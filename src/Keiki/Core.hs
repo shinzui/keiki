@@ -40,6 +40,8 @@ module Keiki.Core
   , Term (..)
     -- * Input-side structural constructor (v2)
   , InCtor (..)
+  , AssembleRegFile
+  , KnownSlotNames
     -- * Update language
   , Update (..)
   , combine

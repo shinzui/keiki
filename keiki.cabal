@@ -35,6 +35,7 @@ common shared-extensions
 library
     import:             warnings, shared-extensions
     exposed-modules:    Keiki.Core
+                        Keiki.Generics
                         Keiki.Symbolic
                         Keiki.Examples.UserRegistration
                         Keiki.Examples.UserRegistrationV0
