@@ -144,10 +144,16 @@ This section must always reflect the actual current state of the work.
       proj #confirmCode)` so the equality short-circuits on
       non-`ConfirmAccount` inputs. `cabal build` succeeds; the existing
       test suite still passes (18/18). (2026-05-01)
-- [ ] **Milestone 6 — End-to-end test passes (fixed schema).** Construct the
-      synthesis-§4 event log with `AccountConfirmed` carrying `confirmCode` (fix-1).
-      Run `reconstitute userReg events` and assert it returns `Just (Deleted,
-      expectedRegs)`. Test passes.
+- [x] **Milestone 6 — End-to-end test passes (fixed schema).** Constructed
+      the synthesis-§4 5-event canonical log (fix-1 schema) plus a
+      hand-computed expected register-file snapshot (Email,
+      ConfirmationCode, registeredAt rotated by the resend, confirmedAt,
+      deletedAt). `reconstitute userReg canonicalLog` returns
+      `Just (Deleted, expectedSnapshot)`. Per-step replay assertions
+      cover step 1 (PotentialCustomer→Registering on
+      RegistrationStarted) and step 5 (Confirmed→Deleted on
+      AccountDeleted). 21 examples, 0 failures. **The synthesis holds:
+      `solveOutput` walks the canonical log end-to-end.** (2026-05-01)
 - [ ] **Milestone 7 — Hidden-input check fires (unfixed schema).** Construct the
       same event log without the `confirmCode` field on `AccountConfirmed`. Either:
       (a) `reconstitute` returns `Nothing` with a `HiddenInput` diagnostic, or

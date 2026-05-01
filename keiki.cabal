@@ -18,6 +18,7 @@ common warnings
 common shared-extensions
     default-language:   GHC2024
     default-extensions: OverloadedLabels
+                        OverloadedStrings
                         UndecidableInstances
                         FunctionalDependencies
                         DuplicateRecordFields
@@ -39,6 +40,8 @@ test-suite keiki-test
     hs-source-dirs:     test
     main-is:            Spec.hs
     other-modules:      Keiki.CoreSpec
+                        Keiki.Examples.UserRegistrationSpec
     build-depends:      base ^>= 4.20,
                         keiki,
-                        hspec ^>= 2.11
+                        hspec ^>= 2.11,
+                        time ^>= 1.12
