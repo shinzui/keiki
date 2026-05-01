@@ -68,6 +68,10 @@ module Keiki.Core
   , solveOutput
   , HiddenInputWarning (..)
   , checkHiddenInputs
+    -- * Internals exposed for testing
+  , termReadsInput
+  , updateReadsInput
+  , outFieldsHaveInpField
   ) where
 
 import Data.Kind (Type)
@@ -213,9 +217,15 @@ data OutFields rs ci fs where
 -- | A pure expression yielding an output value @co@.
 data OutTerm (rs :: [Slot]) (ci :: Type) (co :: Type) where
   -- | Structural pack: tagged by a wire constructor, with one 'Term'
-  -- per field of that constructor.
+  -- per field of that constructor, plus a v1 hand-written inverse used
+  -- by 'solveOutput'. The structural field-list 'OutFields' remains
+  -- inspectable by 'checkHiddenInputs'; the explicit inverse is the v1
+  -- pragmatic fix for the fact that 'TInpField' is an opaque function
+  -- that 'solveOutput' cannot mechanically invert. v2 retires the
+  -- inverse field once 'TInpProj' (structural input projection) lands.
   OPack :: WireCtor co fields
         -> OutFields rs ci fields
+        -> (RegFile rs -> co -> Maybe ci)
         -> OutTerm rs ci co
   -- | v1 escape hatch: opaque function. 'solveOutput' returns 'Nothing'
   -- and 'checkHiddenInputs' flags the edge.
@@ -321,9 +331,12 @@ lit = TLit
 infix 4 .==
 
 
--- | Structural-output construction.
+-- | Structural-output construction. The third argument is the v1
+-- hand-written inverse used by 'solveOutput'. v2 retires this in favour
+-- of mechanical inversion via structural input projection.
 pack :: WireCtor co fields
      -> OutFields rs ci fields
+     -> (RegFile rs -> co -> Maybe ci)
      -> OutTerm rs ci co
 pack = OPack
 
@@ -341,8 +354,9 @@ evalTerm (TApp2 f a b)   regs ci = f (evalTerm a regs ci) (evalTerm b regs ci)
 
 -- | Evaluate an 'OutTerm' against a register file and an input symbol.
 evalOut :: OutTerm rs ci co -> RegFile rs -> ci -> co
-evalOut (OPack ctor fields) regs ci = wcBuild ctor (evalOutFields fields regs ci)
-evalOut (OFn f)             regs ci = f regs ci
+evalOut (OPack ctor fields _inv) regs ci =
+  wcBuild ctor (evalOutFields fields regs ci)
+evalOut (OFn f)                  regs ci = f regs ci
 
 
 evalOutFields :: OutFields rs ci fs -> RegFile rs -> ci -> fs
@@ -463,25 +477,91 @@ reconstitute t = go (initial t, initialRegs t)
 
 -- * Build-time analyses ----------------------------------------------------
 
--- | Recover the input that produced a given output, if the output term
--- is invertible in the input fields. Returns 'Nothing' for opaque 'OFn'
--- and for structural mismatches.
+-- | Recover the input that produced a given output. For 'OPack' the
+-- v1 implementation calls the user-provided inverse directly; for
+-- 'OFn' the result is 'Nothing' (opaque output, not invertible). v2
+-- replaces the 'OPack' inverse field with a structural walk over
+-- 'OutFields' once 'TInpProj' lands.
 solveOutput :: OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
-solveOutput = error "TODO: M4"
+solveOutput (OPack _ctor _fields inv) regs co = inv regs co
+solveOutput (OFn _)                   _regs _co = Nothing
 
 
 -- | A diagnostic produced by 'checkHiddenInputs'.
 data HiddenInputWarning = HiddenInputWarning
   { hiwEdgeSource :: String
-    -- ^ Identifier or description of the edge's source vertex.
+    -- ^ Description of the edge's source (typically @show s@).
   , hiwReason     :: String
     -- ^ Human-readable description of what's hidden.
   } deriving (Eq, Show)
 
 
 -- | For every edge in the transducer, check whether the @update@ or
--- @guard@ reads input fields that the @output@ does not recover.
+-- @guard@ touches the input symbol via an opaque path that the @output@
+-- cannot recover on replay. Specifically:
+--
+--   * If @output@ is @Nothing@ (an ε-edge), and @update@ or @guard@
+--     reaches into @ci@ via 'TInpField', the edge is opaque-input.
+--     ε-edges are silent on the wire, so the input contribution is
+--     unrecoverable.
+--   * If @output@ is 'OFn', the whole output is opaque. Any @update@
+--     or @guard@ reaching into @ci@ is also unrecoverable.
+--   * If @output@ is 'OPack' with @TInpField@ leaves, those leaves are
+--     structurally noted but cannot be inverted without the v1
+--     hand-written inverse (which the user did supply). The check
+--     reports them as best-effort warnings rather than hard errors.
+--
+-- The check is intentionally conservative: it flags candidates for the
+-- author to inspect, not theorems.
 checkHiddenInputs
-  :: SymTransducer phi rs s ci co
+  :: forall phi rs s ci co.
+     (Bounded s, Enum s, Show s)
+  => SymTransducer phi rs s ci co
   -> [HiddenInputWarning]
-checkHiddenInputs = error "TODO: M4"
+checkHiddenInputs t =
+  [ HiddenInputWarning
+      { hiwEdgeSource = show s
+      , hiwReason     = reason
+      }
+  | s <- [minBound .. maxBound]
+  , (n, e) <- zip [(0 :: Int) ..] (edgesOut t s)
+  , reason <- edgeReasons n e
+  ]
+  where
+    edgeReasons :: Int -> Edge phi rs ci co s -> [String]
+    edgeReasons n e = case output e of
+      Nothing
+        | updateReadsInput (update e) ->
+            [ "edge #" <> show n <> ": ε-edge with input read in update" ]
+        | otherwise -> []
+      Just (OFn _) ->
+        [ "edge #" <> show n <> ": OFn output is opaque (no inverse)" ]
+      Just (OPack _ fields _inv)
+        | outFieldsHaveInpField fields ->
+            [ "edge #" <> show n
+              <> ": OPack field uses TInpField; v1 inverse is hand-written"
+            ]
+        | otherwise -> []
+
+
+-- | Does the 'Update' read the input symbol via 'TInpField'?
+updateReadsInput :: Update rs ci -> Bool
+updateReadsInput UKeep          = False
+updateReadsInput (USet _ t)     = termReadsInput t
+updateReadsInput (UCombine a b) = updateReadsInput a || updateReadsInput b
+
+
+-- | Does the 'Term' read the input symbol via 'TInpField'?
+termReadsInput :: Term rs ci r -> Bool
+termReadsInput (TLit _)         = False
+termReadsInput (TReg _)         = False
+termReadsInput (TInpField _)    = True
+termReadsInput (TApp1 _ t)      = termReadsInput t
+termReadsInput (TApp2 _ a b)    = termReadsInput a || termReadsInput b
+
+
+-- | Do the 'OutFields' contain a 'TInpField' anywhere?
+outFieldsHaveInpField :: OutFields rs ci fs -> Bool
+outFieldsHaveInpField OFNil           = False
+outFieldsHaveInpField (OFCons t rest) =
+  termReadsInput t || outFieldsHaveInpField rest

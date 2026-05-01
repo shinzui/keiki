@@ -147,7 +147,29 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+### M4: 'OPack' needs a v1 hand-written inverse (2026-05-01)
+
+The DSL note's 'OPack' constructor was specified as
+`OPack :: WireCtor co fields -> OutFields rs ci fields -> OutTerm rs ci co`.
+While implementing 'solveOutput' it became clear the chosen v1 'Term'
+constructor set cannot be mechanically inverted: the only input-reading
+constructor is 'TInpField', which wraps `ci -> r` opaquely. Inversion
+requires either a structural input-projection constructor (the v2
+'TInpProj') or per-edge user-supplied inverses. The DSL note's
+"Ergonomic verdict" already flagged this exact pain point — see IP-1
+in the MasterPlan's Surprises & Discoveries — but framed it as
+ergonomic (user has to write `\case ... _ -> error "guard"`) rather
+than load-bearing for 'solveOutput'.
+
+Resolution in M4: 'OPack' was extended to carry a third field, a
+hand-written inverse `RegFile rs -> co -> Maybe ci`. The structural
+'OutFields' remains; `checkHiddenInputs` still walks it. 'solveOutput'
+on 'OPack' simply calls the inverse. The deviation is documented in
+the Decision Log entry above and recorded in the MasterPlan's
+Surprises & Discoveries for cross-plan visibility. v2's 'TInpProj' is
+the natural retirement path: when input reads are structural, the
+inverse can be derived mechanically from the structural 'OutFields'
+walk, and the hand-written inverse field on 'OPack' goes away.
 
 
 ## Decision Log
@@ -190,6 +212,31 @@ Record every decision made while working on the plan.
   the surface syntax `#email`). This is the standard pattern for
   label-resolved typeclass machinery and is well-tested in libraries like
   `superrecord` and `extensible`.
+  Date: 2026-05-01
+
+- Decision: 'OPack' carries a v1 hand-written inverse alongside the
+  structural 'OutFields' (deviation from the DSL note's checklist).
+  Rationale: the DSL note's chosen `Term` constructor set has 'TInpField'
+  as the only input-reading constructor, and 'TInpField' wraps an opaque
+  `ci -> r` function that 'solveOutput' cannot mechanically invert. The
+  master-plan acceptance criterion ("'solveOutput' works on that
+  example") requires `reconstitute` to actually succeed on the User
+  Registration smoke-test event log; that is impossible with a purely
+  structural 'solveOutput' as long as input reads are opaque. Two
+  options were considered: (a) introduce a structural input projection
+  ('TInpProj' or HasField/Generic-driven) now, which the DSL note
+  flagged as a v2 priority and which would require non-trivial extra
+  GADT machinery (per-constructor `InCtor` mirroring `WireCtor`); (b)
+  add a hand-written `RegFile rs -> co -> Maybe ci` inverse field to
+  'OPack', so 'solveOutput' delegates to user code while
+  'checkHiddenInputs' still walks the structural 'OutFields'. Option
+  (b) ships in v1 with minimal divergence from the DSL note; the
+  structural 'OutFields' remains the contract for the hidden-input
+  analysis, and the inverse field is the documented v1 escape hatch
+  that v2 retires. The cost is that the synthesis claim of "mechanical
+  apply derivation" is, in v1, "user-supplied per-edge apply" — honest
+  about v1's limits while preserving the rest of the formalism
+  (transducer composition, register evolution, hidden-input analysis).
   Date: 2026-05-01
 
 - Decision: Stub bodies in M1 use `error "TODO: M<n>"` rather than `undefined`.

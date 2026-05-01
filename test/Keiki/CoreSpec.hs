@@ -75,9 +75,45 @@ spec = do
       case reconstitute synthetic ([] :: [String]) of
         Just (s, _) -> s `shouldBe` False
         Nothing     -> expectationFailure "expected Just (initial, _)"
+
+  describe "solveOutput on a tiny OPack" $ do
+    let -- A tiny output sum.
+        wireFooCtor :: WireCtor TinyOut (Int, (Int, ()))
+        wireFooCtor = WireCtor
+          { wcName  = "Foo"
+          , wcMatch = \(Foo a b) -> Just (a, (b, ()))
+          , wcBuild = \(a, (b, ())) -> Foo a b
+          }
+        -- forward: Foo (ci+1) (ci*2)
+        outFoo :: OutTerm '[] Int TinyOut
+        outFoo = OPack
+          wireFooCtor
+          (OFCons (TApp1 (+1) (TInpField id))
+                  (OFCons (TApp1 (*2) (TInpField id)) OFNil))
+          -- v1 hand-written inverse: pull the first field minus 1.
+          (\_regs co -> case co of Foo a _ -> Just (a - 1))
+
+    it "evalOut produces Foo (ci+1) (ci*2)" $
+      evalOut outFoo RNil 5 `shouldBe` Foo 6 10
+    it "solveOutput recovers ci from the observed output" $
+      solveOutput outFoo RNil (Foo 6 10) `shouldBe` Just 5
+    it "solveOutput on OFn returns Nothing (opaque)" $ do
+      let opaqueOut :: OutTerm '[] Int TinyOut
+          opaqueOut = OFn (\_ ci -> Foo ci ci)
+      solveOutput opaqueOut RNil (Foo 7 7) `shouldBe` Nothing
+
+  describe "checkHiddenInputs" $ do
+    it "synthetic transducer's OFn output is flagged" $ do
+      let warnings = checkHiddenInputs synthetic
+      length warnings `shouldBe` 1
+      hiwReason (head warnings) `shouldContain` "OFn output is opaque"
   where
     -- 'show' over `Maybe (s, RegFile rs, Maybe co)` is awkward because
     -- RegFile has no Show. Use a thin coercion to a printable summary.
     show3 :: Show s => Show co => Maybe (s, x, Maybe co) -> String
     show3 Nothing                = "Nothing"
     show3 (Just (s, _, mco))     = "Just (" ++ show s ++ ", _, " ++ show mco ++ ")"
+
+
+-- | Tiny output sum for the solveOutput micro-test.
+data TinyOut = Foo Int Int deriving (Eq, Show)
