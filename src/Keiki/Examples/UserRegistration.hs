@@ -72,7 +72,7 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
-import Keiki.Generics (mkInCtor, mkInCtor0)
+import Keiki.Generics (FieldsOf, mkInCtor, mkInCtor0, mkWireCtor)
 
 
 -- * Domain types ------------------------------------------------------------
@@ -120,28 +120,28 @@ data RegistrationStartedData = RegistrationStartedData
   { email       :: Email
   , confirmCode :: ConfirmationCode
   , at          :: UTCTime
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 newtype ConfirmationEmailSentData = ConfirmationEmailSentData { email :: Email }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | Synthesis §4 fix-1 schema: includes the @confirmCode@ field.
 data AccountConfirmedData = AccountConfirmedData
   { email       :: Email
   , confirmCode :: ConfirmationCode
   , at          :: UTCTime
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 data ConfirmationResentData = ConfirmationResentData
   { email       :: Email
   , confirmCode :: ConfirmationCode
   , at          :: UTCTime
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 data AccountDeletedData = AccountDeletedData
   { email :: Email
   , at    :: UTCTime
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 data UserEvent
   = RegistrationStarted   RegistrationStartedData
@@ -290,67 +290,43 @@ isContinue = matchInCtor inCtorContinue
 
 -- * Wire constructors for events -------------------------------------------
 
-wireRegistrationStarted
-  :: WireCtor UserEvent (Email, (ConfirmationCode, (UTCTime, ())))
-wireRegistrationStarted = WireCtor
-  { wcName  = "RegistrationStarted"
-  , wcMatch = \case
-      RegistrationStarted d ->
-        Just (d.email, (d.confirmCode, (d.at, ())))
-      _ -> Nothing
-  , wcBuild = \(e, (cc, (a, ()))) ->
-      RegistrationStarted (RegistrationStartedData e cc a)
-  }
+-- All five 'WireCtor' values below are 'Keiki.Generics.mkWireCtor'-
+-- built; the nested-pair field tuple is derived from each event
+-- record's 'Generic' field metadata via 'FieldsOf'.
+
+wireRegistrationStarted :: WireCtor UserEvent (FieldsOf RegistrationStartedData)
+wireRegistrationStarted = mkWireCtor
+  "RegistrationStarted"
+  (\case RegistrationStarted d -> Just d; _ -> Nothing)
+  RegistrationStarted
 
 
-wireConfirmationEmailSent
-  :: WireCtor UserEvent (Email, ())
-wireConfirmationEmailSent = WireCtor
-  { wcName  = "ConfirmationEmailSent"
-  , wcMatch = \case
-      ConfirmationEmailSent d -> Just (d.email, ())
-      _ -> Nothing
-  , wcBuild = \(e, ()) ->
-      ConfirmationEmailSent (ConfirmationEmailSentData e)
-  }
+wireConfirmationEmailSent :: WireCtor UserEvent (FieldsOf ConfirmationEmailSentData)
+wireConfirmationEmailSent = mkWireCtor
+  "ConfirmationEmailSent"
+  (\case ConfirmationEmailSent d -> Just d; _ -> Nothing)
+  ConfirmationEmailSent
 
 
-wireAccountConfirmed
-  :: WireCtor UserEvent (Email, (ConfirmationCode, (UTCTime, ())))
-wireAccountConfirmed = WireCtor
-  { wcName  = "AccountConfirmed"
-  , wcMatch = \case
-      AccountConfirmed d ->
-        Just (d.email, (d.confirmCode, (d.at, ())))
-      _ -> Nothing
-  , wcBuild = \(e, (cc, (a, ()))) ->
-      AccountConfirmed (AccountConfirmedData e cc a)
-  }
+wireAccountConfirmed :: WireCtor UserEvent (FieldsOf AccountConfirmedData)
+wireAccountConfirmed = mkWireCtor
+  "AccountConfirmed"
+  (\case AccountConfirmed d -> Just d; _ -> Nothing)
+  AccountConfirmed
 
 
-wireConfirmationResent
-  :: WireCtor UserEvent (Email, (ConfirmationCode, (UTCTime, ())))
-wireConfirmationResent = WireCtor
-  { wcName  = "ConfirmationResent"
-  , wcMatch = \case
-      ConfirmationResent d ->
-        Just (d.email, (d.confirmCode, (d.at, ())))
-      _ -> Nothing
-  , wcBuild = \(e, (cc, (a, ()))) ->
-      ConfirmationResent (ConfirmationResentData e cc a)
-  }
+wireConfirmationResent :: WireCtor UserEvent (FieldsOf ConfirmationResentData)
+wireConfirmationResent = mkWireCtor
+  "ConfirmationResent"
+  (\case ConfirmationResent d -> Just d; _ -> Nothing)
+  ConfirmationResent
 
 
-wireAccountDeleted
-  :: WireCtor UserEvent (Email, (UTCTime, ()))
-wireAccountDeleted = WireCtor
-  { wcName  = "AccountDeleted"
-  , wcMatch = \case
-      AccountDeleted d -> Just (d.email, (d.at, ()))
-      _ -> Nothing
-  , wcBuild = \(e, (a, ())) ->
-      AccountDeleted (AccountDeletedData e a)
-  }
+wireAccountDeleted :: WireCtor UserEvent (FieldsOf AccountDeletedData)
+wireAccountDeleted = mkWireCtor
+  "AccountDeleted"
+  (\case AccountDeleted d -> Just d; _ -> Nothing)
+  AccountDeleted
 
 
 -- * The transducer ---------------------------------------------------------

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 
@@ -37,7 +38,9 @@ module Keiki.Examples.UserRegistrationV0
 
 import Data.Proxy (Proxy (..))
 import Data.Time (UTCTime, fromGregorian, secondsToDiffTime, UTCTime (..))
+import GHC.Generics (Generic)
 import Keiki.Core
+import Keiki.Generics (FieldsOf, mkWireCtor)
 import Keiki.Examples.UserRegistration
   ( Email
   , ConfirmationCode
@@ -66,7 +69,7 @@ import Keiki.Examples.UserRegistration
 data AccountConfirmedDataV0 = AccountConfirmedDataV0
   { email :: Email
   , at    :: UTCTime
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 
 data UserEventV0
@@ -103,68 +106,47 @@ isContinue = matchInCtor inCtorContinue
 
 
 -- * V0 wire constructors ---------------------------------------------------
+--
+-- All five 'WireCtor' values are 'Keiki.Generics.mkWireCtor'-built;
+-- nested-pair fields come from each event record's 'Generic'
+-- metadata via 'FieldsOf'.
 
-wireRegistrationStartedV0
-  :: WireCtor UserEventV0 (Email, (ConfirmationCode, (UTCTime, ())))
-wireRegistrationStartedV0 = WireCtor
-  { wcName  = "RegistrationStartedV0"
-  , wcMatch = \case
-      RegistrationStartedV0 d -> Just (d.email, (d.confirmCode, (d.at, ())))
-      _ -> Nothing
-  , wcBuild = \(e, (cc, (a, ()))) ->
-      RegistrationStartedV0 (RegistrationStartedData e cc a)
-  }
-
-
-wireConfirmationEmailSentV0
-  :: WireCtor UserEventV0 (Email, ())
-wireConfirmationEmailSentV0 = WireCtor
-  { wcName  = "ConfirmationEmailSentV0"
-  , wcMatch = \case
-      ConfirmationEmailSentV0 d -> Just (d.email, ())
-      _ -> Nothing
-  , wcBuild = \(e, ()) ->
-      ConfirmationEmailSentV0 (ConfirmationEmailSentData e)
-  }
+wireRegistrationStartedV0 :: WireCtor UserEventV0 (FieldsOf RegistrationStartedData)
+wireRegistrationStartedV0 = mkWireCtor
+  "RegistrationStartedV0"
+  (\case RegistrationStartedV0 d -> Just d; _ -> Nothing)
+  RegistrationStartedV0
 
 
--- | The hidden-input culprit: AccountConfirmedDataV0 does not carry
+wireConfirmationEmailSentV0 :: WireCtor UserEventV0 (FieldsOf ConfirmationEmailSentData)
+wireConfirmationEmailSentV0 = mkWireCtor
+  "ConfirmationEmailSentV0"
+  (\case ConfirmationEmailSentV0 d -> Just d; _ -> Nothing)
+  ConfirmationEmailSentV0
+
+
+-- | The hidden-input culprit: 'AccountConfirmedDataV0' does not carry
 -- @confirmCode@. The forward direction emits @(email, at)@; the
 -- inverse cannot recover @ci.confirmCode@.
-wireAccountConfirmedV0
-  :: WireCtor UserEventV0 (Email, (UTCTime, ()))
-wireAccountConfirmedV0 = WireCtor
-  { wcName  = "AccountConfirmedV0"
-  , wcMatch = \case
-      AccountConfirmedV0 d -> Just (d.email, (d.at, ()))
-      _ -> Nothing
-  , wcBuild = \(e, (a, ())) ->
-      AccountConfirmedV0 (AccountConfirmedDataV0 e a)
-  }
+wireAccountConfirmedV0 :: WireCtor UserEventV0 (FieldsOf AccountConfirmedDataV0)
+wireAccountConfirmedV0 = mkWireCtor
+  "AccountConfirmedV0"
+  (\case AccountConfirmedV0 d -> Just d; _ -> Nothing)
+  AccountConfirmedV0
 
 
-wireConfirmationResentV0
-  :: WireCtor UserEventV0 (Email, (ConfirmationCode, (UTCTime, ())))
-wireConfirmationResentV0 = WireCtor
-  { wcName  = "ConfirmationResentV0"
-  , wcMatch = \case
-      ConfirmationResentV0 d -> Just (d.email, (d.confirmCode, (d.at, ())))
-      _ -> Nothing
-  , wcBuild = \(e, (cc, (a, ()))) ->
-      ConfirmationResentV0 (ConfirmationResentData e cc a)
-  }
+wireConfirmationResentV0 :: WireCtor UserEventV0 (FieldsOf ConfirmationResentData)
+wireConfirmationResentV0 = mkWireCtor
+  "ConfirmationResentV0"
+  (\case ConfirmationResentV0 d -> Just d; _ -> Nothing)
+  ConfirmationResentV0
 
 
-wireAccountDeletedV0
-  :: WireCtor UserEventV0 (Email, (UTCTime, ()))
-wireAccountDeletedV0 = WireCtor
-  { wcName  = "AccountDeletedV0"
-  , wcMatch = \case
-      AccountDeletedV0 d -> Just (d.email, (d.at, ()))
-      _ -> Nothing
-  , wcBuild = \(e, (a, ())) ->
-      AccountDeletedV0 (AccountDeletedData e a)
-  }
+wireAccountDeletedV0 :: WireCtor UserEventV0 (FieldsOf AccountDeletedData)
+wireAccountDeletedV0 = mkWireCtor
+  "AccountDeletedV0"
+  (\case AccountDeletedV0 d -> Just d; _ -> Nothing)
+  AccountDeletedV0
 
 
 -- * The V0 transducer ------------------------------------------------------
