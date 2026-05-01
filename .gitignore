@@ -1,3 +1,10 @@
 .claude/
 .agents/
 CLAUDE.local.md
+
+# Cabal build artifacts
+dist/
+dist-newstyle/
+.cabal-sandbox/
+cabal.sandbox.config
+.ghc.environment.*

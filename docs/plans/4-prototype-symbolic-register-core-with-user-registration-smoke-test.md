@@ -79,21 +79,25 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Verify prerequisite design notes exist:
+- [x] Verify prerequisite design notes exist:
       `docs/research/dsl-shape-for-symbolic-register.md` (from plan 1),
       `docs/research/schema-evolution.md` (from plan 2),
-      `docs/research/effects-boundary.md` (from plan 3).
-- [ ] Choose Haskell toolchain and project tool: GHC 9.8 LTS, cabal-install. Document
-      in Decision Log.
-- [ ] Scaffold cabal project at the repo root: `keiki.cabal`, `cabal.project`,
-      `src/`, `test/`, optional `examples/`. Initial `Keiki.Core` is a stub
-      (`module Keiki.Core where` exporting nothing). Verify it builds with `cabal
-      build`.
-- [ ] **Milestone 1 — Types compile.** Translate the DSL note's "Prototype
+      `docs/research/effects-boundary.md` (from plan 3). (2026-05-01)
+- [x] Choose Haskell toolchain and project tool: GHC 9.10.3, cabal-install 3.16.1.0,
+      `default-language: GHC2024`. The plan called for GHC 9.8 LTS but the local
+      toolchain is 9.10.3 which is newer and supports GHC2024 default-language.
+      Recorded in Decision Log. (2026-05-01)
+- [x] Scaffold cabal project at the repo root: `keiki.cabal`, `cabal.project`,
+      `src/Keiki/Core.hs`. (2026-05-01)
+- [x] **Milestone 1 — Types compile.** Translated the DSL note's "Prototype
       Implementation Checklist" into Haskell type declarations in `Keiki.Core`.
-      RegFile, Index, Term, OutTerm, Update, Edge, SymTransducer, HsPred (the v1
-      predicate carrier), the `BoolAlg` class. `cabal build` succeeds with the types
-      alone (no implementations yet — use `undefined` for any required helpers).
+      RegFile, Index, Term, OutTerm, Update, Edge, SymTransducer, HsPred,
+      `BoolAlg` class with `HsPred` instance, `HasIndex`/`IsLabel` for
+      `OverloadedLabels`, `(!)` runtime lookup, `combine`/`unsafeCombine`.
+      Evaluator and entry-point bodies are `error "TODO: M2"` / `M3` / `M4`
+      stubs. `cabal build` succeeds with redundant-constraint warnings on the
+      stubbed signatures (resolved by M2 when bodies use the constraints).
+      (2026-05-01)
 - [ ] **Milestone 2 — Bare-minimum evaluator.** Implement `evalTerm`, `evalOut`,
       `runUpdate`, `models` for the `HsPred` instance, and the `delta` and `omega`
       projections. Add a tiny synthetic test (a 2-vertex transducer with no register
@@ -155,6 +159,38 @@ Record every decision made while working on the plan.
   as of the plan date. If the user's environment requires Nix, the cabal project
   works inside a Nix shell without modification.
   Date: 2026-04-30
+
+- Decision: Use GHC 9.10.3 with `default-language: GHC2024` instead of GHC 9.8.
+  Rationale: 9.10.3 is what the local toolchain ships. GHC2024 includes
+  `LambdaCase`, `GADTs`, `DataKinds`, `KindSignatures`, `ScopedTypeVariables`,
+  and `TypeApplications` by default, which removes a chunk of per-file LANGUAGE
+  pragma noise. Extensions that are not in GHC2024 (`OverloadedLabels`,
+  `UndecidableInstances`, `FunctionalDependencies`, `DuplicateRecordFields`,
+  `OverloadedRecordDot`, `AllowAmbiguousTypes`) are declared in the cabal file's
+  `default-extensions`. The `vinyl`/`hspec`/`tasty` ecosystem support is
+  unchanged from 9.8.
+  Date: 2026-05-01
+
+- Decision: `AllowAmbiguousTypes` is required for the `HasIndex` / `IsLabel`
+  surface.
+  Rationale: `HasIndex s rs r` carries the label `s` only as a type-class
+  parameter; the method `indexOf :: Index rs r` does not mention `s` in its
+  return type. The user disambiguates by `TypeApplications` (e.g.,
+  `indexOf @s @rs @r` inside a recursive instance, or via `IsLabel`'s
+  `fromLabel`-from-OverloadedLabels surface, which threads the `s` through
+  the surface syntax `#email`). This is the standard pattern for
+  label-resolved typeclass machinery and is well-tested in libraries like
+  `superrecord` and `extensible`.
+  Date: 2026-05-01
+
+- Decision: Stub bodies in M1 use `error "TODO: M<n>"` rather than `undefined`.
+  Rationale: An `error` with a message points the maintainer to the specific
+  milestone where the body lands, and shows up legibly in test transcripts if
+  ever accidentally reached. `undefined` is just `error "Prelude.undefined"`
+  with less information. The redundant-constraint warnings for `BoolAlg` on
+  `delta`/`omega`/`step`/`reconstitute` are an expected M1 artefact: the
+  bodies don't yet use the constraint, so GHC flags it. M2 makes them used.
+  Date: 2026-05-01
 
 - Decision: Test framework will be chosen at Milestone 2 between `hspec` and
   `tasty-hunit` based on whichever the eventual DSL note's surveys settle on as the

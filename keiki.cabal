@@ -1,0 +1,29 @@
+cabal-version:      3.0
+name:               keiki
+version:            0.1.0.0
+synopsis:           Pure core for symbolic-register transducer event sourcing.
+license:            BSD-3-Clause
+author:             Nadeem Bitar
+maintainer:         nadeem@gmail.com
+copyright:          2026 Nadeem Bitar
+category:           Control
+build-type:         Simple
+tested-with:        GHC == 9.10.3
+
+common warnings
+    ghc-options:        -Wall -Wcompat -Widentities
+                        -Wincomplete-record-updates -Wincomplete-uni-patterns
+                        -Wpartial-fields -Wredundant-constraints
+
+library
+    import:             warnings
+    exposed-modules:    Keiki.Core
+    hs-source-dirs:     src
+    default-language:   GHC2024
+    default-extensions: OverloadedLabels
+                        UndecidableInstances
+                        FunctionalDependencies
+                        DuplicateRecordFields
+                        OverloadedRecordDot
+                        AllowAmbiguousTypes
+    build-depends:      base ^>= 4.20
