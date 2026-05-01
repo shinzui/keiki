@@ -188,7 +188,7 @@ without proving anything.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Replace TInpField with structural input projection (TInpProj) | docs/plans/5-replace-tinpfield-with-structural-input-projection-tinpproj.md | None | None | Complete |
-| 2 | SBV-backed BoolAlg instance for symbolic emptiness | docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md | None | EP-1 | In Progress |
+| 2 | SBV-backed BoolAlg instance for symbolic emptiness | docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md | None | EP-1 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -388,7 +388,7 @@ for an at-a-glance view.
 - [x] EP-2: Implement symbolic `models`, `sat`, `isBot` (M5)
 - [x] EP-2: Implement symbolic `isSingleValued` (M6)
 - [x] EP-2: Add tests; verify `isSingleValued userReg == True` (M7)
-- [ ] EP-2: Update DSL note's BoolAlg section; capture verdict (M8)
+- [x] EP-2: Update DSL note's BoolAlg section; capture verdict (M8)
 
 
 ## Surprises & Discoveries
@@ -503,10 +503,65 @@ EP-1 took 8 commits across M0-M7 plus an M7 progress fix. The largest
 deviation from the M1 design note was the OPack-carries-InCtor
 redesign discovered during M6 (see Surprises & Discoveries).
 
-**EP-2 not yet started.** The MasterPlan-level acceptance criterion
-("all four test categories pass, the User Registration aggregate
-compiles with no per-edge `OPack` inverse, and `cabal build` succeeds
-with no warnings about unreachable v1 escape hatches") is partially
-met by EP-1: three of the four categories are green; the fourth
-(`isSingleValued userReg == True` proved symbolically) is EP-2's
-deliverable.
+**EP-2 complete (2026-05-01).** EP-2 retired the v1 best-effort
+`BoolAlg HsPred` `sat`/`isBot` methods and made `isSingleValued`
+symbolically precise. After EP-2 the repository contains a new
+`Keiki.Symbolic` module (~280 lines) exporting:
+
+- A `Sym` typeclass with instances for `Bool`/`Int`/`Integer`/
+  `Text`/`UTCTime`. `Email` and `ConfirmationCode` pick up the
+  `Text` instance via type aliases.
+- `discoverSym` — runtime dispatch from `Typeable` to `Sym`
+  evidence over the curated registry.
+- A `SymEnv` carrying the shared symbolic input-constructor tag, plus
+  `mkSymEnv`/`translateTermSym`/`translatePred` for the structural
+  walk.
+- A `SymPred` newtype wrapper with a v2 `BoolAlg` instance routing
+  `sat`/`isBot` through SBV (z3 backend). `unsafePerformIO`+NOINLINE
+  on the wrappers; queries are deterministic given the predicate.
+- `isSingleValuedSym` (`BoolAlg`-polymorphic) and `withSymPred`
+  (lifts an `HsPred`-typed transducer to `SymPred`).
+
+`Keiki.Core` gained a `PInCtor :: InCtor ci ifs -> HsPred rs ci`
+constructor and a `matchInCtor` helper as a documented EP-1
+cross-cut: necessary so the symbolic translation can decide
+constructor mutual exclusion. `PEq`/`(.==)` gained a `Typeable r`
+constraint to allow the runtime dispatch in the translator. The v1
+`PMatchC` escape hatch stays for back-compat.
+
+The User Registration aggregate (V5 and V0) migrated its
+`isStart`/`isConfirm`/... helpers from `matchCmd`/`PMatchC` to
+`matchInCtor`/`PInCtor`; the `evalPred` semantics is preserved so all
+existing tests pass.
+
+`cabal test` reports **70 examples, 0 failures**, including the
+load-bearing **`isSingleValuedSym (withSymPred userReg) == True`**
+test proved symbolically by z3.
+
+**The MasterPlan-level acceptance criterion is met in full:** all
+four test categories pass, the User Registration aggregate compiles
+with no per-edge `OPack` inverse (EP-1), `cabal build` succeeds with
+no warnings, and `isSingleValued userReg == True` is symbolically
+proved (EP-2).
+
+EP-2 took 8 commits across M0-M8 plus this M8 verdict commit. The
+solver runtime requirement is z3 in `PATH` (`brew install z3` on
+macOS); SBV resolved to 14.0.
+
+**MasterPlan retrospective.** The two-plan decomposition (EP-1
+TInpProj, EP-2 SBV BoolAlg) held up: each plan touched a distinct
+subsystem with distinct failure modes, and the soft-dep relationship
+gave EP-2 the option to fall back to a separate symbolic-Term
+variant if EP-1 had not landed. EP-1 finished first as expected, so
+EP-2 took the structural-`Term` translation path with no fallback.
+
+The single notable cross-cut not foreseen in either plan was the
+`PInCtor`/`matchInCtor` extension to `Keiki.Core`'s `HsPred`. EP-2's
+M1 design milestone surfaced it explicitly, recorded the rationale,
+and EP-2's M3/M5/M7 implementation absorbed it cleanly. Documented in
+both Surprises & Discoveries entries.
+
+The `isSingleValued userReg` test — flagged by EP-4's retrospective
+as the gate the v1 prototype could not exercise — is now a green
+assertion in the test suite, decided in milliseconds by z3. The v2
+retirement of the named v1 escape hatches is complete.

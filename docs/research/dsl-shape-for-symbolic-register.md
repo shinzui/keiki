@@ -547,8 +547,24 @@ function is the pragmatic choice.
 `sat` is `Nothing` in v1 because there is no symbolic solver; the v1
 single-valuedness check uses Hedgehog generators to produce witnesses.
 This matches synthesis §7's stated v1 plan and is documented as a known
-limitation. v2's SBV-backed `BoolAlg` instance will implement `sat`
-properly.
+limitation.
+
+**v2 update (EP-2 of MasterPlan 2; landed 2026-05-01).** The
+v1 `BoolAlg HsPred` instance shown above stays as-is for back-compat,
+but `Keiki.Symbolic` now exports a `newtype SymPred rs ci = SymPred
+(HsPred rs ci)` whose `BoolAlg (SymPred rs ci) (RegFile rs, ci)`
+instance routes `sat` and `isBot` to z3 via SBV. Calling `isBot
+(SymPred (PEq (TLit 5) (TLit 6)))` returns `True` (proved
+unsatisfiable); calling `isBot (SymPred (PAnd (PInCtor inCtorConfirm)
+(PInCtor inCtorResend)))` returns `True` (constructor mutual
+exclusion, proved). The class-`sat` returns
+`Just (placeholder, placeholder)` on satisfiable predicates — the
+placeholder lets the typeclass shape stay unchanged; concrete witness
+extraction is a future `symSatExt` paired with hand-written extractors.
+A new `PInCtor :: InCtor ci ifs -> HsPred rs ci` constructor (and
+`matchInCtor` helper) was added to make constructor-mutex queries
+decidable; the v1 `PMatchC` escape hatch stays for back-compat. See
+`docs/research/sbv-boolalg-design.md` for the full v2 design record.
 
 
 ## Ergonomic helpers

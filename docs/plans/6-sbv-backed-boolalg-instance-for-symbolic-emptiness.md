@@ -173,16 +173,19 @@ reflect the actual current state of the work.
       `inpConfirm #confirmCode .== lit "abc123"`, unsatisfiable
       constructor mutex). `cabal test` reports 70 examples, 0
       failures.
-- [ ] **Milestone 8 — Update DSL design note; capture verdict.** Edit
-      `docs/research/dsl-shape-for-symbolic-register.md` to mark
-      `sat`/`isBot`/`isSingleValued` as upgraded. Edit
-      `docs/research/effects-boundary.md` if it references the
-      best-effort `isSingleValued` (per §5 of that note). Write the
-      EP-2 verdict in this plan's Outcomes & Retrospective. Cross-cut
-      to the MasterPlan.
-- [ ] Commit at every milestone with `MasterPlan:`, `ExecPlan:`,
+- [x] **Milestone 8 — Update DSL design note; capture verdict.**
+      Edited `docs/research/dsl-shape-for-symbolic-register.md`'s
+      predicate-carrier section with a v2-update paragraph naming the
+      `SymPred` upgrade and the `PInCtor` cross-cut. Edited
+      `docs/research/effects-boundary.md` §5 ("isSingleValued") to
+      replace the "best-effort v1 contract" framing with the
+      `BoolAlg`-polymorphic `isSingleValuedSym` that delivers v2
+      precision via `SymPred`. Wrote the EP-2 verdict in this plan's
+      Outcomes & Retrospective; flipped the MasterPlan's Exec-Plan
+      Registry to Complete and filled its Outcomes & Retrospective.
+- [x] Commit at every milestone with `MasterPlan:`, `ExecPlan:`,
       `Intention:` git trailers.
-- [ ] Update the MasterPlan's Exec-Plan Registry (status) and
+- [x] Update the MasterPlan's Exec-Plan Registry (status) and
       Progress (milestone checkboxes) on each milestone.
 
 
@@ -273,10 +276,77 @@ Record every decision made while working on the plan.
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at
-completion. Compare the result against the original purpose.
+**EP-2 complete (2026-05-01).** EP-2 retired the v1 placeholder
+`BoolAlg HsPred` `sat`/`isBot` methods and the best-effort
+`isSingleValued` analysis named by EP-4's retrospective. After EP-2:
 
-(To be filled during and after implementation.)
+- `Keiki.Symbolic` exports a `newtype SymPred rs ci = SymPred (HsPred
+  rs ci)` whose `BoolAlg` instance routes `sat` to `SBV.sat` over a
+  structural translation of the predicate, and `isBot` to the same
+  query negated (no model means bot). Both wrappers use
+  `unsafePerformIO` + `NOINLINE`; SBV queries are deterministic given
+  the predicate, so the wrappers are pure-API safe.
+- `isSingleValuedSym` walks every vertex's outgoing edges and asks
+  `isBot (guard e1 \`conj\` guard e2)` of every distinct pair; with
+  `SymPred` it is z3-precise.
+- The translation handles `PTop`/`PBot`/`PAnd`/`POr`/`PNot` /
+  `PEq`/`PInCtor` structurally; `PMatchC` falls back to a fresh
+  `SBool`. The new `PInCtor :: InCtor ci ifs -> HsPred rs ci`
+  constructor (added to `Keiki.Core` as a documented EP-1 cross-cut)
+  is the load-bearing addition: `PInCtor ic` translates to
+  `seInputCtor .== literal (icName ic)`, so two `PInCtor`s over
+  distinct constructors are unsat at the constructor tag alone.
+- `Keiki.Examples.UserRegistration` (V5) and
+  `Keiki.Examples.UserRegistrationV0` (V0) `isStart`/`isConfirm`/...
+  helpers migrated from v1 `matchCmd`/`PMatchC` to v2
+  `matchInCtor`/`PInCtor`. The `evalPred` semantics is preserved, so
+  the existing 32 V5/V0 behavioral tests pass without modification.
+- `cabal test` reports **70 examples, 0 failures**, including:
+  - 16 new translation tests in `Keiki.SymbolicSpec` covering every
+    `Term`/`HsPred` translation rule.
+  - 9 new `BoolAlg` ops + solver-backed tests on `SymPred`.
+  - 2 new `isSingleValuedSym` synthetic tests (constructor-mutex
+    is single-valued; overlapping `PTop` is not).
+  - 4 new symbolic User Registration tests including the v2
+    retrospective gate **`isSingleValuedSym (withSymPred userReg)
+    == True`** proved symbolically by z3.
+- `docs/research/sbv-boolalg-design.md` (710 lines) is the
+  authoritative v2 design record.
+  `docs/research/dsl-shape-for-symbolic-register.md`'s predicate-
+  carrier section gained a v2-update paragraph.
+  `docs/research/effects-boundary.md` §5 ("isSingleValued") was
+  rewritten to reflect the upgrade.
+
+**The MasterPlan-level acceptance criterion is met in full.** All
+four test categories pass, the User Registration aggregate compiles
+with no per-edge `OPack` inverse (delivered by EP-1), `cabal build`
+succeeds with no warnings, and `isSingleValued userReg == True` is
+proved symbolically.
+
+**Deviations from the M1 design note:**
+
+- The `Sym` typeclass uses runtime `Typeable`-dispatch via
+  `discoverSym` rather than static constraints on the `BoolAlg`
+  instance. This is simpler and avoids per-instance constraint
+  plumbing on the `BoolAlg` typeclass; the cost is that `PEq` over an
+  unknown type translates to a fresh `SBool` (lose precision) instead
+  of being a compile-time error. Documented in the note.
+- No per-occurrence cache for `TInpCtorField` / `TReg` SBV vars; each
+  occurrence allocates a fresh free var. This means `inpConfirm
+  #confirmCode .== inpConfirm #confirmCode` is sat-but-not-tautology,
+  not tautology — but the User Registration aggregate doesn't trigger
+  this case, and the trade-off is sound (just imprecise). A future
+  improvement could thread an IORef cache.
+- `WitnessExtract` and `symSatExt` are not implemented; `sat` returns
+  a placeholder witness pair. The placeholder lets the typeclass-`sat`
+  shape stay `Maybe a` without per-instance constraints.
+
+**Solver runtime requirement:** z3 must be in `PATH`. Locally
+installed via `brew install z3` (z3 4.15.4). SBV resolved to 14.0.
+
+**EP-2 took 8 commits across M0-M8.** The largest deviation from the
+M1 design note was dropping the per-occurrence SBV cache, an
+optimization the User Registration smoke test does not need.
 
 
 ## Context and Orientation

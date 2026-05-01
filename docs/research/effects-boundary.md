@@ -354,25 +354,35 @@ encoded — see IP-2 in the master plan.
 
 ### `isSingleValued`
 
-Best-effort single-valuedness check for v1:
+Best-effort single-valuedness check for v1; SBV-backed precise check
+for v2:
 
-    isSingleValued
-      :: SymTransducer phi rs s ci co
+    -- v2: lives in Keiki.Symbolic; BoolAlg-polymorphic.
+    isSingleValuedSym
+      :: (BoolAlg phi (RegFile rs, ci), Bounded s, Enum s)
+      => SymTransducer phi rs s ci co
       -> Bool
 
-Synthesis §7 defers a general single-valuedness decision procedure to
-v2 (SBV-backed). For v1, this is a Hedgehog property test plus a
-syntactic conservative approximation: at each vertex, do any two
-outgoing edges' guards have a possibility of overlapping
-(`not (isBot (guard e₁ `conj` guard e₂))`)? If yes, return `False`;
-if all pairs are demonstrably bottom, return `True`. False positives
-(`False` when the transducer is actually single-valued) are
-acceptable in v1; false negatives (`True` when it isn't) are the
-contract the user takes responsibility for via property tests.
+Synthesis §7 deferred a general single-valuedness decision procedure to
+v2 (SBV-backed); v2 has now landed. With the v2 `SymPred` `BoolAlg`
+instance, `isBot (g₁ \`conj\` g₂)` is decided by z3, so the per-vertex
+pairwise check is precise. With the v1 `HsPred` instance, the answer
+is the v1 syntactic conservative approximation (false positives
+acceptable; false negatives the user's contract). Both call sites use
+the same `isSingleValuedSym` function — the `BoolAlg` parameter
+selects v1 or v2 behavior.
 
-Plan 4 may implement only `step`, `reconstitute`, and
-`checkHiddenInputs`; `isSingleValued` is exposed by the pure layer
-but not exercised by the smoke test.
+For the User Registration aggregate, `isSingleValuedSym (withSymPred
+userReg) == True` is asserted in
+`test/Keiki/Examples/UserRegistrationSymbolicSpec.hs`; the proof goes
+through the constructor-mutex translation of `PInCtor`. See
+`docs/research/sbv-boolalg-design.md` for the full v2 design record
+and `docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md`
+for the implementation plan.
+
+Plan 4 implemented `step`, `reconstitute`, and `checkHiddenInputs`
+without exercising `isSingleValued`; EP-2 of MasterPlan 2 added
+`isSingleValuedSym` and the symbolic User Registration spec.
 
 
 ## Runtime-side ports
