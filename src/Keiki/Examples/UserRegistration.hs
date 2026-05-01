@@ -54,6 +54,15 @@ module Keiki.Examples.UserRegistration
   , wireAccountConfirmed
   , wireConfirmationResent
   , wireAccountDeleted
+    -- * Input constructors (exported for testing and reuse)
+  , inCtorStart
+  , inCtorConfirm
+  , inCtorResend
+  , inCtorGdpr
+  , inpStart
+  , inpConfirm
+  , inpResend
+  , inpGdpr
   ) where
 
 import Data.Proxy (Proxy (..))
@@ -172,31 +181,103 @@ emptyRegs =
   $ RNil
 
 
--- * Per-constructor input projections --------------------------------------
+-- * Per-constructor input projections (v2 structural surface) -------------
 --
--- Each helper bakes in the "guard rules out non-matching constructors"
--- assumption. v2's 'TInpProj' retires these by making the projection
--- structural over the constructor.
+-- One 'InCtor' value per command constructor describes how to match
+-- and re-build the constructor's payload as a typed 'RegFile'. The
+-- per-constructor 'inpFoo' helpers turn an 'Index' (typically written
+-- via 'OverloadedLabels' as @inpStart #email@) into a 'Term' that
+-- structurally projects the named field of the named command
+-- constructor. 'solveOutput' walks the 'OutFields' bound by an edge's
+-- @output@ and reconstructs the input @ci@ mechanically; no per-edge
+-- inverse function is needed.
 
-inpStart :: (StartRegistrationData -> r) -> Term UserRegRegs UserCmd r
-inpStart f = TInpField $ \case
-  StartRegistration d -> f d
-  _ -> error "inpStart: guard rules out non-StartRegistration"
+type StartFields   =
+  '[ '("email", Email)
+   , '("confirmCode", ConfirmationCode)
+   , '("at", UTCTime)
+   ]
 
-inpConfirm :: (ConfirmAccountData -> r) -> Term UserRegRegs UserCmd r
-inpConfirm f = TInpField $ \case
-  ConfirmAccount d -> f d
-  _ -> error "inpConfirm: guard rules out non-ConfirmAccount"
+type ConfirmFields =
+  '[ '("confirmCode", ConfirmationCode)
+   , '("at", UTCTime)
+   ]
 
-inpResend :: (ResendConfirmationData -> r) -> Term UserRegRegs UserCmd r
-inpResend f = TInpField $ \case
-  ResendConfirmation d -> f d
-  _ -> error "inpResend: guard rules out non-ResendConfirmation"
+type ResendFields  =
+  '[ '("code", ConfirmationCode)
+   , '("at", UTCTime)
+   ]
 
-inpGdpr :: (FulfillGDPRRequestData -> r) -> Term UserRegRegs UserCmd r
-inpGdpr f = TInpField $ \case
-  FulfillGDPRRequest d -> f d
-  _ -> error "inpGdpr: guard rules out non-FulfillGDPRRequest"
+type GdprFields    =
+  '[ '("at", UTCTime) ]
+
+
+inCtorStart :: InCtor UserCmd StartFields
+inCtorStart = InCtor
+  { icName  = "StartRegistration"
+  , icMatch = \case
+      StartRegistration d ->
+        Just (RCons (Proxy @"email")       d.email
+            $ RCons (Proxy @"confirmCode") d.confirmCode
+            $ RCons (Proxy @"at")          d.at
+            $ RNil)
+      _ -> Nothing
+  , icBuild = \(RCons _ e (RCons _ cc (RCons _ a RNil))) ->
+                StartRegistration (StartRegistrationData e cc a)
+  }
+
+
+inCtorConfirm :: InCtor UserCmd ConfirmFields
+inCtorConfirm = InCtor
+  { icName  = "ConfirmAccount"
+  , icMatch = \case
+      ConfirmAccount d ->
+        Just (RCons (Proxy @"confirmCode") d.confirmCode
+            $ RCons (Proxy @"at")          d.at
+            $ RNil)
+      _ -> Nothing
+  , icBuild = \(RCons _ cc (RCons _ a RNil)) ->
+                ConfirmAccount (ConfirmAccountData cc a)
+  }
+
+
+inCtorResend :: InCtor UserCmd ResendFields
+inCtorResend = InCtor
+  { icName  = "ResendConfirmation"
+  , icMatch = \case
+      ResendConfirmation d ->
+        Just (RCons (Proxy @"code") d.code
+            $ RCons (Proxy @"at")   d.at
+            $ RNil)
+      _ -> Nothing
+  , icBuild = \(RCons _ c (RCons _ a RNil)) ->
+                ResendConfirmation (ResendConfirmationData c a)
+  }
+
+
+inCtorGdpr :: InCtor UserCmd GdprFields
+inCtorGdpr = InCtor
+  { icName  = "FulfillGDPRRequest"
+  , icMatch = \case
+      FulfillGDPRRequest d ->
+        Just (RCons (Proxy @"at") d.at $ RNil)
+      _ -> Nothing
+  , icBuild = \(RCons _ a RNil) ->
+                FulfillGDPRRequest (FulfillGDPRRequestData a)
+  }
+
+
+inpStart   :: Index StartFields   r -> Term UserRegRegs UserCmd r
+inpStart    = TInpCtorField inCtorStart
+
+inpConfirm :: Index ConfirmFields r -> Term UserRegRegs UserCmd r
+inpConfirm  = TInpCtorField inCtorConfirm
+
+inpResend  :: Index ResendFields  r -> Term UserRegRegs UserCmd r
+inpResend   = TInpCtorField inCtorResend
+
+inpGdpr    :: Index GdprFields    r -> Term UserRegRegs UserCmd r
+inpGdpr     = TInpCtorField inCtorGdpr
 
 
 -- * Per-constructor guards -------------------------------------------------
@@ -299,23 +380,18 @@ userRegEdges = \case
     [ Edge
         { guard  = isStart
         , update =
-            USet (#email :: Index UserRegRegs Email) (inpStart (.email))
+            USet (#email :: Index UserRegRegs Email) (inpStart #email)
               `unsafeCombine`
             USet (#confirmCode :: Index UserRegRegs ConfirmationCode)
-                 (inpStart (.confirmCode))
+                 (inpStart #confirmCode)
               `unsafeCombine`
             USet (#registeredAt :: Index UserRegRegs UTCTime)
-                 (inpStart (.at))
+                 (inpStart #at)
         , output = Just $ pack
             wireRegistrationStarted
-            (OFCons (inpStart (.email))
-              (OFCons (inpStart (.confirmCode))
-                (OFCons (inpStart (.at)) OFNil)))
-            (\_regs co -> case co of
-                RegistrationStarted ev ->
-                  Just $ StartRegistration $ StartRegistrationData
-                    ev.email ev.confirmCode ev.at
-                _ -> Nothing)
+            (OFCons (inpStart #email)
+              (OFCons (inpStart #confirmCode)
+                (OFCons (inpStart #at) OFNil)))
         , target = Registering
         }
     ]
@@ -328,9 +404,6 @@ userRegEdges = \case
         , output = Just $ pack
             wireConfirmationEmailSent
             (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
-            (\_regs co -> case co of
-                ConfirmationEmailSent _ -> Just Continue
-                _ -> Nothing)
         , target = RequiresConfirmation
         }
     ]
@@ -340,20 +413,15 @@ userRegEdges = \case
       -- inpConfirm read for non-ConfirmAccount inputs.
       Edge
         { guard  = PAnd isConfirm
-            (inpConfirm (.confirmCode)
+            (inpConfirm #confirmCode
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
         , update = USet (#confirmedAt :: Index UserRegRegs UTCTime)
-                        (inpConfirm (.at))
+                        (inpConfirm #at)
         , output = Just $ pack
             wireAccountConfirmed
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpConfirm (.confirmCode))
-                (OFCons (inpConfirm (.at)) OFNil)))
-            (\_regs co -> case co of
-                AccountConfirmed ev ->
-                  Just $ ConfirmAccount $ ConfirmAccountData
-                    ev.confirmCode ev.at
-                _ -> Nothing)
+              (OFCons (inpConfirm #confirmCode)
+                (OFCons (inpConfirm #at) OFNil)))
         , target = Confirmed
         }
       -- Resend: rotate the code (code arrives in the command).
@@ -361,27 +429,22 @@ userRegEdges = \case
         { guard  = isResend
         , update =
             USet (#confirmCode :: Index UserRegRegs ConfirmationCode)
-                 (inpResend (.code))
+                 (inpResend #code)
               `unsafeCombine`
             USet (#registeredAt :: Index UserRegRegs UTCTime)
-                 (inpResend (.at))
+                 (inpResend #at)
         , output = Just $ pack
             wireConfirmationResent
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpResend (.code))
-                (OFCons (inpResend (.at)) OFNil)))
-            (\_regs co -> case co of
-                ConfirmationResent ev ->
-                  Just $ ResendConfirmation $ ResendConfirmationData
-                    ev.confirmCode ev.at
-                _ -> Nothing)
+              (OFCons (inpResend #code)
+                (OFCons (inpResend #at) OFNil)))
         , target = RequiresConfirmation
         }
       -- GDPR before confirmation: silent ε-edge (no event).
     , Edge
         { guard  = isGdpr
         , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
-                        (inpGdpr (.at))
+                        (inpGdpr #at)
         , output = Nothing
         , target = Deleted
         }
@@ -391,15 +454,11 @@ userRegEdges = \case
     [ Edge
         { guard  = isGdpr
         , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
-                        (inpGdpr (.at))
+                        (inpGdpr #at)
         , output = Just $ pack
             wireAccountDeleted
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpGdpr (.at)) OFNil))
-            (\_regs co -> case co of
-                AccountDeleted ev ->
-                  Just $ FulfillGDPRRequest $ FulfillGDPRRequestData ev.at
-                _ -> Nothing)
+              (OFCons (inpGdpr #at) OFNil))
         , target = Deleted
         }
     ]

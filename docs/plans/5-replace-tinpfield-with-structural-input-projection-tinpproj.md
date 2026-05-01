@@ -138,13 +138,19 @@ actual current state of the work.
       walk bails. Library does not build at this commit
       (V5/V0 example modules still call `pack` with three args); M5/M6
       restore the build.)*
-- [ ] **Milestone 5 — Migrate `Keiki.Examples.UserRegistration` (V5).**
+- [x] **Milestone 5 — Migrate `Keiki.Examples.UserRegistration` (V5).**
       Replace `inpStart`/`inpConfirm`/`inpResend`/`inpGdpr` with new
       helpers that build the new `Term` constructor. Define
       `inCtorStart`, `inCtorConfirm`, `inCtorResend`, `inCtorGdpr` ::
       `InCtor UserCmd ...`. Remove every hand-written inverse from
       `OPack` constructions. `cabal test` passes the V5 spec
       (`UserRegistrationSpec`).
+      *(2026-05-01 — four `inCtor*` values added per UserCmd
+      constructor; `inp*` helpers rewritten as `TInpCtorField inCtor*`;
+      every call site in `userRegEdges` switched from `inpFoo (.field)`
+      to `inpFoo #field`; every `pack` lost its third argument.
+      `Keiki.Examples.UserRegistration` builds; `Keiki.Examples.UserRegistrationV0`
+      still has 5 `pack`-arity errors pending M6.)*
 - [ ] **Milestone 6 — Migrate `Keiki.Examples.UserRegistrationV0`.**
       Same migration as M5. Verify the V0 hidden-input demonstration
       still fires: `reconstitute userRegV0 canonicalLogV0 == Nothing`,
