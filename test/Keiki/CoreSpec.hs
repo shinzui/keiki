@@ -145,6 +145,59 @@ spec = do
           opaqueOut = OFn (\_ ci -> Foo ci ci)
       solveOutput opaqueOut RNil (Foo 7 7) `shouldBe` Nothing
 
+  describe "solveOutput structural path (TInpCtorField)" $ do
+    let -- An output sum mirroring TinyCmd's payload (ci-determined wire).
+        wireTinyFoo :: WireCtor TinyCmdOut (Int, (Int, ()))
+        wireTinyFoo = WireCtor
+          { wcName  = "TinyFooOut"
+          , wcMatch = \(TinyFooOut a b) -> Just (a, (b, ()))
+          , wcBuild = \(a, (b, ())) -> TinyFooOut a b
+          }
+        -- Complete OPack: both fields read from inCtorTinyFoo.
+        outComplete :: OutTerm '[] TinyCmd TinyCmdOut
+        outComplete = OPack
+          wireTinyFoo
+          (OFCons (TInpCtorField inCtorTinyFoo
+                     (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+            (OFCons (TInpCtorField inCtorTinyFoo
+                       (#b :: Index '[ '("a", Int), '("b", Int) ] Int))
+              OFNil))
+          (\_regs _co -> Nothing)  -- fallback unused; structural walk wins
+        -- Incomplete OPack: only #a is in OutFields; #b is a constant.
+        outIncomplete :: OutTerm '[] TinyCmd TinyCmdOut
+        outIncomplete = OPack
+          wireTinyFoo
+          (OFCons (TInpCtorField inCtorTinyFoo
+                     (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+            (OFCons (TLit (0 :: Int)) OFNil))
+          (\_regs _co -> Nothing)
+
+    it "evalOut produces TinyFooOut on a matching ci" $
+      evalOut outComplete RNil (TinyFoo 7 11) `shouldBe` TinyFooOut 7 11
+    it "solveOutput recovers ci structurally (no legacy inverse)" $
+      solveOutput outComplete RNil (TinyFooOut 7 11) `shouldBe` Just (TinyFoo 7 11)
+    it "solveOutput returns Nothing on incomplete coverage" $
+      solveOutput outIncomplete RNil (TinyFooOut 7 0) `shouldBe` Nothing
+    it "detectMissingInCtorFields names the missing slot" $
+      let mfs = detectMissingInCtorFields
+                  (OFCons (TInpCtorField inCtorTinyFoo
+                            (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+                    (OFCons (TLit (0 :: Int)) OFNil)
+                     :: OutFields '[] TinyCmd (Int, (Int, ())))
+      in mfs `shouldBe` Just (MissingInCtorFields "TinyFoo" ["b"])
+    it "detectMissingInCtorFields is Nothing on complete coverage" $
+      let fs = OFCons (TInpCtorField inCtorTinyFoo
+                        (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+                (OFCons (TInpCtorField inCtorTinyFoo
+                          (#b :: Index '[ '("a", Int), '("b", Int) ] Int))
+                  OFNil) :: OutFields '[] TinyCmd (Int, (Int, ()))
+      in detectMissingInCtorFields fs `shouldBe` Nothing
+    it "outFieldsHaveInpCtorField is True when at least one TInpCtorField appears" $
+      let fs = OFCons (TInpCtorField inCtorTinyFoo
+                        (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+                OFNil :: OutFields '[] TinyCmd (Int, ())
+      in outFieldsHaveInpCtorField fs `shouldBe` True
+
   describe "checkHiddenInputs" $ do
     it "synthetic transducer's OFn output is flagged" $ do
       let warnings = checkHiddenInputs synthetic
@@ -160,3 +213,7 @@ spec = do
 
 -- | Tiny output sum for the solveOutput micro-test.
 data TinyOut = Foo Int Int deriving (Eq, Show)
+
+
+-- | Output sum mirroring 'TinyCmd' for the M3 structural-path tests.
+data TinyCmdOut = TinyFooOut Int Int deriving (Eq, Show)

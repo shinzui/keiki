@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | The pure core of keiki: the symbolic-register transducer.
 --
@@ -75,12 +76,17 @@ module Keiki.Core
   , termReadsInput
   , updateReadsInput
   , outFieldsHaveInpField
+  , outFieldsHaveInpCtorField
+  , detectMissingInCtorFields
+  , MissingInCtorFields (..)
   ) where
 
 import Data.Kind (Type)
+import Data.List (nub, (\\))
 import Data.Proxy (Proxy (..))
 import GHC.OverloadedLabels (IsLabel (..))
-import GHC.TypeLits (KnownSymbol, Symbol)
+import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
+import Unsafe.Coerce (unsafeCoerce)
 
 
 -- | A register slot is a label paired with the type of its value.
@@ -174,14 +180,76 @@ data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
 -- 'icBuild' is its left inverse: @icMatch (icBuild rf) == Just rf@ for
 -- every well-formed @rf@.
 --
+-- The constraints 'AssembleRegFile' and 'KnownSlotNames' on the data
+-- constructor mean that any code holding an 'InCtor' can both
+-- mechanically rebuild a 'RegFile' from a bag of '(Index, value)' pairs
+-- and recover the slot names of @ifs@ at run time. The instances are
+-- automatic for any concrete slot list, so users do not write any
+-- additional code.
+--
 -- See @docs/research/tinpproj-design.md@ for the design rationale and
 -- the inversion algorithm that walks 'OutFields' gathering these
 -- per-field reads.
-data InCtor ci (ifs :: [Slot]) = InCtor
-  { icName  :: String
-  , icMatch :: ci -> Maybe (RegFile ifs)
-  , icBuild :: RegFile ifs -> ci
-  }
+data InCtor ci (ifs :: [Slot]) where
+  InCtor
+    :: (AssembleRegFile ifs, KnownSlotNames ifs)
+    => { icName  :: String
+       , icMatch :: ci -> Maybe (RegFile ifs)
+       , icBuild :: RegFile ifs -> ci
+       }
+    -> InCtor ci ifs
+
+
+-- * Slot-list helper classes (v2 inversion machinery) ---------------------
+
+-- | Recover the slot names of an @ifs :: [Slot]@ at run time. Used to
+-- print precise hidden-input warnings.
+class KnownSlotNames (rs :: [Slot]) where
+  slotNames :: [String]
+
+instance KnownSlotNames '[] where
+  slotNames = []
+
+instance (KnownSymbol s, KnownSlotNames rs)
+      => KnownSlotNames ('(s, r) ': rs) where
+  slotNames = symbolVal (Proxy @s) : slotNames @rs
+
+
+-- | An (Index, value) pair indexed by an InCtor's slot list. Using a
+-- GADT existential lets us bag entries with different element types
+-- under one slot list and unpack them safely via pattern matching on
+-- the carried 'Index'.
+data ByIndex (ifs :: [Slot]) where
+  ByIndex :: Index ifs r -> r -> ByIndex ifs
+
+
+-- | Class to assemble a 'RegFile' from a bag of '(Index, value)' pairs.
+-- 'assemble' returns 'Just' iff every slot of @ifs@ is covered by
+-- exactly one entry of the bag (extra entries beyond what slots
+-- demand are ignored as long as the per-slot lookups succeed in
+-- order).
+class AssembleRegFile (ifs :: [Slot]) where
+  assemble :: [ByIndex ifs] -> Maybe (RegFile ifs)
+
+instance AssembleRegFile '[] where
+  assemble _ = Just RNil
+
+instance (KnownSymbol s, AssembleRegFile rs)
+      => AssembleRegFile ('(s, r) ': rs) where
+  assemble entries = do
+    v    <- findHead entries
+    rest <- assemble (popHead entries)
+    pure (RCons (Proxy @s) v rest)
+    where
+      findHead :: [ByIndex ('(s, r) ': rs)] -> Maybe r
+      findHead []                       = Nothing
+      findHead (ByIndex ZIdx v : _)     = Just v
+      findHead (_ : rest)               = findHead rest
+
+      popHead :: [ByIndex ('(s, r) ': rs)] -> [ByIndex rs]
+      popHead []                                = []
+      popHead (ByIndex ZIdx     _ : rest)       = popHead rest
+      popHead (ByIndex (SIdx i) v : rest)       = ByIndex i v : popHead rest
 
 
 -- * Update language --------------------------------------------------------
@@ -517,14 +585,91 @@ reconstitute t = go (initial t, initialRegs t)
 
 -- * Build-time analyses ----------------------------------------------------
 
--- | Recover the input that produced a given output. For 'OPack' the
--- v1 implementation calls the user-provided inverse directly; for
--- 'OFn' the result is 'Nothing' (opaque output, not invertible). v2
--- replaces the 'OPack' inverse field with a structural walk over
--- 'OutFields' once 'TInpProj' lands.
+-- | Recover the input that produced a given output. The v2 path is
+-- structural: walk 'OutFields' gathering '(Index, value)' pairs from
+-- every 'TInpCtorField' read, verify the gathered 'InCtor' values
+-- agree, assemble a 'RegFile' covering every slot of the 'InCtor' and
+-- call 'icBuild'. 'OFn' stays opaque ('Nothing'); the v1 hand-written
+-- inverse field on 'OPack' is consulted only as a fallback when the
+-- structural walk fails (the field is dropped in EP-1 M4).
 solveOutput :: OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
-solveOutput (OPack _ctor _fields inv) regs co = inv regs co
-solveOutput (OFn _)                   _regs _co = Nothing
+solveOutput (OPack ctor fields legacyInv) regs co =
+  case structuralAttempt of
+    Just ci -> Just ci
+    Nothing -> legacyInv regs co
+  where
+    structuralAttempt = do
+      fs_obs <- wcMatch ctor co
+      case gatherInpEntries fields fs_obs of
+        WalkBail              -> Nothing
+        WalkNoInput           -> Nothing
+        WalkGathered (SomeIcWithEntries ic entries) -> do
+          rf <- assemble entries
+          pure (icBuild ic rf)
+solveOutput (OFn _) _regs _co = Nothing
+
+
+-- | Outcome of walking an 'OutFields' looking for input projections.
+data WalkResult ci
+  = WalkBail
+    -- ^ Encountered an opaque term (TApp1/TApp2 or a v1 TInpField);
+    -- no structural inverse possible for this edge.
+  | WalkNoInput
+    -- ^ Walked successfully but found no 'TInpCtorField' reads. The
+    -- output does not depend on the input symbol; 'solveOutput'
+    -- returns 'Nothing' (no @ci@ source).
+  | WalkGathered (SomeIcWithEntries ci)
+    -- ^ Gathered 'TInpCtorField' entries for one consistent 'InCtor'.
+
+
+-- | Existential pairing of an 'InCtor' with its gathered entries.
+-- Pattern-matching surfaces the 'AssembleRegFile' constraint so
+-- 'solveOutput' can call 'assemble' on the bag of entries.
+data SomeIcWithEntries ci where
+  SomeIcWithEntries
+    :: AssembleRegFile ifs
+    => InCtor ci ifs
+    -> [ByIndex ifs]
+    -> SomeIcWithEntries ci
+
+
+-- | Walk an 'OutFields' HList in lockstep with an observed-fields
+-- tuple. The 'Term' arm of each 'OFCons' is inspected for input
+-- projection; the @observed-value@ side is used to record the value
+-- gathered for that slot.
+gatherInpEntries
+  :: forall rs ci fs. OutFields rs ci fs -> fs -> WalkResult ci
+gatherInpEntries OFNil           ()        = WalkNoInput
+gatherInpEntries (OFCons t rest) (v, fs)   =
+  combineWalk (stepOne t v) (gatherInpEntries rest fs)
+  where
+    stepOne :: forall f. Term rs ci f -> f -> WalkResult ci
+    stepOne (TLit _)                       _val = WalkNoInput
+    stepOne (TReg _)                       _val = WalkNoInput
+    stepOne (TInpCtorField ic@InCtor{} ix) val  =
+      WalkGathered (SomeIcWithEntries ic [ByIndex ix val])
+    stepOne (TInpField _)                  _val = WalkBail
+    stepOne (TApp1 _ _)                    _val = WalkBail
+    stepOne (TApp2 _ _ _)                  _val = WalkBail
+
+
+-- | Combine two walk results. 'WalkBail' is absorbing; 'WalkNoInput' is
+-- the identity. Two 'WalkGathered' results merge if their 'InCtor'
+-- values agree on 'icName'; otherwise the edge is malformed and we
+-- bail. The merge uses 'unsafeCoerce' to retype the second list of
+-- entries to the first 'InCtor'\'s slot list — sound because name
+-- equality witnesses 'ifs' equality per the design contract.
+combineWalk :: WalkResult ci -> WalkResult ci -> WalkResult ci
+combineWalk WalkBail        _              = WalkBail
+combineWalk _               WalkBail       = WalkBail
+combineWalk WalkNoInput     r              = r
+combineWalk r               WalkNoInput    = r
+combineWalk (WalkGathered (SomeIcWithEntries ic1 e1))
+            (WalkGathered (SomeIcWithEntries ic2 e2))
+  | icName ic1 == icName ic2
+      = WalkGathered (SomeIcWithEntries ic1 (e1 ++ unsafeCoerce e2))
+  | otherwise
+      = WalkBail
 
 
 -- | A diagnostic produced by 'checkHiddenInputs'.
@@ -577,11 +722,22 @@ checkHiddenInputs t =
       Just (OFn _) ->
         [ "edge #" <> show n <> ": OFn output is opaque (no inverse)" ]
       Just (OPack _ fields _inv)
+        | Just (MissingInCtorFields icN missing) <- detectMissingInCtorFields fields
+            -> [ "edge #" <> show n
+                 <> ": OPack walk for InCtor \"" <> icN
+                 <> "\" leaves field"
+                 <> (if length missing == 1 then " " else "s ")
+                 <> "{" <> showMissing missing <> "} unrecovered"
+               ]
         | outFieldsHaveInpField fields ->
             [ "edge #" <> show n
               <> ": OPack field uses TInpField; v1 inverse is hand-written"
             ]
         | otherwise -> []
+    showMissing :: [String] -> String
+    showMissing []     = ""
+    showMissing [x]    = "\"" <> x <> "\""
+    showMissing (x:xs) = "\"" <> x <> "\", " <> showMissing xs
 
 
 -- | Does the 'Update' read the input symbol via 'TInpField'?
@@ -602,8 +758,102 @@ termReadsInput (TApp1 _ t)           = termReadsInput t
 termReadsInput (TApp2 _ a b)         = termReadsInput a || termReadsInput b
 
 
--- | Do the 'OutFields' contain a 'TInpField' anywhere?
+-- | Do the 'OutFields' contain a v1 'TInpField' anywhere? Precisely
+-- the v1 surface; structural 'TInpCtorField' reads are tracked
+-- separately by 'detectMissingInCtorFields'.
 outFieldsHaveInpField :: OutFields rs ci fs -> Bool
 outFieldsHaveInpField OFNil           = False
 outFieldsHaveInpField (OFCons t rest) =
-  termReadsInput t || outFieldsHaveInpField rest
+  termHasInpField t || outFieldsHaveInpField rest
+  where
+    termHasInpField :: Term rs ci r -> Bool
+    termHasInpField (TLit _)              = False
+    termHasInpField (TReg _)              = False
+    termHasInpField (TInpField _)         = True
+    termHasInpField (TInpCtorField _ _)   = False
+    termHasInpField (TApp1 _ t')          = termHasInpField t'
+    termHasInpField (TApp2 _ a b)         = termHasInpField a || termHasInpField b
+
+
+-- | Do the 'OutFields' contain a v2 'TInpCtorField' anywhere?
+outFieldsHaveInpCtorField :: OutFields rs ci fs -> Bool
+outFieldsHaveInpCtorField OFNil           = False
+outFieldsHaveInpCtorField (OFCons t rest) =
+  termHasInpCtorField t || outFieldsHaveInpCtorField rest
+  where
+    termHasInpCtorField :: Term rs ci r -> Bool
+    termHasInpCtorField (TLit _)              = False
+    termHasInpCtorField (TReg _)              = False
+    termHasInpCtorField (TInpField _)         = False
+    termHasInpCtorField (TInpCtorField _ _)   = True
+    termHasInpCtorField (TApp1 _ t')          = termHasInpCtorField t'
+    termHasInpCtorField (TApp2 _ a b)         = termHasInpCtorField a || termHasInpCtorField b
+
+
+-- | The result of 'detectMissingInCtorFields': the offending 'InCtor'
+-- name plus the names of slots its 'OutFields' walk does not visit.
+data MissingInCtorFields = MissingInCtorFields
+  { mifIcName  :: String
+  , mifMissing :: [String]
+  } deriving (Eq, Show)
+
+
+-- | If an 'OutFields' uses 'TInpCtorField' reads, return 'Just' the
+-- 'InCtor' name plus the field names that the 'OutFields' walk does
+-- not visit; return 'Nothing' if the 'OutFields' does not use any
+-- 'TInpCtorField' reads, or if every slot of the (single) 'InCtor' is
+-- visited.
+--
+-- Multiple distinct 'InCtor's in one 'OutFields' is itself a build-time
+-- error; this function reports the first 'InCtor' encountered (with
+-- all its missing fields). The structural 'solveOutput' walk
+-- additionally returns 'Nothing' on inconsistent 'InCtor's at run time.
+detectMissingInCtorFields
+  :: forall rs ci fs.
+     OutFields rs ci fs
+  -> Maybe MissingInCtorFields
+detectMissingInCtorFields fields = case go fields of
+  Nothing            -> Nothing
+  Just (icN, slots, visited) ->
+    case slots \\ nub visited of
+      []      -> Nothing
+      missing -> Just (MissingInCtorFields icN missing)
+  where
+    -- Returns Just (icName, allSlotNames, visitedSlotNames) on first
+    -- TInpCtorField encountered; merges later TInpCtorField reads on
+    -- the same icName into 'visited'; bails (returns Nothing) on
+    -- name-conflict (the runtime structural walk reports that case
+    -- too).
+    go :: forall fs'. OutFields rs ci fs' -> Maybe (String, [String], [String])
+    go OFNil           = Nothing
+    go (OFCons t rest) = case stepOne t of
+      Nothing                     -> go rest
+      Just (icN, slots, visited)  -> case go rest of
+        Nothing -> Just (icN, slots, visited)
+        Just (icN', _slots', visited')
+          | icN == icN' -> Just (icN, slots, visited ++ visited')
+          | otherwise   -> Just (icN, slots, visited)
+
+    stepOne :: forall r. Term rs ci r -> Maybe (String, [String], [String])
+    stepOne (TInpCtorField ic ix) =
+      let allSlots     = slotNamesOf ic
+          visitedSlot  = allSlots !! indexInt ix
+      in Just (icName ic, allSlots, [visitedSlot])
+    stepOne (TApp1 _ t')          = stepOne t'
+    stepOne (TApp2 _ a b)         = case stepOne a of
+      Just r  -> case stepOne b of
+        Just r' | fst3 r == fst3 r' ->
+          Just (fst3 r, snd3 r, thd3 r ++ thd3 r')
+        _ -> Just r
+      Nothing -> stepOne b
+    stepOne _                     = Nothing
+
+    fst3 (a, _, _) = a
+    snd3 (_, b, _) = b
+    thd3 (_, _, c) = c
+
+
+-- | Read the slot-name list out of an 'InCtor' (uses the
+-- 'KnownSlotNames' instance carried by the data constructor).
+slotNamesOf :: forall ci ifs. InCtor ci ifs -> [String]
+slotNamesOf InCtor{} = slotNames @ifs

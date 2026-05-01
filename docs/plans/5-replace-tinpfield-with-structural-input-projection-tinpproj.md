@@ -99,7 +99,7 @@ actual current state of the work.
       under `describe "TInpCtorField (structural input projection)"`.
       `cabal test` reports 28 examples, 0 failures (24 baseline + 4
       new).)*
-- [ ] **Milestone 3 — Update `solveOutput` and analyses for the new
+- [x] **Milestone 3 — Update `solveOutput` and analyses for the new
       constructor.** `solveOutput` learns to walk an `OutFields` HList,
       identify all `TInpCtorField` entries, check they share a single
       `InCtor`, gather field values from the observed `co`, and call
@@ -107,6 +107,19 @@ actual current state of the work.
       `outFieldsHaveInpField` analysis. Update `checkHiddenInputs` to
       emit a more precise warning shape. Add unit tests covering the
       mechanical inversion on a tiny `OPack` using the new constructor.
+      *(2026-05-01 — added `KnownSlotNames`, `ByIndex`, `AssembleRegFile`
+      classes; `WalkResult`/`SomeIcWithEntries`/`gatherInpEntries`
+      private helpers; rewrote `solveOutput` to try the structural walk
+      first and fall back to the v1 hand-written inverse on bail (the
+      legacy inverse field still exists; M4 removes it). Added
+      `outFieldsHaveInpCtorField`, `MissingInCtorFields`, and
+      `detectMissingInCtorFields`. Rewrote `checkHiddenInputs`'s OPack
+      clause: when the analyzer finds missing fields, the warning text
+      is `OPack walk for InCtor "<name>" leaves field {"<f>"} unrecovered`;
+      the v1 `outFieldsHaveInpField` warning shape is kept as a
+      fallback for edges still on `TInpField`. Added six new tests under
+      `solveOutput structural path (TInpCtorField)`. `cabal test` reports
+      34 examples, 0 failures.)*
 - [ ] **Milestone 4 — Drop the hand-written inverse field from
       `OPack`.** Change the `OPack` constructor signature to
       `OPack :: WireCtor co fields -> OutFields rs ci fields -> OutTerm rs ci co`
