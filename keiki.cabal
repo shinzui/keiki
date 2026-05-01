@@ -15,10 +15,7 @@ common warnings
                         -Wincomplete-record-updates -Wincomplete-uni-patterns
                         -Wpartial-fields -Wredundant-constraints
 
-library
-    import:             warnings
-    exposed-modules:    Keiki.Core
-    hs-source-dirs:     src
+common shared-extensions
     default-language:   GHC2024
     default-extensions: OverloadedLabels
                         UndecidableInstances
@@ -26,4 +23,19 @@ library
                         DuplicateRecordFields
                         OverloadedRecordDot
                         AllowAmbiguousTypes
+
+library
+    import:             warnings, shared-extensions
+    exposed-modules:    Keiki.Core
+    hs-source-dirs:     src
     build-depends:      base ^>= 4.20
+
+test-suite keiki-test
+    import:             warnings, shared-extensions
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Spec.hs
+    other-modules:      Keiki.CoreSpec
+    build-depends:      base ^>= 4.20,
+                        keiki,
+                        hspec ^>= 2.11

@@ -96,10 +96,12 @@ data Index (rs :: [Slot]) (r :: Type) where
   SIdx :: Index rs r    -> Index ('(s', r') ': rs) r
 
 
--- | Runtime register lookup.
+-- | Runtime register lookup. Matching on 'Index' first lets GHC's GADT
+-- pattern checker see that 'RNil' is unreachable — 'ZIdx' and 'SIdx'
+-- both refine @rs@ to @'(_,_) ': _@.
 (!) :: RegFile rs -> Index rs r -> r
-RCons _ x _   ! ZIdx   = x
-RCons _ _ rs' ! SIdx i = rs' ! i
+regs ! ZIdx     = case regs of RCons _ x _    -> x
+regs ! SIdx i   = case regs of RCons _ _ rest -> rest ! i
 infixl 9 !
 
 
@@ -330,38 +332,82 @@ pack = OPack
 
 -- | Evaluate a 'Term' against a register file and an input symbol.
 evalTerm :: Term rs ci r -> RegFile rs -> ci -> r
-evalTerm = error "TODO: M2"
+evalTerm (TLit r)        _    _  = r
+evalTerm (TReg ix)       regs _  = regs ! ix
+evalTerm (TInpField f)   _    ci = f ci
+evalTerm (TApp1 f t)     regs ci = f (evalTerm t regs ci)
+evalTerm (TApp2 f a b)   regs ci = f (evalTerm a regs ci) (evalTerm b regs ci)
 
 
 -- | Evaluate an 'OutTerm' against a register file and an input symbol.
 evalOut :: OutTerm rs ci co -> RegFile rs -> ci -> co
-evalOut = error "TODO: M2"
+evalOut (OPack ctor fields) regs ci = wcBuild ctor (evalOutFields fields regs ci)
+evalOut (OFn f)             regs ci = f regs ci
+
+
+evalOutFields :: OutFields rs ci fs -> RegFile rs -> ci -> fs
+evalOutFields OFNil           _    _  = ()
+evalOutFields (OFCons t rest) regs ci =
+  (evalTerm t regs ci, evalOutFields rest regs ci)
 
 
 -- | Evaluate a predicate to a 'Bool' on the current state.
 evalPred :: HsPred rs ci -> RegFile rs -> ci -> Bool
-evalPred = error "TODO: M2"
+evalPred PTop          _    _  = True
+evalPred PBot          _    _  = False
+evalPred (PAnd p q)    r    c  = evalPred p r c && evalPred q r c
+evalPred (POr p q)     r    c  = evalPred p r c || evalPred q r c
+evalPred (PNot p)      r    c  = not (evalPred p r c)
+evalPred (PEq a b)     r    c  = evalTerm a r c == evalTerm b r c
+evalPred (PMatchC f)   _    c  = f c
 
 
--- | Apply an 'Update' to the register file.
+-- | Apply an 'Update' to the register file. 'UCombine' applies left
+-- then right; the user's 'combine' smart constructor (or hand-checked
+-- 'unsafeCombine' use) is responsible for distinct targets so that the
+-- order does not matter.
 runUpdate :: Update rs ci -> RegFile rs -> ci -> RegFile rs
-runUpdate = error "TODO: M2"
+runUpdate UKeep          regs _  = regs
+runUpdate (USet ix t)    regs ci = setSlot ix (evalTerm t regs ci) regs
+runUpdate (UCombine a b) regs ci = runUpdate b (runUpdate a regs ci) ci
 
 
--- | Single-step transition.
+-- | Pure register-file slot update at the index.
+setSlot :: Index rs r -> r -> RegFile rs -> RegFile rs
+setSlot ZIdx     v regs = case regs of RCons p _ rest -> RCons p v rest
+setSlot (SIdx i) v regs = case regs of RCons p x rest -> RCons p x (setSlot i v rest)
+
+
+-- | Single-step transition. Returns 'Just (s', regs')' iff exactly one
+-- outgoing edge has a satisfied guard.
 delta
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
   -> s -> RegFile rs -> ci -> Maybe (s, RegFile rs)
-delta = error "TODO: M2"
+delta t s regs ci =
+  case [ (target e, runUpdate (update e) regs ci)
+       | e <- edgesOut t s
+       , models (guard e) (regs, ci)
+       ] of
+    [single] -> Just single
+    _        -> Nothing
 
 
--- | Single-step output.
+-- | Single-step output. Returns 'Just co' for the unique active edge
+-- whose 'output' is non-ε; 'Nothing' otherwise (including the case where
+-- the unique active edge is an ε-edge).
 omega
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
   -> s -> RegFile rs -> ci -> Maybe co
-omega = error "TODO: M2"
+omega t s regs ci =
+  case [ evalOut o regs ci
+       | e <- edgesOut t s
+       , models (guard e) (regs, ci)
+       , Just o <- [output e]
+       ] of
+    [o] -> Just o
+    _   -> Nothing
 
 
 -- * Pure-layer entry points ------------------------------------------------

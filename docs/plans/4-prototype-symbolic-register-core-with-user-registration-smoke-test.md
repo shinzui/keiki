@@ -98,10 +98,14 @@ This section must always reflect the actual current state of the work.
       stubs. `cabal build` succeeds with redundant-constraint warnings on the
       stubbed signatures (resolved by M2 when bodies use the constraints).
       (2026-05-01)
-- [ ] **Milestone 2 — Bare-minimum evaluator.** Implement `evalTerm`, `evalOut`,
-      `runUpdate`, `models` for the `HsPred` instance, and the `delta` and `omega`
-      projections. Add a tiny synthetic test (a 2-vertex transducer with no register
-      reads) confirming `delta` and `omega` behave. `cabal test` passes.
+- [x] **Milestone 2 — Bare-minimum evaluator.** Implemented `evalTerm`,
+      `evalOut`, `evalOutFields`, `evalPred`, `runUpdate` (plus the internal
+      `setSlot` helper that walks `Index`/`RegFile` together), the `BoolAlg
+      HsPred` instance's `models` (delegating to `evalPred`), and the
+      projections `delta` and `omega`. Test framework: `hspec ^>= 2.11`,
+      added as a `keiki-test` cabal stanza. The synthetic 2-vertex
+      transducer over `Bool` input plus targeted `evalTerm`/`evalPred`
+      micro-tests run as 11 examples, 0 failures. (2026-05-01)
 - [ ] **Milestone 3 — `step` and `reconstitute` skeletons.** Implement `step` per the
       boundary note's signature; implement `reconstitute` as a fold of `solveOutput`
       results. `solveOutput` itself can be a stub returning `Nothing` at this
