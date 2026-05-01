@@ -159,6 +159,12 @@ spec = do
                    :: Maybe (RegFile '[], ())
       isJust result `shouldBe` False
 
+  describe "isSingleValuedSym (M6)" $ do
+    it "synthetic 2-edge with constructor-mutex guards is single-valued" $
+      isSingleValuedSym synth2Mutex `shouldBe` True
+    it "synthetic 2-edge with overlapping guards is not single-valued" $
+      isSingleValuedSym synth2Overlap `shouldBe` False
+
 
 -- | 'True' iff a 'Sym' instance is discoverable for @r@ at runtime
 -- via the curated registry.
@@ -179,3 +185,55 @@ isPAnd, isPOr, isPNot :: HsPred rs ci -> Bool
 isPAnd (PAnd _ _) = True; isPAnd _ = False
 isPOr  (POr  _ _) = True; isPOr  _ = False
 isPNot (PNot _)   = True; isPNot _ = False
+
+
+-- * Synthetic transducers for isSingleValuedSym tests --------------------
+
+-- | A two-edge transducer from @False@ whose guards are mutually
+-- exclusive ('PInCtor TinyFoo' vs. 'PInCtor TinyBar'). The vertex
+-- 'True' has no outgoing edges. The expected verdict is
+-- 'isSingleValuedSym == True'.
+synth2Mutex :: SymTransducer (SymPred '[] TinyCmd) '[] Bool TinyCmd ()
+synth2Mutex = SymTransducer
+  { edgesOut = \case
+      False ->
+        [ Edge { guard  = SymPred (PInCtor inCtorTinyFoo)
+               , update = UKeep
+               , output = Nothing
+               , target = True
+               }
+        , Edge { guard  = SymPred (PInCtor inCtorTinyBar)
+               , update = UKeep
+               , output = Nothing
+               , target = True
+               }
+        ]
+      True -> []
+  , initial     = False
+  , initialRegs = RNil
+  , isFinal     = (== True)
+  }
+
+
+-- | A two-edge transducer with overlapping ('PTop') guards. The
+-- expected verdict is 'isSingleValuedSym == False'.
+synth2Overlap :: SymTransducer (SymPred '[] TinyCmd) '[] Bool TinyCmd ()
+synth2Overlap = SymTransducer
+  { edgesOut = \case
+      False ->
+        [ Edge { guard = SymPred PTop
+               , update = UKeep
+               , output = Nothing
+               , target = True
+               }
+        , Edge { guard = SymPred PTop
+               , update = UKeep
+               , output = Nothing
+               , target = True
+               }
+        ]
+      True -> []
+  , initial     = False
+  , initialRegs = RNil
+  , isFinal     = (== True)
+  }

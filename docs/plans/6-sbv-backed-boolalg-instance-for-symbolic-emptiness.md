@@ -151,13 +151,13 @@ reflect the actual current state of the work.
       True`, `isBot (PEq lit5 lit5) == False`, and the load-bearing
       `isBot (PInCtor TinyFoo AND PInCtor TinyBar) == True`. Total
       cabal test: 64 examples, 0 failures.
-- [ ] **Milestone 6 — Implement symbolic `isSingleValued`.** Walk
-      every vertex's outgoing edges; for every pair `(e1, e2)` with
-      `e1 /= e2`, check `isBot (guard e1 \`conj\` guard e2)`. If all
-      pairs are bot, return `True`; otherwise `False`. The exact
-      function lives in `Keiki.Core` (currently exposed but
-      best-effort) or in `Keiki.Symbolic` (per M1). Add a unit test on
-      a small known-single-valued transducer (e.g., a 2-edge synthetic).
+- [x] **Milestone 6 — Implement symbolic `isSingleValued`.** Added
+      `isSingleValuedSym` (BoolAlg-polymorphic) and `withSymPred`
+      (lifts an `HsPred`-typed transducer's guards to `SymPred`) to
+      `Keiki.Symbolic`. New tests: a synthetic 2-edge transducer
+      with constructor-mutex guards is single-valued; a synthetic
+      2-edge transducer with overlapping `PTop` guards is not.
+      `cabal test` reports 66 examples, 0 failures.
 - [ ] **Milestone 7 — Tests on User Registration.** Add a new spec
       file (`test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` or
       add cases to the existing spec) with at least two assertions:

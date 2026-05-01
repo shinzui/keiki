@@ -50,6 +50,9 @@ module Keiki.Symbolic
     -- * Solver-backed analyses
   , symIsBot
   , symSat
+    -- * Single-valuedness
+  , isSingleValuedSym
+  , withSymPred
     -- * Re-exports
   , module Keiki.Core
   ) where
@@ -316,3 +319,57 @@ symIsBot p = unsafePerformIO $ do
     env <- mkSymEnv
     translatePred env p
   pure (not (SBV.modelExists res))
+
+
+-- * Single-valuedness ------------------------------------------------------
+
+-- | A transducer is /single-valued/ when, at every reachable
+-- vertex, at most one outgoing edge's guard is satisfied for any
+-- given input. The check decomposes into "for every vertex @s@, for
+-- every distinct pair @(e1, e2)@ of outgoing edges, is the
+-- conjunction of their guards 'isBot'?". The function is
+-- 'BoolAlg'-polymorphic; precision depends on the chosen 'isBot'
+-- implementation. With 'SymPred', this is the v2 SBV-backed
+-- decision; with the v1 'HsPred' instance the answer is the v1
+-- syntactic over-approximation.
+isSingleValuedSym
+  :: forall phi rs s ci co.
+     (BoolAlg phi (RegFile rs, ci), Bounded s, Enum s)
+  => SymTransducer phi rs s ci co
+  -> Bool
+isSingleValuedSym t = all vertexSV [minBound .. maxBound]
+  where
+    vertexSV :: s -> Bool
+    vertexSV s =
+      let es    = edgesOut t s
+          ies   = zip [(0 :: Int) ..] es
+          pairs = [ (e1, e2)
+                  | (i, e1) <- ies
+                  , (j, e2) <- ies
+                  , i < j
+                  ]
+      in all (\(e1, e2) -> isBot (guard e1 `conj` guard e2)) pairs
+
+
+-- | Lift a transducer's edges from the v1 'HsPred' guard carrier to
+-- the v2 'SymPred' carrier so 'isSingleValuedSym' (or any other
+-- 'BoolAlg'-polymorphic analysis) sees the SBV-backed instance.
+-- The control graph and update / output terms are unchanged.
+withSymPred
+  :: SymTransducer (HsPred rs ci) rs s ci co
+  -> SymTransducer (SymPred rs ci) rs s ci co
+withSymPred t = SymTransducer
+  { edgesOut    = \s -> map liftEdge (edgesOut t s)
+  , initial     = initial t
+  , initialRegs = initialRegs t
+  , isFinal     = isFinal t
+  }
+  where
+    liftEdge :: Edge (HsPred rs ci) rs ci co s
+             -> Edge (SymPred rs ci) rs ci co s
+    liftEdge e = Edge
+      { guard  = SymPred (guard e)
+      , update = update e
+      , output = output e
+      , target = target e
+      }

@@ -386,7 +386,7 @@ for an at-a-glance view.
 - [x] EP-2: Implement `Term`-to-symbolic translation (M3)
 - [x] EP-2: Implement new `BoolAlg` instance (`top`, `bot`, conj/disj/neg) (M4)
 - [x] EP-2: Implement symbolic `models`, `sat`, `isBot` (M5)
-- [ ] EP-2: Implement symbolic `isSingleValued` (M6)
+- [x] EP-2: Implement symbolic `isSingleValued` (M6)
 - [ ] EP-2: Add tests; verify `isSingleValued userReg == True` (M7)
 - [ ] EP-2: Update DSL note's BoolAlg section; capture verdict (M8)
 
