@@ -70,14 +70,22 @@ actual current state of the work.
       `docs/masterplans/2-retire-v1-escape-hatches-in-pure-core-tinpproj-sbv-boolalg.md`
       exists. *(2026-05-01 — confirmed: build is up-to-date, test
       suite reports `24 examples, 0 failures`, all four files present.)*
-- [ ] **Milestone 1 — Survey + design note.** Survey the four candidate
+- [x] **Milestone 1 — Survey + design note.** Survey the four candidate
       shapes for structural input projection (Lens, HasField/Generic,
       hand-rolled `InCtor` mirroring `WireCtor`, GHC.Generics-derived).
       Pick one, with rationale. Write a focused design note at
       `docs/research/tinpproj-design.md` (~300 lines) covering: the
       retirement target, the survey, the chosen shape, the mechanical
       `solveOutput` algorithm, the migration plan for User Registration,
-      and the v1 API surface that stays vs. goes.
+      and the v1 API surface that stays vs. goes. *(2026-05-01 —
+      `docs/research/tinpproj-design.md` written, 612 lines.
+      Picked candidate 3: hand-rolled `InCtor ci ifs` mirroring
+      `WireCtor`, slot-list `ifs :: [Slot]`, `TInpCtorField :: InCtor ci
+      ifs -> Index ifs r -> Term rs ci r`. Inversion algorithm uses a
+      `ByIndex`+`AssembleRegFile` class to typecheck without
+      `unsafeCoerce`. `TLit`/`TReg` equality checks deferred to the
+      guard's `models` post-step; documented as the only design-time
+      deviation from the M3 sketch.)*
 - [ ] **Milestone 2 — Add new constructor to `Term`.** Introduce
       `data InCtor ci fields` (mirroring `WireCtor co fields`). Add the
       new constructor to `Term` per the design note's name. Add a helper
@@ -146,8 +154,42 @@ discovered during implementation. Provide concise evidence.
 
 Record every decision made while working on the plan.
 
-(None yet — the M1 design milestone produces the first batch of
-decisions.)
+- Decision: pick candidate 3 (hand-rolled `InCtor ci ifs` mirroring
+  `WireCtor`) with slot-list `ifs :: [Slot]` so `OverloadedLabels`
+  works.
+  Rationale: maximally symmetric with the existing output side
+  (`WireCtor`); reuses `RegFile`/`Index`/`IsLabel` so call sites read
+  `inpStart #email` instead of `inpStart (.email)`; zero new deps;
+  short type-safe inverse algorithm. Lens/HasField (1, 2) rejected for
+  the partiality / records-vs-sums mismatch on `ci`. GHC.Generics (4)
+  rejected for now; can be added later as opt-in convenience without
+  disturbing the chosen shape.
+  Date: 2026-05-01
+
+- Decision: `solveOutput` does not check `TLit`/`TReg` value equalities
+  during the OPack walk.
+  Rationale: would require adding `Eq r` to `TLit`/`TReg` (a v1 API
+  break). Soundness comes from `applyEvent`'s post-step guard `models`
+  check, which catches wrong-edge attribution before any
+  literal/register check would have. Documented as the only
+  design-time deviation from the EP-1 plan's M3 sketch.
+  Date: 2026-05-01
+
+- Decision: `InCtor` equality is name-based (`icName` string compare).
+  Rationale: pragmatic, sufficient for the structural walk's
+  consistency check (step 3 of the inversion algorithm), no `IO`
+  dependency. `StableName` rejected as the alternative; not worth the
+  IO cost.
+  Date: 2026-05-01
+
+- Decision: `TInpField` and `inp` stay alive in parallel during M2-M6;
+  M7 deletes them in a single commit once every use site has been
+  migrated.
+  Rationale: keeps `cabal build` green throughout the migration. M4 is
+  the only intentionally-broken intermediate state (the example modules
+  fail to compile until M5/M6 land). The EP-1 plan documents this
+  explicitly as expected.
+  Date: 2026-05-01
 
 
 ## Outcomes & Retrospective

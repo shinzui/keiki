@@ -370,7 +370,7 @@ This section aggregates milestone-level progress across all child plans
 for an at-a-glance view.
 
 - [x] EP-1: Verify prerequisites — Keiki.Core builds, all tests pass (M0)
-- [ ] EP-1: Survey TInpProj shapes; pick one; write design note (M1)
+- [x] EP-1: Survey TInpProj shapes; pick one; write design note (M1)
 - [ ] EP-1: Add new structural input-projection constructor to `Term` (M2)
 - [ ] EP-1: Update evaluator and analyses to handle the new constructor (M3)
 - [ ] EP-1: Drop hand-written inverse field from `OPack`; mechanically
