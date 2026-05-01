@@ -143,7 +143,7 @@ commit incrementally.
 | 1 | Sharpen DSL shape for symbolic-register transducer | docs/plans/1-sharpen-dsl-shape-for-symbolic-register-transducer.md | None | None | Complete |
 | 2 | Sharpen schema evolution for events and registers | docs/plans/2-sharpen-schema-evolution-for-events-and-registers.md | None | None | Complete |
 | 3 | Sharpen effects boundary between pure transducer and runtime | docs/plans/3-sharpen-effects-boundary-between-pure-transducer-and-runtime.md | None | None | Complete |
-| 4 | Prototype symbolic-register core with User Registration smoke test | docs/plans/4-prototype-symbolic-register-core-with-user-registration-smoke-test.md | EP-1, EP-2, EP-3 | None | Not Started |
+| 4 | Prototype symbolic-register core with User Registration smoke test | docs/plans/4-prototype-symbolic-register-core-with-user-registration-smoke-test.md | EP-1, EP-2, EP-3 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -336,15 +336,15 @@ at-a-glance view.
 - [x] EP-1: Author DSL design note at `docs/research/dsl-shape-for-symbolic-register.md` (2026-05-01)
 - [x] EP-2: Author schema-evolution design note at `docs/research/schema-evolution.md` (2026-05-01)
 - [x] EP-3: Author effects-boundary design note at `docs/research/effects-boundary.md` (2026-05-01)
-- [ ] EP-4: Verify prerequisites (Milestone 0)
-- [ ] EP-4: Project scaffolding and types compile (Milestone 1)
-- [ ] EP-4: Bare-minimum evaluator (Milestone 2)
-- [ ] EP-4: `step` and `reconstitute` skeletons (Milestone 3)
-- [ ] EP-4: `solveOutput` for `OutTerm` (Milestone 4)
-- [ ] EP-4: User Registration aggregate compiles (Milestone 5)
-- [ ] EP-4: End-to-end test passes on fixed schema (Milestone 6)
-- [ ] EP-4: Hidden-input check fires on unfixed schema (Milestone 7)
-- [ ] EP-4: Ergonomic verdict in Outcomes & Retrospective (Milestone 8)
+- [x] EP-4: Verify prerequisites (Milestone 0) (2026-05-01)
+- [x] EP-4: Project scaffolding and types compile (Milestone 1) (2026-05-01)
+- [x] EP-4: Bare-minimum evaluator (Milestone 2) (2026-05-01)
+- [x] EP-4: `step` and `reconstitute` skeletons (Milestone 3) (2026-05-01)
+- [x] EP-4: `solveOutput` for `OutTerm` (Milestone 4) (2026-05-01)
+- [x] EP-4: User Registration aggregate compiles (Milestone 5) (2026-05-01)
+- [x] EP-4: End-to-end test passes on fixed schema (Milestone 6) (2026-05-01)
+- [x] EP-4: Hidden-input check fires on unfixed schema (Milestone 7) (2026-05-01)
+- [x] EP-4: Ergonomic verdict in Outcomes & Retrospective (Milestone 8) (2026-05-01)
 
 
 ## Surprises & Discoveries
@@ -516,6 +516,46 @@ EP-4 (the prototype) is unblocked.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original vision.
 
-(To be filled during and after implementation. The final entry must answer:
-**Does the synthesis hold?** with a one-sentence verdict and a pointer to the
-prototype plan's Outcomes & Retrospective.)
+### Final verdict (2026-05-01)
+
+**Yes — the synthesis holds, with one v1 deviation that v2 retires.**
+The master plan's two-part acceptance criterion is met:
+
+1. *AST surface ergonomics tolerable* → **painful but workable**.
+   The synthesis-§4 User Registration aggregate compiles in the
+   chosen v1 DSL. Pain concentrates in three v1 escape hatches
+   ('TInpField', 'OFn', 'PMatchC'); per-constructor input helpers
+   (`inpStart`, `inpConfirm`, ...) absorb the worst boilerplate.
+2. *`solveOutput` works on that example* → **yes**, end-to-end.
+   `reconstitute userReg canonicalLog` returns
+   `Just (Deleted, expectedSnapshot)` over the synthesis-§4 5-event
+   log (M6). The V0 unfixed schema halts replay (`Nothing`) and
+   surfaces hidden-input warnings (M7); the build-time check has
+   bite at the v1 conservative level.
+
+The deviation: 'OPack' carries a hand-written
+`RegFile rs -> co -> Maybe ci` inverse alongside its structural
+'OutFields', because v1's only input-reading 'Term' constructor
+('TInpField') is opaque. The 'OutFields' remains the contract for
+`checkHiddenInputs`; the inverse is documented as the v1 escape hatch
+that v2's 'TInpProj' (structural input projection) retires.
+Mechanical apply derivation, in v1, is "user-supplied per-edge apply
+with structural hidden-input checking"; v2 promotes both halves to
+truly mechanical. See
+[EP-4 Outcomes & Retrospective](../plans/4-prototype-symbolic-register-core-with-user-registration-smoke-test.md#outcomes--retrospective)
+for the full discussion.
+
+Final test transcript: 24 examples, 0 failures. The library has a
+working v1 foundation; v2 priorities (in order, per the design notes
+and prototype findings):
+
+- 'TInpProj' or `Generic`-derived input projection, retiring
+  'TInpField' and removing the 'OPack' hand-written inverse.
+- SBV-backed `BoolAlg` instance for symbolic emptiness/equivalence.
+- `Keiki.Runtime` layer (event store, queue, subscriptions, timers)
+  per the EP-3 boundary note.
+- The Order Fulfillment process manager (synthesis §5) as the second
+  smoke test once the runtime layer lands.
+
+Phase 1 (sharpening) and Phase 2 (prototype) both complete on
+2026-05-01.

@@ -168,13 +168,19 @@ This section must always reflect the actual current state of the work.
       examples, 0 failures. **The check has bite at the v1 conservative
       level; v2 will narrow it via structural input projection.**
       (2026-05-01)
-- [ ] **Milestone 8 — Ergonomic verdict.** Read `Keiki.Examples.UserRegistration`
-      side-by-side with synthesis §4's pseudosyntax. Write a one-paragraph verdict in
-      the Outcomes & Retrospective section: tolerable, painful but workable, or
-      blocking. If blocking, file a follow-up plan.
-- [ ] Commit at every milestone (with `MasterPlan:`, `ExecPlan:`, `Intention:`
-      trailers).
-- [ ] Update master plan's Exec-Plan Registry and Progress on each milestone.
+- [x] **Milestone 8 — Ergonomic verdict.** Read
+      `Keiki.Examples.UserRegistration` side-by-side with synthesis §4
+      and wrote the verdict in Outcomes & Retrospective below.
+      Cross-cut to the MasterPlan's Outcomes & Retrospective.
+      (2026-05-01)
+- [x] Commit at every milestone (with `MasterPlan:`, `ExecPlan:`,
+      `Intention:` trailers). M0–M8 each landed as a discrete commit;
+      a few cross-plan-cleanup commits also carry the trailers.
+      (2026-05-01)
+- [x] Update master plan's Exec-Plan Registry and Progress on each
+      milestone. The MasterPlan's Phase 1 entries were updated as
+      EP-1/EP-2/EP-3 commits landed; the EP-4 row and Outcomes
+      cross-cut land in the M8 commit. (2026-05-01)
 
 
 ## Surprises & Discoveries
@@ -295,7 +301,76 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Verdict (2026-05-01)
+
+**The synthesis holds, with one explicit v1 deviation that v2 retires.**
+
+Both halves of the master plan acceptance criterion are met:
+
+- **AST surface ergonomics: painful but workable.** The
+  `Keiki.Examples.UserRegistration` transcription compiles and
+  expresses synthesis §4 verbatim, using only the constructors and
+  helpers from `Keiki.Core`. Pain concentrates in three v1 escape
+  hatches: `TInpField` (opaque `ci -> r` callback, requires `\case ...
+  _ -> error "guard"` boilerplate per edge), `OFn` (opaque output, not
+  used in the User Registration aggregate but available for prototype
+  experiments), and `PMatchC` (opaque `ci -> Bool` for constructor
+  guards, factored away by the per-constructor `isStart`/`isConfirm`
+  /... helpers). Per-constructor input helpers (`inpStart`,
+  `inpConfirm`, `inpResend`, `inpGdpr`) make the file readable; without
+  them the boilerplate would be substantially worse. v2's
+  `TInpProj` retires the largest pain point (the total-callback
+  `inp` lambdas).
+- **`solveOutput` works on the example.** `reconstitute userReg
+  canonicalLog` returns `Just (Deleted, expectedSnapshot)` end-to-end,
+  through five events including a confirmation-code rotation and a
+  GDPR delete (M6, 21/21 passing tests). The unfixed V0 schema halts
+  replay (M7) and surfaces hidden-input warnings, demonstrating the
+  build-time check has bite at the v1 conservative level.
+
+The deviation is the M4 OPack-inverse field: v1's chosen `Term` set
+has `TInpField` opaque, so `solveOutput` cannot mechanically invert.
+'OPack' was extended to carry a hand-written `RegFile rs -> co ->
+Maybe ci` inverse alongside the structural 'OutFields'. The
+'OutFields' remains the contract for `checkHiddenInputs`; the inverse
+is the documented v1 escape hatch that v2's structural input projection
+('TInpProj') retires. This honest framing — "v1 does user-supplied
+per-edge apply with structural hidden-input checking; v2 promotes
+both halves to mechanical derivation" — preserves the rest of the
+formalism (transducer composition, register evolution, finite control
+graph analysis) and keeps the v1 deliverable shippable.
+
+What was learned in implementation that the design notes did not
+predict:
+
+- The synthesis-§4 walkthrough's step 3 implicitly assumes
+  post-update register reads in the omega projection ("`regs ! #confirmCode`
+  reads the new code"). The §2 formal definition is pre-update. This
+  prototype follows §2 (pre-update) and resolves the apparent step-3
+  conflict by reading the new code from the input directly
+  (`inpResend (.code)`) rather than from the post-update register.
+  Both readings produce the same canonical event log; the §2-faithful
+  one is simpler to implement and to invert.
+- The `unsafeCombine` smart-constructor escape on `Update`'s
+  distinct-targets invariant is fine for v1 — every use site in the
+  User Registration transcription is hand-checked. The runtime-
+  checked `combine :: ... -> Either String _` is exercised in the
+  v2 path where smart-constructor enforcement covers more cases.
+- GHC's GADT pattern checker still produces spurious incomplete-
+  pattern warnings on `(!)` and `setSlot` when the outer match is on
+  the 'RegFile' value rather than the 'Index'. Reordering to "match
+  on 'Index' first, with an inner case on 'RegFile'" silences the
+  warning cleanly. Worth recording for any future GADT pattern in the
+  library.
+
+The master-plan-level question — *"does the synthesis hold?"* — is
+answered **yes** with the v1 deviation noted. The library has a
+sound foundation to extend in v2 with structural input projection
+('TInpProj'), SBV-backed `BoolAlg`, and the `Keiki.Runtime` layer
+that the EP-3 boundary note proposes. The Order Fulfillment process
+manager (synthesis §5) — deferred from the master plan as out of
+scope — is the natural follow-up smoke test once the runtime layer
+lands.
 
 
 ## Context and Orientation
