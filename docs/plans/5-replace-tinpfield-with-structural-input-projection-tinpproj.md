@@ -86,13 +86,19 @@ actual current state of the work.
       `unsafeCoerce`. `TLit`/`TReg` equality checks deferred to the
       guard's `models` post-step; documented as the only design-time
       deviation from the M3 sketch.)*
-- [ ] **Milestone 2 — Add new constructor to `Term`.** Introduce
+- [x] **Milestone 2 — Add new constructor to `Term`.** Introduce
       `data InCtor ci fields` (mirroring `WireCtor co fields`). Add the
       new constructor to `Term` per the design note's name. Add a helper
       function. Update `evalTerm` to handle the new constructor.
       `cabal build` succeeds; `TInpField` and `inp` still exist in
       parallel. Add a unit test (`describe "TInpProj structural
       projection"`) exercising the new constructor in `test/Keiki/CoreSpec.hs`.
+      *(2026-05-01 — `InCtor ci ifs`, `TInpCtorField :: InCtor ci ifs ->
+      Index ifs r -> Term rs ci r`, and `inpCtor` helper added; exports
+      updated; `evalTerm` and `termReadsInput` extended; four new tests
+      under `describe "TInpCtorField (structural input projection)"`.
+      `cabal test` reports 28 examples, 0 failures (24 baseline + 4
+      new).)*
 - [ ] **Milestone 3 — Update `solveOutput` and analyses for the new
       constructor.** `solveOutput` learns to walk an `OutFields` HList,
       identify all `TInpCtorField` entries, check they share a single

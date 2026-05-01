@@ -1,7 +1,26 @@
 module Keiki.CoreSpec (spec) where
 
+import Control.Exception (evaluate)
+import Data.Proxy (Proxy (..))
 import Test.Hspec
 import Keiki.Core
+
+
+-- | A two-constructor input symbol used by the 'TInpCtorField' tests.
+data TinyCmd = TinyFoo Int Int | TinyBar Int deriving (Eq, Show)
+
+
+inCtorTinyFoo :: InCtor TinyCmd
+                 '[ '("a", Int), '("b", Int) ]
+inCtorTinyFoo = InCtor
+  { icName  = "TinyFoo"
+  , icMatch = \case
+      TinyFoo a b -> Just (RCons (Proxy @"a") a
+                          $ RCons (Proxy @"b") b
+                          $ RNil)
+      _ -> Nothing
+  , icBuild = \(RCons _ a (RCons _ b RNil)) -> TinyFoo a b
+  }
 
 
 -- A minimal 2-vertex transducer over 'Bool' input, 'String' output, no
@@ -40,6 +59,30 @@ spec = do
       evalTerm
         (TApp2 (+) (TInpField id) (TLit 10) :: Term '[] Int Int)
         RNil 5 `shouldBe` 15
+
+  describe "TInpCtorField (structural input projection)" $ do
+    it "evaluates field #a on the matching constructor" $
+      evalTerm
+        (TInpCtorField inCtorTinyFoo (#a :: Index '[ '("a", Int), '("b", Int) ] Int)
+           :: Term '[] TinyCmd Int)
+        RNil (TinyFoo 7 9) `shouldBe` 7
+    it "evaluates field #b on the matching constructor" $
+      evalTerm
+        (TInpCtorField inCtorTinyFoo (#b :: Index '[ '("a", Int), '("b", Int) ] Int)
+           :: Term '[] TinyCmd Int)
+        RNil (TinyFoo 7 9) `shouldBe` 9
+    it "errors with the icName when the input is the wrong constructor" $
+      evaluate
+        (evalTerm
+           (TInpCtorField inCtorTinyFoo (#a :: Index '[ '("a", Int), '("b", Int) ] Int)
+              :: Term '[] TinyCmd Int)
+           RNil (TinyBar 0))
+        `shouldThrow` errorCall "evalTerm: TInpCtorField guard violation: TinyFoo"
+    it "termReadsInput is True for a TInpCtorField term" $
+      termReadsInput
+        (TInpCtorField inCtorTinyFoo (#a :: Index '[ '("a", Int), '("b", Int) ] Int)
+           :: Term '[] TinyCmd Int)
+        `shouldBe` True
 
   describe "evalPred" $ do
     it "PTop is True; PBot is False" $ do

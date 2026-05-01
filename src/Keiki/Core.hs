@@ -31,6 +31,8 @@ module Keiki.Core
   , HasIndex (..)
     -- * Term language
   , Term (..)
+    -- * Input-side structural constructor (v2)
+  , InCtor (..)
     -- * Update language
   , Update (..)
   , combine
@@ -51,6 +53,7 @@ module Keiki.Core
   , mkOut
   , proj
   , inp
+  , inpCtor
   , lit
   , (.==)
   , pack
@@ -142,8 +145,15 @@ data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
   TReg      :: Index rs r -> Term rs ci r
   -- | v1 escape hatch: opaque function over the input symbol. v2
   -- replaces with structural input projection so the hidden-input check
-  -- can see through it.
-  TInpField :: (ci -> r) -> Term rs ci r
+  -- can see through it. Retired in EP-1 of MasterPlan 2; kept in
+  -- parallel with 'TInpCtorField' until every use site is migrated.
+  TInpField     :: (ci -> r) -> Term rs ci r
+  -- | v2 structural input projection: read field @ix@ of the input
+  -- constructor described by @ic@. The 'InCtor' value names the
+  -- expected constructor and supplies the round-trip
+  -- ('icMatch'/'icBuild') so that 'solveOutput' can mechanically
+  -- recover @ci@ from an observed output. See @docs/research/tinpproj-design.md@.
+  TInpCtorField :: InCtor ci ifs -> Index ifs r -> Term rs ci r
   TApp1     :: (a -> r)
             -> Term rs ci a
             -> Term rs ci r
@@ -151,6 +161,27 @@ data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
             -> Term rs ci a
             -> Term rs ci b
             -> Term rs ci r
+
+
+-- | Per-constructor input projection. An 'InCtor' value names one
+-- constructor of the input symbol type @ci@ and pins the round-trip
+-- between that constructor's payload and a typed register file
+-- @'RegFile' ifs@. The slot list @ifs@ is the field schema for the
+-- constructor; together with 'Index' it lets call sites read fields
+-- via 'OverloadedLabels' (for example @inpStart #email@).
+--
+-- 'icMatch' must return 'Just' iff @ci@ is the named constructor.
+-- 'icBuild' is its left inverse: @icMatch (icBuild rf) == Just rf@ for
+-- every well-formed @rf@.
+--
+-- See @docs/research/tinpproj-design.md@ for the design rationale and
+-- the inversion algorithm that walks 'OutFields' gathering these
+-- per-field reads.
+data InCtor ci (ifs :: [Slot]) = InCtor
+  { icName  :: String
+  , icMatch :: ci -> Maybe (RegFile ifs)
+  , icBuild :: RegFile ifs -> ci
+  }
 
 
 -- * Update language --------------------------------------------------------
@@ -320,6 +351,12 @@ inp :: (ci -> r) -> Term rs ci r
 inp = TInpField
 
 
+-- | Structural input projection: read field @ix@ of the input
+-- constructor described by @ic@. The v2 replacement for 'inp'.
+inpCtor :: InCtor ci ifs -> Index ifs r -> Term rs ci r
+inpCtor = TInpCtorField
+
+
 -- | A constant 'Term'.
 lit :: r -> Term rs ci r
 lit = TLit
@@ -345,11 +382,14 @@ pack = OPack
 
 -- | Evaluate a 'Term' against a register file and an input symbol.
 evalTerm :: Term rs ci r -> RegFile rs -> ci -> r
-evalTerm (TLit r)        _    _  = r
-evalTerm (TReg ix)       regs _  = regs ! ix
-evalTerm (TInpField f)   _    ci = f ci
-evalTerm (TApp1 f t)     regs ci = f (evalTerm t regs ci)
-evalTerm (TApp2 f a b)   regs ci = f (evalTerm a regs ci) (evalTerm b regs ci)
+evalTerm (TLit r)              _    _  = r
+evalTerm (TReg ix)             regs _  = regs ! ix
+evalTerm (TInpField f)         _    ci = f ci
+evalTerm (TInpCtorField ic ix) _    ci = case icMatch ic ci of
+  Just rf -> rf ! ix
+  Nothing -> error ("evalTerm: TInpCtorField guard violation: " ++ icName ic)
+evalTerm (TApp1 f t)           regs ci = f (evalTerm t regs ci)
+evalTerm (TApp2 f a b)         regs ci = f (evalTerm a regs ci) (evalTerm b regs ci)
 
 
 -- | Evaluate an 'OutTerm' against a register file and an input symbol.
@@ -551,13 +591,15 @@ updateReadsInput (USet _ t)     = termReadsInput t
 updateReadsInput (UCombine a b) = updateReadsInput a || updateReadsInput b
 
 
--- | Does the 'Term' read the input symbol via 'TInpField'?
+-- | Does the 'Term' read the input symbol — via 'TInpField' (v1) or
+-- 'TInpCtorField' (v2)?
 termReadsInput :: Term rs ci r -> Bool
-termReadsInput (TLit _)         = False
-termReadsInput (TReg _)         = False
-termReadsInput (TInpField _)    = True
-termReadsInput (TApp1 _ t)      = termReadsInput t
-termReadsInput (TApp2 _ a b)    = termReadsInput a || termReadsInput b
+termReadsInput (TLit _)              = False
+termReadsInput (TReg _)              = False
+termReadsInput (TInpField _)         = True
+termReadsInput (TInpCtorField _ _)   = True
+termReadsInput (TApp1 _ t)           = termReadsInput t
+termReadsInput (TApp2 _ a b)         = termReadsInput a || termReadsInput b
 
 
 -- | Do the 'OutFields' contain a 'TInpField' anywhere?
