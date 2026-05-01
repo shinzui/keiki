@@ -376,7 +376,7 @@ for an at-a-glance view.
 - [x] EP-1: Drop hand-written inverse field from `OPack`; mechanically
       derive `solveOutput` (M4)
 - [x] EP-1: Migrate `Keiki.Examples.UserRegistration` (V5) (M5)
-- [ ] EP-1: Migrate `Keiki.Examples.UserRegistrationV0` (V0) (M6)
+- [x] EP-1: Migrate `Keiki.Examples.UserRegistrationV0` (V0) (M6)
 - [ ] EP-1: Remove `TInpField` constructor and `inp` helper from public API (M7)
 - [ ] EP-1: Update DSL design note; capture verdict (M8)
 - [ ] EP-2: Verify prerequisites — record EP-1 status; build passes (M0)
@@ -396,7 +396,19 @@ for an at-a-glance view.
 Document cross-plan insights, dependency changes, scope adjustments, or
 unexpected interactions between child plans. Provide concise evidence.
 
-(None yet.)
+- *2026-05-01 (during EP-1 M6).* The original M1 design pinned
+  `OPack :: WireCtor co fields -> OutFields rs ci fields -> OutTerm rs
+  ci co`, expecting `solveOutput` to discover the `InCtor` from
+  `TInpCtorField` reads inside `OutFields`. This breaks for edges
+  whose input has no payload — notably `Continue` in the User
+  Registration aggregate, which has no fields and therefore cannot
+  appear inside any `OutFields` (`Index '[] r` is uninhabited). The
+  redesign adds an explicit `InCtor ci ifs` first argument to `OPack`;
+  `solveOutput` walks the structural `OutFields` against the named
+  `InCtor`, which means an empty-payload constructor recovers
+  trivially as `icBuild ic RNil`. EP-2 should treat `OPack`'s shape
+  as "InCtor + WireCtor + OutFields"; the design note
+  `docs/research/tinpproj-design.md` is updated in EP-1's M8 to match.
 
 
 ## Decision Log

@@ -127,12 +127,20 @@ spec = do
           , wcMatch = \(Foo a b) -> Just (a, (b, ()))
           , wcBuild = \(a, (b, ())) -> Foo a b
           }
+        -- A degenerate InCtor for the Int-input fixture.
+        inCtorIntId :: InCtor Int '[]
+        inCtorIntId = InCtor
+          { icName  = "IntId"
+          , icMatch = \_ -> Just RNil
+          , icBuild = \RNil -> 0  -- forward direction never used here
+          }
         -- forward: Foo (ci+1) (ci*2). Uses the v1 TInpField surface; the
         -- structural walk bails so solveOutput returns Nothing for this
         -- output. After EP-1 M7 retires TInpField, this fixture is
         -- removed entirely.
         outFoo :: OutTerm '[] Int TinyOut
         outFoo = OPack
+          inCtorIntId
           wireFooCtor
           (OFCons (TApp1 (+1) (TInpField id))
                   (OFCons (TApp1 (*2) (TInpField id)) OFNil))
@@ -157,6 +165,7 @@ spec = do
         -- Complete OPack: both fields read from inCtorTinyFoo.
         outComplete :: OutTerm '[] TinyCmd TinyCmdOut
         outComplete = OPack
+          inCtorTinyFoo
           wireTinyFoo
           (OFCons (TInpCtorField inCtorTinyFoo
                      (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
@@ -166,6 +175,7 @@ spec = do
         -- Incomplete OPack: only #a is in OutFields; #b is a constant.
         outIncomplete :: OutTerm '[] TinyCmd TinyCmdOut
         outIncomplete = OPack
+          inCtorTinyFoo
           wireTinyFoo
           (OFCons (TInpCtorField inCtorTinyFoo
                      (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
@@ -178,19 +188,19 @@ spec = do
     it "solveOutput returns Nothing on incomplete coverage" $
       solveOutput outIncomplete RNil (TinyFooOut 7 0) `shouldBe` Nothing
     it "detectMissingInCtorFields names the missing slot" $
-      let mfs = detectMissingInCtorFields
-                  (OFCons (TInpCtorField inCtorTinyFoo
-                            (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
-                    (OFCons (TLit (0 :: Int)) OFNil)
-                     :: OutFields '[] TinyCmd (Int, (Int, ())))
-      in mfs `shouldBe` Just (MissingInCtorFields "TinyFoo" ["b"])
+      let fs = OFCons (TInpCtorField inCtorTinyFoo
+                        (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+                 (OFCons (TLit (0 :: Int)) OFNil)
+                 :: OutFields '[] TinyCmd (Int, (Int, ()))
+      in detectMissingInCtorFields inCtorTinyFoo fs
+           `shouldBe` Just (MissingInCtorFields "TinyFoo" ["b"])
     it "detectMissingInCtorFields is Nothing on complete coverage" $
       let fs = OFCons (TInpCtorField inCtorTinyFoo
                         (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
                 (OFCons (TInpCtorField inCtorTinyFoo
                           (#b :: Index '[ '("a", Int), '("b", Int) ] Int))
                   OFNil) :: OutFields '[] TinyCmd (Int, (Int, ()))
-      in detectMissingInCtorFields fs `shouldBe` Nothing
+      in detectMissingInCtorFields inCtorTinyFoo fs `shouldBe` Nothing
     it "outFieldsHaveInpCtorField is True when at least one TInpCtorField appears" $
       let fs = OFCons (TInpCtorField inCtorTinyFoo
                         (#a :: Index '[ '("a", Int), '("b", Int) ] Int))

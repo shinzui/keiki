@@ -1,5 +1,6 @@
 module Keiki.Examples.UserRegistrationV0Spec (spec) where
 
+import Data.List (isInfixOf)
 import Data.Maybe (isNothing)
 import Test.Hspec
 import Keiki.Core
@@ -10,24 +11,33 @@ spec :: Spec
 spec = do
   describe "userRegV0 — synthesis-§4 step-4 unfixed schema" $ do
     it "reconstitute returns Nothing on the V0 canonical log" $
-      -- The Confirm edge's output (V0) does not carry confirmCode, so
-      -- the user-supplied inverse cannot reconstruct ci, and replay
-      -- halts. This is the canonical synthesis-§4 step-4 walkthrough,
-      -- showing the bug at runtime. (RegFile has no Show instance,
-      -- so we collapse the Maybe to a Bool before asserting.)
+      -- The V0 Confirm edge's OutFields does not carry confirmCode
+      -- (the wireAccountConfirmedV0 wire's tuple shape drops it).
+      -- The structural inverse (post-EP-1) sees that inCtorConfirm
+      -- has a confirmCode slot the OutFields walk never visits, so
+      -- assemble returns Nothing and replay halts. Same outcome as
+      -- the v1 hand-written-Nothing inverse, but now structurally
+      -- observable. RegFile has no Show instance, so we collapse the
+      -- Maybe to a Bool before asserting.
       isNothing (reconstitute userRegV0 canonicalLogV0) `shouldBe` True
 
     it "checkHiddenInputs surfaces at least one warning" $ do
-      -- v1's check is conservative: it flags every OPack edge whose
-      -- OutFields contains TInpField (because v1 cannot field-name-
-      -- match input reads). The list is the v1 "candidates to review"
-      -- surface; v2 narrows it via structural input projection.
       let warnings = checkHiddenInputs userRegV0
       length warnings `shouldSatisfy` (> 0)
 
     it "checkHiddenInputs warning includes the RequiresConfirmation source" $
-      -- The bad Confirm edge lives in RequiresConfirmation. The
-      -- warning list should mention it.
       let warnings = checkHiddenInputs userRegV0
           sources  = map hiwEdgeSource warnings
       in sources `shouldContain` ["RequiresConfirmation"]
+
+    it "checkHiddenInputs warning names the missing InCtor and field" $
+      -- Post-EP-1: the structural analyzer names the precise missing
+      -- field. The Confirm edge's OutFields walks (#email, #at) but
+      -- inCtorConfirm has slots [confirmCode, at]; \"confirmCode\" is
+      -- left unrecovered.
+      let warnings = checkHiddenInputs userRegV0
+          reasons  = map hiwReason warnings
+          inAny xs sub = any (sub `isInfixOf`) xs
+      in do
+        reasons `shouldSatisfy` (`inAny` "ConfirmAccount")
+        reasons `shouldSatisfy` (`inAny` "confirmCode")

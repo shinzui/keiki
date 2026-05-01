@@ -59,6 +59,7 @@ module Keiki.Examples.UserRegistration
   , inCtorConfirm
   , inCtorResend
   , inCtorGdpr
+  , inCtorContinue
   , inpStart
   , inpConfirm
   , inpResend
@@ -267,6 +268,19 @@ inCtorGdpr = InCtor
   }
 
 
+-- | The 'Continue' command has no payload, so its 'InCtor' has the
+-- empty slot list. The structural inverse recovers @Continue@ from
+-- @icBuild inCtorContinue RNil@.
+inCtorContinue :: InCtor UserCmd '[]
+inCtorContinue = InCtor
+  { icName  = "Continue"
+  , icMatch = \case
+      Continue -> Just RNil
+      _        -> Nothing
+  , icBuild = \RNil -> Continue
+  }
+
+
 inpStart   :: Index StartFields   r -> Term UserRegRegs UserCmd r
 inpStart    = TInpCtorField inCtorStart
 
@@ -388,6 +402,7 @@ userRegEdges = \case
             USet (#registeredAt :: Index UserRegRegs UTCTime)
                  (inpStart #at)
         , output = Just $ pack
+            inCtorStart
             wireRegistrationStarted
             (OFCons (inpStart #email)
               (OFCons (inpStart #confirmCode)
@@ -402,6 +417,7 @@ userRegEdges = \case
         { guard  = isContinue
         , update = UKeep
         , output = Just $ pack
+            inCtorContinue
             wireConfirmationEmailSent
             (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
         , target = RequiresConfirmation
@@ -418,6 +434,7 @@ userRegEdges = \case
         , update = USet (#confirmedAt :: Index UserRegRegs UTCTime)
                         (inpConfirm #at)
         , output = Just $ pack
+            inCtorConfirm
             wireAccountConfirmed
             (OFCons (proj (#email :: Index UserRegRegs Email))
               (OFCons (inpConfirm #confirmCode)
@@ -434,6 +451,7 @@ userRegEdges = \case
             USet (#registeredAt :: Index UserRegRegs UTCTime)
                  (inpResend #at)
         , output = Just $ pack
+            inCtorResend
             wireConfirmationResent
             (OFCons (proj (#email :: Index UserRegRegs Email))
               (OFCons (inpResend #code)
@@ -456,6 +474,7 @@ userRegEdges = \case
         , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
                         (inpGdpr #at)
         , output = Just $ pack
+            inCtorGdpr
             wireAccountDeleted
             (OFCons (proj (#email :: Index UserRegRegs Email))
               (OFCons (inpGdpr #at) OFNil))

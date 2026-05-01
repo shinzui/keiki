@@ -151,13 +151,25 @@ actual current state of the work.
       to `inpFoo #field`; every `pack` lost its third argument.
       `Keiki.Examples.UserRegistration` builds; `Keiki.Examples.UserRegistrationV0`
       still has 5 `pack`-arity errors pending M6.)*
-- [ ] **Milestone 6 — Migrate `Keiki.Examples.UserRegistrationV0`.**
+- [x] **Milestone 6 — Migrate `Keiki.Examples.UserRegistrationV0`.**
       Same migration as M5. Verify the V0 hidden-input demonstration
       still fires: `reconstitute userRegV0 canonicalLogV0 == Nothing`,
       and `checkHiddenInputs userRegV0` produces a warning that names
       the missing field of the missing constructor (more precise than
       the v1 "OPack field uses TInpField" warning). Update
       `test/Keiki/Examples/UserRegistrationV0Spec.hs` assertion text.
+      *(2026-05-01 — V0 migrated: local `inp*` wrappers deleted; the
+      module now imports `inCtor*` and `inp*` from V5. Every `pack`
+      call site updated for the M6 redesign (OPack carries the
+      `InCtor` first argument); `inCtorContinue` added to V5 for the
+      empty-payload Continue command. `reconstitute userRegV0
+      canonicalLogV0` returns `Nothing` because the structural walk
+      sees `inCtorConfirm`'s `confirmCode` slot is not visited.
+      `checkHiddenInputs` produces `OPack walk for InCtor
+      "ConfirmAccount" leaves field {"confirmCode"} unrecovered`. V0
+      spec strengthened with a fourth assertion checking the warning
+      text mentions "ConfirmAccount" and "confirmCode". `cabal test`
+      reports 35 examples, 0 failures.)*
 - [ ] **Milestone 7 — Remove `TInpField` and `inp` from the public
       API.** Delete the constructor from `Term`. Delete the `inp`
       helper. Delete the `termReadsInput` / `outFieldsHaveInpField`
@@ -182,7 +194,28 @@ actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights
 discovered during implementation. Provide concise evidence.
 
-(None yet.)
+- *2026-05-01 (during M6).* The structural inversion as designed in M1
+  (infer the `InCtor` from the `OutFields` walk) cannot recover the
+  input for an edge whose input constructor has *no payload fields* —
+  notably the `Continue` command, which the `Registering ->
+  RequiresConfirmation` edge consumes. The `OutFields` for that edge
+  reads only registers (no `TInpCtorField`), so `gatherInpEntries`
+  returns `WalkNoInput` and `solveOutput` returns `Nothing`. The v1
+  hand-written inverse simply produced `Just Continue`; the structural
+  walk has no analogous mechanism because `Index '[] r` has no
+  inhabitants — there is no way to write a `TInpCtorField` for an
+  empty-payload constructor. Evidence: V5 `reconstitute userReg
+  canonicalLog` returned `Nothing` after M5/M6 with the
+  infer-from-walk design; step 2 was the failing event.
+
+  *Resolution.* Add the `InCtor ci ifs` to `OPack` as a first argument
+  so each output is explicitly tagged with the input constructor it
+  corresponds to. The walk only gathers field values; the `InCtor`
+  identity comes from the `OPack` itself. Empty-payload constructors
+  produce zero entries and `assemble [] = Just RNil`, so `icBuild`
+  reconstructs the input correctly. This deviates from the M1 design
+  note and the M2-M4 implementation; the next M5/M6 milestone update
+  records the redesign and the design note is updated in M8.
 
 
 ## Decision Log
@@ -216,6 +249,19 @@ Record every decision made while working on the plan.
   dependency. `StableName` rejected as the alternative; not worth the
   IO cost.
   Date: 2026-05-01
+
+- Decision: `OPack` carries an explicit `InCtor ci ifs` first argument
+  rather than inferring the `InCtor` from the `OutFields` walk.
+  Rationale: empty-payload input constructors (notably `Continue` in
+  the User Registration aggregate) cannot appear in any `OutFields`
+  because `Index '[] r` is uninhabited, so the walk has no way to
+  recover their constructor identity. Carrying the `InCtor` on `OPack`
+  makes recovery explicit and trivial: `assemble [] = Just RNil` and
+  `icBuild ic RNil = Continue` (or whatever empty-payload constructor
+  the user names). This deviates from the M1 design note (the
+  no-`InCtor` shape pinned there) and from the M2-M4 implementation;
+  the design note is updated in M8 to match.
+  Date: 2026-05-01 (discovered during M6 testing)
 
 - Decision: `TInpField` and `inp` stay alive in parallel during M2-M6;
   M7 deletes them in a single commit once every use site has been

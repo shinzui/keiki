@@ -42,10 +42,6 @@ import Keiki.Core
 import Keiki.Examples.UserRegistration
   ( Email
   , ConfirmationCode
-  , StartRegistrationData (..)
-  , ConfirmAccountData (..)
-  , ResendConfirmationData (..)
-  , FulfillGDPRRequestData (..)
   , UserCmd (..)
   , RegistrationStartedData (..)
   , ConfirmationEmailSentData (..)
@@ -53,6 +49,15 @@ import Keiki.Examples.UserRegistration
   , AccountDeletedData (..)
   , UserRegRegs
   , Vertex (..)
+  , inCtorStart
+  , inCtorConfirm
+  , inCtorResend
+  , inCtorGdpr
+  , inCtorContinue
+  , inpStart
+  , inpConfirm
+  , inpResend
+  , inpGdpr
   )
 
 
@@ -84,27 +89,6 @@ emptyRegsV0 =
   $ RCons (Proxy @"confirmedAt")  (error "uninit: confirmedAt")
   $ RCons (Proxy @"deletedAt")    (error "uninit: deletedAt")
   $ RNil
-
-
-inpStart :: (StartRegistrationData -> r) -> Term UserRegRegs UserCmd r
-inpStart f = TInpField $ \case
-  StartRegistration d -> f d
-  _ -> error "inpStart"
-
-inpConfirm :: (ConfirmAccountData -> r) -> Term UserRegRegs UserCmd r
-inpConfirm f = TInpField $ \case
-  ConfirmAccount d -> f d
-  _ -> error "inpConfirm"
-
-inpResend :: (ResendConfirmationData -> r) -> Term UserRegRegs UserCmd r
-inpResend f = TInpField $ \case
-  ResendConfirmation d -> f d
-  _ -> error "inpResend"
-
-inpGdpr :: (FulfillGDPRRequestData -> r) -> Term UserRegRegs UserCmd r
-inpGdpr f = TInpField $ \case
-  FulfillGDPRRequest d -> f d
-  _ -> error "inpGdpr"
 
 
 isStart, isConfirm, isResend, isGdpr, isContinue :: HsPred UserRegRegs UserCmd
@@ -204,23 +188,19 @@ userRegV0Edges = \case
     [ Edge
         { guard  = isStart
         , update =
-            USet (#email :: Index UserRegRegs Email) (inpStart (.email))
+            USet (#email :: Index UserRegRegs Email) (inpStart #email)
               `unsafeCombine`
             USet (#confirmCode :: Index UserRegRegs ConfirmationCode)
-                 (inpStart (.confirmCode))
+                 (inpStart #confirmCode)
               `unsafeCombine`
             USet (#registeredAt :: Index UserRegRegs UTCTime)
-                 (inpStart (.at))
+                 (inpStart #at)
         , output = Just $ pack
+            inCtorStart
             wireRegistrationStartedV0
-            (OFCons (inpStart (.email))
-              (OFCons (inpStart (.confirmCode))
-                (OFCons (inpStart (.at)) OFNil)))
-            (\_regs co -> case co of
-                RegistrationStartedV0 ev ->
-                  Just $ StartRegistration $ StartRegistrationData
-                    ev.email ev.confirmCode ev.at
-                _ -> Nothing)
+            (OFCons (inpStart #email)
+              (OFCons (inpStart #confirmCode)
+                (OFCons (inpStart #at) OFNil)))
         , target = Registering
         }
     ]
@@ -230,59 +210,53 @@ userRegV0Edges = \case
         { guard  = isContinue
         , update = UKeep
         , output = Just $ pack
+            inCtorContinue
             wireConfirmationEmailSentV0
             (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
-            (\_regs co -> case co of
-                ConfirmationEmailSentV0 _ -> Just Continue
-                _ -> Nothing)
         , target = RequiresConfirmation
         }
     ]
 
   RequiresConfirmation ->
-    [ -- Right-code Confirm edge — UNFIXED. Output OutFields no longer
-      -- carry confirmCode. The hand-written inverse cannot recover
-      -- ci.confirmCode, so it returns Nothing — replay halts.
+    [ -- Right-code Confirm edge — UNFIXED. The OutFields walks only
+      -- (#email, #at): the wireAccountConfirmedV0 wire's tuple shape
+      -- still drops confirmCode. The structural inverse therefore
+      -- cannot find a value for inCtorConfirm's "confirmCode" slot
+      -- and solveOutput returns Nothing — replay halts. The hidden-
+      -- input check (post-EP-1) names this missing field precisely.
       Edge
         { guard  = PAnd isConfirm
-            (inpConfirm (.confirmCode)
+            (inpConfirm #confirmCode
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
         , update = USet (#confirmedAt :: Index UserRegRegs UTCTime)
-                        (inpConfirm (.at))
+                        (inpConfirm #at)
         , output = Just $ pack
+            inCtorConfirm
             wireAccountConfirmedV0
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpConfirm (.at)) OFNil))
-            -- Honest inverse: the V0 wire can't supply confirmCode,
-            -- so no consistent ci can be reconstructed. Returning
-            -- Nothing surfaces the bug at replay time.
-            (\_regs _co -> Nothing)
+              (OFCons (inpConfirm #at) OFNil))
         , target = Confirmed
         }
     , Edge
         { guard  = isResend
         , update =
             USet (#confirmCode :: Index UserRegRegs ConfirmationCode)
-                 (inpResend (.code))
+                 (inpResend #code)
               `unsafeCombine`
             USet (#registeredAt :: Index UserRegRegs UTCTime)
-                 (inpResend (.at))
+                 (inpResend #at)
         , output = Just $ pack
+            inCtorResend
             wireConfirmationResentV0
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpResend (.code))
-                (OFCons (inpResend (.at)) OFNil)))
-            (\_regs co -> case co of
-                ConfirmationResentV0 ev ->
-                  Just $ ResendConfirmation $ ResendConfirmationData
-                    ev.confirmCode ev.at
-                _ -> Nothing)
+              (OFCons (inpResend #code)
+                (OFCons (inpResend #at) OFNil)))
         , target = RequiresConfirmation
         }
     , Edge
         { guard  = isGdpr
         , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
-                        (inpGdpr (.at))
+                        (inpGdpr #at)
         , output = Nothing
         , target = Deleted
         }
@@ -292,15 +266,12 @@ userRegV0Edges = \case
     [ Edge
         { guard  = isGdpr
         , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
-                        (inpGdpr (.at))
+                        (inpGdpr #at)
         , output = Just $ pack
+            inCtorGdpr
             wireAccountDeletedV0
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpGdpr (.at)) OFNil))
-            (\_regs co -> case co of
-                AccountDeletedV0 ev ->
-                  Just $ FulfillGDPRRequest $ FulfillGDPRRequestData ev.at
-                _ -> Nothing)
+              (OFCons (inpGdpr #at) OFNil))
         , target = Deleted
         }
     ]
