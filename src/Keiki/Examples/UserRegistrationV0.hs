@@ -36,11 +36,10 @@ module Keiki.Examples.UserRegistrationV0
   , canonicalLogV0
   ) where
 
-import Data.Proxy (Proxy (..))
 import Data.Time (UTCTime, fromGregorian, secondsToDiffTime, UTCTime (..))
 import GHC.Generics (Generic)
 import Keiki.Core
-import Keiki.Generics (FieldsOf, mkWireCtor)
+import Keiki.Generics (FieldsOf, emptyRegFile, mkWireCtorVia)
 import Keiki.Examples.UserRegistration
   ( Email
   , ConfirmationCode
@@ -78,19 +77,13 @@ data UserEventV0
   | AccountConfirmedV0      AccountConfirmedDataV0
   | ConfirmationResentV0    ConfirmationResentData
   | AccountDeletedV0        AccountDeletedData
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 
 -- * Transducer scaffolding ------------------------------------------------
 
 emptyRegsV0 :: RegFile UserRegRegs
-emptyRegsV0 =
-  RCons (Proxy @"email")        (error "uninit: email")
-  $ RCons (Proxy @"confirmCode")  (error "uninit: confirmCode")
-  $ RCons (Proxy @"registeredAt") (error "uninit: registeredAt")
-  $ RCons (Proxy @"confirmedAt")  (error "uninit: confirmedAt")
-  $ RCons (Proxy @"deletedAt")    (error "uninit: deletedAt")
-  $ RNil
+emptyRegsV0 = emptyRegFile
 
 
 -- | Per-constructor guards. Migrated from v1 'matchCmd' to v2
@@ -107,46 +100,27 @@ isContinue = matchInCtor inCtorContinue
 
 -- * V0 wire constructors ---------------------------------------------------
 --
--- All five 'WireCtor' values are 'Keiki.Generics.mkWireCtor'-built;
--- nested-pair fields come from each event record's 'Generic'
--- metadata via 'FieldsOf'.
+-- All five 'WireCtor' values are 'mkWireCtorVia'-built; both the
+-- sum-side match\/wrap and the nested-pair field tuple come from
+-- 'UserEventV0' and each event record's 'Generic' instances.
 
-wireRegistrationStartedV0 :: WireCtor UserEventV0 (FieldsOf RegistrationStartedData)
-wireRegistrationStartedV0 = mkWireCtor
-  "RegistrationStartedV0"
-  (\case RegistrationStartedV0 d -> Just d; _ -> Nothing)
-  RegistrationStartedV0
-
+wireRegistrationStartedV0   :: WireCtor UserEventV0 (FieldsOf RegistrationStartedData)
+wireRegistrationStartedV0    = mkWireCtorVia @"RegistrationStartedV0"
 
 wireConfirmationEmailSentV0 :: WireCtor UserEventV0 (FieldsOf ConfirmationEmailSentData)
-wireConfirmationEmailSentV0 = mkWireCtor
-  "ConfirmationEmailSentV0"
-  (\case ConfirmationEmailSentV0 d -> Just d; _ -> Nothing)
-  ConfirmationEmailSentV0
-
+wireConfirmationEmailSentV0  = mkWireCtorVia @"ConfirmationEmailSentV0"
 
 -- | The hidden-input culprit: 'AccountConfirmedDataV0' does not carry
 -- @confirmCode@. The forward direction emits @(email, at)@; the
 -- inverse cannot recover @ci.confirmCode@.
-wireAccountConfirmedV0 :: WireCtor UserEventV0 (FieldsOf AccountConfirmedDataV0)
-wireAccountConfirmedV0 = mkWireCtor
-  "AccountConfirmedV0"
-  (\case AccountConfirmedV0 d -> Just d; _ -> Nothing)
-  AccountConfirmedV0
+wireAccountConfirmedV0      :: WireCtor UserEventV0 (FieldsOf AccountConfirmedDataV0)
+wireAccountConfirmedV0       = mkWireCtorVia @"AccountConfirmedV0"
 
+wireConfirmationResentV0    :: WireCtor UserEventV0 (FieldsOf ConfirmationResentData)
+wireConfirmationResentV0     = mkWireCtorVia @"ConfirmationResentV0"
 
-wireConfirmationResentV0 :: WireCtor UserEventV0 (FieldsOf ConfirmationResentData)
-wireConfirmationResentV0 = mkWireCtor
-  "ConfirmationResentV0"
-  (\case ConfirmationResentV0 d -> Just d; _ -> Nothing)
-  ConfirmationResentV0
-
-
-wireAccountDeletedV0 :: WireCtor UserEventV0 (FieldsOf AccountDeletedData)
-wireAccountDeletedV0 = mkWireCtor
-  "AccountDeletedV0"
-  (\case AccountDeletedV0 d -> Just d; _ -> Nothing)
-  AccountDeletedV0
+wireAccountDeletedV0        :: WireCtor UserEventV0 (FieldsOf AccountDeletedData)
+wireAccountDeletedV0         = mkWireCtorVia @"AccountDeletedV0"
 
 
 -- * The V0 transducer ------------------------------------------------------

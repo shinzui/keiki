@@ -67,12 +67,11 @@ module Keiki.Examples.UserRegistration
   , inpGdpr
   ) where
 
-import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
-import Keiki.Generics (FieldsOf, mkInCtor, mkInCtor0, mkWireCtor)
+import Keiki.Generics (FieldsOf, emptyRegFile, mkInCtor0, mkInCtorVia, mkWireCtorVia)
 
 
 -- * Domain types ------------------------------------------------------------
@@ -111,7 +110,7 @@ data UserCmd
   | ResendConfirmation ResendConfirmationData
   | FulfillGDPRRequest FulfillGDPRRequestData
   | Continue
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 
 -- * Event payloads ----------------------------------------------------------
@@ -149,7 +148,7 @@ data UserEvent
   | AccountConfirmed      AccountConfirmedData
   | ConfirmationResent    ConfirmationResentData
   | AccountDeleted        AccountDeletedData
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 
 -- * Register file and control vertices -------------------------------------
@@ -172,17 +171,12 @@ data Vertex
   deriving (Eq, Show, Enum, Bounded)
 
 
--- | Initial register file. Slots are pre-bound to deferred errors so
--- that the type checks; reads of an uninitialized slot crash with a
--- targeted message rather than silently returning bottom.
+-- | Initial register file. Each slot is pre-bound to a deferred
+-- @"uninit: <slot>"@ error by 'Keiki.Generics.emptyRegFile' so reads
+-- of an uninitialized slot crash with a targeted message instead of
+-- a silent bottom.
 emptyRegs :: RegFile UserRegRegs
-emptyRegs =
-  RCons (Proxy @"email")        (error "uninit: email")
-  $ RCons (Proxy @"confirmCode")  (error "uninit: confirmCode")
-  $ RCons (Proxy @"registeredAt") (error "uninit: registeredAt")
-  $ RCons (Proxy @"confirmedAt")  (error "uninit: confirmedAt")
-  $ RCons (Proxy @"deletedAt")    (error "uninit: deletedAt")
-  $ RNil
+emptyRegs = emptyRegFile
 
 
 -- * Per-constructor input projections (v2 structural surface) -------------
@@ -216,44 +210,28 @@ type GdprFields    =
   '[ '("at", UTCTime) ]
 
 
--- All five 'InCtor' values below are 'Keiki.Generics.mkInCtor'-built:
--- the slot list and the RegFile inversion come from the payload
--- record's 'Generic' field metadata. 'inCtorContinue' uses the
--- 'mkInCtor0' singleton variant since the constructor has no
--- payload.
+-- All five 'InCtor' values below are 'mkInCtorVia'-built: the
+-- constructor name, the sum-side match\/wrap, the slot list, and the
+-- 'RegFile' inversion are all derived from 'UserCmd' and the payload
+-- record's 'Generic' instances. 'inCtorContinue' uses 'mkInCtor0'
+-- because 'Continue' is a singleton value rather than a record-payload
+-- constructor; 'mkInCtorVia' would also work via the unit-payload
+-- 'GHasCtor' instance, but 'mkInCtor0' is the more direct expression.
 
-inCtorStart :: InCtor UserCmd StartFields
-inCtorStart = mkInCtor
-  "StartRegistration"
-  (\case StartRegistration d -> Just d; _ -> Nothing)
-  StartRegistration
+inCtorStart    :: InCtor UserCmd StartFields
+inCtorStart     = mkInCtorVia @"StartRegistration"
 
+inCtorConfirm  :: InCtor UserCmd ConfirmFields
+inCtorConfirm   = mkInCtorVia @"ConfirmAccount"
 
-inCtorConfirm :: InCtor UserCmd ConfirmFields
-inCtorConfirm = mkInCtor
-  "ConfirmAccount"
-  (\case ConfirmAccount d -> Just d; _ -> Nothing)
-  ConfirmAccount
+inCtorResend   :: InCtor UserCmd ResendFields
+inCtorResend    = mkInCtorVia @"ResendConfirmation"
 
+inCtorGdpr     :: InCtor UserCmd GdprFields
+inCtorGdpr      = mkInCtorVia @"FulfillGDPRRequest"
 
-inCtorResend :: InCtor UserCmd ResendFields
-inCtorResend = mkInCtor
-  "ResendConfirmation"
-  (\case ResendConfirmation d -> Just d; _ -> Nothing)
-  ResendConfirmation
-
-
-inCtorGdpr :: InCtor UserCmd GdprFields
-inCtorGdpr = mkInCtor
-  "FulfillGDPRRequest"
-  (\case FulfillGDPRRequest d -> Just d; _ -> Nothing)
-  FulfillGDPRRequest
-
-
--- | The 'Continue' command has no payload; 'mkInCtor0' supplies the
--- empty-RegFile inversion against the singleton value.
 inCtorContinue :: InCtor UserCmd '[]
-inCtorContinue = mkInCtor0 "Continue" Continue
+inCtorContinue  = mkInCtor0 "Continue" Continue
 
 
 inpStart   :: Index StartFields   r -> Term UserRegRegs UserCmd r
@@ -290,43 +268,24 @@ isContinue = matchInCtor inCtorContinue
 
 -- * Wire constructors for events -------------------------------------------
 
--- All five 'WireCtor' values below are 'Keiki.Generics.mkWireCtor'-
--- built; the nested-pair field tuple is derived from each event
--- record's 'Generic' field metadata via 'FieldsOf'.
+-- All five 'WireCtor' values below are 'mkWireCtorVia'-built; both
+-- the sum-side match\/wrap and the nested-pair field tuple come from
+-- 'UserEvent' and each event record's 'Generic' instances.
 
-wireRegistrationStarted :: WireCtor UserEvent (FieldsOf RegistrationStartedData)
-wireRegistrationStarted = mkWireCtor
-  "RegistrationStarted"
-  (\case RegistrationStarted d -> Just d; _ -> Nothing)
-  RegistrationStarted
-
+wireRegistrationStarted   :: WireCtor UserEvent (FieldsOf RegistrationStartedData)
+wireRegistrationStarted    = mkWireCtorVia @"RegistrationStarted"
 
 wireConfirmationEmailSent :: WireCtor UserEvent (FieldsOf ConfirmationEmailSentData)
-wireConfirmationEmailSent = mkWireCtor
-  "ConfirmationEmailSent"
-  (\case ConfirmationEmailSent d -> Just d; _ -> Nothing)
-  ConfirmationEmailSent
+wireConfirmationEmailSent  = mkWireCtorVia @"ConfirmationEmailSent"
 
+wireAccountConfirmed      :: WireCtor UserEvent (FieldsOf AccountConfirmedData)
+wireAccountConfirmed       = mkWireCtorVia @"AccountConfirmed"
 
-wireAccountConfirmed :: WireCtor UserEvent (FieldsOf AccountConfirmedData)
-wireAccountConfirmed = mkWireCtor
-  "AccountConfirmed"
-  (\case AccountConfirmed d -> Just d; _ -> Nothing)
-  AccountConfirmed
+wireConfirmationResent    :: WireCtor UserEvent (FieldsOf ConfirmationResentData)
+wireConfirmationResent     = mkWireCtorVia @"ConfirmationResent"
 
-
-wireConfirmationResent :: WireCtor UserEvent (FieldsOf ConfirmationResentData)
-wireConfirmationResent = mkWireCtor
-  "ConfirmationResent"
-  (\case ConfirmationResent d -> Just d; _ -> Nothing)
-  ConfirmationResent
-
-
-wireAccountDeleted :: WireCtor UserEvent (FieldsOf AccountDeletedData)
-wireAccountDeleted = mkWireCtor
-  "AccountDeleted"
-  (\case AccountDeleted d -> Just d; _ -> Nothing)
-  AccountDeleted
+wireAccountDeleted        :: WireCtor UserEvent (FieldsOf AccountDeletedData)
+wireAccountDeleted         = mkWireCtorVia @"AccountDeleted"
 
 
 -- * The transducer ---------------------------------------------------------
