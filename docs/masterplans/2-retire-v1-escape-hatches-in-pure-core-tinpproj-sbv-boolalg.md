@@ -188,7 +188,7 @@ without proving anything.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Replace TInpField with structural input projection (TInpProj) | docs/plans/5-replace-tinpfield-with-structural-input-projection-tinpproj.md | None | None | Complete |
-| 2 | SBV-backed BoolAlg instance for symbolic emptiness | docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md | None | EP-1 | Not Started |
+| 2 | SBV-backed BoolAlg instance for symbolic emptiness | docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md | None | EP-1 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -379,7 +379,7 @@ for an at-a-glance view.
 - [x] EP-1: Migrate `Keiki.Examples.UserRegistrationV0` (V0) (M6)
 - [x] EP-1: Remove `TInpField` constructor and `inp` helper from public API (M7)
 - [x] EP-1: Update DSL design note; capture verdict (M8)
-- [ ] EP-2: Verify prerequisites — record EP-1 status; build passes (M0)
+- [x] EP-2: Verify prerequisites — record EP-1 status; build passes (M0)
 - [ ] EP-2: Survey solvers; pick one; decide translation subset; write
       design note (M1)
 - [ ] EP-2: Add solver dependency to `keiki.cabal` (M2)

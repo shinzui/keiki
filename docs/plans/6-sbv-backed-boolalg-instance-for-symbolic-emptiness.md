@@ -80,11 +80,13 @@ be documented here, even if it requires splitting a partially completed
 task into two ("done" vs. "remaining"). This section must always
 reflect the actual current state of the work.
 
-- [ ] **Milestone 0 — Verify prerequisites.** `cabal build` and
-      `cabal test` succeed in the repo as-is. Record EP-1's status:
-      Complete, In Progress, or Not Started. The choice affects M1's
-      decision tree (build SBV translation on EP-1's structural `Term`
-      vs. carve a separate symbolic-Term variant).
+- [x] **Milestone 0 — Verify prerequisites.** `cabal build` and
+      `cabal test` succeed in the repo as-is (32 examples, 0 failures
+      on commit `2ac8313`). EP-1 status: **Complete** (rows in the
+      MasterPlan's Exec-Plan Registry; the structural `TInpCtorField`,
+      explicit-`InCtor` `OPack`, and structural `solveOutput` are all
+      live in `src/Keiki/Core.hs`). M1 therefore defaults to "build
+      SBV translation on EP-1's structural `Term`."
 - [ ] **Milestone 1 — Survey + design note.** Survey solver options
       (SBV, z3-haskell, hand-rolled enumeration). Decide on a solver
       and on how to handle solver dependencies (cabal flag vs.
@@ -162,8 +164,14 @@ discovered during implementation. Provide concise evidence.
 
 Record every decision made while working on the plan.
 
-(None yet — the M1 design milestone produces the first batch of
-decisions.)
+- Decision: EP-1 status at EP-2 M0 was **Complete**. The structural
+  `Term` (`TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`) and the
+  explicit-`InCtor` `OPack` are live in `src/Keiki/Core.hs`. The v1
+  `TInpField` constructor and the `inp` helper have been retired.
+  Rationale: determines M1's translation-target choice — EP-2 builds
+  the SBV translation directly on the structural `Term`, no separate
+  symbolic-Term variant needed.
+  Date: 2026-05-01
 
 
 ## Outcomes & Retrospective
