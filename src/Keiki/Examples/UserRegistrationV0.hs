@@ -15,13 +15,12 @@
 --      edge cannot fabricate a correct @d.confirmCode@ from the
 --      observed event — and any guess will be rejected by the edge's
 --      equality guard against @regs ! #confirmCode@.
---   2. **The hidden-input check produces warnings.** v1's check is
---      conservative — it flags every 'OPack' edge whose 'OutFields'
---      contains 'TInpField', plus every 'OFn' edge. With the chosen
---      DSL it cannot field-name-match input reads in @guard@ against
---      input reads in @output@, but the warning list is the v1
---      "candidates to review" surface. v2's structural input
---      projection makes the check field-precise.
+--   2. **The hidden-input check produces warnings.** Post-EP-1 the
+--      check walks each 'OPack''s 'OutFields' against the 'InCtor'
+--      named on it; if any slot of the 'InCtor' is unvisited the
+--      check reports the missing field by name. The Confirm edge
+--      surfaces as @InCtor "ConfirmAccount" leaves field
+--      \{"confirmCode"\} unrecovered@.
 --
 -- Most of the surface mirrors 'Keiki.Examples.UserRegistration' (V5,
 -- the fixed schema). Only the 'AccountConfirmed' wire and the right-

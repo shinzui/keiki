@@ -11,17 +11,23 @@
 -- (the working baseline). See those notes for the rationale behind every
 -- shape declared here.
 --
--- v1 limitations recorded in the DSL note's \"Ergonomic verdict\" and
--- \"v1-only surfaces\" sections:
+-- v1 escape hatches retired in EP-1 of MasterPlan 2:
 --
---   * 'TInpField' carries an opaque @ci -> r@; v2 replaces with structural
---     input projection.
---   * 'OFn' carries an opaque @RegFile rs -> ci -> co@; v2 replaces with
---     structural 'OPack'.
---   * 'PMatchC' carries an opaque @ci -> Bool@; v2 replaces with a
---     pattern AST.
+--   * @TInpField :: (ci -> r) -> Term rs ci r@ replaced by
+--     'TInpCtorField' + 'InCtor' (structural input projection).
+--   * 'OPack''s hand-written inverse field replaced by mechanical
+--     inversion in 'solveOutput' that walks 'OutFields' against the
+--     'InCtor' carried on 'OPack'.
+--
+-- v1 escape hatches still pending v2 retirement (out of scope for this
+-- MasterPlan):
+--
+--   * 'OFn' carries an opaque @RegFile rs -> ci -> co@; v3 replaces.
+--   * 'PMatchC' carries an opaque @ci -> Bool@; v3 replaces with a
+--     pattern AST. EP-2 of MasterPlan 2 documents how the SBV-backed
+--     'BoolAlg' instance falls back on 'PMatchC'.
 --   * 'unsafeCombine' bypasses the distinct-targets check that 'combine'
---     enforces; v2 makes the check static.
+--     enforces; later MasterPlan makes the check static.
 module Keiki.Core
   ( -- * Slots and the register file
     Slot
@@ -53,7 +59,6 @@ module Keiki.Core
   , matchCmd
   , mkOut
   , proj
-  , inp
   , inpCtor
   , lit
   , (.==)
@@ -75,7 +80,6 @@ module Keiki.Core
     -- * Internals exposed for testing
   , termReadsInput
   , updateReadsInput
-  , outFieldsHaveInpField
   , outFieldsHaveInpCtorField
   , detectMissingInCtorFields
   , MissingInCtorFields (..)
@@ -149,16 +153,12 @@ instance forall s rs r.
 data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
   TLit      :: r -> Term rs ci r
   TReg      :: Index rs r -> Term rs ci r
-  -- | v1 escape hatch: opaque function over the input symbol. v2
-  -- replaces with structural input projection so the hidden-input check
-  -- can see through it. Retired in EP-1 of MasterPlan 2; kept in
-  -- parallel with 'TInpCtorField' until every use site is migrated.
-  TInpField     :: (ci -> r) -> Term rs ci r
-  -- | v2 structural input projection: read field @ix@ of the input
+  -- | Structural input projection: read field @ix@ of the input
   -- constructor described by @ic@. The 'InCtor' value names the
   -- expected constructor and supplies the round-trip
   -- ('icMatch'/'icBuild') so that 'solveOutput' can mechanically
-  -- recover @ci@ from an observed output. See @docs/research/tinpproj-design.md@.
+  -- recover @ci@ from an observed output. See
+  -- @docs/research/tinpproj-design.md@.
   TInpCtorField :: InCtor ci ifs -> Index ifs r -> Term rs ci r
   TApp1     :: (a -> r)
             -> Term rs ci a
@@ -415,13 +415,8 @@ proj :: Index rs r -> Term rs ci r
 proj = TReg
 
 
--- | Read an input field into a 'Term' (opaque function in v1).
-inp :: (ci -> r) -> Term rs ci r
-inp = TInpField
-
-
 -- | Structural input projection: read field @ix@ of the input
--- constructor described by @ic@. The v2 replacement for 'inp'.
+-- constructor described by @ic@.
 inpCtor :: InCtor ci ifs -> Index ifs r -> Term rs ci r
 inpCtor = TInpCtorField
 
@@ -456,7 +451,6 @@ pack = OPack
 evalTerm :: Term rs ci r -> RegFile rs -> ci -> r
 evalTerm (TLit r)              _    _  = r
 evalTerm (TReg ix)             regs _  = regs ! ix
-evalTerm (TInpField f)         _    ci = f ci
 evalTerm (TInpCtorField ic ix) _    ci = case icMatch ic ci of
   Just rf -> rf ! ix
   Nothing -> error ("evalTerm: TInpCtorField guard violation: " ++ icName ic)
@@ -610,10 +604,10 @@ solveOutput (OFn _) _regs _co = Nothing
 -- | Walk an 'OutFields' HList in lockstep with an observed-fields
 -- tuple, gathering '(Index, value)' pairs for the named 'InCtor'.
 -- Returns 'Nothing' on a malformed edge (a 'TInpCtorField' for a
--- different 'InCtor', or any opaque term such as 'TApp1', 'TApp2', or
--- a v1 'TInpField'). Returns @'Just' []@ for an 'OutFields' that
--- carries no input projection; 'assemble []' for an empty 'ifs' is
--- 'Just RNil', so empty-payload input constructors recover trivially.
+-- different 'InCtor', or any opaque term such as 'TApp1' or
+-- 'TApp2'). Returns @'Just' []@ for an 'OutFields' that carries no
+-- input projection; 'assemble []' for an empty 'ifs' is 'Just RNil',
+-- so empty-payload input constructors recover trivially.
 gatherInpEntries
   :: forall rs ci ifs fs.
      OutFields rs ci fs -> fs -> InCtor ci ifs -> Maybe [ByIndex ifs]
@@ -629,7 +623,6 @@ gatherInpEntries (OFCons t rest) (v, fs)   ic  = do
     stepOne (TInpCtorField ic2 ix)    val  ic1
       | icName ic1 == icName ic2 = Just [ByIndex (unsafeCoerce ix) val]
       | otherwise                = Nothing
-    stepOne (TInpField _)             _val _   = Nothing
     stepOne (TApp1 _ _)               _val _   = Nothing
     stepOne (TApp2 _ _ _)             _val _   = Nothing
 
@@ -643,23 +636,21 @@ data HiddenInputWarning = HiddenInputWarning
   } deriving (Eq, Show)
 
 
--- | For every edge in the transducer, check whether the @update@ or
--- @guard@ touches the input symbol via an opaque path that the @output@
--- cannot recover on replay. Specifically:
+-- | For every edge in the transducer, check whether the @output@ can
+-- mechanically recover the input on replay. Specifically:
 --
---   * If @output@ is @Nothing@ (an ε-edge), and @update@ or @guard@
---     reaches into @ci@ via 'TInpField', the edge is opaque-input.
---     ε-edges are silent on the wire, so the input contribution is
+--   * If @output@ is @Nothing@ (an ε-edge), and @update@ reads the
+--     input symbol, that contribution is silent on the wire and
 --     unrecoverable.
---   * If @output@ is 'OFn', the whole output is opaque. Any @update@
---     or @guard@ reaching into @ci@ is also unrecoverable.
---   * If @output@ is 'OPack' with @TInpField@ leaves, those leaves are
---     structurally noted but cannot be inverted without the v1
---     hand-written inverse (which the user did supply). The check
---     reports them as best-effort warnings rather than hard errors.
+--   * If @output@ is 'OFn', the whole output is opaque ('solveOutput'
+--     returns 'Nothing').
+--   * If @output@ is 'OPack' whose 'OutFields' walk does not visit
+--     every slot of the OPack's named 'InCtor', the structural
+--     inverse cannot reconstruct the input; the warning names the
+--     'InCtor' and the missing slot.
 --
--- The check is intentionally conservative: it flags candidates for the
--- author to inspect, not theorems.
+-- The check is intentionally conservative: it flags candidates for
+-- the author to inspect, not theorems.
 checkHiddenInputs
   :: forall phi rs s ci co.
      (Bounded s, Enum s, Show s)
@@ -691,10 +682,6 @@ checkHiddenInputs t =
                  <> (if length missing == 1 then " " else "s ")
                  <> "{" <> showMissing missing <> "} unrecovered"
                ]
-        | outFieldsHaveInpField fields ->
-            [ "edge #" <> show n
-              <> ": OPack field uses TInpField; v1 inverse is hand-written"
-            ]
         | otherwise -> []
     showMissing :: [String] -> String
     showMissing []     = ""
@@ -702,42 +689,23 @@ checkHiddenInputs t =
     showMissing (x:xs) = "\"" <> x <> "\", " <> showMissing xs
 
 
--- | Does the 'Update' read the input symbol via 'TInpField'?
+-- | Does the 'Update' read the input symbol via 'TInpCtorField'?
 updateReadsInput :: Update rs ci -> Bool
 updateReadsInput UKeep          = False
 updateReadsInput (USet _ t)     = termReadsInput t
 updateReadsInput (UCombine a b) = updateReadsInput a || updateReadsInput b
 
 
--- | Does the 'Term' read the input symbol — via 'TInpField' (v1) or
--- 'TInpCtorField' (v2)?
+-- | Does the 'Term' read the input symbol via 'TInpCtorField'?
 termReadsInput :: Term rs ci r -> Bool
 termReadsInput (TLit _)              = False
 termReadsInput (TReg _)              = False
-termReadsInput (TInpField _)         = True
 termReadsInput (TInpCtorField _ _)   = True
 termReadsInput (TApp1 _ t)           = termReadsInput t
 termReadsInput (TApp2 _ a b)         = termReadsInput a || termReadsInput b
 
 
--- | Do the 'OutFields' contain a v1 'TInpField' anywhere? Precisely
--- the v1 surface; structural 'TInpCtorField' reads are tracked
--- separately by 'detectMissingInCtorFields'.
-outFieldsHaveInpField :: OutFields rs ci fs -> Bool
-outFieldsHaveInpField OFNil           = False
-outFieldsHaveInpField (OFCons t rest) =
-  termHasInpField t || outFieldsHaveInpField rest
-  where
-    termHasInpField :: Term rs ci r -> Bool
-    termHasInpField (TLit _)              = False
-    termHasInpField (TReg _)              = False
-    termHasInpField (TInpField _)         = True
-    termHasInpField (TInpCtorField _ _)   = False
-    termHasInpField (TApp1 _ t')          = termHasInpField t'
-    termHasInpField (TApp2 _ a b)         = termHasInpField a || termHasInpField b
-
-
--- | Do the 'OutFields' contain a v2 'TInpCtorField' anywhere?
+-- | Do the 'OutFields' contain a 'TInpCtorField' read anywhere?
 outFieldsHaveInpCtorField :: OutFields rs ci fs -> Bool
 outFieldsHaveInpCtorField OFNil           = False
 outFieldsHaveInpCtorField (OFCons t rest) =
@@ -746,7 +714,6 @@ outFieldsHaveInpCtorField (OFCons t rest) =
     termHasInpCtorField :: Term rs ci r -> Bool
     termHasInpCtorField (TLit _)              = False
     termHasInpCtorField (TReg _)              = False
-    termHasInpCtorField (TInpField _)         = False
     termHasInpCtorField (TInpCtorField _ _)   = True
     termHasInpCtorField (TApp1 _ t')          = termHasInpCtorField t'
     termHasInpCtorField (TApp2 _ a b)         = termHasInpCtorField a || termHasInpCtorField b

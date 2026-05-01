@@ -51,14 +51,12 @@ spec = do
   describe "evalTerm" $ do
     it "evaluates TLit" $
       evalTerm (TLit (42 :: Int)) RNil () `shouldBe` 42
-    it "evaluates TInpField" $
-      evalTerm (TInpField id :: Term '[] Int Int) RNil 7 `shouldBe` 7
     it "evaluates TApp1" $
-      evalTerm (TApp1 (+1) (TInpField id) :: Term '[] Int Int) RNil 5 `shouldBe` 6
+      evalTerm (TApp1 (+1) (TLit (5 :: Int)) :: Term '[] () Int) RNil () `shouldBe` 6
     it "evaluates TApp2" $
       evalTerm
-        (TApp2 (+) (TInpField id) (TLit 10) :: Term '[] Int Int)
-        RNil 5 `shouldBe` 15
+        (TApp2 (+) (TLit (5 :: Int)) (TLit 10) :: Term '[] () Int)
+        RNil () `shouldBe` 15
 
   describe "TInpCtorField (structural input projection)" $ do
     it "evaluates field #a on the matching constructor" $
@@ -119,37 +117,8 @@ spec = do
         Just (s, _) -> s `shouldBe` False
         Nothing     -> expectationFailure "expected Just (initial, _)"
 
-  describe "solveOutput on a tiny OPack (v1 TInpField subset)" $ do
-    let -- A tiny output sum.
-        wireFooCtor :: WireCtor TinyOut (Int, (Int, ()))
-        wireFooCtor = WireCtor
-          { wcName  = "Foo"
-          , wcMatch = \(Foo a b) -> Just (a, (b, ()))
-          , wcBuild = \(a, (b, ())) -> Foo a b
-          }
-        -- A degenerate InCtor for the Int-input fixture.
-        inCtorIntId :: InCtor Int '[]
-        inCtorIntId = InCtor
-          { icName  = "IntId"
-          , icMatch = \_ -> Just RNil
-          , icBuild = \RNil -> 0  -- forward direction never used here
-          }
-        -- forward: Foo (ci+1) (ci*2). Uses the v1 TInpField surface; the
-        -- structural walk bails so solveOutput returns Nothing for this
-        -- output. After EP-1 M7 retires TInpField, this fixture is
-        -- removed entirely.
-        outFoo :: OutTerm '[] Int TinyOut
-        outFoo = OPack
-          inCtorIntId
-          wireFooCtor
-          (OFCons (TApp1 (+1) (TInpField id))
-                  (OFCons (TApp1 (*2) (TInpField id)) OFNil))
-
-    it "evalOut produces Foo (ci+1) (ci*2)" $
-      evalOut outFoo RNil 5 `shouldBe` Foo 6 10
-    it "solveOutput on a TInpField-only OPack returns Nothing (structural walk bails)" $
-      solveOutput outFoo RNil (Foo 6 10) `shouldBe` Nothing
-    it "solveOutput on OFn returns Nothing (opaque)" $ do
+  describe "solveOutput on OFn (opaque)" $ do
+    it "solveOutput on OFn returns Nothing" $ do
       let opaqueOut :: OutTerm '[] Int TinyOut
           opaqueOut = OFn (\_ ci -> Foo ci ci)
       solveOutput opaqueOut RNil (Foo 7 7) `shouldBe` Nothing

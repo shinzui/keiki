@@ -377,7 +377,7 @@ for an at-a-glance view.
       derive `solveOutput` (M4)
 - [x] EP-1: Migrate `Keiki.Examples.UserRegistration` (V5) (M5)
 - [x] EP-1: Migrate `Keiki.Examples.UserRegistrationV0` (V0) (M6)
-- [ ] EP-1: Remove `TInpField` constructor and `inp` helper from public API (M7)
+- [x] EP-1: Remove `TInpField` constructor and `inp` helper from public API (M7)
 - [ ] EP-1: Update DSL design note; capture verdict (M8)
 - [ ] EP-2: Verify prerequisites — record EP-1 status; build passes (M0)
 - [ ] EP-2: Survey solvers; pick one; decide translation subset; write
