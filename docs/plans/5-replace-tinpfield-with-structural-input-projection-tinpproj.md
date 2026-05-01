@@ -170,12 +170,23 @@ actual current state of the work.
       spec strengthened with a fourth assertion checking the warning
       text mentions "ConfirmAccount" and "confirmCode". `cabal test`
       reports 35 examples, 0 failures.)*
-- [ ] **Milestone 7 — Remove `TInpField` and `inp` from the public
+- [x] **Milestone 7 — Remove `TInpField` and `inp` from the public
       API.** Delete the constructor from `Term`. Delete the `inp`
       helper. Delete the `termReadsInput` / `outFieldsHaveInpField`
       helpers (or rename them to track only the new constructor).
       Update `Keiki.Core`'s exports. `cabal build` and `cabal test`
       pass with no warnings about unused or unreachable code.
+      *(2026-05-01 — `TInpField` constructor and `inp` helper deleted;
+      `evalTerm`, `termReadsInput`, `gatherInpEntries.stepOne` no
+      longer carry their TInpField clauses; `outFieldsHaveInpField`
+      removed; `checkHiddenInputs`'s OPack clause loses its
+      "OPack field uses TInpField" fallback (no longer reachable);
+      module exports drop `inp` and `outFieldsHaveInpField`. Module
+      haddock and a single comment in V0's module updated. `cabal
+      build` is green; `cabal test` reports 32 examples, 0 failures
+      (35 - 1 evalTerm-TInpField - 2 v1-OPack-subset tests). The only
+      remaining TInpField mention is a one-line historical note in
+      `Keiki.Core`'s haddock acknowledging the retirement.)*
 - [ ] **Milestone 8 — Update DSL design note; capture verdict.** Edit
       `docs/research/dsl-shape-for-symbolic-register.md`: update
       "Ergonomic verdict", "v1-only surfaces (flagged for v2
