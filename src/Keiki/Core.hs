@@ -57,6 +57,7 @@ module Keiki.Core
   , SymTransducer (..)
     -- * Helpers (the user-facing DSL surface)
   , matchCmd
+  , matchInCtor
   , mkOut
   , proj
   , inpCtor
@@ -88,6 +89,7 @@ module Keiki.Core
 import Data.Kind (Type)
 import Data.List (nub, (\\))
 import Data.Proxy (Proxy (..))
+import Data.Typeable (Typeable)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Unsafe.Coerce (unsafeCoerce)
@@ -343,8 +345,15 @@ data HsPred (rs :: [Slot]) (ci :: Type) where
   PAnd    :: HsPred rs ci -> HsPred rs ci -> HsPred rs ci
   POr     :: HsPred rs ci -> HsPred rs ci -> HsPred rs ci
   PNot    :: HsPred rs ci -> HsPred rs ci
-  PEq     :: Eq r
+  PEq     :: (Eq r, Typeable r)
           => Term rs ci r -> Term rs ci r -> HsPred rs ci
+  -- | Structural input-constructor guard: @True@ iff the input symbol
+  -- is the constructor named by the carried 'InCtor'. Added in EP-2 of
+  -- MasterPlan 2 so the SBV-backed 'BoolAlg' instance can recognize
+  -- constructor mutual exclusion symbolically. The opaque-function
+  -- alternative ('PMatchC') stays for back-compat. See
+  -- @docs/research/sbv-boolalg-design.md@.
+  PInCtor :: InCtor ci ifs -> HsPred rs ci
   -- | v1 escape hatch: opaque predicate over the input symbol.
   PMatchC :: (ci -> Bool) -> HsPred rs ci
 
@@ -405,6 +414,18 @@ matchCmd :: (ci -> Bool) -> HsPred rs ci
 matchCmd = PMatchC
 
 
+-- | Structural input-constructor guard: @True@ iff the input symbol
+-- is the constructor named by the supplied 'InCtor'. Added in EP-2 of
+-- MasterPlan 2 as a structural alternative to 'matchCmd'/'PMatchC' so
+-- the SBV-backed 'BoolAlg' instance can decide constructor-mutual-
+-- exclusion symbolically. The semantics is
+-- @evalPred (matchInCtor ic) regs ci == isJust (icMatch ic ci)@; the
+-- v1 'matchCmd' escape hatch stays available for users who want to
+-- opt out of structural recognition.
+matchInCtor :: InCtor ci ifs -> HsPred rs ci
+matchInCtor = PInCtor
+
+
 -- | v1 escape-hatch output. v2 retires in favour of structural 'OPack'.
 mkOut :: (RegFile rs -> ci -> co) -> OutTerm rs ci co
 mkOut = OFn
@@ -427,7 +448,7 @@ lit = TLit
 
 
 -- | Equality predicate sugar.
-(.==) :: Eq r => Term rs ci r -> Term rs ci r -> HsPred rs ci
+(.==) :: (Eq r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
 (.==) = PEq
 infix 4 .==
 
@@ -482,6 +503,9 @@ evalPred (PAnd p q)    r    c  = evalPred p r c && evalPred q r c
 evalPred (POr p q)     r    c  = evalPred p r c || evalPred q r c
 evalPred (PNot p)      r    c  = not (evalPred p r c)
 evalPred (PEq a b)     r    c  = evalTerm a r c == evalTerm b r c
+evalPred (PInCtor ic)  _    c  = case icMatch ic c of
+                                   Just _  -> True
+                                   Nothing -> False
 evalPred (PMatchC f)   _    c  = f c
 
 

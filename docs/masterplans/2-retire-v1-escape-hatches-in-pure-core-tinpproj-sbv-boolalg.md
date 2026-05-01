@@ -383,7 +383,7 @@ for an at-a-glance view.
 - [x] EP-2: Survey solvers; pick one; decide translation subset; write
       design note (M1)
 - [x] EP-2: Add solver dependency to `keiki.cabal` (M2)
-- [ ] EP-2: Implement `Term`-to-symbolic translation (M3)
+- [x] EP-2: Implement `Term`-to-symbolic translation (M3)
 - [ ] EP-2: Implement new `BoolAlg` instance (`top`, `bot`, conj/disj/neg) (M4)
 - [ ] EP-2: Implement symbolic `models`, `sat`, `isBot` (M5)
 - [ ] EP-2: Implement symbolic `isSingleValued` (M6)

@@ -108,16 +108,23 @@ reflect the actual current state of the work.
       (32 examples, 0 failures). The runtime z3 requirement is
       documented as a comment block at the top of `keiki.cabal`. z3
       4.15.4 installed locally via `brew install z3`.
-- [ ] **Milestone 3 — Implement `Term`-to-SBV translation.** Define a
-      `Symbolic`-style typeclass for slot types, command types, and
-      event types (the design note pins names and signatures).
-      Implement instances for `Bool`, `Int`, `Integer`, `Text`,
-      `UTCTime` (encoded as `SInteger` Unix timestamp), and the User
-      Registration `Email`/`ConfirmationCode` aliases. Implement the
-      structural `Term`-walk that builds an SBV expression from a
-      `Term`. Add unit tests for each translation case in
-      `test/Keiki/Symbolic/TranslationSpec.hs` (or wherever the M1
-      design milestone places the symbolic module).
+- [x] **Milestone 3 — Implement `Term`-to-SBV translation.** Created
+      `src/Keiki/Symbolic.hs` with the `Sym` typeclass (instances for
+      `Bool`, `Int`, `Integer`, `Text`, `UTCTime`); `discoverSym`
+      runtime dispatch from `Typeable r` to `Sym r` evidence over the
+      curated registry; `SymEnv` carrying a shared symbolic input
+      constructor tag; `translateTermSym` walking the structural
+      `Term` (`TLit`/`TReg`/`TInpCtorField` structurally; `TApp1`/
+      `TApp2` to fresh free vars); `translatePred` walking `HsPred`
+      (boolean skeleton structural; `PEq` via `discoverSym` dispatch;
+      `PInCtor` to `seInputCtor .== icName ic`; `PMatchC` to fresh
+      `SBool`). Cross-cut into `Keiki.Core`: added `PInCtor`,
+      `matchInCtor`, `evalPred` case for `PInCtor`, and `Typeable r`
+      constraint on `PEq` / `(.==)`. New spec
+      `test/Keiki/SymbolicSpec.hs` exercises every translation rule
+      against z3; cabal test reports 48 examples, 0 failures (16 new
+      symbolic-translation cases including the load-bearing
+      `PInCtor TinyFoo AND PInCtor TinyBar` constructor-mutex test).
 - [ ] **Milestone 4 — Implement new `BoolAlg` instance.** Define the
       symbolic predicate type (per M1's choice) and its `BoolAlg`
       methods `top`, `bot`, `conj`, `disj`, `neg`. These are pure
