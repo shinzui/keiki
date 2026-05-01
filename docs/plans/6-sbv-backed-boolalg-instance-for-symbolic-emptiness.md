@@ -87,16 +87,18 @@ reflect the actual current state of the work.
       explicit-`InCtor` `OPack`, and structural `solveOutput` are all
       live in `src/Keiki/Core.hs`). M1 therefore defaults to "build
       SBV translation on EP-1's structural `Term`."
-- [ ] **Milestone 1 — Survey + design note.** Survey solver options
-      (SBV, z3-haskell, hand-rolled enumeration). Decide on a solver
-      and on how to handle solver dependencies (cabal flag vs.
-      hard requirement). Decide on the translatable subset of
-      `Term`/`HsPred` and the fallback for unsupported terms.
-      Decide on the BoolAlg-instance shape: a new instance for
-      `HsPred`, a wrapper newtype, or a separate symbolic predicate
-      type. Write a focused design note at
-      `docs/research/sbv-boolalg-design.md` (~300 lines) covering all
-      of the above and the test-and-acceptance plan.
+- [x] **Milestone 1 — Survey + design note.** Wrote
+      `docs/research/sbv-boolalg-design.md` (710 lines). Pinned: SBV
+      as the solver, hard cabal dep, new `Keiki.Symbolic` module,
+      `newtype SymPred rs ci = SymPred (HsPred rs ci)` wrapper,
+      `unsafePerformIO`+NOINLINE for purity, `Sym` typeclass with
+      instances for Bool/Int/Integer/Text/UTCTime, structural Term/
+      HsPred translation rules, `PInCtor` cross-cut into `Keiki.Core`
+      (with `matchInCtor` helper) to make `isSingleValuedSym userReg
+      == True` achievable, `withSymPred` adapter to lift the example
+      transducer's guard carrier. Witness extraction split into
+      typeclass-`sat` (placeholder witness, satisfiability-only) and
+      `symSatExt` (full extraction via `WitnessExtract` instances).
 - [ ] **Milestone 2 — Add solver dependency to cabal.** Add the chosen
       solver library (`sbv` is the default) to `keiki.cabal`'s
       `build-depends`. If the design note picked a cabal flag for
@@ -171,6 +173,69 @@ Record every decision made while working on the plan.
   Rationale: determines M1's translation-target choice — EP-2 builds
   the SBV translation directly on the structural `Term`, no separate
   symbolic-Term variant needed.
+  Date: 2026-05-01
+
+- Decision: Solver is **SBV** (`sbv ^>=11.7`); hard cabal dep, not
+  flag-gated. Default backend is z3 (runtime requirement on
+  `z3` in `PATH`). Z3-haskell rejected (more plumbing for no gain
+  over SBV's own pipeline); hand-rolled enumeration rejected
+  (incomplete on `Text`/`UTCTime`). The optional-flag path was
+  rejected because the synthesis-§7 single-valuedness invariant is
+  load-bearing; making it optional creates an unexercised default
+  build.
+  Rationale: SBV is the only mature library that maps a Haskell
+  predicate to z3 with the needed shape (`SBool`/`SInteger`/
+  `SString`); cabal-flag complexity buys nothing the synthesis can
+  use.
+  Date: 2026-05-01
+
+- Decision: New module **`Keiki.Symbolic`** carries the SBV-backed
+  surface (typeclass `Sym`, `translateTerm`, `translatePred`,
+  `SymPred` wrapper, `BoolAlg` instance, `isSingleValuedSym`,
+  `withSymPred`). It re-exports `Keiki.Core`. The v1
+  `BoolAlg HsPred` instance stays unchanged in `Keiki.Core` for
+  back-compat.
+  Rationale: keeps the v1 pure surface free of SBV imports and gives
+  the v2 surface a clean home. Same cabal package, so no transitive
+  dep split.
+  Date: 2026-05-01
+
+- Decision: Purity model is **`unsafePerformIO`+`NOINLINE`**. SBV's
+  `sat`/`isVacuous` are deterministic given the same predicate, so
+  wrapping them in a pure function is semantically defensible.
+  `NOINLINE` prevents GHC from reordering or inlining the IO action.
+  Alternatives — `MonadIO m`-parameterized `BoolAlg` and a separate
+  `BoolAlgIO` class — were rejected as out of proportion to the
+  payoff.
+  Rationale: keeps `delta`/`omega`/`step`/`reconstitute`/`models`
+  callers untouched.
+  Date: 2026-05-01
+
+- Decision (cross-cut): Add **`PInCtor :: InCtor ci ifs -> HsPred rs
+  ci`** to `Keiki.Core`'s `HsPred`, and a `matchInCtor` helper. The
+  v1 `PMatchC` escape hatch stays for back-compat. The User
+  Registration `isStart`/`isConfirm`/`isResend`/`isGdpr`/`isContinue`
+  helpers migrate from `matchCmd` to `matchInCtor` so the symbolic
+  translation recognizes constructor mutual exclusion. This is an
+  acknowledged scope cross-cut into EP-1's territory; the change is
+  additive (no existing surface goes away).
+  Rationale: the only path to `isSingleValuedSym userReg == True`
+  without retiring `PMatchC` outright (which is out of scope for
+  MasterPlan 2). The two alternatives — refusing to translate
+  `PMatchC` (insufficient: query stays `False`) and pattern-matching
+  on `PMatchC`'s opaque function (impossible) — were rejected.
+  Date: 2026-05-01
+
+- Decision: `BoolAlg`'s typeclass-`sat` returns
+  `Just (unsafeWitness, unsafeWitness)` on satisfiable predicates
+  (placeholder witness; the `Just`/`Nothing` distinction reports
+  satisfiability). Full witness extraction is the job of a separate
+  `symSatExt` function backed by a `WitnessExtract rs ci` typeclass
+  with hand-written instances per `(rs, ci)` pair. Tests that need a
+  real witness use `symSatExt`.
+  Rationale: keeps the `BoolAlg` typeclass shape unchanged, avoids a
+  per-instance constraint plumbing problem, and matches v1's
+  convention that `sat` is a coarse-grained satisfiability reporter.
   Date: 2026-05-01
 
 

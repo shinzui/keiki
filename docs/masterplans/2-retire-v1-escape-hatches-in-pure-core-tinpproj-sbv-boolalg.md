@@ -380,7 +380,7 @@ for an at-a-glance view.
 - [x] EP-1: Remove `TInpField` constructor and `inp` helper from public API (M7)
 - [x] EP-1: Update DSL design note; capture verdict (M8)
 - [x] EP-2: Verify prerequisites — record EP-1 status; build passes (M0)
-- [ ] EP-2: Survey solvers; pick one; decide translation subset; write
+- [x] EP-2: Survey solvers; pick one; decide translation subset; write
       design note (M1)
 - [ ] EP-2: Add solver dependency to `keiki.cabal` (M2)
 - [ ] EP-2: Implement `Term`-to-symbolic translation (M3)
@@ -395,6 +395,23 @@ for an at-a-glance view.
 
 Document cross-plan insights, dependency changes, scope adjustments, or
 unexpected interactions between child plans. Provide concise evidence.
+
+- *2026-05-01 (during EP-2 M1).* The SBV translation needs to
+  recognize that `isConfirm AND isResend` is unsat at the constructor
+  level. The User Registration helpers in
+  `src/Keiki/Examples/UserRegistration.hs` build those predicates
+  from `matchCmd \(StartRegistration{}) -> True; _ -> False`-style
+  patterns — i.e. as `PMatchC` over an opaque `ci -> Bool`. SBV
+  cannot inspect the closure. EP-2's design note pins the resolution:
+  add a `PInCtor :: InCtor ci ifs -> HsPred rs ci` constructor (and
+  a `matchInCtor` helper) to `Keiki.Core` and migrate the User
+  Registration helpers to use it. This is a documented scope
+  cross-cut into EP-1's territory; the change is additive (the v1
+  `PMatchC` constructor stays for back-compat). EP-2's M5b sub-step
+  performs the migration. The alternative — pattern-recognizing
+  `PMatchC`'s opaque function — was rejected as impossible; refusing
+  to translate `PMatchC` would leave `isSingleValuedSym userReg ==
+  False`, defeating the milestone.
 
 - *2026-05-01 (during EP-1 M6).* The original M1 design pinned
   `OPack :: WireCtor co fields -> OutFields rs ci fields -> OutTerm rs
