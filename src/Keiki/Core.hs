@@ -414,24 +414,51 @@ omega t s regs ci =
 
 -- | One full step of the transducer combining 'delta' and 'omega'.
 -- Returns 'Nothing' if no edge from the current vertex has a satisfied
--- guard.
+-- guard. The inner 'Maybe co' is 'Nothing' for an ε-edge.
 step
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
   -> (s, RegFile rs)
   -> ci
   -> Maybe (s, RegFile rs, Maybe co)
-step = error "TODO: M3"
+step t (s, regs) ci = case delta t s regs ci of
+  Nothing          -> Nothing
+  Just (s', regs') -> Just (s', regs', omega t s regs ci)
 
 
--- | Reconstitute the @(state, registers)@ pair from a log of outputs by
--- inverting each output via 'solveOutput'.
+-- | Apply one observed output to the state by walking outgoing edges,
+-- inverting each edge's @output@ via 'solveOutput', verifying the
+-- guard on the recovered input, and applying the edge's @update@.
+-- Internal helper for 'reconstitute'.
+applyEvent
+  :: BoolAlg phi (RegFile rs, ci)
+  => SymTransducer phi rs s ci co
+  -> s -> RegFile rs -> co -> Maybe (s, RegFile rs)
+applyEvent t s regs co =
+  case [ (target e, runUpdate (update e) regs ci)
+       | e <- edgesOut t s
+       , Just o  <- [output e]
+       , Just ci <- [solveOutput o regs co]
+       , models (guard e) (regs, ci)
+       ] of
+    [single] -> Just single
+    _        -> Nothing
+
+
+-- | Reconstitute @(state, registers)@ from a log of outputs by
+-- replaying each event through 'applyEvent', which inverts the
+-- producing edge's @output@ via 'solveOutput'.
 reconstitute
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
   -> [co]
   -> Maybe (s, RegFile rs)
-reconstitute = error "TODO: M3"
+reconstitute t = go (initial t, initialRegs t)
+  where
+    go acc []         = Just acc
+    go (s, regs) (co : rest) = do
+      next <- applyEvent t s regs co
+      go next rest
 
 
 -- * Build-time analyses ----------------------------------------------------

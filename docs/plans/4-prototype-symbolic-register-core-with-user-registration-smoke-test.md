@@ -106,11 +106,16 @@ This section must always reflect the actual current state of the work.
       added as a `keiki-test` cabal stanza. The synthetic 2-vertex
       transducer over `Bool` input plus targeted `evalTerm`/`evalPred`
       micro-tests run as 11 examples, 0 failures. (2026-05-01)
-- [ ] **Milestone 3 — `step` and `reconstitute` skeletons.** Implement `step` per the
-      boundary note's signature; implement `reconstitute` as a fold of `solveOutput`
-      results. `solveOutput` itself can be a stub returning `Nothing` at this
-      milestone — the goal is to have the full pure-layer entry-point surface
-      compiled and exercised by trivial tests.
+- [x] **Milestone 3 — `step` and `reconstitute` skeletons.** Implemented
+      `step` (combines `delta` and `omega`; outer `Maybe` for "no edge
+      fired", inner `Maybe co` for "fired but ε"). Implemented
+      `reconstitute` as a fold over an internal `applyEvent` helper — the
+      direction-C §5 `applySym` pattern: walk outgoing edges, invert each
+      candidate edge's output via `solveOutput`, keep edges whose
+      recovered input also satisfies the guard. `solveOutput` is still
+      the M4 stub, so `reconstitute` only succeeds on the empty log
+      until M4 lands; the empty-log case is covered by a test. 14
+      examples, 0 failures. (2026-05-01)
 - [ ] **Milestone 4 — `solveOutput` for `OutTerm`.** Implement `solveOutput` against
       the `OutTerm` AST chosen by the DSL note. This is the hard milestone. Add a
       micro-test: a single edge whose output term is `Pack OutCtor [Inp .field]`,

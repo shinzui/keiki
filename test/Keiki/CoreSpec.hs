@@ -59,3 +59,25 @@ spec = do
       fmap fst (delta synthetic False RNil False) `shouldBe` Nothing
     it "delta returns Nothing in the True (sink) vertex" $
       fmap fst (delta synthetic True RNil True) `shouldBe` Nothing
+
+  describe "step" $ do
+    it "produces (s', _, Just co) on a matching output edge" $ do
+      case step synthetic (False, RNil) True of
+        Just (s', _, Just co) -> (s', co) `shouldBe` (True, "true")
+        other                 -> expectationFailure (show3 other)
+    it "returns Nothing in the sink vertex" $
+      case step synthetic (True, RNil) True of
+        Nothing -> pure ()
+        other   -> expectationFailure (show3 other)
+
+  describe "reconstitute" $ do
+    it "returns the initial state for the empty log" $
+      case reconstitute synthetic ([] :: [String]) of
+        Just (s, _) -> s `shouldBe` False
+        Nothing     -> expectationFailure "expected Just (initial, _)"
+  where
+    -- 'show' over `Maybe (s, RegFile rs, Maybe co)` is awkward because
+    -- RegFile has no Show. Use a thin coercion to a printable summary.
+    show3 :: Show s => Show co => Maybe (s, x, Maybe co) -> String
+    show3 Nothing                = "Nothing"
+    show3 (Just (s, _, mco))     = "Just (" ++ show s ++ ", _, " ++ show mco ++ ")"
