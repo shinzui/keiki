@@ -29,6 +29,7 @@ library
     import:             warnings, shared-extensions
     exposed-modules:    Keiki.Core
                         Keiki.Examples.UserRegistration
+                        Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
     build-depends:      base ^>= 4.20,
                         text ^>= 2.1,
@@ -41,6 +42,7 @@ test-suite keiki-test
     main-is:            Spec.hs
     other-modules:      Keiki.CoreSpec
                         Keiki.Examples.UserRegistrationSpec
+                        Keiki.Examples.UserRegistrationV0Spec
     build-depends:      base ^>= 4.20,
                         keiki,
                         hspec ^>= 2.11,

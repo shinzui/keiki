@@ -154,11 +154,20 @@ This section must always reflect the actual current state of the work.
       RegistrationStarted) and step 5 (Confirmed→Deleted on
       AccountDeleted). 21 examples, 0 failures. **The synthesis holds:
       `solveOutput` walks the canonical log end-to-end.** (2026-05-01)
-- [ ] **Milestone 7 — Hidden-input check fires (unfixed schema).** Construct the
-      same event log without the `confirmCode` field on `AccountConfirmed`. Either:
-      (a) `reconstitute` returns `Nothing` with a `HiddenInput` diagnostic, or
-      (b) the `checkHiddenInputs` analysis returns a non-empty list pinpointing the
-      bad edge. Test that this happens.
+- [x] **Milestone 7 — Hidden-input check fires (unfixed schema).**
+      Added `Keiki.Examples.UserRegistrationV0` mirroring V5 except:
+      `AccountConfirmedDataV0` drops the `confirmCode` field, the
+      Confirm edge's `OutFields` no longer carries it, and the
+      hand-written inverse on that edge honestly returns `Nothing` (no
+      consistent ci can be reconstructed from a wire that lacks
+      `confirmCode`). On replay this halts: `reconstitute userRegV0
+      canonicalLogV0` returns `Nothing`. `checkHiddenInputs` produces
+      warnings (v1's check is conservative — flags every OPack with
+      TInpField in its OutFields plus every OFn — and the
+      `RequiresConfirmation` source appears in the warning list). 24
+      examples, 0 failures. **The check has bite at the v1 conservative
+      level; v2 will narrow it via structural input projection.**
+      (2026-05-01)
 - [ ] **Milestone 8 — Ergonomic verdict.** Read `Keiki.Examples.UserRegistration`
       side-by-side with synthesis §4's pseudosyntax. Write a one-paragraph verdict in
       the Outcomes & Retrospective section: tolerable, painful but workable, or
