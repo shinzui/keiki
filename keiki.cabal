@@ -25,6 +25,13 @@ common shared-extensions
                         OverloadedRecordDot
                         AllowAmbiguousTypes
 
+-- The library's symbolic analyses (sat, isBot, isSingleValuedSym) are
+-- backed by SBV and require the z3 SMT solver to be available in PATH
+-- at runtime. Install via: brew install z3 (macOS) or apt install z3
+-- (Debian). The library will fail loudly if z3 is missing when those
+-- analyses run; pure evaluation (delta/omega/step/reconstitute) does
+-- not depend on z3.
+
 library
     import:             warnings, shared-extensions
     exposed-modules:    Keiki.Core
@@ -32,6 +39,7 @@ library
                         Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
     build-depends:      base ^>= 4.20,
+                        sbv >= 11.7 && < 15,
                         text ^>= 2.1,
                         time ^>= 1.12
 
@@ -46,4 +54,6 @@ test-suite keiki-test
     build-depends:      base ^>= 4.20,
                         keiki,
                         hspec ^>= 2.11,
+                        sbv >= 11.7 && < 15,
+                        text ^>= 2.1,
                         time ^>= 1.12

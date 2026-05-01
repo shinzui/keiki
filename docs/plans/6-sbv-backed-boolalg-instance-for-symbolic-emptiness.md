@@ -99,13 +99,15 @@ reflect the actual current state of the work.
       transducer's guard carrier. Witness extraction split into
       typeclass-`sat` (placeholder witness, satisfiability-only) and
       `symSatExt` (full extraction via `WitnessExtract` instances).
-- [ ] **Milestone 2 — Add solver dependency to cabal.** Add the chosen
-      solver library (`sbv` is the default) to `keiki.cabal`'s
-      `build-depends`. If the design note picked a cabal flag for
-      solver-optional builds, wire the flag. Verify `cabal build`
-      succeeds with the new dep. Document the runtime requirement
-      (z3 in `PATH`, etc.) in `keiki.cabal`'s synopsis comment and in
-      the design note.
+- [x] **Milestone 2 — Add solver dependency to cabal.** Added
+      `sbv >= 11.7 && < 15` to both the `library` and the
+      `keiki-test` `build-depends`. Cabal resolved to SBV 14.0; the
+      build pulled libBF, haskell-src-exts, haskell-src-meta,
+      th-orphans, async, uniplate, and a handful of smaller
+      transitive deps. `cabal build` and `cabal test` are green
+      (32 examples, 0 failures). The runtime z3 requirement is
+      documented as a comment block at the top of `keiki.cabal`. z3
+      4.15.4 installed locally via `brew install z3`.
 - [ ] **Milestone 3 — Implement `Term`-to-SBV translation.** Define a
       `Symbolic`-style typeclass for slot types, command types, and
       event types (the design note pins names and signatures).
