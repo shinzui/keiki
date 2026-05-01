@@ -141,7 +141,7 @@ commit incrementally.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Sharpen DSL shape for symbolic-register transducer | docs/plans/1-sharpen-dsl-shape-for-symbolic-register-transducer.md | None | None | Complete |
-| 2 | Sharpen schema evolution for events and registers | docs/plans/2-sharpen-schema-evolution-for-events-and-registers.md | None | None | Not Started |
+| 2 | Sharpen schema evolution for events and registers | docs/plans/2-sharpen-schema-evolution-for-events-and-registers.md | None | None | Complete |
 | 3 | Sharpen effects boundary between pure transducer and runtime | docs/plans/3-sharpen-effects-boundary-between-pure-transducer-and-runtime.md | None | None | Not Started |
 | 4 | Prototype symbolic-register core with User Registration smoke test | docs/plans/4-prototype-symbolic-register-core-with-user-registration-smoke-test.md | EP-1, EP-2, EP-3 | None | Not Started |
 
@@ -334,7 +334,7 @@ This section aggregates milestone-level progress across all child plans for an
 at-a-glance view.
 
 - [x] EP-1: Author DSL design note at `docs/research/dsl-shape-for-symbolic-register.md` (2026-05-01)
-- [ ] EP-2: Author schema-evolution design note at `docs/research/schema-evolution.md`
+- [x] EP-2: Author schema-evolution design note at `docs/research/schema-evolution.md` (2026-05-01)
 - [ ] EP-3: Author effects-boundary design note at `docs/research/effects-boundary.md`
 - [ ] EP-4: Verify prerequisites (Milestone 0)
 - [ ] EP-4: Project scaffolding and types compile (Milestone 1)
@@ -376,6 +376,34 @@ interactions between child plans. Provide concise evidence.
 - **Ergonomic verdict:** *painful but workable*. Pain concentrates in three v1
   escape hatches (`TInpField`, `OFn`, `PMatchC`); v2 retirements are listed in
   the DSL note's checklist. Verdict is non-blocking for the master-plan gate.
+
+### From EP-2 (schema evolution; 2026-05-01)
+
+- **Upcaster shape is 1-to-many.** The chosen v1 model is an explicit upcaster
+  at the event-store boundary with signature
+  `WireEvent -> Either Error [CurrentEvent]`. The list return is required to
+  handle constructor-split refactorings (Scenario C in the schema-evolution
+  note). This affects EP-3's effects boundary: the event-store-read port must
+  allow a single wire-read to expand into multiple events transparently to the
+  runtime loop.
+- **Hidden-input check role broadens.** The same `checkHiddenInputs` analysis
+  also fires on schema refactorings that drop a field while leaving a writer
+  for it. EP-1's check belongs to the DSL surface as designed; EP-4's tests
+  for the check should also cover an evolution case in addition to the
+  synthesis-§4 instance.
+- **Snapshot shape-hash is cheap and forward-compatible.** EP-4 should compute
+  and store a register-file shape hash on every snapshot even though v1 never
+  compares it. One line of code; future-proofs the on-disk format so v2
+  evolution work does not require a snapshot-format migration.
+- **Pure semantic change is permanently outside the library's reach.** Same
+  shape, different meaning is undetectable by any formalism mechanism. The
+  application must adopt a domain-level versioning convention. Worth recording
+  here so future contributors do not expect keiki to "handle versioning"
+  universally.
+- **`crem` and `tan-event-source` not in `mori` registry.** Schema-evolution
+  survey of those two relied on published documentation; `message-db` and
+  `tan/message-db-hs` were inspected locally. All four delegate evolution to
+  the application — no library does it natively.
 
 
 ## Decision Log
