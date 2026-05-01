@@ -280,27 +280,40 @@ aggregate uses it for things like
 `regs ! #email` (read register).
 
     data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
-      TLit      :: r -> Term rs ci r
-      TReg      :: Index rs r -> Term rs ci r
-      TInpField :: (ci -> r) -> Term rs ci r       -- v1 escape hatch
-      TApp1     :: (a -> r)
-                -> Term rs ci a
-                -> Term rs ci r
-      TApp2     :: (a -> b -> r)
-                -> Term rs ci a
-                -> Term rs ci b
-                -> Term rs ci r
+      TLit          :: r -> Term rs ci r
+      TReg          :: Index rs r -> Term rs ci r
+      TInpCtorField :: InCtor ci ifs -> Index ifs r -> Term rs ci r  -- v2 (EP-1)
+      TApp1         :: (a -> r)
+                    -> Term rs ci a
+                    -> Term rs ci r
+      TApp2         :: (a -> b -> r)
+                    -> Term rs ci a
+                    -> Term rs ci b
+                    -> Term rs ci r
 
-`TInpField` carries an opaque Haskell function `ci -> r`. This is the
-v1 pragmatic shape. v2 will replace it with a structural constructor —
-`TInpProj :: Lens' ci r -> Term rs ci r` or a Generic-derived field
-selector — so the AST stays inspectable for the hidden-input check. The
-v1 `solveOutput` cannot see through `TInpField`, so any edge whose
-guard or update reaches into `ci` via `TInpField` is automatically a
-hidden-input candidate that the build-time check will warn about. This
-is an acceptable v1 limitation because the smoke-test (User
-Registration) demonstrates the warning fires correctly. It is recorded
-in this note's "Ergonomic verdict" as a v2 priority.
+**EP-1 update (2026-05-01).** The v1 prototype carried a `TInpField ::
+(ci -> r) -> Term rs ci r` constructor wrapping an opaque Haskell
+function. EP-1 of MasterPlan 2 retired it in favour of
+`TInpCtorField`, which reads field `ix` of the input constructor
+described by an `InCtor ci ifs` value. The slot list `ifs :: [Slot]`
+mirrors `RegFile`'s shape so call sites read `inpStart #email` (an
+`OverloadedLabels` `Index`) instead of `inpStart (.email)` (a record
+projection). See `docs/research/tinpproj-design.md` for the design
+note. With `TInpField` gone, `solveOutput` is purely structural — no
+per-edge user-supplied inverse code is needed. The
+`Keiki.Examples.UserRegistration` worked example below is in its v1
+form throughout this section; the post-EP-1 source is the
+authoritative reference.
+
+`InCtor` is the symmetric input-side analogue of `WireCtor`:
+
+    data InCtor ci (ifs :: [Slot]) where
+      InCtor :: (AssembleRegFile ifs, KnownSlotNames ifs)
+             => { icName  :: String
+                , icMatch :: ci -> Maybe (RegFile ifs)
+                , icBuild :: RegFile ifs -> ci
+                }
+             -> InCtor ci ifs
 
 `Update rs ci` is the copyless update language from synthesis §2:
 
@@ -557,9 +570,10 @@ defined in this note.
     proj     :: Index rs r -> Term rs ci r
     proj     = TReg
 
-    -- Read an input field into a Term (opaque function in v1).
-    inp      :: (ci -> r) -> Term rs ci r
-    inp      = TInpField
+    -- Structural input projection (v2; EP-1). Replaces the v1
+    -- `inp :: (ci -> r) -> Term rs ci r` opaque helper.
+    inpCtor  :: InCtor ci ifs -> Index ifs r -> Term rs ci r
+    inpCtor  = TInpCtorField
 
     -- Lit a constant Term.
     lit      :: r -> Term rs ci r
@@ -587,18 +601,20 @@ defined in this note.
          -> OutTerm rs ci co
     pack = OPack
 
-The helpers in v1 vs stable:
+The helpers in v1 vs stable (post-EP-1):
 
-- **v1-only / blocks v2 hidden-input check:** `matchCmd` (collapses to
-  `PMatchC`), `mkOut` (collapses to `OFn`), `inp` (collapses to
-  `TInpField`).
+- **v1-only / pending retirement:** `matchCmd` (collapses to
+  `PMatchC`), `mkOut` (collapses to `OFn`).
+- **Retired in EP-1:** `inp` is gone — replaced by `inpCtor` plus the
+  per-constructor `InCtor` values that the user defines once. The
+  `OPack` hand-written inverse field is gone — `solveOutput` walks
+  structurally.
 - **Stable across v1 and v2:** `proj`, `lit`, `(!)`, `combine`,
-  `unsafeCombine`, `(.==)`, `pack`.
+  `unsafeCombine`, `(.==)`, `pack` (signature now takes an `InCtor`
+  first argument).
 
-A useful documentation-line in the prototype: every use of `matchCmd`,
-`mkOut`, or `inp` in a `userReg`-style declaration is a place v2 will
-ask the user to rewrite. This is the price of v1 being shippable
-without SMT or Generics machinery.
+Every use of `matchCmd` or `mkOut` in a `userReg`-style declaration
+remains a place a future MasterPlan will ask the user to rewrite.
 
 
 ## Worked example: User Registration
@@ -874,7 +890,10 @@ exist in the prototype before the User Registration smoke test can run.
 - `data RegFile (rs :: [Slot])` — constructors: `RNil`, `RCons`
 - `data Index (rs :: [Slot]) (r :: Type)` — constructors: `ZIdx`, `SIdx`
 - `data Term (rs :: [Slot]) (ci :: Type) (r :: Type)` — constructors:
-  `TLit`, `TReg`, `TInpField`, `TApp1`, `TApp2`
+  `TLit`, `TReg`, `TInpCtorField` (v2; EP-1), `TApp1`, `TApp2`
+- `data InCtor ci (ifs :: [Slot])` (v2; EP-1) — record `InCtor` with
+  fields `icName`, `icMatch`, `icBuild`; data constructor carries
+  `(AssembleRegFile ifs, KnownSlotNames ifs)` constraints
 - `data Update (rs :: [Slot]) (ci :: Type)` — constructors: `UKeep`,
   `USet`, `UCombine`
 - `data WireCtor co fields` — record with `wcName`, `wcMatch`, `wcBuild`
@@ -904,13 +923,13 @@ exist in the prototype before the User Registration smoke test can run.
 - `matchCmd :: (ci -> Bool) -> HsPred rs ci`
 - `mkOut    :: (RegFile rs -> ci -> co) -> OutTerm rs ci co`
 - `proj     :: Index rs r -> Term rs ci r`
-- `inp      :: (ci -> r) -> Term rs ci r`
+- `inpCtor  :: InCtor ci ifs -> Index ifs r -> Term rs ci r` (v2; EP-1)
 - `lit      :: r -> Term rs ci r`
 - `(!)      :: RegFile rs -> Index rs r -> r`
 - `(.==)    :: Eq r => Term rs ci r -> Term rs ci r -> HsPred rs ci`
 - `combine  :: Update rs ci -> Update rs ci -> Either String (Update rs ci)`
 - `unsafeCombine :: Update rs ci -> Update rs ci -> Update rs ci`
-- `pack     :: WireCtor co fields -> OutFields rs ci fields -> OutTerm rs ci co`
+- `pack     :: InCtor ci ifs -> WireCtor co fields -> OutFields rs ci fields -> OutTerm rs ci co` (v2 signature; EP-1)
 
 **Evaluators**
 
@@ -924,16 +943,19 @@ exist in the prototype before the User Registration smoke test can run.
 **Build-time analyses**
 
 - `solveOutput :: OutTerm rs ci co -> RegFile rs -> co -> Maybe ci` —
-  pattern-walks `OPack`; returns `Nothing` for `OFn`
-- A hidden-input check that traverses all edges of a `SymTransducer`
-  and reports any edge whose `update` or `guard` reads a part of `ci`
-  that the edge's `output` does not recover. The check must:
-  - Treat `OFn` as "recovers nothing" (emits a warning that the edge
-    is opaque-output).
-  - Treat `TInpField` reads in `update` or `guard` as "demands a part
-    of `ci`" with no further structural information; for v1 this
-    means any edge with both an `OFn` output and a `TInpField` read
-    in `update`/`guard` is flagged.
+  walks `OPack`'s `OutFields` against the `InCtor` named on it,
+  gathering `(Index, value)` pairs and assembling them into a
+  `RegFile ifs` that is passed to `icBuild`. Returns `Nothing` for
+  `OFn`, for unmatched wire constructors, for opaque `TApp` reads
+  inside `OutFields`, and for `OutFields` walks that leave any slot
+  of the `InCtor` unvisited.
+- The hidden-input check (`checkHiddenInputs`) traverses every edge
+  and reports:
+  - `OFn` outputs as "opaque (no inverse)".
+  - ε-edges whose `update` reaches into `ci` (silent on the wire).
+  - `OPack` outputs whose `OutFields` does not visit every slot of
+    the `InCtor` named on the `OPack`. The warning names the
+    `InCtor` and the missing slot.
 
 **Smoke-test scaffolding (EP-4 owns the implementation; this note
 defines the contract)**
@@ -949,12 +971,20 @@ defines the contract)**
   than `OFn`) when the schema has the synthesis §4 step-4
   `confirmCode`-not-in-event problem.
 
-**v1-only surfaces (flagged for v2 retirement)**
+**v1 surfaces — retired in EP-1 of MasterPlan 2 (2026-05-01)**
 
-- `TInpField` (replace with `TInpProj` or `Generic`-derived selector).
+- ~~`TInpField`~~ — replaced by `TInpCtorField` + `InCtor`. See
+  `docs/research/tinpproj-design.md`.
+- ~~`OPack`'s hand-written inverse field~~ — replaced by mechanical
+  inversion against `OPack`'s `InCtor`.
+
+**v1 surfaces still pending retirement (out of scope for MasterPlan 2)**
+
 - `OFn` (every output authored through `mkOut` becomes a structural
   `OPack`).
-- `PMatchC` (replace with `PCtor` or pattern AST).
+- `PMatchC` (replace with `PCtor` or pattern AST). EP-2 of MasterPlan
+  2 documents how the SBV-backed `BoolAlg` instance falls back on
+  `PMatchC`.
 - `unsafeCombine` (every call site moves to `combine` once
   smart-constructor enforcement covers the "distinct targets"
   invariant).

@@ -289,7 +289,65 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at
 completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**EP-1 verdict (2026-05-01): mechanical inversion holds.** The plan's
+purpose was to retire two named v1 escape hatches —
+`TInpField :: (ci -> r) -> Term rs ci r` and the `OPack` hand-written
+`(RegFile rs -> co -> Maybe ci)` inverse field — and to make the
+synthesis claim of *mechanical apply derivation* hold at v1+EP-1 in
+the keiki pure core. After this plan:
+
+- `Keiki.Core` exports `InCtor ci ifs` (the symmetric input-side
+  analogue of `WireCtor co fields`), `TInpCtorField :: InCtor ci ifs
+  -> Index ifs r -> Term rs ci r`, and `inpCtor`. The `TInpField`
+  constructor and `inp` helper are gone.
+- `OPack` carries an `InCtor ci ifs` first argument instead of a
+  hand-written inverse field. `solveOutput` walks `OutFields`
+  structurally, gathers `(Index, value)` pairs against the named
+  `InCtor`, assembles a typed `RegFile ifs` via the
+  `AssembleRegFile` class chain, and calls `icBuild`. No per-edge
+  user inverse code anywhere.
+- `reconstitute userReg canonicalLog == Just (Deleted,
+  expectedSnapshot)` passes — every event in the canonical 5-event
+  log replays mechanically including the empty-payload `Continue`
+  command (handled by the `inCtorContinue :: InCtor UserCmd '[]` and
+  the `assemble [] = Just RNil` base case).
+- `reconstitute userRegV0 canonicalLogV0 == Nothing` still passes —
+  the V0 hidden-input bug surfaces *structurally*: the Confirm edge's
+  `OutFields` walks only `(#email, #at)` but `inCtorConfirm`'s slot
+  list includes `confirmCode`, so `assemble` returns `Nothing`. No
+  hand-written `Nothing` inverse needed.
+- `checkHiddenInputs userRegV0` produces `OPack walk for InCtor
+  "ConfirmAccount" leaves field {"confirmCode"} unrecovered` — a
+  field-precise warning, not the v1 conservative "OPack field uses
+  TInpField".
+- `cabal test` reports 32 examples, 0 failures (24 baseline – 3 v1
+  TInpField-only tests + 4 TInpCtorField evaluation + 6 structural
+  inversion + 1 strengthened V0).
+
+**Gaps and follow-ups.** EP-2 of MasterPlan 2 is the next step. EP-2's
+M1 design milestone reads the post-EP-1 `Term` and `HsPred` shapes;
+the structural `Term` is the SBV translation's foundation. EP-2's
+`PMatchC` strategy (option 3 in EP-2's plan) may pull EP-1's `InCtor`
+into the symbolic translation as `matchInCtor`-derived constructor
+guards; that is EP-2's M1 call.
+
+`OFn`, `PMatchC`, and the static `unsafeCombine` check remain v1
+escape hatches in the codebase, out of scope per MasterPlan 2's scope
+statement.
+
+**Lessons.** The largest lesson is that the M1 design note's
+no-`InCtor`-on-`OPack` shape was insufficient: it fails for
+empty-payload input constructors (Continue) because `Index '[] r` is
+uninhabited. The redesign during M6 — adding an explicit `InCtor` to
+`OPack` — is documented in this plan's Surprises & Discoveries and
+Decision Log. The general lesson: when a design note pins a shape,
+exercise the shape on every aggregate constructor (including
+zero-payload ones) before committing the rest of the implementation.
+
+The second lesson is that rewriting `solveOutput` mid-migration as a
+"structural-first, fallback-to-legacy" path (M3) was the right way to
+avoid breaking the test suite while the example modules still used
+`TInpField`. Hybrid windows pay off in long migrations.
 
 
 ## Context and Orientation

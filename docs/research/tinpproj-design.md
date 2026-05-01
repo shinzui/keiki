@@ -610,3 +610,43 @@ None. The design above pins every decision the milestones need. M2-M7
 implement what M1 specifies; if a milestone surfaces a contradiction
 between this note and the code, raise it in the EP-1 plan's Surprises &
 Discoveries and update the note before continuing.
+
+
+## Post-implementation update (2026-05-01)
+
+The implementation surfaced one shape change against the design above.
+The original design carried `OPack :: WireCtor co fields -> OutFields
+rs ci fields -> OutTerm rs ci co` and expected `solveOutput` to
+discover the `InCtor` from `TInpCtorField` reads inside `OutFields`.
+This breaks for input constructors with no payload (specifically
+`Continue` in the User Registration aggregate): `Index '[] r` is
+uninhabited so an empty-payload `InCtor` cannot appear in any
+`OutFields`, and the walk has no way to recover the constructor
+identity.
+
+The shipped form of `OPack` carries the `InCtor` explicitly:
+
+    data OutTerm (rs :: [Slot]) (ci :: Type) (co :: Type) where
+      OPack :: InCtor ci ifs
+            -> WireCtor co fields
+            -> OutFields rs ci fields
+            -> OutTerm rs ci co
+      OFn   :: (RegFile rs -> ci -> co) -> OutTerm rs ci co
+
+    pack :: InCtor ci ifs
+         -> WireCtor co fields
+         -> OutFields rs ci fields
+         -> OutTerm rs ci co
+    pack = OPack
+
+`solveOutput` walks the `OutFields` against the named `InCtor`,
+gathering only entries whose `TInpCtorField`'s `InCtor` matches by
+`icName` and bailing on any opaque term. Empty-payload constructors
+recover trivially: `gatherInpEntries` yields `Just []`, `assemble []
+= Just RNil`, and `icBuild ic RNil` returns the singleton constructor.
+The result is a strictly cleaner design than the M1 shape — no
+`SomeIcWithEntries` existential is needed, and the icName-based
+combine step is gone.
+
+The EP-1 plan's Surprises & Discoveries and Decision Log record the
+deviation and the date.

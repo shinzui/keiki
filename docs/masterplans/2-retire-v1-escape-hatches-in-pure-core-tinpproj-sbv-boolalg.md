@@ -187,7 +187,7 @@ without proving anything.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Replace TInpField with structural input projection (TInpProj) | docs/plans/5-replace-tinpfield-with-structural-input-projection-tinpproj.md | None | None | In Progress |
+| 1 | Replace TInpField with structural input projection (TInpProj) | docs/plans/5-replace-tinpfield-with-structural-input-projection-tinpproj.md | None | None | Complete |
 | 2 | SBV-backed BoolAlg instance for symbolic emptiness | docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md | None | EP-1 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -378,7 +378,7 @@ for an at-a-glance view.
 - [x] EP-1: Migrate `Keiki.Examples.UserRegistration` (V5) (M5)
 - [x] EP-1: Migrate `Keiki.Examples.UserRegistrationV0` (V0) (M6)
 - [x] EP-1: Remove `TInpField` constructor and `inp` helper from public API (M7)
-- [ ] EP-1: Update DSL design note; capture verdict (M8)
+- [x] EP-1: Update DSL design note; capture verdict (M8)
 - [ ] EP-2: Verify prerequisites — record EP-1 status; build passes (M0)
 - [ ] EP-2: Survey solvers; pick one; decide translation subset; write
       design note (M1)
@@ -461,4 +461,35 @@ unexpected interactions between child plans. Provide concise evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones or at
 completion. Compare the result against the original vision.
 
-(To be filled during and after implementation.)
+**EP-1 complete (2026-05-01).** EP-1 retired the v1 `TInpField`
+constructor and the `OPack` hand-written inverse field. After EP-1
+the `Keiki.Core` `Term` constructor set is `TLit`, `TReg`,
+`TInpCtorField`, `TApp1`, `TApp2`; the `OutTerm` constructor set is
+`OPack` (now carrying an `InCtor ci ifs` first argument so empty-
+payload input constructors recover trivially) plus the v1 `OFn`
+escape hatch. `solveOutput` is purely structural — no per-edge
+hand-written inverse code anywhere. The `Keiki.Examples.UserRegistration`
+(V5) and `Keiki.Examples.UserRegistrationV0` aggregates were
+migrated end-to-end. `cabal test` reports 32 examples, 0 failures,
+including:
+
+- `reconstitute userReg canonicalLog == Just (Deleted,
+  expectedSnapshot)` — the v1 verdict's "synthesis holds" gate is
+  honored mechanically.
+- `reconstitute userRegV0 canonicalLogV0 == Nothing` — the V0
+  hidden-input bug surfaces structurally.
+- `checkHiddenInputs userRegV0` produces a field-precise warning
+  (`OPack walk for InCtor "ConfirmAccount" leaves field
+  {"confirmCode"} unrecovered`).
+
+EP-1 took 8 commits across M0-M7 plus an M7 progress fix. The largest
+deviation from the M1 design note was the OPack-carries-InCtor
+redesign discovered during M6 (see Surprises & Discoveries).
+
+**EP-2 not yet started.** The MasterPlan-level acceptance criterion
+("all four test categories pass, the User Registration aggregate
+compiles with no per-edge `OPack` inverse, and `cabal build` succeeds
+with no warnings about unreachable v1 escape hatches") is partially
+met by EP-1: three of the four categories are green; the fourth
+(`isSingleValued userReg == True` proved symbolically) is EP-2's
+deliverable.
