@@ -1,6 +1,7 @@
 module Keiki.SymbolicSpec (spec) where
 
 import Data.Kind (Type)
+import Data.Maybe (isJust)
 import Data.Proxy (Proxy (..))
 import qualified Data.SBV as SBV
 import Data.Text (Text)
@@ -104,6 +105,33 @@ spec = do
            )
         `shouldReturn` True
 
+  describe "SymPred BoolAlg structural ops (M4)" $ do
+    it "top wraps PTop" $
+      isPTop (unSymPred (top :: SymPred '[] ())) `shouldBe` True
+    it "bot wraps PBot" $
+      isPBot (unSymPred (bot :: SymPred '[] ())) `shouldBe` True
+    it "conj p q wraps PAnd" $
+      isPAnd (unSymPred (conj (top :: SymPred '[] ()) bot))
+        `shouldBe` True
+    it "disj p q wraps POr" $
+      isPOr (unSymPred (disj (top :: SymPred '[] ()) bot))
+        `shouldBe` True
+    it "neg p wraps PNot" $
+      isPNot (unSymPred (neg (top :: SymPred '[] ())))
+        `shouldBe` True
+    it "models delegates to evalPred (top is True)" $
+      models (top :: SymPred '[] ()) (RNil, ())
+        `shouldBe` True
+    it "models delegates to evalPred (bot is False)" $
+      models (bot :: SymPred '[] ()) (RNil, ())
+        `shouldBe` False
+    it "isBot bot is True (v1 stub honored pre-M5)" $
+      isBot (bot :: SymPred '[] ())
+        `shouldBe` True
+    it "sat p is Nothing pre-M5" $ do
+      let result = sat (top :: SymPred '[] ()) :: Maybe (RegFile '[], ())
+      isJust result `shouldBe` False
+
 
 -- | 'True' iff a 'Sym' instance is discoverable for @r@ at runtime
 -- via the curated registry.
@@ -111,3 +139,16 @@ symKnown :: forall (r :: Type). Typeable r => Proxy r -> Bool
 symKnown _ = case discoverSym :: Maybe (SymDict r) of
   Just _  -> True
   Nothing -> False
+
+
+-- | Constructor-shape predicates for the M4 SymPred wrapper tests.
+-- Each one is 'True' iff the supplied 'HsPred' has the named outermost
+-- constructor.
+isPTop, isPBot :: HsPred rs ci -> Bool
+isPTop PTop = True; isPTop _ = False
+isPBot PBot = True; isPBot _ = False
+
+isPAnd, isPOr, isPNot :: HsPred rs ci -> Bool
+isPAnd (PAnd _ _) = True; isPAnd _ = False
+isPOr  (POr  _ _) = True; isPOr  _ = False
+isPNot (PNot _)   = True; isPNot _ = False

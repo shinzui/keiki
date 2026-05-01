@@ -125,10 +125,17 @@ reflect the actual current state of the work.
       against z3; cabal test reports 48 examples, 0 failures (16 new
       symbolic-translation cases including the load-bearing
       `PInCtor TinyFoo AND PInCtor TinyBar` constructor-mutex test).
-- [ ] **Milestone 4 — Implement new `BoolAlg` instance.** Define the
-      symbolic predicate type (per M1's choice) and its `BoolAlg`
-      methods `top`, `bot`, `conj`, `disj`, `neg`. These are pure
-      structural compositions; no solver call yet. Add unit tests.
+- [x] **Milestone 4 — Implement new `BoolAlg` instance.** Added
+      `newtype SymPred (rs :: [Slot]) (ci :: Type) = SymPred {
+      unSymPred :: HsPred rs ci }` and a `BoolAlg (SymPred rs ci)
+      (RegFile rs, ci)` instance with five-of-eight methods
+      structural (`top` / `bot` / `conj` / `disj` / `neg` wrap
+      'HsPred' constructors) plus `models` delegating to v1's
+      `evalPred`. `sat` and `isBot` are temporarily v1-style stubs
+      until M5 lands the SBV-backed bodies. New tests in
+      `Keiki.SymbolicSpec` cover every structural op plus the
+      `models`/v1-stub `sat`/`isBot` baselines. `cabal test` reports
+      57 examples, 0 failures.
 - [ ] **Milestone 5 — Implement symbolic `models`, `sat`, `isBot`.**
       `models` reduces to a forall-quantified eval check.
       `sat` calls SBV's `sat` and extracts a concrete witness from the

@@ -16,7 +16,7 @@
 -- symbolic surfaces. See @docs/research/sbv-boolalg-design.md@ for
 -- the design rationale.
 --
--- Milestones implemented in this revision (M3 of EP-2):
+-- Milestones implemented in this revision (through M4 of EP-2):
 --
 --   * The 'Sym' typeclass and instances for 'Bool', 'Int', 'Integer',
 --     'Text', and 'UTCTime'.
@@ -25,6 +25,11 @@
 --     into SBV expressions.
 --   * 'discoverSym' — runtime dispatch from 'Typeable' to 'Sym'
 --     evidence over the curated registry of supported types.
+--   * 'SymPred' newtype wrapper plus its 'BoolAlg' instance with
+--     structural 'top' / 'bot' / 'conj' / 'disj' / 'neg' and a 'models'
+--     that re-uses the v1 'evalPred' (concrete evaluation, no solver
+--     call). 'sat' and 'isBot' remain stubbed at the v1 level pending
+--     M5 of EP-2.
 module Keiki.Symbolic
   ( -- * Symbolic representation
     Sym (..)
@@ -37,6 +42,8 @@ module Keiki.Symbolic
   , mkSymEnv
   , translateTermSym
   , translatePred
+    -- * Symbolic predicate wrapper
+  , SymPred (..)
     -- * Re-exports
   , module Keiki.Core
   ) where
@@ -225,3 +232,36 @@ translatePred env = go
         sa <- translateTermSym env a
         sb <- translateTermSym env b
         pure (sa SBV..== sb)
+
+
+-- * Symbolic predicate wrapper ----------------------------------------------
+
+-- | A newtype wrapper over 'HsPred' that selects the v2 'BoolAlg'
+-- instance (with SBV-backed analyses) instead of the v1 syntactic
+-- one. The v1 'BoolAlg HsPred' instance in "Keiki.Core" stays
+-- unchanged for back-compat; consumers that want symbolic answers
+-- wrap with 'SymPred'.
+--
+-- The 'SymPred' constructor is exported so callers can lift
+-- @userReg@-style transducers via 'fmap'-like adapters; M6 of EP-2
+-- ships 'withSymPred' which re-tags every edge guard.
+newtype SymPred (rs :: [Slot]) (ci :: Type) = SymPred { unSymPred :: HsPred rs ci }
+
+
+-- | The v2 'BoolAlg' instance. Five of the eight methods are
+-- structural (M4): they compose 'HsPred' constructors. 'models'
+-- delegates to the v1 'evalPred' (concrete evaluation, no solver
+-- call). The remaining two — 'sat' and 'isBot' — are stubbed at
+-- the v1 level until M5 lands the SBV-backed bodies. The instance
+-- header therefore matches v1's contract for now; callers see no
+-- behavioural change yet.
+instance BoolAlg (SymPred rs ci) (RegFile rs, ci) where
+  top                                = SymPred PTop
+  bot                                = SymPred PBot
+  conj (SymPred p) (SymPred q)       = SymPred (PAnd p q)
+  disj (SymPred p) (SymPred q)       = SymPred (POr  p q)
+  neg  (SymPred p)                   = SymPred (PNot p)
+  models (SymPred p) (regs, ci)      = evalPred p regs ci
+  sat _                              = Nothing  -- upgraded in EP-2 M5
+  isBot (SymPred PBot)               = True
+  isBot _                            = False    -- upgraded in EP-2 M5
