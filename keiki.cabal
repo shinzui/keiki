@@ -52,6 +52,7 @@ test-suite keiki-test
     other-modules:      Keiki.CoreSpec
                         Keiki.SymbolicSpec
                         Keiki.Examples.UserRegistrationSpec
+                        Keiki.Examples.UserRegistrationSymbolicSpec
                         Keiki.Examples.UserRegistrationV0Spec
     build-depends:      base ^>= 4.20,
                         keiki,

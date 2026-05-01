@@ -295,14 +295,22 @@ inpGdpr     = TInpCtorField inCtorGdpr
 
 
 -- * Per-constructor guards -------------------------------------------------
+--
+-- These were 'matchCmd'-built v1 'PMatchC' atoms in earlier
+-- revisions; EP-2 of MasterPlan 2 migrated them to 'matchInCtor' so
+-- the SBV-backed 'BoolAlg' instance recognizes constructor mutual
+-- exclusion symbolically. The v1 'evalPred' semantics is preserved:
+-- @evalPred (matchInCtor ic) regs ci == isJust (icMatch ic ci)@,
+-- which is identical in behavior to the pattern-match closures the
+-- previous form used.
 
 isStart, isConfirm, isResend, isGdpr, isContinue
   :: HsPred UserRegRegs UserCmd
-isStart    = matchCmd $ \case StartRegistration{}  -> True; _ -> False
-isConfirm  = matchCmd $ \case ConfirmAccount{}     -> True; _ -> False
-isResend   = matchCmd $ \case ResendConfirmation{} -> True; _ -> False
-isGdpr     = matchCmd $ \case FulfillGDPRRequest{} -> True; _ -> False
-isContinue = matchCmd $ \case Continue             -> True; _ -> False
+isStart    = matchInCtor inCtorStart
+isConfirm  = matchInCtor inCtorConfirm
+isResend   = matchInCtor inCtorResend
+isGdpr     = matchInCtor inCtorGdpr
+isContinue = matchInCtor inCtorContinue
 
 
 -- * Wire constructors for events -------------------------------------------

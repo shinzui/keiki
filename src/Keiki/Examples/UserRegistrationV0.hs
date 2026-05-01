@@ -90,12 +90,16 @@ emptyRegsV0 =
   $ RNil
 
 
+-- | Per-constructor guards. Migrated from v1 'matchCmd' to v2
+-- 'matchInCtor' alongside the V5 aggregate so the SBV-backed
+-- 'BoolAlg' instance recognizes constructor mutex on the V0 form
+-- too. The 'evalPred' semantics is preserved.
 isStart, isConfirm, isResend, isGdpr, isContinue :: HsPred UserRegRegs UserCmd
-isStart    = matchCmd $ \case StartRegistration{}  -> True; _ -> False
-isConfirm  = matchCmd $ \case ConfirmAccount{}     -> True; _ -> False
-isResend   = matchCmd $ \case ResendConfirmation{} -> True; _ -> False
-isGdpr     = matchCmd $ \case FulfillGDPRRequest{} -> True; _ -> False
-isContinue = matchCmd $ \case Continue             -> True; _ -> False
+isStart    = matchInCtor inCtorStart
+isConfirm  = matchInCtor inCtorConfirm
+isResend   = matchInCtor inCtorResend
+isGdpr     = matchInCtor inCtorGdpr
+isContinue = matchInCtor inCtorContinue
 
 
 -- * V0 wire constructors ---------------------------------------------------

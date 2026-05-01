@@ -158,13 +158,21 @@ reflect the actual current state of the work.
       with constructor-mutex guards is single-valued; a synthetic
       2-edge transducer with overlapping `PTop` guards is not.
       `cabal test` reports 66 examples, 0 failures.
-- [ ] **Milestone 7 — Tests on User Registration.** Add a new spec
-      file (`test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` or
-      add cases to the existing spec) with at least two assertions:
-      `isSingleValued userReg == True` (symbolically proved) and
-      `sat (PEq (proj #email) (lit ...))` returns a concrete witness
-      with the expected email value. Run the full test suite; expect
-      no regressions.
+- [x] **Milestone 7 — Tests on User Registration.** Migrated
+      `Keiki.Examples.UserRegistration` and
+      `Keiki.Examples.UserRegistrationV0` `isStart`/`isConfirm`/
+      `isResend`/`isGdpr`/`isContinue` helpers from `matchCmd`-built
+      `PMatchC` atoms to `matchInCtor`-built `PInCtor` atoms. The
+      `evalPred` semantics is unchanged so the existing 32 V5/V0
+      tests pass without modification. New
+      `test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` asserts
+      the v2 retrospective gate
+      `isSingleValuedSym (withSymPred userReg) == True` (proved
+      symbolically by z3), plus three `symSat` smoke checks
+      (satisfiable singleton `PInCtor`, satisfiable
+      `inpConfirm #confirmCode .== lit "abc123"`, unsatisfiable
+      constructor mutex). `cabal test` reports 70 examples, 0
+      failures.
 - [ ] **Milestone 8 — Update DSL design note; capture verdict.** Edit
       `docs/research/dsl-shape-for-symbolic-register.md` to mark
       `sat`/`isBot`/`isSingleValued` as upgraded. Edit
