@@ -125,11 +125,38 @@ spec = do
     it "models delegates to evalPred (bot is False)" $
       models (bot :: SymPred '[] ()) (RNil, ())
         `shouldBe` False
-    it "isBot bot is True (v1 stub honored pre-M5)" $
-      isBot (bot :: SymPred '[] ())
+
+  describe "SymPred BoolAlg solver-backed methods (M5)" $ do
+    it "isBot bot is True" $
+      isBot (bot :: SymPred '[] ()) `shouldBe` True
+    it "isBot top is False" $
+      isBot (top :: SymPred '[] ()) `shouldBe` False
+    it "isBot (PEq lit5 lit6) is True (SBV unsat)" $
+      isBot (SymPred (PEq (TLit (5 :: Int)) (TLit 6)) :: SymPred '[] ())
         `shouldBe` True
-    it "sat p is Nothing pre-M5" $ do
+    it "isBot (PEq lit5 lit5) is False (SBV sat)" $
+      isBot (SymPred (PEq (TLit (5 :: Int)) (TLit 5)) :: SymPred '[] ())
+        `shouldBe` False
+    it "isBot (PInCtor TinyFoo AND PInCtor TinyBar) is True (constructor mutex)" $
+      isBot (SymPred (PAnd (PInCtor inCtorTinyFoo)
+                           (PInCtor inCtorTinyBar))
+             :: SymPred '[] TinyCmd)
+        `shouldBe` True
+    it "sat top is Just _" $ do
       let result = sat (top :: SymPred '[] ()) :: Maybe (RegFile '[], ())
+      isJust result `shouldBe` True
+    it "sat bot is Nothing" $ do
+      let result = sat (bot :: SymPred '[] ()) :: Maybe (RegFile '[], ())
+      isJust result `shouldBe` False
+    it "sat (PEq lit5 lit5) is Just _" $ do
+      let result = sat (SymPred (PEq (TLit (5 :: Int)) (TLit 5))
+                       :: SymPred '[] ())
+                   :: Maybe (RegFile '[], ())
+      isJust result `shouldBe` True
+    it "sat (PEq lit5 lit6) is Nothing" $ do
+      let result = sat (SymPred (PEq (TLit (5 :: Int)) (TLit 6))
+                       :: SymPred '[] ())
+                   :: Maybe (RegFile '[], ())
       isJust result `shouldBe` False
 
 

@@ -136,13 +136,21 @@ reflect the actual current state of the work.
       `Keiki.SymbolicSpec` cover every structural op plus the
       `models`/v1-stub `sat`/`isBot` baselines. `cabal test` reports
       57 examples, 0 failures.
-- [ ] **Milestone 5 — Implement symbolic `models`, `sat`, `isBot`.**
-      `models` reduces to a forall-quantified eval check.
-      `sat` calls SBV's `sat` and extracts a concrete witness from the
-      model. `isBot` calls SBV's `prove (neg p)` (or equivalently
-      `sat p` and checks `Nothing`). Handle solver timeouts and
-      unsupported-term fallbacks per the M1 design note. Add unit
-      tests on hand-built predicates.
+- [x] **Milestone 5 — Implement symbolic `models`, `sat`, `isBot`.**
+      Added `symSat :: HsPred rs ci -> Maybe (RegFile rs, ci)` and
+      `symIsBot :: HsPred rs ci -> Bool` to `Keiki.Symbolic`. Both
+      are pure-API wrappers (`unsafePerformIO` + `NOINLINE`) over
+      `SBV.sat (mkSymEnv >>= translatePred env p)` plus a
+      `modelExists` check. `symSat` returns
+      `Just (unsafeWitness, unsafeWitness)` on a model — the
+      placeholder witness lets the typeclass-`sat` shape stay
+      unchanged; full extraction is a future `symSatExt`.
+      `SymPred`'s `BoolAlg` instance routes `sat` and `isBot`
+      through these. Tests now cover the full algebra: `isBot bot
+      == True`, `isBot top == False`, `isBot (PEq lit5 lit6) ==
+      True`, `isBot (PEq lit5 lit5) == False`, and the load-bearing
+      `isBot (PInCtor TinyFoo AND PInCtor TinyBar) == True`. Total
+      cabal test: 64 examples, 0 failures.
 - [ ] **Milestone 6 — Implement symbolic `isSingleValued`.** Walk
       every vertex's outgoing edges; for every pair `(e1, e2)` with
       `e1 /= e2`, check `isBot (guard e1 \`conj\` guard e2)`. If all

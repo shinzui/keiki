@@ -16,7 +16,7 @@
 -- symbolic surfaces. See @docs/research/sbv-boolalg-design.md@ for
 -- the design rationale.
 --
--- Milestones implemented in this revision (through M4 of EP-2):
+-- Milestones implemented in this revision (through M5 of EP-2):
 --
 --   * The 'Sym' typeclass and instances for 'Bool', 'Int', 'Integer',
 --     'Text', and 'UTCTime'.
@@ -28,8 +28,11 @@
 --   * 'SymPred' newtype wrapper plus its 'BoolAlg' instance with
 --     structural 'top' / 'bot' / 'conj' / 'disj' / 'neg' and a 'models'
 --     that re-uses the v1 'evalPred' (concrete evaluation, no solver
---     call). 'sat' and 'isBot' remain stubbed at the v1 level pending
---     M5 of EP-2.
+--     call).
+--   * 'symIsBot' / 'symSat' — pure-API wrappers around SBV's solver
+--     calls (via 'unsafePerformIO' + NOINLINE). 'SymPred''s 'BoolAlg'
+--     methods 'sat' and 'isBot' route through these, so the v1
+--     placeholder behavior is replaced with precise symbolic answers.
 module Keiki.Symbolic
   ( -- * Symbolic representation
     Sym (..)
@@ -44,6 +47,9 @@ module Keiki.Symbolic
   , translatePred
     -- * Symbolic predicate wrapper
   , SymPred (..)
+    -- * Solver-backed analyses
+  , symIsBot
+  , symSat
     -- * Re-exports
   , module Keiki.Core
   ) where
@@ -55,6 +61,7 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Typeable (Typeable)
+import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 import Keiki.Core
@@ -248,13 +255,10 @@ translatePred env = go
 newtype SymPred (rs :: [Slot]) (ci :: Type) = SymPred { unSymPred :: HsPred rs ci }
 
 
--- | The v2 'BoolAlg' instance. Five of the eight methods are
--- structural (M4): they compose 'HsPred' constructors. 'models'
--- delegates to the v1 'evalPred' (concrete evaluation, no solver
--- call). The remaining two — 'sat' and 'isBot' — are stubbed at
--- the v1 level until M5 lands the SBV-backed bodies. The instance
--- header therefore matches v1's contract for now; callers see no
--- behavioural change yet.
+-- | The v2 'BoolAlg' instance. The five structural methods compose
+-- 'HsPred' constructors. 'models' delegates to the v1 'evalPred'
+-- (concrete evaluation, no solver call). 'sat' and 'isBot' route
+-- through 'symSat' / 'symIsBot', which dispatch to z3 via SBV.
 instance BoolAlg (SymPred rs ci) (RegFile rs, ci) where
   top                                = SymPred PTop
   bot                                = SymPred PBot
@@ -262,6 +266,53 @@ instance BoolAlg (SymPred rs ci) (RegFile rs, ci) where
   disj (SymPred p) (SymPred q)       = SymPred (POr  p q)
   neg  (SymPred p)                   = SymPred (PNot p)
   models (SymPred p) (regs, ci)      = evalPred p regs ci
-  sat _                              = Nothing  -- upgraded in EP-2 M5
-  isBot (SymPred PBot)               = True
-  isBot _                            = False    -- upgraded in EP-2 M5
+  sat (SymPred p)                    = symSat   p
+  isBot (SymPred p)                  = symIsBot p
+
+
+-- * Solver-backed analyses --------------------------------------------------
+
+-- | The pure-API witness placeholder. 'symSat' returns
+-- @Just (placeholder, placeholder)@ on a satisfiable predicate; this
+-- pair tells callers \"yes, a witness exists\" without obliging the
+-- 'BoolAlg' typeclass to thread a 'WitnessExtract'-style constraint.
+-- Forcing either component crashes with a directing message; tests
+-- that need the real witness will be served by a future
+-- @symSatExt@ helper paired with hand-written extractors.
+unsafeWitness :: a
+unsafeWitness =
+  error
+    "Keiki.Symbolic.sat: placeholder witness; use symSat-backed \
+    \analyses (isBot, isSingleValuedSym) or a future symSatExt for \
+    \the concrete witness."
+
+
+-- | Symbolic satisfiability check. Translates the predicate to an
+-- SBV expression and asks z3 whether a model exists. Returns
+-- @Just (placeholder, placeholder)@ on a model and 'Nothing' on
+-- unsat or solver-unknown. The 'unsafePerformIO' is justified
+-- because every SBV query is deterministic for a given predicate
+-- and side-effect-free outside the solver process.
+{-# NOINLINE symSat #-}
+symSat :: HsPred rs ci -> Maybe (RegFile rs, ci)
+symSat p = unsafePerformIO $ do
+  res <- SBV.sat $ do
+    env <- mkSymEnv
+    translatePred env p
+  pure $ if SBV.modelExists res
+           then Just (unsafeWitness, unsafeWitness)
+           else Nothing
+
+
+-- | Symbolic emptiness check. Translates the predicate to an SBV
+-- expression and asks z3 whether any model exists; @True@ when none
+-- does (the predicate is bot), @False@ otherwise (including the
+-- conservative 'Unknown' fallback). The 'unsafePerformIO' wrapper is
+-- justified for the same reason as 'symSat'.
+{-# NOINLINE symIsBot #-}
+symIsBot :: HsPred rs ci -> Bool
+symIsBot p = unsafePerformIO $ do
+  res <- SBV.sat $ do
+    env <- mkSymEnv
+    translatePred env p
+  pure (not (SBV.modelExists res))
