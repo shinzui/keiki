@@ -116,10 +116,16 @@ This section must always reflect the actual current state of the work.
       the M4 stub, so `reconstitute` only succeeds on the empty log
       until M4 lands; the empty-log case is covered by a test. 14
       examples, 0 failures. (2026-05-01)
-- [ ] **Milestone 4 — `solveOutput` for `OutTerm`.** Implement `solveOutput` against
-      the `OutTerm` AST chosen by the DSL note. This is the hard milestone. Add a
-      micro-test: a single edge whose output term is `Pack OutCtor [Inp .field]`,
-      then verify `solveOutput edge.output observedOutput == Just observedInput`.
+- [x] **Milestone 4 — `solveOutput` for `OutTerm`.** Implemented
+      `solveOutput`, `checkHiddenInputs`, and the structural helpers
+      `termReadsInput` / `updateReadsInput` / `outFieldsHaveInpField`. v1
+      deviation: 'OPack' carries a third field — a hand-written inverse
+      `RegFile rs -> co -> Maybe ci` — because the chosen v1 'Term'
+      constructor set has 'TInpField' as the only input-reading
+      constructor and `TInpField` is opaque. The structural 'OutFields'
+      remains the contract for the hidden-input analysis. Recorded in
+      Decision Log and propagated to the MasterPlan's Surprises &
+      Discoveries section in a follow-up commit. (2026-05-01)
 - [ ] **Milestone 5 — User Registration aggregate.** Define
       `Keiki.Examples.UserRegistration` with the domain types (Email, ConfirmationCode,
       UTCTime, etc.), the `UserCmd` and `UserEvent` sums, the `UserRegRegs` type-level

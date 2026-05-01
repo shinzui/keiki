@@ -438,6 +438,32 @@ interactions between child plans. Provide concise evidence.
 All three sharpening plans (EP-1, EP-2, EP-3) are Complete as of 2026-05-01.
 EP-4 (the prototype) is unblocked.
 
+### From EP-4 M4 (solveOutput; 2026-05-01)
+
+- **OPack needs a v1 hand-written inverse (deviation from EP-1's
+  checklist).** EP-1 sketched `OPack :: WireCtor co fields -> OutFields
+  rs ci fields -> OutTerm rs ci co`. While implementing 'solveOutput' in
+  M4, it became clear that the chosen v1 'Term' set cannot be
+  mechanically inverted: 'TInpField' is opaque (`ci -> r`), so even on
+  a fully-structural `OPack` the input contribution to each field is
+  unrecoverable. EP-1's "Ergonomic verdict" framed this as an
+  ergonomic pain point (IP-1: total `\case ... _ -> error "guard"`
+  callbacks) but did not flag it as load-bearing for `solveOutput`.
+  Resolution in EP-4: 'OPack' was extended to carry a third field —
+  a `RegFile rs -> co -> Maybe ci` hand-written inverse. The structural
+  'OutFields' remains for `checkHiddenInputs`. v2's 'TInpProj'
+  retirement path is unchanged: when input reads are structural, the
+  inverse can be derived from the 'OutFields' walk and the hand-written
+  field is dropped.
+- **Implication for the master-plan acceptance criterion.** "`solveOutput`
+  works on that example" still holds — the smoke test can demonstrate
+  end-to-end replay using the `OPack` inverse — but the synthesis claim
+  of *mechanically* derived `apply` is, in v1, "user-supplied per-edge
+  apply, structurally checked for hidden inputs." That is honest about
+  v1's limits while preserving the rest of the formalism (transducer
+  composition, register evolution, hidden-input analysis). The verdict
+  paragraph in EP-4's M8 should call this out.
+
 
 ## Decision Log
 
