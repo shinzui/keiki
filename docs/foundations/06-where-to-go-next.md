@@ -1,0 +1,101 @@
+# 06 — Where to Go Next
+
+You've built up the vocabulary. The library's design notes live in
+`docs/research/`. Here's a recommended path through them.
+
+## Required reading
+
+These four cover the core design as it stands today. About 90 minutes
+to read end to end.
+
+1. **`core-design-transducer-as-source-of-truth.md`** (~5 min)
+   The kernel — what `Transducer s c e` is and the family of derived
+   types (`Acceptor`, `Decider`, `Sequencer`). Maps directly onto
+   foundations `03` and `04`.
+
+2. **`formalism-choice-mealy-machines-vs-finite-state-transducers.md`** (~20 min)
+   Sharper take on why the FST is the right choice for keiki versus
+   the Mealy-machine encoding used by `crem`. Reinforces foundations
+   `03`. Skip on first pass if you trust the choice.
+
+3. **`fst-as-workflow-runtime.md`** (~30 min)
+   How the pure transducer connects to a real runtime — event store,
+   queue, subscriptions, timers, activities, signals, child workflows,
+   cancellation. Maps Temporal's feature surface onto the FST
+   formulation. Read all of it; this is the operational shape of the
+   library.
+
+4. **`synthesis-c-foundation-b-presentation-with-worked-examples.md`** (~30 min)
+   The current proposed direction for handling data, with two fully
+   worked examples (an event-sourced aggregate and a process manager).
+   Maps directly onto foundations `05`. This is the most up-to-date
+   statement of the design.
+
+## Depth on specific topics
+
+Read these when you hit the topic, not in order.
+
+- **`multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`**
+  When one command needs to produce multiple events, how to model it.
+  Three approaches with trade-offs. Read before you write your first
+  multi-event aggregate.
+
+- **`future-directions-profunctors-effects-and-composition.md`**
+  Composition operations (sequential, parallel, feedback), profunctor
+  structure, the effect-monad story. Read when you start composing
+  transducers or routing across bounded contexts.
+
+- **`orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`**
+  Treats sagas, process managers, and feedback loops as
+  transducers. Read when you're building a process manager and want
+  to know what patterns the formalism handles.
+
+- **`workflow-modeling-approvals-pipelines-and-human-in-the-loop-as-transducers.md`**
+  Worked examples of common workflow shapes. Useful pattern catalogue.
+
+## Background and exploration
+
+These document decisions and explorations rather than the current
+design. Useful when you want to know "why didn't we do X."
+
+- **`architecture-comparison-fst-aggregate-vs-crem.md`**
+  How keiki differs from `crem`, the other Haskell FST-shaped library.
+
+- **`efsm-based-workflow-engine-technical-analysis.md`**
+  Earlier analysis of the EFSM extension. Superseded by the
+  symbolic-register approach in the synthesis doc, but documents the
+  reasoning that led there.
+
+- **`performance-analysis-projection-costs-and-production-architecture.md`**
+  Performance considerations for projections and the runtime.
+
+- **`data-direction-b-indexed-state-per-vertex.md`** and
+  **`data-direction-c-symbolic-and-register-automata.md`**
+  The parallel exploration that produced the synthesis. Read these if
+  you want to understand the trade-offs the synthesis makes; skip if
+  you trust the conclusion.
+
+## How to follow along once code lands
+
+The design notes are ahead of the implementation. When code lands,
+expect:
+
+- A `keiki-core` package with the `SymTransducer`, `Edge`, `RegFile`,
+  and `Update` types described in the synthesis doc.
+- A worked example (likely User Registration from `02` and the
+  synthesis doc) as the smoke test.
+- A runtime module wiring the pure core to a swappable event store and
+  queue (architecture from `fst-as-workflow-runtime.md`).
+- An `examples/` directory expanding the patterns from the worked
+  examples.
+
+If you find a gap between a design note and the implementation, the
+implementation is the source of truth. The design notes will be
+updated to match.
+
+## Asking questions
+
+If something in the foundations doesn't land, the right move is to
+file an issue against the foundations doc rather than re-deriving the
+mental model on your own. The same goes for the research notes — the
+docs should explain themselves, and gaps are bugs.
