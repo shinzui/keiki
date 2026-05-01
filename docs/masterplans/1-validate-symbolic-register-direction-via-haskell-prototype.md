@@ -142,7 +142,7 @@ commit incrementally.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Sharpen DSL shape for symbolic-register transducer | docs/plans/1-sharpen-dsl-shape-for-symbolic-register-transducer.md | None | None | Complete |
 | 2 | Sharpen schema evolution for events and registers | docs/plans/2-sharpen-schema-evolution-for-events-and-registers.md | None | None | Complete |
-| 3 | Sharpen effects boundary between pure transducer and runtime | docs/plans/3-sharpen-effects-boundary-between-pure-transducer-and-runtime.md | None | None | Not Started |
+| 3 | Sharpen effects boundary between pure transducer and runtime | docs/plans/3-sharpen-effects-boundary-between-pure-transducer-and-runtime.md | None | None | Complete |
 | 4 | Prototype symbolic-register core with User Registration smoke test | docs/plans/4-prototype-symbolic-register-core-with-user-registration-smoke-test.md | EP-1, EP-2, EP-3 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -335,7 +335,7 @@ at-a-glance view.
 
 - [x] EP-1: Author DSL design note at `docs/research/dsl-shape-for-symbolic-register.md` (2026-05-01)
 - [x] EP-2: Author schema-evolution design note at `docs/research/schema-evolution.md` (2026-05-01)
-- [ ] EP-3: Author effects-boundary design note at `docs/research/effects-boundary.md`
+- [x] EP-3: Author effects-boundary design note at `docs/research/effects-boundary.md` (2026-05-01)
 - [ ] EP-4: Verify prerequisites (Milestone 0)
 - [ ] EP-4: Project scaffolding and types compile (Milestone 1)
 - [ ] EP-4: Bare-minimum evaluator (Milestone 2)
@@ -404,6 +404,39 @@ interactions between child plans. Provide concise evidence.
   survey of those two relied on published documentation; `message-db` and
   `tan/message-db-hs` were inspected locally. All four delegate evolution to
   the application — no library does it natively.
+
+### From EP-3 (effects boundary; 2026-05-01)
+
+- **IP-6 (time/randomness) forces a small divergence from synthesis pseudosyntax.**
+  Synthesis §4's `Set #confirmCode freshCode` is not directly representable in
+  the chosen DSL because the pure layer cannot pull randomness. EP-4's User
+  Registration translation must add `code :: ConfirmationCode` as a field of
+  `ResendConfirmationData`, populated by the test fixture (the hypothetical
+  adapter generates the code before constructing the input). The edge becomes
+  `Set #confirmCode (\(ResendConfirmation d) -> d.code)`. Document the
+  divergence in EP-4's Decision Log when the User Registration aggregate is
+  written.
+- **`checkHiddenInputs` returns `[HiddenInputWarning]`, not `Bool`.** The
+  warning shape is structural — it names the bad edge, the input field that
+  is hidden, and the output term that fails to mention it. This cross-cuts
+  EP-1 (the shape of `HiddenInputWarning` depends on `OutTerm`'s structural
+  encoding — IP-2) and EP-4 (which implements the analysis).
+- **No `Keiki.Runtime` module in v1, even an empty one (IP-4).** Adding it
+  invites a contributor to put `IO` in it before the runtime design is ready.
+  EP-4 adds only `Keiki.Core` and `Keiki.Examples.UserRegistration`.
+- **`isSingleValued` is exposed but best-effort in v1.** Syntactic
+  conservative approximation; not exercised by the smoke test. May be
+  re-precision'd in v2 once the SBV-backed `BoolAlg` instance lands.
+- **`crem` and `tan-event-source` not in the `mori` registry.** Effects-boundary
+  survey of those two relied on published-docs knowledge. `effectful` and
+  `tan/message-db-hs` were inspected locally; `tan/message-db-hs`'s
+  `MessageDb` effect surface is the shape `Keiki.Runtime`'s eventual
+  event-store port should mirror.
+
+### Phase 1 complete
+
+All three sharpening plans (EP-1, EP-2, EP-3) are Complete as of 2026-05-01.
+EP-4 (the prototype) is unblocked.
 
 
 ## Decision Log
