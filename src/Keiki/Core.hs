@@ -316,15 +316,13 @@ data OutFields rs ci fs where
 -- | A pure expression yielding an output value @co@.
 data OutTerm (rs :: [Slot]) (ci :: Type) (co :: Type) where
   -- | Structural pack: tagged by a wire constructor, with one 'Term'
-  -- per field of that constructor, plus a v1 hand-written inverse used
-  -- by 'solveOutput'. The structural field-list 'OutFields' remains
-  -- inspectable by 'checkHiddenInputs'; the explicit inverse is the v1
-  -- pragmatic fix for the fact that 'TInpField' is an opaque function
-  -- that 'solveOutput' cannot mechanically invert. v2 retires the
-  -- inverse field once 'TInpProj' (structural input projection) lands.
+  -- per field of that constructor. 'solveOutput' walks the structural
+  -- 'OutFields' mechanically — see EP-1 M3/M4 of MasterPlan 2 for the
+  -- algorithm. The v1 hand-written inverse field that this constructor
+  -- carried is gone; users now express input projection via
+  -- 'TInpCtorField' inside 'OutFields'.
   OPack :: WireCtor co fields
         -> OutFields rs ci fields
-        -> (RegFile rs -> co -> Maybe ci)
         -> OutTerm rs ci co
   -- | v1 escape hatch: opaque function. 'solveOutput' returns 'Nothing'
   -- and 'checkHiddenInputs' flags the edge.
@@ -436,12 +434,11 @@ lit = TLit
 infix 4 .==
 
 
--- | Structural-output construction. The third argument is the v1
--- hand-written inverse used by 'solveOutput'. v2 retires this in favour
--- of mechanical inversion via structural input projection.
+-- | Structural-output construction. 'solveOutput' inverts the result
+-- mechanically by walking 'OutFields'; users no longer supply an
+-- inverse function (the v1 hand-written inverse is retired in EP-1 M4).
 pack :: WireCtor co fields
      -> OutFields rs ci fields
-     -> (RegFile rs -> co -> Maybe ci)
      -> OutTerm rs ci co
 pack = OPack
 
@@ -462,9 +459,9 @@ evalTerm (TApp2 f a b)         regs ci = f (evalTerm a regs ci) (evalTerm b regs
 
 -- | Evaluate an 'OutTerm' against a register file and an input symbol.
 evalOut :: OutTerm rs ci co -> RegFile rs -> ci -> co
-evalOut (OPack ctor fields _inv) regs ci =
+evalOut (OPack ctor fields) regs ci =
   wcBuild ctor (evalOutFields fields regs ci)
-evalOut (OFn f)                  regs ci = f regs ci
+evalOut (OFn f)             regs ci = f regs ci
 
 
 evalOutFields :: OutFields rs ci fs -> RegFile rs -> ci -> fs
@@ -585,27 +582,20 @@ reconstitute t = go (initial t, initialRegs t)
 
 -- * Build-time analyses ----------------------------------------------------
 
--- | Recover the input that produced a given output. The v2 path is
--- structural: walk 'OutFields' gathering '(Index, value)' pairs from
--- every 'TInpCtorField' read, verify the gathered 'InCtor' values
--- agree, assemble a 'RegFile' covering every slot of the 'InCtor' and
--- call 'icBuild'. 'OFn' stays opaque ('Nothing'); the v1 hand-written
--- inverse field on 'OPack' is consulted only as a fallback when the
--- structural walk fails (the field is dropped in EP-1 M4).
+-- | Recover the input that produced a given output by walking
+-- 'OutFields' structurally: gather '(Index, value)' pairs from every
+-- 'TInpCtorField' read, verify the gathered 'InCtor' values agree,
+-- assemble a 'RegFile' covering every slot of the 'InCtor', and call
+-- 'icBuild'. 'OFn' stays opaque ('Nothing').
 solveOutput :: OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
-solveOutput (OPack ctor fields legacyInv) regs co =
-  case structuralAttempt of
-    Just ci -> Just ci
-    Nothing -> legacyInv regs co
-  where
-    structuralAttempt = do
-      fs_obs <- wcMatch ctor co
-      case gatherInpEntries fields fs_obs of
-        WalkBail              -> Nothing
-        WalkNoInput           -> Nothing
-        WalkGathered (SomeIcWithEntries ic entries) -> do
-          rf <- assemble entries
-          pure (icBuild ic rf)
+solveOutput (OPack ctor fields) _regs co = do
+  fs_obs <- wcMatch ctor co
+  case gatherInpEntries fields fs_obs of
+    WalkBail              -> Nothing
+    WalkNoInput           -> Nothing
+    WalkGathered (SomeIcWithEntries ic entries) -> do
+      rf <- assemble entries
+      pure (icBuild ic rf)
 solveOutput (OFn _) _regs _co = Nothing
 
 
@@ -721,7 +711,7 @@ checkHiddenInputs t =
         | otherwise -> []
       Just (OFn _) ->
         [ "edge #" <> show n <> ": OFn output is opaque (no inverse)" ]
-      Just (OPack _ fields _inv)
+      Just (OPack _ fields)
         | Just (MissingInCtorFields icN missing) <- detectMissingInCtorFields fields
             -> [ "edge #" <> show n
                  <> ": OPack walk for InCtor \"" <> icN

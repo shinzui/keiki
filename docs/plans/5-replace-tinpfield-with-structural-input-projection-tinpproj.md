@@ -120,7 +120,7 @@ actual current state of the work.
       fallback for edges still on `TInpField`. Added six new tests under
       `solveOutput structural path (TInpCtorField)`. `cabal test` reports
       34 examples, 0 failures.)*
-- [ ] **Milestone 4 — Drop the hand-written inverse field from
+- [x] **Milestone 4 — Drop the hand-written inverse field from
       `OPack`.** Change the `OPack` constructor signature to
       `OPack :: WireCtor co fields -> OutFields rs ci fields -> OutTerm rs ci co`
       (no third field). Update the `pack` helper. Compilation breaks at
@@ -128,6 +128,16 @@ actual current state of the work.
       `src/Keiki/Examples/UserRegistration.hs` and
       `src/Keiki/Examples/UserRegistrationV0.hs`; this is intentional
       and is fixed in M5/M6.
+      *(2026-05-01 — `OPack` shrunk to two arguments; `pack` matches.
+      `evalOut`/`solveOutput`/`checkHiddenInputs`'s `OPack` clauses no
+      longer mention an inverse parameter. `solveOutput` is now purely
+      structural for `OPack`; the v1 fallback path is gone. Test fixture
+      `outFoo` in `CoreSpec.hs` updated (drops third arg) and its
+      assertion now reflects the new behaviour: a TInpField-only
+      OutFields makes solveOutput return Nothing because the structural
+      walk bails. Library does not build at this commit
+      (V5/V0 example modules still call `pack` with three args); M5/M6
+      restore the build.)*
 - [ ] **Milestone 5 — Migrate `Keiki.Examples.UserRegistration` (V5).**
       Replace `inpStart`/`inpConfirm`/`inpResend`/`inpGdpr` with new
       helpers that build the new `Term` constructor. Define

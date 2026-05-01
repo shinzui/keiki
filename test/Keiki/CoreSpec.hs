@@ -119,7 +119,7 @@ spec = do
         Just (s, _) -> s `shouldBe` False
         Nothing     -> expectationFailure "expected Just (initial, _)"
 
-  describe "solveOutput on a tiny OPack" $ do
+  describe "solveOutput on a tiny OPack (v1 TInpField subset)" $ do
     let -- A tiny output sum.
         wireFooCtor :: WireCtor TinyOut (Int, (Int, ()))
         wireFooCtor = WireCtor
@@ -127,19 +127,20 @@ spec = do
           , wcMatch = \(Foo a b) -> Just (a, (b, ()))
           , wcBuild = \(a, (b, ())) -> Foo a b
           }
-        -- forward: Foo (ci+1) (ci*2)
+        -- forward: Foo (ci+1) (ci*2). Uses the v1 TInpField surface; the
+        -- structural walk bails so solveOutput returns Nothing for this
+        -- output. After EP-1 M7 retires TInpField, this fixture is
+        -- removed entirely.
         outFoo :: OutTerm '[] Int TinyOut
         outFoo = OPack
           wireFooCtor
           (OFCons (TApp1 (+1) (TInpField id))
                   (OFCons (TApp1 (*2) (TInpField id)) OFNil))
-          -- v1 hand-written inverse: pull the first field minus 1.
-          (\_regs co -> case co of Foo a _ -> Just (a - 1))
 
     it "evalOut produces Foo (ci+1) (ci*2)" $
       evalOut outFoo RNil 5 `shouldBe` Foo 6 10
-    it "solveOutput recovers ci from the observed output" $
-      solveOutput outFoo RNil (Foo 6 10) `shouldBe` Just 5
+    it "solveOutput on a TInpField-only OPack returns Nothing (structural walk bails)" $
+      solveOutput outFoo RNil (Foo 6 10) `shouldBe` Nothing
     it "solveOutput on OFn returns Nothing (opaque)" $ do
       let opaqueOut :: OutTerm '[] Int TinyOut
           opaqueOut = OFn (\_ ci -> Foo ci ci)
@@ -162,7 +163,6 @@ spec = do
             (OFCons (TInpCtorField inCtorTinyFoo
                        (#b :: Index '[ '("a", Int), '("b", Int) ] Int))
               OFNil))
-          (\_regs _co -> Nothing)  -- fallback unused; structural walk wins
         -- Incomplete OPack: only #a is in OutFields; #b is a constant.
         outIncomplete :: OutTerm '[] TinyCmd TinyCmdOut
         outIncomplete = OPack
@@ -170,7 +170,6 @@ spec = do
           (OFCons (TInpCtorField inCtorTinyFoo
                      (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
             (OFCons (TLit (0 :: Int)) OFNil))
-          (\_regs _co -> Nothing)
 
     it "evalOut produces TinyFooOut on a matching ci" $
       evalOut outComplete RNil (TinyFoo 7 11) `shouldBe` TinyFooOut 7 11
