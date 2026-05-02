@@ -19,7 +19,7 @@ import GHC.Generics (Generic)
 import Test.Hspec
 
 import qualified Keiki.Builder as B
-import Keiki.Builder ((.=))
+import Keiki.Builder ((.=), (*:))
 import Keiki.Core
   ( Edge (..)
   , HsPred
@@ -153,7 +153,7 @@ coffeeBuilt = B.buildTransducer Idle emptyCoffeeRegs (const False) do
       B.onCmd inCtorInsert $ \d -> B.do
         B.slot @"price"         .= d.amount
         B.slot @"brewStartedAt" .= d.at
-        B.emit wireBrewed (OFCons d.amount OFNil)
+        B.emit wireBrewed (d.amount *: B.oNil)
         B.goto Brewing
 
     B.from Brewing do

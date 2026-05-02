@@ -32,6 +32,8 @@
 --     type-check at the offending line.
 --   * 'emit' takes a 'WireCtor' and an 'OutFields' and packages
 --     'OPack' with the InCtor recovered from the enclosing 'onCmd'.
+--     The 'OutFields' value is built with the right-associative
+--     '(*:)' / 'oNil' operators (synonyms for 'OFCons' / 'OFNil').
 --
 -- See @docs\/research\/edge-builder-dsl-shape.md@ for the full
 -- design and per-question rationale (carrier monad,
@@ -41,7 +43,7 @@
 --
 -- @
 -- import qualified Keiki.Builder as B
--- import Keiki.Builder        ((.=))
+-- import Keiki.Builder        ((.=), (*:))
 -- import qualified Prelude
 --
 -- emailDelivery
@@ -57,10 +59,7 @@
 --         B.'slot' \@\"emailRecipient\" .= d.recipient
 --         B.'slot' \@\"emailSubject\"   .= d.subject
 --         B.'slot' \@\"emailSentAt\"    .= d.at
---         B.'emit' inCtorSendEmail wireEmailSent
---           ('Keiki.Core.OFCons' d.recipient
---           ('Keiki.Core.OFCons' d.subject
---           ('Keiki.Core.OFCons' d.at 'Keiki.Core.OFNil')))
+--         B.'emit' wireEmailSent (d.recipient *: d.subject *: d.at *: B.'oNil')
 --         B.'goto' EmailSentVertex
 --
 --     B.'from' EmailSentVertex (Prelude.pure ())  -- terminal
@@ -73,8 +72,8 @@
 --   * @{-\# LANGUAGE BlockArguments \#-}@ — so a @B.do@ block can
 --     appear as a function argument without parentheses.
 --   * @import qualified Keiki.Builder as B@ /and/
---     @import Keiki.Builder ((.=))@ — the operator must be in scope
---     unqualified; @B.(.=)@ is unreadable.
+--     @import Keiki.Builder ((.=), (*:))@ — the operators must be
+--     in scope unqualified; @B.(.=)@ / @B.(*:)@ is unreadable.
 --
 -- == Three-layer monad shape
 --
@@ -138,6 +137,9 @@ module Keiki.Builder
   , emit
   , emitWith
   , noEmit
+    -- ** Output-fields HList sugar
+  , (*:)
+  , oNil
     -- ** Guards
   , requireEq
   , requireGuard
@@ -165,7 +167,7 @@ import Keiki.Core
   , HsPred (..)
   , Index
   , InCtor
-  , OutFields
+  , OutFields (..)
   , OutTerm
   , RegFile
   , SymTransducer (..)
@@ -384,6 +386,25 @@ emitWith ic wc fs = EdgeBuilder $ \pe ->
 -- exists only so the user can be explicit about intent.
 noEmit :: EdgeBuilder rs ci co v w w ()
 noEmit = EdgeBuilder $ \pe -> ((), pe)
+
+
+-- | Right-associative HList constructor synonym for 'OFCons'.
+-- Lets 'emit' call sites read top-to-bottom in the wire ctor's
+-- field order:
+--
+-- > B.emit wireEmailSent (d.recipient *: d.subject *: d.at *: oNil)
+--
+-- Identical AST: @t1 *: t2 *: oNil@ produces the same 'OutFields'
+-- value as @OFCons t1 (OFCons t2 OFNil)@. Provided as the
+-- intermediate step before the field-keyed record form (M5).
+(*:) :: Term rs ci f -> OutFields rs ci fs -> OutFields rs ci (f, fs)
+(*:) = OFCons
+infixr 5 *:
+
+
+-- | The empty 'OutFields' HList. Synonym for 'OFNil'.
+oNil :: OutFields rs ci ()
+oNil = OFNil
 
 
 -- * Guards ----------------------------------------------------------------

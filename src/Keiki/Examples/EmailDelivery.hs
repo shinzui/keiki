@@ -50,7 +50,7 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
-import Keiki.Builder ((.=))
+import Keiki.Builder ((.=), (*:))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -164,8 +164,7 @@ emailDelivery = B.buildTransducer EmailPending emptyEmailRegs
         B.slot @"emailRecipient" .= d.recipient
         B.slot @"emailSubject"   .= d.subject
         B.slot @"emailSentAt"    .= d.at
-        B.emit wireEmailSent
-          (OFCons d.recipient (OFCons d.subject (OFCons d.at OFNil)))
+        B.emit wireEmailSent (d.recipient *: d.subject *: d.at *: B.oNil)
         B.goto EmailSentVertex
 
 
