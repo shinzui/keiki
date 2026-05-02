@@ -1,6 +1,8 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | A small Email Delivery aggregate, the second worked example in
@@ -30,6 +32,7 @@ module Keiki.Examples.EmailDelivery
   , EmailVertex (..)
     -- * The transducer
   , emailDelivery
+  , emailDeliveryAST
   , emptyEmailRegs
     -- * Wire constructors (exported for testing / composition)
   , wireEmailSent
@@ -46,6 +49,8 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
+import qualified Keiki.Builder as B
+import Keiki.Builder ((.=))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -141,24 +146,54 @@ $(deriveView ''EmailVertex ''EmailRegs
 
 -- * The transducer ---------------------------------------------------------
 
+-- | The aggregate's transducer, authored with 'Keiki.Builder'. This
+-- is the canonical form every downstream consumer
+-- ('Keiki.Composition.compose', the deciders, the symbolic
+-- analyses, the example specs) uses by name.
 emailDelivery
   :: SymTransducer (HsPred EmailRegs EmailCmd)
                    EmailRegs
                    EmailVertex
                    EmailCmd
                    EmailEvent
-emailDelivery = SymTransducer
-  { edgesOut    = emailDeliveryEdges
+emailDelivery = B.buildTransducer EmailPending emptyEmailRegs
+                  (\case EmailSentVertex -> True; _ -> False) do
+
+    B.from EmailPending do
+      B.onCmd inCtorSendEmail $ \d -> B.do
+        B.slot @"emailRecipient" .= d.recipient
+        B.slot @"emailSubject"   .= d.subject
+        B.slot @"emailSentAt"    .= d.at
+        B.emit inCtorSendEmail wireEmailSent
+          (OFCons d.recipient (OFCons d.subject (OFCons d.at OFNil)))
+        B.goto EmailSentVertex
+
+
+-- * AST form (legacy, retained for the M4 equivalence test) ----------------
+
+-- | The same transducer hand-authored against the post-MP-6
+-- "Keiki.Core" AST. Retained as a side-by-side reference for the
+-- 'Keiki.Examples.EmailDeliveryBuilderSpec' equivalence test;
+-- removable in a follow-up plan once the migration is judged
+-- stable.
+emailDeliveryAST
+  :: SymTransducer (HsPred EmailRegs EmailCmd)
+                   EmailRegs
+                   EmailVertex
+                   EmailCmd
+                   EmailEvent
+emailDeliveryAST = SymTransducer
+  { edgesOut    = emailDeliveryASTEdges
   , initial     = EmailPending
   , initialRegs = emptyEmailRegs
   , isFinal     = \case EmailSentVertex -> True; _ -> False
   }
 
 
-emailDeliveryEdges
+emailDeliveryASTEdges
   :: EmailVertex
   -> [Edge (HsPred EmailRegs EmailCmd) EmailRegs EmailCmd EmailEvent EmailVertex]
-emailDeliveryEdges = \case
+emailDeliveryASTEdges = \case
 
   EmailPending ->
     [ Edge

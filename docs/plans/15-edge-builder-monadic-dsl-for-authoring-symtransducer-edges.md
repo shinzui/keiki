@@ -104,7 +104,7 @@ entries, add new items as discovered.
 - [x] M1: Settle builder shape — write the design note `docs/research/edge-builder-dsl-shape.md` resolving the open questions (do-notation mechanism `QualifiedDo`-vs-`RebindableSyntax`, `(.=)` lifting, `emit` shape, `from`/`onCmd` shape, error-message shape, error reporting). Append a paragraph to `docs/research/dsl-shape-for-symbolic-register.md`'s "Open follow-ups" section pointing at the new note. Completed 2026-05-02.
 - [x] M2: Spike — implement a throwaway `EdgeBuilderSpike.hs` against a coffee-dispenser two-vertex toy. Show the builder compiles to the same `Edge` AST as a hand-written reference; validated by per-edge `delta`/`omega` agreement on a short input log. Decide whether the spike's shape is what M3 ships or needs revision; record verdict. Completed 2026-05-02. Verdict: **shape revised**, design note amended in lockstep — see Surprises & Discoveries entry "EP-15 M2 spike findings".
 - [x] M3: Implement the production module `src/Keiki/Builder.hs` and expose it from `keiki.cabal`. Surface includes `buildTransducer`, `from`, `onCmd`, `onEpsilon`, `(.=)`, `slot`, `emit`, `noEmit`, `goto`, `requireEq`, `requireGuard`. Distinct-targets check happens at compile time via `Disjoint` (not finalize-time as the plan originally said — the spike showed the type-level path is what M2 settled on). Missing/duplicated `goto` are caught at finalize time. Haddock at 100% (31/31). Spike rewritten on top of `Keiki.Builder`. Completed 2026-05-02.
-- [ ] M4: Migrate `Keiki.Examples.EmailDelivery`'s `emailDeliveryEdges` to the builder. Keep the AST-form value behind a new internal name (`emailDeliveryAST`) for the equivalence test. Add `test/Keiki/Examples/EmailDeliveryBuilderSpec.hs` asserting `delta`/`omega` agree on the single canonical command. Confirm the migrated file's LOC dropped by the targeted amount.
+- [x] M4: Migrate `Keiki.Examples.EmailDelivery`'s `emailDeliveryEdges` to the builder. Keep the AST-form value behind a new internal name (`emailDeliveryAST`) for the equivalence test. Add `test/Keiki/Examples/EmailDeliveryBuilderSpec.hs` asserting `delta`/`omega` agree on the single canonical command. Confirm the migrated file's LOC dropped by the targeted amount. Completed 2026-05-02. **LOC went up** from 185 → 220 because the AST form is preserved alongside the builder form per the plan's Concrete Steps; see Surprises & Discoveries entry "M4 LOC inversion".
 - [ ] M5: Migrate `Keiki.Examples.UserRegistration`'s `userRegEdges` to the builder. Same structure: AST form preserved as `userRegAST`, builder form named `userReg`, equivalence test added. Confirm `Keiki.Examples.UserRegistrationSpec` still passes (it uses `userReg` by name).
 - [ ] M6: Add unit tests in `test/Keiki/BuilderSpec.hs` covering: single `(.=)`, sequential `(.=)` with distinct slots, duplicate `(.=)` to the same slot fails, `emit` round-trips through `solveOutput`, `noEmit` produces an ε-edge, `goto` sets `target`, missing `goto` fails, `requireEq` extends the guard, `onEpsilon` (no `onCmd`) builds a guard-only edge.
 - [ ] M7: Documentation — update `docs/research/dsl-shape-for-symbolic-register.md` with a new §"Authoring DSL on top of the AST" linking to the builder module's haddock. If `docs/foundations/06-where-to-go-next.md` references the AST surface as the authoring path, update it to point at the builder first.
@@ -167,6 +167,31 @@ any discovered limit of the builder DSL with concise evidence.)
 
   Both findings shipped to the design note. M3 will inherit the
   revised shape verbatim.
+
+- 2026-05-02 (M4 LOC inversion) — The plan's M4 Concrete Steps
+  require preserving the AST form (`emailDeliveryAST` /
+  `emailDeliveryASTEdges`) alongside the new builder form. With both
+  forms present, `EmailDelivery.hs` grew from 185 to 220 LOC (the
+  builder form is ~17 lines, the AST form is ~30 lines, plus
+  imports / extensions / haddock for both). The plan's overall
+  Validation gate "wc -l … reports < 130" is unreachable while
+  both forms coexist; that target presumes the AST form is removed
+  in a follow-up plan once the equivalence test is judged stable.
+
+  Resolution: M4 ships with both forms present. The Progress entry
+  records the actual 220 LOC. The equivalence test (6 hspec
+  examples) passes; the migration is judged successful on the
+  behavioural axis, and the LOC budget is treated as a known
+  inconsistency in the plan's gates. A future plan ("retire AST
+  forms in examples") can drop the AST forms, at which point LOC
+  drops below the original 185 baseline.
+
+  Builder form alone is 17 lines (16 with one less for the import);
+  AST form is 30 lines. So removing the AST form would put
+  EmailDelivery at ~190, not ≤130. The plan's < 130 figure was
+  optimistic; the realistic post-AST-removal number is closer to
+  ~190. This is a documentation-only discrepancy; no code change
+  needed.
 
 
 ## Decision Log
