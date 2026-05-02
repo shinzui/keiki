@@ -81,6 +81,16 @@ design. Useful when you want to know "why didn't we do X."
   you want to understand the trade-offs the synthesis makes; skip if
   you trust the conclusion.
 
+## Benchmarking
+
+`cabal bench` runs the `keiki-bench` benchmark suite (EP-22), which
+exercises the five pure-core operations (`delta`, `omega`, `step`,
+`applyEvent`, `reconstitute`) on the `UserRegistration` and
+`OrderCart` example aggregates in both authoring forms (builder
+and AST). See **`bench/README.md`** for how to capture a baseline,
+diff against a previous run, and read the `bcompare` ratios in
+the `head-to-head` group.
+
 ## How to follow along once code lands
 
 The design notes are ahead of the implementation. When code lands,
@@ -101,9 +111,17 @@ updated to match.
 
 ## Authoring a transducer
 
-The recommended entry point for writing a new aggregate is the
-**`Keiki.Builder`** module — a monadic DSL that compiles down to
-the `Keiki.Core` AST. Read its haddock first; the worked
+For the action-oriented walkthrough, read **`docs/guide/user-guide.md`**.
+It covers the four-layer authoring model (`buildTransducer` →
+`from` → `onCmd`/`onEpsilon` → edge body), the TH derivations,
+running a transducer, the `Decider`/`Acceptor` façades,
+composition, the symbolic analyses, common errors, and an
+extensive glossary. It's the right starting point if you're about
+to write a new aggregate.
+
+The recommended entry point in code is the **`Keiki.Builder`**
+module — a monadic DSL that compiles down to the `Keiki.Core`
+AST. Read its haddock alongside the user guide; the worked
 `EmailDelivery` example at the top is a complete tutorial. The
 builder removes the per-edge boilerplate of the AST (record
 literals, infix `combine`, slot-name-tagged `USet` annotations,

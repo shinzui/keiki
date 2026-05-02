@@ -114,13 +114,13 @@ entries, add new items as discovered.
   AST). Added a head-to-head `bcompare` group on builder vs AST
   for `step` and `reconstitute`. 24 benches, ≈48s wall-clock.
   (2026-05-02)
-- [ ] M4 — Documentation closure: a one-page `bench/README.md`
-  on how to run, interpret, and capture a baseline (referencing
-  `tasty-bench`'s `--baseline` and `--csv` flags). Update
-  `docs/foundations/06-where-to-go-next.md` with a one-liner
-  pointer at "Benchmarking" if such a section is appropriate;
-  otherwise add a brief mention to the top-level `README.md` /
-  `CLAUDE.md` if those exist.
+- [x] M4 — Documentation closure: shipped `bench/README.md`
+  (one screenful, covers `cabal bench`, `--csv` baseline
+  capture, `--baseline` diff, the `bcompare` ratio
+  interpretation, and the operation matrix). Added a
+  "Benchmarking" section to `docs/foundations/06-where-to-go-next.md`
+  pointing at `bench/README.md`. No top-level `README.md` exists
+  (skipped per plan). (2026-05-02)
 
 
 ## Surprises & Discoveries
@@ -334,7 +334,94 @@ Subsequent decisions made during implementation append below them with a date.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### What landed (vs the validation criteria in Purpose)
+
+1. ✅ `cabal build` clean under GHC 9.12.3.
+2. ✅ `cabal test` green at 149 examples (141 baseline + 8 new
+   from `OrderCartBuilderSpec` and `OrderCartSpec`). Plan
+   target was ≥145.
+3. ✅ `cabal bench` runs end-to-end in ~48 s (under the 60 s
+   budget), exits zero, every benchmark prints `OK`.
+4. ✅ The bench output covers, for each (aggregate × form), all
+   five pure-core operations, plus head-to-head `bcompare`
+   ratios on `step` and `reconstitute` for both aggregates.
+5. ✅ `Keiki.Examples.OrderCart` exposes both `orderCart` and
+   `orderCartAST`, byte-identically agreeing on three canonical
+   logs (happy / cancel / refund).
+6. ✅ `bench/README.md` exists and describes how to run,
+   capture a baseline, and interpret the output.
+
+The size criterion ("`OrderCart` is at least 8× the size of
+`EmailDelivery` in command-ctor count") holds: 10 OrderCart
+commands vs 1 EmailDelivery command (10×); 10 OrderCart events
+vs 1 EmailDelivery event (10×).
+
+### What the bench *measured* (the original open question)
+
+> Whether `Keiki.Builder` introduces measurable runtime overhead
+> vs. the hand-written AST form (Purpose item 2).
+
+**Yes — about 2× on per-step operations.** Concretely:
+
+    UserReg/builder/step   ≈ 50.6 ns
+    UserReg/ast/step       ≈ 28.9 ns   (0.57× builder)
+    OrderCart/builder/step ≈ 57.9 ns
+    OrderCart/ast/step     ≈ 30.5 ns   (0.52× builder)
+
+The gap is in `delta`'s edge dispatch: builder's
+`Prelude.lookup` over an alist of `(vertex, edges)` pairs vs
+AST's hand-written `\case`. On the full-replay path
+(`reconstitute` over a 32-event log), the gap shrinks to
+0.87–0.94× because per-step setup amortises the lookup
+overhead away.
+
+This is real but not large in absolute terms. The decision
+about whether to cut over the alist to a faster dispatch
+(IntMap, vector indexed by `fromEnum`, perfect-hash table) is
+out of scope here; this plan delivers the measurement that
+makes the conversation possible.
+
+### Plan deviations recorded in Decision Log
+
+- Renamed five OrderCart event constructors with `Order`
+  prefix to dodge same-named vertex constructors (a Haskell
+  module cannot host two type-level data constructors with the
+  same name even across distinct sum types). The plan's prose
+  used un-prefixed names.
+- Replaced `cartItems :: [CartItem]` with `itemCount :: Word32`
+  (counter evolved by `TApp1 (+ 1) #itemCount`). The plan
+  called for a list register; encoding "append" as a `Term`
+  adds noise without exercising any new interpreter path the
+  bench cares about.
+- Skipped the `KnownInCtors OrderCmd` instance. `OrderCartRegs`
+  carries `Word16` / `Word32` / `Word64` slots that aren't in
+  the curated `Keiki.Symbolic.Sym` registry, and the plan
+  declared SBV-bound analyses out of scope. Pure-core
+  operations are unaffected.
+
+None of the deviations affect the measurement matrix the plan
+sized for; all are documented in the Decision Log.
+
+### Lessons
+
+- **Slot-typing checked early.** The first compile of the M2
+  module surfaced the missing `Sym Word*` instances *via the
+  `KnownInCtors` instance*, not silently. The instance acts as
+  a "your aggregate is symbolic-analysis-ready" check; skipping
+  it was the right call once the fixture's slot types
+  diverged from the curated registry.
+- **`solveOutput` is the bottleneck, not `delta`.** `applyEvent`
+  takes ~300 ns per call across both aggregates and both forms,
+  vs `step` at ~30–60 ns. The 10× factor is dominated by
+  `solveOutput`'s `gatherInpEntries` HList walk plus
+  `assemble`'s slot-by-slot `findHead` — a future perf plan
+  should target `applyEvent` before chasing the 2× gap on
+  `delta`.
+- **The bench fixtures live in the bench module, not the
+  library.** Using `urLog` / `ocLog` only inside `bench/` keeps
+  the test side's canonical 5- and 9-event logs unchanged,
+  preserves the test-suite's narrative shape, and avoids any
+  test-time import of bench-specific data.
 
 
 ## Context and Orientation
