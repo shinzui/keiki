@@ -34,7 +34,8 @@ common shared-extensions
 
 library
     import:             warnings, shared-extensions
-    exposed-modules:    Keiki.Composition
+    exposed-modules:    Keiki.Acceptor
+                        Keiki.Composition
                         Keiki.Core
                         Keiki.Decider
                         Keiki.Generics
@@ -55,7 +56,8 @@ test-suite keiki-test
     type:               exitcode-stdio-1.0
     hs-source-dirs:     test
     main-is:            Spec.hs
-    other-modules:      Keiki.CompositionSpec
+    other-modules:      Keiki.AcceptorSpec
+                        Keiki.CompositionSpec
                         Keiki.CoreSpec
                         Keiki.DeciderSpec
                         Keiki.Generics.THSpec

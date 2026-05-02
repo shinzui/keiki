@@ -203,6 +203,19 @@ emails and timestamps are not enumerable.
 
 This is the data problem. It's the whole reason `05` exists.
 
+## In code: `Keiki.Acceptor`
+
+The library exports `Keiki.Acceptor.inputAcceptor` and
+`Keiki.Acceptor.outputAcceptor`, each producing an `Acceptor a s`
+record (step function, initial state, final-state predicate) from a
+`SymTransducer`. The state carrier is `(s, RegFile rs)` because edge
+guards depend on the register file as well as the control vertex.
+Use `accepts (inputAcceptor t) cmds :: Bool` to ask whether a
+command sequence is in the input language; `accepts (outputAcceptor
+t) events :: Bool` for the event language. The output acceptor's
+`aStep` is exactly the `evolve` this chapter derives — it wraps
+`applyEvent`, which inverts ω mechanically.
+
 ## Vocabulary recap
 
 - **Input projection (π₁)** — the acceptor over the input alphabet
