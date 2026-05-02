@@ -59,6 +59,7 @@ test-suite keiki-test
     hs-source-dirs:     test
     main-is:            Spec.hs
     other-modules:      Keiki.AcceptorSpec
+                        Keiki.BuilderSpec
                         Keiki.BuilderSpike
                         Keiki.CompositionSpec
                         Keiki.CoreSpec

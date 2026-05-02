@@ -2,6 +2,7 @@ module Main (main) where
 
 import Test.Hspec
 import qualified Keiki.AcceptorSpec
+import qualified Keiki.BuilderSpec
 import qualified Keiki.BuilderSpike
 import qualified Keiki.CompositionSpec
 import qualified Keiki.CoreSpec
@@ -19,6 +20,7 @@ import qualified Keiki.Examples.UserRegistrationViewSpec
 main :: IO ()
 main = hspec $ do
   describe "Keiki.Acceptor"                               Keiki.AcceptorSpec.spec
+  describe "Keiki.Builder (EP-15 M6)"                     Keiki.BuilderSpec.spec
   describe "Keiki.BuilderSpike (EP-15 M2)"                Keiki.BuilderSpike.spec
   describe "Keiki.Composition"                            Keiki.CompositionSpec.spec
   describe "Keiki.Core"                                   Keiki.CoreSpec.spec
