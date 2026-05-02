@@ -47,10 +47,10 @@ intermediary).
 
 **Worked error message — duplicate `(.=)`.** Given:
 
-    B.from EmailPending B.do
+    B.from EmailPending $ do
       B.onCmd inCtorSendEmail $ \d -> B.do
-        #emailRecipient .= d.recipient
-        #emailRecipient .= d.recipient   -- duplicate
+        B.slot @"emailRecipient" B..= d.recipient
+        B.slot @"emailRecipient" B..= d.recipient   -- duplicate
         B.goto EmailSentVertex
 
 GHC fails the second `(.=)` with the existing `TypeError` from
@@ -61,7 +61,7 @@ GHC fails the second `(.=)` with the existing `TypeError` from
           written by both halves of `combine`. Each register slot
           may be written at most once per edge update.
         • In a stmt of a 'do' block:
-            #emailRecipient .= d.recipient
+            slot @"emailRecipient" .= d.recipient
 
 The line number points at the offending duplicate `(.=)` (the
 indexed-bind's `>>=` is desugared from that statement, and GHC
@@ -69,22 +69,34 @@ attributes the failed `Disjoint` constraint to it). The slot name is
 quoted in the message verbatim — the user does not need to read the
 indexed-monad type to locate the bug.
 
+(The `B.do` qualifier applies only to the per-edge body. The outer
+`from`/`onCmd` blocks are plain `Monad`-typed `do`-notation; only
+`EdgeBuilder` (the per-edge layer) is the indexed monad. See Q4 for
+the three-monad layering.)
+
 
 ## Q2 — `(.=)` shape
 
-**Decision.** RHS is always a `Term rs ci r`. No `ToTerm` overload
-class.
+**Decision.** RHS is always a `Term rs ci r`. The slot LHS is
+`slot @"name"` (a TypeApplication-driven helper), not `#name`. No
+`ToTerm` overload class.
 
 The existing AST examples never write a bare value as a slot RHS:
 every `USet` is `USet ix (inpFoo #x)` or `USet ix (proj #y)` or
 `USet ix (TLit v)`-via-`lit`. All three already produce a `Term`.
 Adding a `ToTerm` overload would buy a small win for the literal
-case (`#slot .= 42` instead of `#slot .= lit 42`) at the cost of an
-overlap-instance dance (the `Term rs ci r` instance must take
-precedence over the bare-value instance, and GHC's type inference
-on the bare-value side has to defer until both sides resolve).
+case (`slot @"x" .= 42` instead of `slot @"x" .= lit 42`) at the
+cost of an overlap-instance dance. The conservative shape now keeps
+the type-error story crisp.
 
 Pragmatic shape:
+
+    -- A label-style helper that lifts a slot name (via TypeApplication)
+    -- to its slot-name-tagged register index.
+    slot
+      :: forall (name :: Symbol) rs r.
+         (KnownSymbol name, HasIndexN name rs r)
+      => IndexN name rs r
 
     (.=) :: (Disjoint '[s] w, KnownSymbol s)
          => IndexN s rs r
@@ -93,14 +105,42 @@ Pragmatic shape:
     infixr 6 .=
 
 The `(Disjoint '[s] w)` constraint is what the type error
-referenced in Q1 lifts. `IndexN s rs r` is the slot-name-tagged
-index; `#slot` resolves to it via the `IsLabel` instance in
-`Keiki.Internal.Slots`.
+referenced in Q1 lifts.
+
+**Why `slot @"name"` instead of `#name`.** EP-15 M2 (the spike)
+discovered that `#name` does not resolve cleanly to `IndexN "name"
+rs r` when `name` is a quantified type variable in `(.=)`'s
+signature. The IsLabel instance in `Keiki.Internal.Slots` is
+`IsLabel s (IndexN s rs r)`, and GHC's instance lookup will not
+commit to `s ~ "name"` when the pattern-side `s` appears at two
+positions in the constraint head and the call-site `name` is itself
+unsolved (the existing AST works around this by writing
+`(#name :: IndexN "name" Regs T)` everywhere). The `slot @"name"`
+helper sidesteps the problem by pinning the symbol via
+TypeApplication. Inside `slot`, the `HasIndexN name rs r` constraint
+fires once `rs` is determined from the surrounding `EdgeBuilder`,
+returning `IndexN name rs r` for the chosen `name`.
+
+The user surface goes from
+
+    USet (#emailRecipient :: IndexN "emailRecipient" EmailRegs Email) ...
+
+(AST, name appears twice) to
+
+    slot @"emailRecipient" .= ...
+
+(builder, name appears once). The win is preserved; the syntax
+becomes `slot @"name"` instead of `#name`.
+
+If a future GHC release fixes the IsLabel instance-head unification
+(or a future plan adds a class-driven label resolution that handles
+the two-positions case), `slot` can be made an alias for `id` and
+the user surface flips back to `#name .= …` without touching
+`(.=)` itself. The current shape commits to the working surface.
 
 If a follow-up plan finds `lit`-noise on literal-heavy aggregates
-sufficient to motivate the overload, the type signature widens
-without rewriting any existing call site. The conservative shape now
-keeps the type-error story crisp.
+sufficient to motivate a `ToTerm`-style RHS overload, the type
+signature widens without rewriting any existing call site.
 
 
 ## Q3 — `emit` shape
@@ -167,11 +207,30 @@ against). An edge with neither `emit` nor `noEmit` is treated as an
 
 ## Q4 — Vertex grouping (`from`)
 
-**Decision.** Vertex-keyed sub-builders. The top-level builder is a
-plain `Monad`-carrier `VertexBuilder rs ci co s a` whose runtime
-state is a `[(s, Edge phi rs ci co s)]` writer. `from V $ do { … }`
-parses the inner do-block's `onCmd`/`onEpsilon` blocks into a list
-of `Edge` values and tags each with `V`.
+**Decision.** Vertex-keyed sub-builders. The builder is a *three-
+layer* construction:
+
+1. **`VertexBuilder rs ci co v a`** — top-level, plain `Monad`. The
+   runtime state is `[(v, [Edge ...])]`; `from V` writes one entry.
+2. **`EdgeListBuilder rs ci co v a`** — per-source-vertex, plain
+   `Monad`. The runtime state is `[Edge ...]`; `onCmd` and
+   `onEpsilon` each prepend one Edge.
+3. **`EdgeBuilder rs ci co v w w' a`** — per-edge body, *indexed*
+   monad. The type-level slot-set `(w :: [Symbol])` threads through
+   every `(.=)` so the `Disjoint` check fires at compile time.
+
+Only layer 3 is indexed. `QualifiedDo` (`B.do`) is used *only* in
+the per-edge body; the outer `from V $ do { … }` and
+`buildTransducer initS regs isF $ do { … }` use plain `do` (which
+GHC desugars against Prelude's `Monad`).
+
+EP-15 M2 (the spike) discovered this layering is necessary:
+`QualifiedDo` redirects `(>>=)` to a single named operator, but
+the three layers each have a different bind type signature (the
+indexed bind threads `w`; the plain binds do not). Trying to use
+`B.do` for all three layers fails to type-check because the indexed
+bind cannot accept a `VertexBuilder` argument. M3 ships the
+three-layer design verbatim.
 
     -- Top-level entry: produce a SymTransducer from an initial vertex,
     -- initial register file, and a do-block of `from V $ do …` clauses.
@@ -380,20 +439,20 @@ side-by-side with the post-MP-6 AST form. The AST form is what
                       EmailPending
                       emptyEmailRegs
                       (\case EmailSentVertex -> True; _ -> False)
-                      $ B.do
+                      $ do  -- VertexBuilder (plain Monad)
 
-      B.from EmailPending B.do
-        B.onCmd inCtorSendEmail $ \d -> B.do
-          #emailRecipient .= d.recipient
-          #emailSubject   .= d.subject
-          #emailSentAt    .= d.at
+      B.from EmailPending $ do  -- EdgeListBuilder (plain Monad)
+        B.onCmd inCtorSendEmail $ \d -> B.do  -- EdgeBuilder (indexed)
+          B.slot @"emailRecipient" B..= d.recipient
+          B.slot @"emailSubject"   B..= d.subject
+          B.slot @"emailSentAt"    B..= d.at
           B.emit wireEmailSent
             ( OFCons d.recipient
             ( OFCons d.subject
             ( OFCons d.at OFNil )))
           B.goto EmailSentVertex
 
-      B.from EmailSentVertex (B.pure ())  -- terminal
+      B.from EmailSentVertex (pure ())  -- terminal
 
 The visible differences:
 
@@ -401,14 +460,17 @@ The visible differences:
   gone. `onCmd` sets the guard implicitly; `(.=)` accumulates the
   update; `emit` sets the output; `goto` sets the target.
 - The `IndexN "name" Regs T` annotation on every `USet` is gone.
-  `#name` resolves to `IndexN s rs r` directly via `IsLabel`, and
-  `(.=)` infers the `s rs r` from the threaded edge state.
+  `slot @"name"` lifts the slot name to its `IndexN` in one place;
+  `(.=)` reads the threaded edge state to determine `rs` and `r`.
 - The `infix combine` chain is gone. Sequential `(.=)` lines are
   joined by the indexed-monad's `(>>)` (which itself emits a
   `combine` in the threaded `Update`).
-- The `pack inCtorSendEmail wireEmailSent` prefix is gone. `emit`
-  picks up the InCtor from the enclosing `onCmd` and packages the
-  `OPack` itself.
+- The `pack inCtorSendEmail wireEmailSent` prefix on `OPack` is no
+  longer hand-written; `emit` packages the `OPack` itself, with the
+  enclosing `onCmd`'s InCtor passed explicitly as the first
+  argument (M3 retains the explicit InCtor parameter so a future
+  ε-emit, where the InCtor is not in scope, can use a different
+  wire-side helper).
 - The `Just $` wrapper around the OutTerm is gone. `emit` writes
   `peOutput = Just …`; `noEmit` (or omission) leaves it `Nothing`.
 - Field names appear once each in the body of an edge, instead of

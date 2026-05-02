@@ -102,7 +102,7 @@ entries, add new items as discovered.
 
 - [x] M0: Verify prerequisites — record GHC version, baseline test count, baseline LOC of both example files. (MP-6 is Complete on master at draft time; no per-child status record needed.) Completed 2026-05-02.
 - [x] M1: Settle builder shape — write the design note `docs/research/edge-builder-dsl-shape.md` resolving the open questions (do-notation mechanism `QualifiedDo`-vs-`RebindableSyntax`, `(.=)` lifting, `emit` shape, `from`/`onCmd` shape, error-message shape, error reporting). Append a paragraph to `docs/research/dsl-shape-for-symbolic-register.md`'s "Open follow-ups" section pointing at the new note. Completed 2026-05-02.
-- [ ] M2: Spike — implement a throwaway `EdgeBuilderSpike.hs` against a coffee-dispenser two-vertex toy. Show the builder compiles to the same `Edge` AST as a hand-written reference; validated by per-edge `delta`/`omega` agreement on a short input log. Decide whether the spike's shape is what M3 ships or needs revision; record verdict.
+- [x] M2: Spike — implement a throwaway `EdgeBuilderSpike.hs` against a coffee-dispenser two-vertex toy. Show the builder compiles to the same `Edge` AST as a hand-written reference; validated by per-edge `delta`/`omega` agreement on a short input log. Decide whether the spike's shape is what M3 ships or needs revision; record verdict. Completed 2026-05-02. Verdict: **shape revised**, design note amended in lockstep — see Surprises & Discoveries entry "EP-15 M2 spike findings".
 - [ ] M3: Implement the production module `src/Keiki/Builder.hs` and expose it from `keiki.cabal`. Surface includes `buildTransducer`, `from`, `onCmd`, `onEpsilon`, `(.=)`, `emit`, `noEmit`, `goto`, `requireEq`, `requireGuard`. Distinct-targets check happens at builder-finalize time and produces a precise error message.
 - [ ] M4: Migrate `Keiki.Examples.EmailDelivery`'s `emailDeliveryEdges` to the builder. Keep the AST-form value behind a new internal name (`emailDeliveryAST`) for the equivalence test. Add `test/Keiki/Examples/EmailDeliveryBuilderSpec.hs` asserting `delta`/`omega` agree on the single canonical command. Confirm the migrated file's LOC dropped by the targeted amount.
 - [ ] M5: Migrate `Keiki.Examples.UserRegistration`'s `userRegEdges` to the builder. Same structure: AST form preserved as `userRegAST`, builder form named `userReg`, equivalence test added. Confirm `Keiki.Examples.UserRegistrationSpec` still passes (it uses `userReg` by name).
@@ -131,6 +131,42 @@ any discovered limit of the builder DSL with concise evidence.)
   note stays at its current length; if the longer form turns out to
   hide the contract, M2's spike-completion will note it and a follow-
   up commit will tighten.
+
+- 2026-05-02 (M2 spike findings) — Two design adjustments forced
+  by the spike, both amended into `docs/research/edge-builder-dsl-shape.md`
+  in lockstep:
+
+  1. **`#name .= …` does not type-check.** The `IsLabel s (IndexN
+     s rs r)` instance in `Keiki.Internal.Slots` is shaped so GHC
+     will not commit to `s ~ "name"` when `s` is a quantified type
+     variable in `(.=)`'s signature (the pattern-side `s` appears
+     at two positions in the constraint head; GHC defers
+     commitment without an explicit annotation). The existing AST
+     works around this with `(#name :: IndexN "name" Regs T)`. The
+     builder needs to remove that annotation.
+
+     Resolution: introduce `slot :: forall name rs r. (KnownSymbol
+     name, HasIndexN name rs r) => IndexN name rs r` and have the
+     user write `slot @"name" .= …`. The TypeApplication pins the
+     symbol, GHC discharges `HasIndexN` from the EdgeBuilder's
+     `rs`. Slot name still appears once. The `#name` form is left
+     for a future GHC release or a class-driven label resolution
+     fix.
+
+  2. **`B.do` cannot be used for the outer `from`/`buildTransducer`
+     blocks.** `QualifiedDo` redirects to a single named `(>>=)`,
+     but the builder has three monad layers: `VertexBuilder`
+     (plain), `EdgeListBuilder` (plain), and `EdgeBuilder`
+     (indexed). Trying to use `B.do` for all three fails to
+     type-check because the indexed bind cannot accept a plain-
+     monad argument.
+
+     Resolution: only the per-edge body uses `B.do`. Outer layers
+     use plain `do`. Documented in the design note's Q4. The
+     three-layer design is reflected in the M3 surface signatures.
+
+  Both findings shipped to the design note. M3 will inherit the
+  revised shape verbatim.
 
 
 ## Decision Log
