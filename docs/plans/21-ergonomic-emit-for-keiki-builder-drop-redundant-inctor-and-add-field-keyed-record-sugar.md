@@ -1,13 +1,13 @@
 ---
 id: 21
 slug: ergonomic-emit-for-keiki-builder-drop-redundant-inctor-and-add-field-keyed-record-sugar
-title: "Ergonomic emit for Keiki.Builder: drop redundant InCtor and add field-keyed record sugar"
+title: "Ergonomic emit for Keiki.Builder: drop redundant InCtor, eliminate residual Index annotations, and add field-keyed record sugar"
 kind: exec-plan
 created_at: 2026-05-02T17:21:52Z
 intention: "intention_01knjzws4qezz9w8b0743zfqv8"
 ---
 
-# Ergonomic emit for Keiki.Builder: drop redundant InCtor and add field-keyed record sugar
+# Ergonomic emit for Keiki.Builder: drop redundant InCtor, eliminate residual Index annotations, and add field-keyed record sugar
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
@@ -18,34 +18,60 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 EP-15 shipped `Keiki.Builder` (`src/Keiki/Builder.hs`) with a working
 edge-authoring DSL. The slot-write side (`B.slot @"name" .= …`) and
 the control side (`B.from`/`B.onCmd`/`B.goto`) read like a clean
-imperative state-machine description, but the output side
-(`B.emit`) is still awkward. The current shape is:
+imperative state-machine description, but the **output side**
+(`B.emit`) and **register-read side** (`proj` in `requireEq` /
+`OFCons`) are still awkward.
 
-    B.emit inCtorSendEmail wireEmailSent
-      (OFCons d.recipient (OFCons d.subject (OFCons d.at OFNil)))
+Current shape (post-EP-15) — the User-Registration `Confirm` edge:
 
-Three sources of friction:
+    B.from RequiresConfirmation do
+      B.onCmd inCtorConfirm $ \d -> B.do
+        B.requireEq d.confirmCode
+                    (proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
+        B.slot @"confirmedAt" .= d.at
+        B.emit inCtorConfirm wireAccountConfirmed
+          (OFCons (proj (#email :: Index UserRegRegs Email))
+            (OFCons d.confirmCode (OFCons d.at OFNil)))
+        B.goto Confirmed
 
-1. **Redundant `InCtor` argument.** The enclosing `onCmd ic …`
-   already supplied an `InCtor`; `emit` repeats it.
+Four sources of friction:
+
+1. **Redundant `InCtor` argument on `emit`.** The enclosing
+   `onCmd ic …` already supplied an `InCtor`; `emit` repeats it.
 2. **`OFCons … OFNil` HList nesting.** The user has to write a
    nested-pair HList, which has nothing to do with the wire-side
    record's surface.
-3. **Positional rather than field-named.** The user must remember
-   the wire ctor's field order (matched by `Generic`'s
-   `RegFieldsOf` walk on the payload type). A wrong order
-   compiles fine and produces wrong output.
+3. **Positional rather than field-named outputs.** The user must
+   remember the wire ctor's field order (matched by `Generic`'s
+   `RegFieldsOf` walk on the payload type). A wrong order compiles
+   fine and produces wrong output.
+4. **`proj (#name :: Index Regs T)` annotations.** Every register
+   read in `requireEq` and `emit`-`OFCons` arguments is wrapped in
+   `proj` and pinned with a full `:: Index Regs T` annotation
+   because GHC's `IsLabel` resolution does not currently produce a
+   `Term`-typed result directly. There are five such sites in
+   `Keiki.Examples.UserRegistration`'s builder form.
 
 After this plan, a contributor authors the same edge as:
 
-    -- M1: drop the redundant InCtor; HList operator sugar.
-    B.emit wireEmailSent (d.recipient *: d.subject *: d.at *: oNil)
+    -- M1: drop the redundant InCtor; eliminate Index annotations.
+    --     `#name` resolves directly to a `Term`-typed register read.
+    B.from RequiresConfirmation do
+      B.onCmd inCtorConfirm $ \d -> B.do
+        B.requireEq d.confirmCode #confirmCode
+        B.slot @"confirmedAt" .= d.at
+        B.emit wireAccountConfirmed
+          (OFCons #email (OFCons d.confirmCode (OFCons d.at OFNil)))
+        B.goto Confirmed
+
+    -- M2: HList operator sugar.
+    B.emit wireAccountConfirmed (#email *: d.confirmCode *: d.at *: oNil)
 
     -- M3+: field-keyed record-syntax form.
-    B.emit wireEmailSent EmailSentTermFields
-      { recipient = d.recipient
-      , subject   = d.subject
-      , at        = d.at
+    B.emit wireAccountConfirmed AccountConfirmedTermFields
+      { email       = #email
+      , confirmCode = d.confirmCode
+      , at          = d.at
       }
 
 …with both forms compiling to the same `OPack` AST node consumed
@@ -60,13 +86,19 @@ The user-visible improvement is verified by:
 2. `cabal test` is green at ≥138 examples (post-EP-15 M7
    baseline). New cases added by this plan add ≥5 examples.
 3. Both example aggregates' `emit` call sites no longer mention
-   any `InCtor`-typed argument and no longer use raw
-   `OFCons`/`OFNil`. After M5 they use the field-keyed form
-   exclusively.
+   any `InCtor`-typed argument, no `proj (#name :: Index Regs T)`
+   annotations, and no raw `OFCons`/`OFNil`. After M5 they use the
+   field-keyed form exclusively.
 4. `wc -l` on `src/Keiki/Examples/UserRegistration.hs` drops
-   from 464 (post-EP-15) to under 440 (M1 alone), and to under
-   420 once the field-keyed form lands (M5). EmailDelivery shrinks
-   from 220 to under 215 (M1) / under 210 (M5).
+   from 464 (post-EP-15) to under 440 (M1 alone — InCtor + Index-
+   annotation removal), and to under 420 once the field-keyed
+   form lands (M5). EmailDelivery shrinks from 220 to under 215
+   (M1) / under 210 (M5).
+5. `grep -c ":: Index " src/Keiki/Examples/UserRegistration.hs`
+   drops from 10 (5 builder-form + 5 AST-form) to 5 (AST-form
+   only) after M1. The AST-form annotations are deliberately not
+   touched — the AST form is the lower-level escape hatch and
+   keeps the explicit annotations as documentation.
 
 The plan is purely additive on top of the EP-15 surface: the
 existing `B.emit ic wc fs` shape becomes deprecated (still works
@@ -83,7 +115,9 @@ completed items with a date, split partial items into "done" and "remaining"
 entries, add new items as discovered.
 
 - [ ] M0: Verify prerequisites — record baseline test count, build state, current `emit` LOC totals across the two examples.
-- [ ] M1: Drop the redundant `InCtor` argument from `B.emit`. Add a `peInCtor :: Maybe (SomeInCtor ci)` field to `PartialEdge` (set by `onCmd`, `Nothing` in `onEpsilon`). The new `B.emit wc fs` reads `peInCtor` and errors at finalize time if `Nothing`. Add `B.emitWith :: InCtor ci ifs -> WireCtor co fs -> OutFields rs ci fs -> EdgeBuilder ...` for `onEpsilon` callers and as a fallback. Migrate the two example aggregates and the spike to the new shape.
+- [ ] M1: Two related ergonomic fixes shipped together:
+  1. **Drop the redundant `InCtor` argument from `B.emit`.** Add a `peInCtor :: Maybe (SomeInCtor ci)` field to `PartialEdge` (set by `onCmd`, `Nothing` in `onEpsilon`). The new `B.emit wc fs` reads `peInCtor` and errors at finalize time if `Nothing`. Add `B.emitWith :: InCtor ci ifs -> WireCtor co fs -> OutFields rs ci fs -> EdgeBuilder ...` for `onEpsilon` callers and as a fallback.
+  2. **Eliminate `proj (#name :: Index Regs T)` boilerplate at call sites.** Add a new instance `IsLabel s (Term rs ci r)` to `src/Keiki/Core.hs` (next to the existing `IsLabel s (Index rs r)` instance) so `#name` resolves directly to a `Term`-typed register read in any context that expects a `Term`. Remove the `proj (#name :: Index Regs T)` annotations from the 5 builder-form sites in `src/Keiki/Examples/UserRegistration.hs` (none in EmailDelivery's builder form). Migrate the two example aggregates' builder forms and the spike to drop both the InCtor and the Index annotations.
 - [ ] M2: Add `(*:)` and `oNil` operator-style HList sugar to `Keiki.Builder` (re-exports of `OFCons` and `OFNil` with the operator's right-associative fixity 5). Migrate the two example aggregates to the operator form. (The plan's M5 will replace these with the field-keyed form, but M2 ships incrementally.)
 - [ ] M3: Settle field-keyed record sugar shape — write the design note `docs/research/emit-field-keyed-record-sugar.md` resolving the open questions (per-event vs class-driven generation, field-name disambiguation strategy, interaction with DuplicateRecordFields, error-message shape).
 - [ ] M4: Implement field-keyed sugar. Extend `Keiki.Generics.TH.deriveWireCtors` (or add a new splice `deriveWireCtorsAndTermRecords`) to emit a per-event `<EventName>TermFields rs ci` record type whose fields are `Term rs ci T` for each wire-side field, plus a typeclass instance `ToOutFields` (or similar) connecting it to the existing `OutFields rs ci fs`. `B.emit wc rec` becomes overloaded over the typeclass.
@@ -118,6 +152,51 @@ Subsequent decisions made during implementation append below them with a date.
   fires, and read it back when `emit` runs. The cost is one extra
   field on `PartialEdge`; the existential is hidden via
   `SomeInCtor` (already defined in `Keiki.Symbolic`).
+  Date: 2026-05-02
+
+- Decision: Eliminate the `proj (#name :: Index Regs T)`
+  boilerplate by adding an `IsLabel s (Term rs ci r)` instance to
+  `Keiki.Core`, alongside the existing `IsLabel s (Index rs r)`.
+  Rationale: The existing pattern `proj (#name :: Index Regs T)`
+  is forced by GHC's inability to determine `rs` and `r` for a
+  bare `#name` in `Term`-typed contexts without explicit
+  annotation. EP-15's M2 spike showed that `#name` cannot resolve
+  cleanly to `IndexN` because the `IsLabel s (IndexN s rs r)`
+  instance has the symbol at two pattern positions (the
+  two-positions-share-`s` issue). The same is *not* true for
+  `IsLabel s (Term rs ci r)`: the symbol appears once, and
+  GHC's resolution can determine `rs` and `r` from the
+  surrounding context (the `Term`-typed slot). Adding the
+  instance is a one-liner in `Keiki.Core`; the resulting `#name`
+  resolves to `TReg (indexOf @s @rs @r)` whenever the context
+  demands a `Term`. The existing `IsLabel s (Index rs r)`
+  instance is preserved (so `inpFoo #name` keeps working).
+  GHC's instance dispatch is type-directed by the *result type*,
+  so the two instances coexist without overlap.
+  Date: 2026-05-02
+
+- Decision: The new `IsLabel s (Term rs ci r)` instance is added
+  to `Keiki.Core`, not to `Keiki.Builder`.
+  Rationale: The instance is useful anywhere a `Term` is
+  expected — including the AST form of a transducer, not just
+  the builder form. Placing it in `Keiki.Core` makes it part of
+  the AST surface; users who choose the AST escape hatch also
+  benefit. It preserves the rule that "the AST is the source of
+  truth, and the builder is a layer on top": an instance for
+  `Term` belongs at the AST layer.
+  Date: 2026-05-02
+
+- Decision: AST-form `proj (#name :: Index Regs T)` annotations
+  in `userRegASTEdges` and `emailDeliveryASTEdges` are *not*
+  migrated by this plan.
+  Rationale: The AST form is preserved as the documented escape
+  hatch and as the equivalence-test reference. Touching it would
+  invalidate the side-by-side comparison that
+  `EmailDeliveryBuilderSpec` and `UserRegistrationBuilderSpec`
+  depend on (they cite the AST-form's exact shape as the
+  contract). A future plan that retires the AST forms entirely
+  can also drop their annotations; this plan keeps them as
+  documentation of the unmigrated shape.
   Date: 2026-05-02
 
 - Decision: Rename the explicit-InCtor form to `emitWith` rather
@@ -226,6 +305,48 @@ later uses to invert the OPack on replay.
 `Resend`, `GdprFromConfirmed`). Every one has the same shape:
 `B.emit <inCtor>` (the same one bound by the enclosing `onCmd`)
 followed by an `OFCons … OFCons … OFNil` chain.
+
+### Why `proj (#name :: Index Regs T)` is forced today
+
+`Keiki.Core` provides `proj :: Index rs r -> Term rs ci r` and
+the `IsLabel s (Index rs r)` instance, so `proj #name` should in
+principle resolve cleanly to a `Term`-typed register read once
+the surrounding context pins `rs` and `r`. In practice, GHC's
+inference does not commit early enough to discharge the
+`HasIndex s rs r` constraint without the user spelling out
+`(#name :: Index Regs T)`. The pattern appears in
+`src/Keiki/Examples/UserRegistration.hs` at five builder-form
+sites:
+
+- `proj (#email :: Index UserRegRegs Email)` (4 OFCons sites in
+  edges out of `Registering`, `RequiresConfirmation/Confirm`,
+  `RequiresConfirmation/Resend`, and `Confirmed/Gdpr`).
+- `proj (#confirmCode :: Index UserRegRegs ConfirmationCode)` (the
+  `requireEq` site in `RequiresConfirmation/Confirm`).
+
+The fix (M1 part B) is a one-instance addition to `Keiki.Core`:
+
+    instance HasIndex s rs r => IsLabel s (Term rs ci r) where
+      fromLabel = TReg (indexOf @s @rs @r)
+
+With this instance present, `#name` resolves directly to a `Term`
+in any `Term`-typed context. The two `IsLabel` instances
+(`Index` and `Term`) coexist because GHC's instance dispatch is
+type-directed by the result type:
+
+- `inpFoo #name` (`inpFoo`'s arg is `Index ifs r`) → `Index`
+  instance fires.
+- `requireEq d.x #y` (`requireEq`'s args are `Term rs ci r`) →
+  `Term` instance fires.
+
+This is *not* the same problem EP-15 M2 hit on
+`IsLabel s (IndexN s rs r)`. The `IndexN` instance has the
+symbol at two pattern positions in its head (`s` in
+`IsLabel s (IndexN s rs r)`), forcing GHC to commit the symbol
+before instance selection. The `Term` instance has the symbol
+only in the `IsLabel` head; the body of the constraint
+(`HasIndex s rs r`) discharges by the standard FD-driven path
+once `rs` is known from context.
 
 ### What `PartialEdge` carries (the structural target of M1)
 
@@ -337,9 +458,12 @@ End state: a Decision Log entry recording the post-EP-15 baseline.
 Acceptance: `cabal test` is green and we have recorded the
 example LOC and the test count.
 
-### M1 — Drop the redundant InCtor argument
+### M1 — Drop the redundant InCtor and eliminate `Index` annotations
 
-Two changes:
+Two related ergonomic fixes shipped together — both remove
+boilerplate that EP-15 exposed but did not address.
+
+**Part A: drop `emit`'s redundant `InCtor` argument.**
 
 1. Add `peInCtor :: Maybe (SomeInCtor ci)` to `PartialEdge` (in
    `src/Keiki/Builder.hs`). Set by `onCmd` to `Just (SomeInCtor
@@ -360,26 +484,75 @@ Two changes:
                           \inside onEpsilon, or move emit inside an \
                           \onCmd block."
 
-Migrate `Keiki.Examples.EmailDelivery` and
-`Keiki.Examples.UserRegistration` to drop the InCtor argument at
-every call site (six sites total). Migrate
-`test/Keiki/BuilderSpike.hs` and `test/Keiki/BuilderSpec.hs` to
-the same shape.
+**Part B: add an `IsLabel s (Term rs ci r)` instance.**
+
+Add to `src/Keiki/Core.hs`, next to the existing
+`IsLabel s (Index rs r)` instance:
+
+    instance forall s rs ci r.
+             HasIndex s rs r
+          => IsLabel s (Term rs ci r) where
+      fromLabel = TReg (indexOf @s @rs @r)
+
+This lets `#name` resolve to a `Term`-typed register read in any
+context that expects a `Term` (e.g. `requireEq`'s arguments,
+`OFCons`'s first argument). The existing `IsLabel s (Index rs r)`
+instance is unchanged; GHC dispatches between the two by the
+expected result type, so `inpFoo #name` (which expects an `Index`)
+continues to resolve to the existing instance, while
+`requireEq d.x #y` (which expects a `Term`) resolves to the new
+one. No overlap, no ambiguity.
+
+**Migration.**
+
+Migrate the **builder forms** of both example aggregates (and the
+spike + BuilderSpec) to drop both the InCtor argument and the
+`proj (#name :: Index Regs T)` annotations:
+
+In `src/Keiki/Examples/UserRegistration.hs` (5 builder-form sites):
+
+    -- Before (post-EP-15):
+    B.emit inCtorContinue wireConfirmationEmailSent
+      (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
+
+    -- After (M1):
+    B.emit wireConfirmationEmailSent (OFCons #email OFNil)
+
+And one `requireEq` site:
+
+    -- Before:
+    B.requireEq d.confirmCode
+                (proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
+
+    -- After:
+    B.requireEq d.confirmCode #confirmCode
+
+In `src/Keiki/Examples/EmailDelivery.hs`: the builder form has no
+`proj`-of-register sites (every emit field is a payload-projected
+`d.fieldName`). Only the `inCtorSendEmail` argument is dropped.
+
+The AST forms (`emailDeliveryASTEdges`, `userRegASTEdges`) are
+**not** migrated — they remain as the equivalence-test reference
+and the documented escape hatch (Decision Log entry above).
 
 The equivalence specs (`EmailDeliveryBuilderSpec`,
 `UserRegistrationBuilderSpec`) re-pass without modification — the
-runtime behaviour is unchanged because the InCtor recovered from
-`peInCtor` is the same one previously passed explicitly.
+runtime behaviour is unchanged because (a) the InCtor recovered
+from `peInCtor` is the same one previously passed explicitly, and
+(b) `#name` and `proj #name :: Index Regs r` produce the same
+`TReg`-rooted `Term`.
 
 End state: the public `emit` signature has two arguments; every
-example call site has lost one argument; tests are green.
+builder-form example call site has lost one InCtor argument and
+all `proj (#name :: Index ...)` annotations; tests are green.
 
 Acceptance: `cabal test` is green. `wc -l
 src/Keiki/Examples/EmailDelivery.hs` reports < 215; `wc -l
-src/Keiki/Examples/UserRegistration.hs` reports < 460. The
-two-argument `emit` in `src/Keiki/Builder.hs` is exported; the
-three-argument `emitWith` is also exported as the documented
-escape hatch.
+src/Keiki/Examples/UserRegistration.hs` reports < 440. `grep -c
+":: Index " src/Keiki/Examples/UserRegistration.hs` reports 5
+(AST-form annotations only). The two-argument `emit` in
+`src/Keiki/Builder.hs` is exported; the three-argument `emitWith`
+is also exported as the documented escape hatch.
 
 ### M2 — Operator-style HList sugar
 
@@ -580,6 +753,8 @@ The exact commands to run, in order. Working directory is
     wc -l src/Keiki/Examples/UserRegistration.hs
     grep -c "B.emit" src/Keiki/Examples/EmailDelivery.hs
     grep -c "B.emit" src/Keiki/Examples/UserRegistration.hs
+    grep -c ":: Index " src/Keiki/Examples/EmailDelivery.hs
+    grep -c ":: Index " src/Keiki/Examples/UserRegistration.hs
 
 Expected (post-EP-15 baseline):
 
@@ -589,11 +764,19 @@ Expected (post-EP-15 baseline):
        464 src/Keiki/Examples/UserRegistration.hs
     1   (EmailDelivery emit count)
     5   (UserRegistration emit count)
+    0   (EmailDelivery :: Index annotations)
+    10  (UserRegistration :: Index annotations — 5 builder, 5 AST)
 
 Record the exact numbers in the Decision Log under
 "M0 baseline (date)".
 
-### M1 — drop InCtor
+### M1 — drop InCtor + eliminate Index annotations
+
+Edit `src/Keiki/Core.hs`:
+- Add `IsLabel s (Term rs ci r)` instance next to the existing
+  `IsLabel s (Index rs r)` instance (around `src/Keiki/Core.hs:156-160`).
+- Add `Term` to the `OverloadedLabels` discoverability comment
+  near the existing instance, if such a comment exists.
 
 Edit `src/Keiki/Builder.hs`:
 - Add `peInCtor :: Maybe (SomeInCtor ci)` to `PartialEdge`.
@@ -602,21 +785,38 @@ Edit `src/Keiki/Builder.hs`:
   to thread `peInCtor` through. `onCmd` initialises it with `Just
   (SomeInCtor ic)`; `onEpsilon` initialises with `Nothing`; the
   rest preserve the existing value.
+- Import `SomeInCtor (..)` from `Keiki.Symbolic`.
 - Rename the existing 3-arg `emit` to `emitWith`.
 - Add a new 2-arg `emit` that reads `peInCtor`.
+- Update the module-level haddock to mention both the new `emit`
+  shape and the `#name`-as-`Term` resolution.
 
-Edit `src/Keiki/Examples/EmailDelivery.hs` (1 site) and
-`src/Keiki/Examples/UserRegistration.hs` (5 sites): drop the
-InCtor argument from every `B.emit` call.
+Edit `src/Keiki/Examples/EmailDelivery.hs` (1 builder-form site):
+drop the InCtor argument from the single `B.emit` call. The
+builder form has no `proj (#name :: Index Regs T)` sites.
+
+Edit `src/Keiki/Examples/UserRegistration.hs` (5 builder-form
+sites): drop the InCtor argument from every `B.emit` call AND
+replace each `proj (#name :: Index UserRegRegs T)` with bare
+`#name`. The AST-form sites (`userRegASTEdges`) are left
+untouched.
 
 Edit `test/Keiki/BuilderSpike.hs`,
-`test/Keiki/BuilderSpec.hs`: same migration.
+`test/Keiki/BuilderSpec.hs`: drop InCtor argument; migrate any
+`proj (#name :: ...)` sites if present.
 
 Run:
 
+    cabal build
     cabal test
+    grep -c ":: Index " src/Keiki/Examples/UserRegistration.hs
+    grep -c ":: Index " src/Keiki/Examples/EmailDelivery.hs
 
-Expected: 138+ examples pass (no test count change at this point).
+Expected: 138+ examples pass (no test count change at this
+point — behaviour is identical). The `grep` reports 5 (AST-form
+only) for UserRegistration and 0 or a small AST-form count for
+EmailDelivery.
+
 Commit at green.
 
 ### M2 — operator sugar
@@ -710,7 +910,9 @@ The plan is complete when:
    from M4 + M5 unit additions).
 3. Every `B.emit` call site in `Keiki.Examples.EmailDelivery` and
    `Keiki.Examples.UserRegistration` uses the record-syntax form
-   (no `OFCons`/`OFNil`/`*:`/`oNil`/explicit InCtor).
+   (no `OFCons`/`OFNil`/`*:`/`oNil`/explicit InCtor). No
+   `proj (#name :: Index Regs T)` annotations remain in the
+   builder forms.
 4. The equivalence specs (`EmailDeliveryBuilderSpec`,
    `UserRegistrationBuilderSpec`) pass: for every step of the
    canonical event log, `delta` and `omega` agree between the
@@ -766,12 +968,15 @@ branch (`master`).
 
 ## Interfaces and Dependencies
 
-### Modules consumed (no new code)
+### Modules consumed (and one minor extension)
 
 - `Keiki.Core` (`src/Keiki/Core.hs`): `OutFields`, `OPack`,
-  `pack`, `WireCtor`, `OutTerm`, `Term`, `Edge`. M1 reads the
-  same surface; M4 produces the same `OutFields` shape from the
-  TH-emitted records.
+  `pack`, `WireCtor`, `OutTerm`, `Term`, `Edge`, `Index`,
+  `HasIndex`. M1 adds one new instance — `IsLabel s (Term rs ci
+  r)` — alongside the existing `IsLabel s (Index rs r)`. The
+  instance reuses the existing `HasIndex` class machinery; no
+  other surface change to `Keiki.Core`. M4 produces the same
+  `OutFields` shape from the TH-emitted records.
 - `Keiki.Symbolic` (`src/Keiki/Symbolic.hs`): `SomeInCtor` —
   reused by M1's `peInCtor` field. The constructor is unchanged.
 - `Keiki.Generics` (`src/Keiki/Generics.hs`): `FieldsOf`,
