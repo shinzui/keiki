@@ -8,3 +8,10 @@ dist-newstyle/
 .cabal-sandbox/
 cabal.sandbox.config
 .ghc.environment.*
+.envrc
+dist
+dist-*
+cabal-dev
+.direnv
+cabal.project.local
+.pre-commit-config.yaml
