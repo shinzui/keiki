@@ -144,6 +144,307 @@ Out of scope for this MasterPlan:
   neither introduces a parallel core.
 
 
+## Tradeoff Analysis (retrospective, augmented 2026-05-02)
+
+Vision & Scope's three-reason argument — theoretical soundness,
+future-facing alignment, realistic distribution — was sufficient to
+act on but undersold EP-19's genuine strengths and overstated one of
+its weaknesses. This section augments Vision & Scope with six
+dimensions of evaluation grounded in the actual code and plan
+specifications. It does not reverse the shipped choice; it makes the
+deliberation honest in the project history. The shipped path (EP-20)
+remains the right call for the reasons in the closing verdict, but
+the analysis surfaces real costs EP-20 carries that the original
+Vision & Scope did not name.
+
+
+### 1. Authoring ergonomics — side by side
+
+The canonical multi-event command is `StartRegistration →
+[RegistrationStarted, ConfirmationEmailSent]`. Under each path, here
+is the literal authoring shape in the builder DSL.
+
+EP-19 (multi-emit, never implemented):
+
+    from PotentialCustomer $ B.onCmd inCtorStart $ do
+      email       .= inpStart #email
+      confirmCode .= inpStart #confirmCode
+      emit wireRegistrationStarted
+        (inpStart #email *: inpStart #confirmCode *: inpStart #at *: oNil)
+      emit wireConfirmationEmailSent
+        (inpStart #email *: oNil)
+      goto RequiresConfirmation
+
+EP-20 (`chainTo`, shipped at `src/Keiki/Builder.hs:443-448`):
+
+    from PotentialCustomer $ B.onCmd inCtorStart $ do
+      email       .= inpStart #email
+      confirmCode .= inpStart #confirmCode
+      emit wireRegistrationStarted
+        (inpStart #email *: inpStart #confirmCode *: inpStart #at *: oNil)
+      B.chainTo Registering inCtorContinue
+      emit wireConfirmationEmailSent
+        (inpStart #email *: oNil)
+      goto RequiresConfirmation
+
+Inside the `from` block, EP-20 costs one extra line. The hidden cost
+is naming: `Registering` must be a constructor of the user's `Vertex`
+enum, `inCtorContinue` must reference an `InCtor` derived from a
+`Continue` constructor in the user's `ci` enum, and both must appear
+in `deriveAggregateCtors` and `deriveView` spec lists. Adding one
+length-2 command costs roughly six lines of declarative overhead
+*outside* the `from` block under EP-20; zero under EP-19.
+
+For length-N commands the gap widens linearly: each additional event
+inside one logical command needs one more intermediate vertex
+constructor declared in the `Vertex` enum and one more `chainTo` call
+(the `Continue` advancement command can be reused). Under EP-19,
+additional events are additional `emit` calls and nothing else.
+
+Verdict: EP-19 wins on byte-cost per multi-event command. EP-20's
+`chainTo` compresses the in-block authoring well but leaves the
+out-of-block declarations (vertex constructor, command constructor,
+TH spec entries) as the load-bearing cost.
+
+
+### 2. Cognitive surface — what a user must learn
+
+EP-19 expands one concept and cascades it through the existing
+operators: `Edge.output` becomes a list with three semantic cases
+(length-0 = ε, length-1 = today's letter, length-≥2 = multi-event).
+Composition concatenates lists. `omega` returns a list. Replay through
+a length-≥2 edge needs an `InFlight` wrapper that the caller of
+`applyEvent` sees in the type. Total: one new conceptual change with
+four mechanical adaptations.
+
+EP-20 adds three independent library surfaces: `Keiki.Core.applyEvents`
+(chunk-replay primitive), `Keiki.Decider.DriverConfig` +
+`Keiki.Decider.toMultiDecider` (façade with a per-aggregate
+configuration value that must stay in sync with the `Vertex` enum),
+and `Keiki.Builder.chainTo` (sugar that desugars to existing
+primitives). Each surface is small and learnable on its own, but a
+user who wants the full multi-event story must understand all three
+plus the conceptual claim that intermediate vertices like `Registering`
+are real states in their model even though no business event lives
+there.
+
+The "real state in your model" framing is a load-bearing modelling
+claim, not a sugar artefact. Under EP-20 a user reading
+`Keiki.Examples.UserRegistration` sees `Registering` in the `Vertex`
+enum, in any future diagram, in the `View` projection, and in the
+driver config. They have to learn that `Registering` is a synthetic
+checkpoint with no intrinsic semantics beyond "between event 1 and
+event 2 of one logical command." This is a real cognitive cost the
+original Vision & Scope did not surface.
+
+Verdict: EP-19 wins on conceptual count (one new idea vs three), but
+the EP-19 idea (lists in `output`) reshapes the foundation. EP-20's
+three ideas are each smaller and additive. The framing of the user's
+state space — does it include synthetic checkpoints or not — is the
+deeper cognitive choice; EP-20 says yes, EP-19 says no. Both are
+defensible models.
+
+
+### 3. State-space cost as commands grow
+
+For a length-N multi-event command, EP-20 adds N−1 intermediate
+vertex constructors and one advancement command constructor (the
+`Continue` constructor is typically shared across all multi-event
+commands in an aggregate). EP-19 adds nothing — the length-N edge has
+output list of length N and no extra state.
+
+For an aggregate with K length-2 commands sharing one `Continue`:
+EP-20 adds K vertex constructors plus one `Continue` constructor.
+EP-19 adds zero.
+
+Vision & Scope dismisses the length-12 property-sync case by noting it
+"decomposes more cleanly into 12 disjoint-guarded edges than into one
+length-12 edge." That observation is correct but applies to *both*
+paths equally: 12 disjoint-guarded letter edges from one source
+vertex work fine under EP-20 (each is letter, no intermediates needed)
+and under EP-19 (each is letter, length-1 output list). The
+length-12-edge construction is a strawman — neither path actually
+wants it.
+
+So the realistic-distribution argument from Vision & Scope, on closer
+look, only differentiates the paths for length-2 and length-3
+commands where decomposition into disjoint edges is unnatural. There
+the state-space cost gap is real: each length-2 command costs EP-20
+one vertex constructor that EP-19 does not pay.
+
+Verdict: EP-19 wins on state-space economy. The cost under EP-20 is
+modest (one constructor per length-2 command, with derivation
+overhead) but it is not zero, and the original Vision & Scope's
+"manageable" framing buries the linear growth.
+
+
+### 4. Composition under composeEdge
+
+This dimension is the strongest hidden argument for EP-20 and was
+not named in the original Vision & Scope.
+
+Today's `Keiki.Composition.composeEdge` (at
+`src/Keiki/Composition.hs:401-447`) takes one first-edge `e1` and
+either drops it (ε-edge → `epsilonEdge`) or pairs it with each
+second-edge `e2` whose guard accepts the produced mid-symbol via
+`productEdge`. The result is a list of composed letter edges, one
+per matching `e2`. `productEdge`'s output is `fmap (\o2 -> substOut
+o2 o1) (output e2)` — a single `Maybe`.
+
+Under EP-20, composition stays per-letter-edge throughout. A
+multi-event chain in the first transducer
+(`PotentialCustomer → Registering → RequiresConfirmation` via two
+letter edges) composes by composing each letter edge against the
+second transducer separately. The composed transducer has the same
+chain shape with `Composite` source/target states; chain length grows
+additively in composition, not multiplicatively. The existing
+`composeEdge` works unchanged.
+
+Under EP-19, composition of a length-2 first-edge is fundamentally
+harder than composition of a letter edge. The first-edge produces two
+mid-symbols `[o1a, o1b]`; the second transducer steps on `o1a` from
+state `s2`, transitions to some `s2'`, then must step on `o1b` from
+`s2'`. A single composed edge from `(s1, s2)` cannot express this —
+its output list reflects T2's behaviour from `s2` for both events, but
+T2's state changes between events. A sound composition must either:
+
+- Restrict multi-event edges to those whose internal events all
+  trigger the same downstream edge (severe restriction unlikely to
+  hold in practice), or
+- Internally expand multi-event edges into a chain of letter edges
+  before composition (which *is* state refinement, performed by the
+  library).
+
+Either way, EP-19's plan M6 ("`composeEdge` adapts to compose
+multi-event edges by concatenating output lists with the existing
+`substOut` substitution applied to each") understates this. The
+naïve concatenation works only when T2's transition on `o1a` lands
+on a state from which `o1b` triggers the same edge T2 would have
+taken from `s2` on `o1b` standalone. That is not a property the
+type system enforces; it is an unstated invariant that breaks at
+composition time under realistic T2 shapes.
+
+Verdict: EP-20 wins decisively on composition. The reason is
+structural: multi-event composition is not a closed operation on a
+single edge. EP-20 keeps composition simple by keeping all edges
+letter; EP-19 either restricts the multi-event class (losing
+expressiveness) or hides chain expansion inside composition
+(re-introducing state refinement under a different name).
+
+
+### 5. Migration cost — what if we change later
+
+If EP-20 ships and we later decide multi-event edges should be
+first-class in the AST: add `output :: [OutTerm rs ci co]` (or a
+parallel field) to `Edge`, adapt the ~24 call sites EP-19's M0
+inventories, leave the shipped `chainTo` either as deprecated sugar
+or re-target it to compile to a length-2 edge directly, retire
+`DriverConfig` and `toMultiDecider` for the multi-event case (they
+remain valid for genuine internal control vertices), shrink user
+`Vertex` and `ci` enums where the intermediates collapse. The
+shipped `applyEvents` stays valid in either world.
+
+The reverse migration (EP-19 → EP-20) is harder. Collapsing back to
+letter requires synthesising intermediate vertices for every
+multi-event edge in every aggregate, naming them, threading them
+through diagrams and projections, and hand-editing every consuming
+spec. Tooling could automate the synthesis but the names are
+load-bearing for the user's mental model and have to be chosen by
+hand.
+
+Verdict: EP-20 wins on migration optionality. The shipped path keeps
+the door open to GSM widening later if real-world authoring pain
+warrants it. EP-19 closes the door on returning to letter-FST-only.
+This is the strongest conservative argument for EP-20 that Vision &
+Scope did not name.
+
+
+### 6. The hidden-input check — what the original argument got right and wrong
+
+Vision & Scope claims widening "weakens the hidden-input check from
+'this `OutTerm` recovers its input' to 'the *union* of `OutTerm`s on
+this edge recovers the input,' which couples the analysis across the
+list and is harder to discharge cleanly under composition." The
+honest version is narrower.
+
+The current `Keiki.Core.checkHiddenInputs` walks every edge of every
+vertex, computes for each `OutTerm` which `InCtor` slots it visits,
+and flags any slot read by guard or update that the visited set does
+not cover. It is decidable per-edge because each edge has at most
+one `OutTerm`.
+
+Under EP-19, the check generalises to set-union over the edge's
+output list: for each `InCtor` named in any `OPack` of the list, the
+union of slots covered by the `OPack`s referencing that `InCtor`
+must include every slot read by guard or update. This is still
+decidable per-edge (set union and set difference are decidable). It
+is not "weakened" in the rigorous sense — both versions catch every
+genuinely hidden input.
+
+What the generalised check loses is *edge-locality of the fix*.
+Under EP-20's letter chain, the first edge of a multi-event command
+has its own `update` and `output`, and the hidden-input check on
+that edge fires if the update reads a slot not in the single output.
+The user fixes it by adding a slot reference to that edge's emit.
+Under EP-19, a hidden-input warning on a length-2 edge says "the
+union of these two OPacks does not cover slot X read by update"; the
+fix could be in either OPack, and the user has to choose where to
+expose the slot. The check still fires; the fix is less locally
+constrained.
+
+The "harder to discharge cleanly under composition" claim is also
+softer than Vision & Scope implies. Post-composition, the
+composite's edges are still edges with output lists; the union check
+on the composite's edges is the same set-union operation, decidable.
+It is not "harder" in any algorithmic sense; it operates on possibly
+longer output lists.
+
+Verdict: the hidden-input check argument from Vision & Scope holds
+*directionally* (the check becomes coarser-grained and the fix less
+locally constrained) but does not hold in the strong form Vision &
+Scope used. EP-20 keeps the check edge-local; EP-19 keeps it
+decidable but coarser. Both are sound.
+
+
+### Verdict (revised)
+
+Across the six dimensions, the score is mixed:
+
+- **EP-19 wins on**: authoring ergonomics (1), cognitive surface
+  count (2), state-space economy (3).
+- **EP-20 wins on**: composition (4), migration optionality (5),
+  hidden-input check locality (6).
+
+The original Vision & Scope's three reasons (theoretical soundness,
+future-facing alignment, realistic distribution) map onto dimensions
+6, 4-via-diagrams-implication, and 3 respectively. The expanded
+analysis preserves the verdict (EP-20 is the right call) but for a
+different weighting than Vision & Scope used:
+
+- The decisive technical argument is **composition** (dimension 4),
+  not the hidden-input check (dimension 6). Multi-event composition
+  is fundamentally non-local, and EP-19 either restricts multi-event
+  edges or re-introduces state refinement under composition.
+- The decisive strategic argument is **migration optionality**
+  (dimension 5), not future-facing alignment. EP-20 → EP-19 is
+  recoverable later if authoring pain warrants; EP-19 → EP-20 is
+  not.
+- EP-19's authoring and state-space wins are real and the original
+  Vision & Scope underweighted them. The decision to pay those
+  costs is informed by composition + migration arguments above, not
+  by realistic-distribution alone.
+
+The shipped `chainTo` verb (EP-20 M5) is the most important
+ergonomic mitigation: it reduces the in-`from` authoring overhead
+to one extra line per length-N command, so the day-to-day cost
+lives in the `Vertex` and `ci` enum declarations and TH spec lists,
+not in the edge bodies. Without `chainTo`, EP-19's authoring win
+would be larger and the verdict closer.
+
+The shipped path stands. This section makes the deliberation
+honest; no rework follows from it.
+
+
 ## Decomposition Strategy
 
 The MasterPlan decomposes into exactly two child ExecPlans because
@@ -501,6 +802,29 @@ working on the master plan.
   be updated to reflect the cascade.
   **Date**: 2026-05-02
 
+- **Decision**: Augment the MasterPlan with a retrospective
+  six-dimension Tradeoff Analysis section between Vision & Scope and
+  Decomposition Strategy. The shipped path (EP-20) is preserved; the
+  augmentation is informational.
+  **Rationale**: the original Vision & Scope's three-reason argument
+  (theoretical soundness, future-facing alignment, realistic
+  distribution) was sufficient to act on but undersold EP-19's
+  genuine strengths (no synthetic vertices, no `DriverConfig` sync,
+  smaller library surface) and overstated one of its weaknesses (the
+  hidden-input check is generalised, not weakened). The new section
+  covers six dimensions — authoring ergonomics, cognitive surface,
+  state-space cost as commands grow, composition under `composeEdge`,
+  migration optionality, hidden-input check honest framing — so the
+  project history reflects honest deliberation. The expanded analysis
+  preserves the verdict but reweights the supporting arguments: the
+  decisive technical argument becomes composition (multi-event
+  composition is fundamentally non-local), and the decisive
+  strategic argument becomes migration optionality (EP-20 → EP-19 is
+  recoverable, the reverse is not). EP-19's wins on authoring,
+  cognitive count, and state-space economy are real and explicitly
+  acknowledged.
+  **Date**: 2026-05-02
+
 
 ## Outcomes & Retrospective
 
@@ -593,3 +917,20 @@ recommendation; no rework was needed.
   and
   `docs/plans/20-multi-event-commands-via-state-refinement-ergonomics.md`)
   carry the same change.
+
+- **2026-05-02 (retrospective tradeoff augmentation)**: Added a new
+  "Tradeoff Analysis (retrospective, augmented 2026-05-02)" section
+  between Vision & Scope and Decomposition Strategy. The section
+  evaluates EP-19 vs EP-20 along six dimensions (authoring
+  ergonomics, cognitive surface, state-space cost as commands grow,
+  composition under `composeEdge`, migration optionality,
+  hidden-input check honest framing) and closes with a revised
+  verdict that preserves the EP-20 selection but reweights the
+  supporting arguments: composition (dimension 4) and migration
+  optionality (dimension 5) replace theoretical soundness and
+  future-facing alignment as the load-bearing reasons. EP-19's wins
+  on authoring (dimension 1), cognitive count (dimension 2), and
+  state-space economy (dimension 3) are explicitly acknowledged.
+  Added a corresponding Decision Log entry. No child-plan cascade
+  required; the analysis is informational and does not change any
+  shipped artefact.
