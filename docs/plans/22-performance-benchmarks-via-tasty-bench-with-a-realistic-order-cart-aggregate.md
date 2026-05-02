@@ -107,11 +107,13 @@ entries, add new items as discovered.
   end-to-end replay through the canonical event log). Test
   count rose from 141 to 149 (+8 new cases). 10 commands,
   10 events, 8 vertices, 11 registers, 12 edges. (2026-05-02)
-- [ ] M3 — Real benchmark module: replace the M1 smoke bench
+- [x] M3 — Real benchmark module: replaced the M1 smoke bench
   with grouped benches for `delta`, `omega`, `step`,
   `reconstitute`, `applyEvent`, exercised across both example
-  aggregates. Add a head-to-head `bcompare` group on builder vs
-  AST forms.
+  aggregates and both forms (UserReg / OrderCart × builder /
+  AST). Added a head-to-head `bcompare` group on builder vs AST
+  for `step` and `reconstitute`. 24 benches, ≈48s wall-clock.
+  (2026-05-02)
 - [ ] M4 — Documentation closure: a one-page `bench/README.md`
   on how to run, interpret, and capture a baseline (referencing
   `tasty-bench`'s `--baseline` and `--csv` flags). Update
@@ -126,7 +128,32 @@ entries, add new items as discovered.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- M3: builder-form `step` is roughly 2× slower than the AST
+  form. Concretely, on the development host (macOS arm64,
+  GHC 9.12.3, `-O1`):
+
+      UserReg/builder/step   ≈ 50.6 ns
+      UserReg/ast/step       ≈ 28.9 ns   (0.57× builder)
+      OrderCart/builder/step ≈ 57.9 ns
+      OrderCart/ast/step     ≈ 30.5 ns   (0.52× builder)
+
+  Most of the gap is in 'delta' (the underlying transition
+  step): builder ≈ 48–56 ns vs AST ≈ 27–28 ns. The likely
+  cause is the `Prelude.lookup` over an alist that
+  `Keiki.Builder.buildTransducer` uses to materialise
+  `edgesOut` (`src/Keiki/Builder.hs:677`), versus the
+  hand-written `\case` in the AST forms. The plan flagged this
+  as an open question in the Purpose section; the bench now
+  *measures* it. The `reconstitute` overhead amortises away —
+  builder/AST gap on the 32-event log shrinks to 0.87–0.94×.
+
+- The performance gap is *only* visible on the per-step path
+  (`delta`/`omega`/`step`/`applyEvent`). On the full-replay
+  path (`reconstitute`), per-step setup dominates the
+  alist-lookup overhead enough that the two forms run within
+  ~10% of each other. This argues that the alist lookup is the
+  hot spot worth chasing if a future plan optimises the
+  builder.
 
 
 ## Decision Log
