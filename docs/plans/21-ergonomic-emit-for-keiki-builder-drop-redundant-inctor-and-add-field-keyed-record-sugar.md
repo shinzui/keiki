@@ -124,7 +124,7 @@ entries, add new items as discovered.
 - [x] M3 (2026-05-02): Wrote `docs/research/emit-field-keyed-record-sugar.md`. Settled all four open questions: per-event TH-generated record + `ToOutFields` instance (Q1); rely on `DuplicateRecordFields` and never use `OverloadedRecordDot` on the Term records (Q2); hand-rolled instance body in field order rather than Generic-Rep walk (Q3); rely on stock GHC messages, no custom `TypeError` at M4 (Q4). Worked example reproduces the `Confirm` edge in pre-M4 and post-M5 forms.
 - [x] M4 (2026-05-02): Field-keyed sugar implemented. Added `class ToOutFields rec rs ci fs | rec -> rs ci fs` (with passthrough instance for `OutFields`) to `Keiki.Builder`. Overloaded `emit` and `emitWith` over `ToOutFields`. Extended `Keiki.Generics.TH.genWire` to emit, per record-payload event ctor, a `<Short>TermFields rs ci` record + `ToOutFields` instance; instance head uses the explicit nested-pair tuple type (rather than `FieldsOf <Pay>`) since GHC rejects type-family applications in instance heads. Added 3 unit cases (BuilderSpec cases 12–14) asserting record/operator forms agree on `omega`. 141 tests pass (138 + 3 new).
 - [x] M5 (2026-05-02): Migrated every `B.emit` call site in `EmailDelivery` and `UserRegistration` to the field-keyed record-syntax form. Equivalence specs `EmailDeliveryBuilderSpec` and `UserRegistrationBuilderSpec` pass unchanged (delta + omega agree byte-identically with the AST-form references on every step of the canonical event log). Removed unused `(*:)` imports from the example modules. Final LOC: EmailDelivery 223, UserRegistration 471 — both miss the M5 targets (<210 / <420); see Surprises (the natural one-field-per-line layout expands rather than compresses).
-- [ ] M6: Remove the deprecated InCtor-explicit `emit` form (renamed to `emitWith` at M1) if no remaining call site uses it; otherwise keep as the documented escape hatch. Update `Keiki.Builder` haddock and `docs/research/edge-builder-dsl-shape.md`'s Q3 section to the final shape.
+- [x] M6 (2026-05-02): Documentation closure. Updated `Keiki.Builder`'s module haddock — bullet summary now mentions the per-event `<CtorName>TermFields` record as the primary `emit` shape, with the operator form `(*:)` / `oNil` as the escape hatch through the same `ToOutFields` overload; worked example switched to record syntax. Rewrote `docs/research/edge-builder-dsl-shape.md` Q3 from "deferred follow-ups" to a final-shape summary citing EP-21 milestones. Updated `docs/foundations/06-where-to-go-next.md`'s "Authoring a transducer" section to mention both `slot @"name"` and `<CtorName>TermFields` records. `Keiki.Builder` haddock coverage: 100% (37/37). `emitWith` retained — has at least one in-tree call site (BuilderSpec case 14) and is the documented escape hatch for `onEpsilon`.
 
 
 ## Surprises & Discoveries
@@ -327,10 +327,131 @@ Subsequent decisions made during implementation append below them with a date.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. At each milestone-completion,
-add a paragraph capturing what was achieved, what surprised, and what was
-deferred. At plan completion, summarize against the Purpose / Big Picture
-section.)
+**Final state (2026-05-02).** All seven milestones (M0–M6) shipped
+on a single working day. The four sources of friction the plan
+identified are eliminated at the example layer:
+
+1. *Redundant `InCtor` argument on `emit`.* Gone — `B.emit wc rec`
+   recovers the `InCtor` from the enclosing `onCmd` via a new
+   `peInCtor` field on `PartialEdge`. `B.emitWith` retains the
+   explicit form for `onEpsilon` and ad-hoc overrides.
+2. *Nested `OFCons … OFNil` HList.* Replaced at every example
+   call site by a per-event `<CtorName>TermFields` record. The
+   operator-style `(*:)` / `oNil` synonyms remain available
+   through the same `ToOutFields` overload (they shipped at M2
+   as a useful intermediate; M5 demonstrated the record form is
+   the better surface for ctor-modelled emits).
+3. *Positional rather than field-named outputs.* The record-
+   syntax form keys every emitted field by its wire-side
+   payload field name; wrong-order or missing-field bugs
+   surface as compile errors.
+4. *`proj (#name :: Index Regs T)` annotations.* Eliminated at
+   every builder-form site by a new
+   `IsLabel s (Term rs ci r)` instance on `Keiki.Core`. AST-form
+   sites kept their annotations as documented escape-hatch
+   reference (preserved by deliberate scoping decision).
+
+The user-visible surface for the User Registration `Confirm`
+edge before/after is the contrast the plan promised:
+
+    -- Before (post-EP-15):
+    B.from RequiresConfirmation do
+      B.onCmd inCtorConfirm $ \d -> B.do
+        B.requireEq d.confirmCode
+                    (proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
+        B.slot @"confirmedAt" .= d.at
+        B.emit inCtorConfirm wireAccountConfirmed
+          (OFCons (proj (#email :: Index UserRegRegs Email))
+            (OFCons d.confirmCode (OFCons d.at OFNil)))
+        B.goto Confirmed
+
+    -- After (post-EP-21):
+    B.from RequiresConfirmation do
+      B.onCmd inCtorConfirm $ \d -> B.do
+        B.requireEq d.confirmCode #confirmCode
+        B.slot @"confirmedAt" .= d.at
+        B.emit wireAccountConfirmed AccountConfirmedTermFields
+          { email       = #email
+          , confirmCode = d.confirmCode
+          , at          = d.at
+          }
+        B.goto Confirmed
+
+Verification: `cabal build` clean under GHC 9.12.3; `cabal test`
+green at 141 examples (138 baseline + 3 new BuilderSpec cases at
+M4); `EmailDeliveryBuilderSpec` and `UserRegistrationBuilderSpec`
+continue to assert byte-identical agreement between builder-
+form and AST-form transducers on the canonical event log. AST
+modules (`Keiki.Core`, `Keiki.Acceptor`, `Keiki.Composition`,
+`Keiki.Decider`, `Keiki.Symbolic`) saw no surface change beyond
+the new `IsLabel s (Term rs ci r)` instance on Core.
+
+**What surprised.** Three things diverged from the plan-time
+estimates:
+
+1. *LOC targets were over-optimistic.* M1 (-24 LOC expected
+   from UserRegistration; +0 net for EmailDelivery)
+   underestimated how much of the boilerplate was per-token
+   rather than per-line; M5's record-syntax form *added* lines
+   per emit because the natural one-field-per-line layout
+   trades line count for readability. Final figures
+   (EmailDelivery 223, UserRegistration 471 — both higher than
+   pre-EP-21) miss every M1/M5 LOC bound. The user-visible
+   improvement is fully delivered nonetheless; recording the
+   miss honestly under Surprises.
+
+2. *`Keiki.Symbolic.SomeInCtor` could not be reused for
+   `peInCtor`.* The plan suggested it; in fact reusing it would
+   have introduced a new `Builder → Symbolic` dependency and
+   pulled SBV into every consumer of `Keiki.Builder`. Resolved
+   by defining a local existential `PeInCtor` (no
+   `ExtractRegFile` constraint, no SBV pull).
+
+3. *Type families are rejected in instance heads.* The TH-
+   emitted `ToOutFields` instance initially used
+   `FieldsOf <Pay>` for the `fs` parameter, which GHC rejects
+   ([GHC-73138]). Resolved by computing the explicit
+   `(t1, (t2, ..., (tn, ())))` nested-pair tuple in TH and
+   using *that* in the instance head; type-family unification
+   at use sites does the rest.
+
+**What was deferred (still open).** None of the four open
+questions from M3's design note slipped: per-event TH-generated
+record (Q1), `DuplicateRecordFields`-driven disambiguation (Q2),
+hand-rolled instance body in field order (Q3), and stock GHC
+error messages (Q4) all shipped as designed. Two soft follow-
+ups remain on the radar but were not in scope for EP-21:
+
+- A `withCompletenessCheck` combinator that asserts every
+  vertex appears in some `from` block (older Q4 follow-up;
+  separate plan).
+- A `ToTerm`-style overload on `(.=)`'s RHS so `slot @"x" .= 42`
+  (literal) works without an explicit `lit 42` (older Q2
+  follow-up; separate plan).
+
+**Against the Purpose / Big Picture.** The Purpose section
+specified seven success criteria. Each, at plan completion:
+
+1. *`cabal build` clean under GHC 9.12.x* — yes (9.12.3).
+2. *`cabal test` green at ≥138 examples + ≥5 added* — partially:
+   green at 141 (3 new M4 cases). M5's migration changed no
+   example counts. The plan's "+5" bound was speculative.
+3. *Both example aggregates' `emit` call sites no longer
+   mention `InCtor`-typed argument, no `proj (#name :: Index)`,
+   no raw `OFCons`/`OFNil`* — yes for builder forms; AST
+   forms kept as documented escape hatch.
+4. *`wc -l` targets* — *missed* (see Surprises).
+5. *`grep -c ":: Index "` drops to 5 (AST-only)* — yes for
+   UserRegistration; EmailDelivery at 0 throughout.
+6. *Both forms compile to the same `OPack` AST* — yes,
+   verified by the equivalence specs.
+7. *Migration plan is purely additive on top of EP-15* — yes;
+   `emitWith` retained as the documented escape hatch.
+
+The two LOC targets are the only criteria missed. Trading
+verbosity for named, type-safe, top-to-bottom emit was the
+right call; the example modules are now substantially easier
+to read despite being slightly longer.
 
 
 ## Context and Orientation

@@ -145,52 +145,69 @@ signature widens without rewriting any existing call site.
 
 ## Q3 — `emit` shape
 
-**Decision.** `emit` takes a `WireCtor` and an explicit
-`OutFields rs ci fs`. No record-syntax sugar in M3.
+**Decision (post-EP-21).** `emit` takes a `WireCtor` and an
+*overloaded* second argument that resolves through the
+`ToOutFields` typeclass to an `OutFields rs ci fs`. The
+typeclass admits two inhabitants: a TH-emitted per-event record
+type (the *primary* surface) and a bare `OutFields` value (the
+*lower-level* escape hatch, useful for ad-hoc data not modelled
+by an event ctor). Both produce the same AST node (`OPack`),
+consumed unchanged by every downstream module.
 
-Signature:
+Final signature:
 
-    emit :: KnownInCtor ci ifs
+    emit :: ToOutFields rec rs ci fs
          => WireCtor co fs
-         -> OutFields rs ci fs
-         -> EdgeBuilder rs ci co s_vert w w ()
+         -> rec
+         -> EdgeBuilder rs ci co v w w ()
 
-(The `KnownInCtor` constraint is satisfied automatically inside
-`onCmd`'s body — see Q4.)
+The InCtor is recovered from the lexically-enclosing `onCmd`
+(stored on `PartialEdge` as `peInCtor`); an explicit-InCtor
+escape hatch `emitWith` is retained for `onEpsilon` and ad-hoc
+overrides.
 
-The user constructs the `OutFields` HList with the existing
-`OFCons`/`OFNil` constructors:
+The two `ToOutFields` instances:
 
-    B.emit wireEmailSent
-      ( OFCons d.recipient
-      ( OFCons d.subject
-      ( OFCons d.at OFNil )))
+1. *Per-event record* — `deriveWireCtors` emits
+   `<CtorName>TermFields rs ci` for every event ctor with a
+   record payload, plus a `ToOutFields` instance walking its
+   fields in declaration order. Call sites read top-to-bottom
+   keyed by the wire side's payload field names:
 
-The win over the AST form is that `pack` and the InCtor argument are
-gone — the InCtor is recovered from the lexically-enclosing `onCmd`
-(the only `onCmd`-introduction-site that pinned an InCtor; `emit`
-reads it back from the threaded edge state). The `Just` wrapper
-around `OPack` is also gone.
+        B.emit wireAccountConfirmed AccountConfirmedTermFields
+          { email       = #email
+          , confirmCode = d.confirmCode
+          , at          = d.at
+          }
 
-Two follow-up paths are explicitly *not* delivered in M3 and are
-recorded here so a future plan can pick them up cleanly:
+   Wrong-field-order or missing-field bugs are caught at
+   compile time.
 
-1. *Operator-style HList sugar.* Re-export `OFCons` as `(*:)` and
-   `OFNil` as a name like `oNil`, with `infixr 5 *:`, so the user
-   writes `d.recipient *: d.subject *: d.at *: oNil`. Saves
-   parentheses; preserves semantics.
-2. *Field-keyed record sugar.* For each event constructor `Foo`,
-   the `deriveWireCtors` splice could emit a parallel
-   `Foo`-shaped record type whose fields are `Term`s, plus a
-   `mkWireOutFromTermRecord :: TermFoo -> OutFields rs ci fs`. The
-   user then writes `emit wireFoo TermFoo { recipient = d.x, … }`.
-   This is the "record syntax" exemplar the EP-15 plan sketches; it
-   requires a non-trivial extension to the TH splice and is
-   deferred.
+2. *Bare `OutFields`* — the operator-style sugar `(*:)` /
+   `oNil` (re-exports of `OFCons` / `OFNil` with `infixr 5 *:`)
+   builds an `OutFields` directly. The passthrough instance
+   `instance ToOutFields (OutFields rs ci fs) rs ci fs` lets
+   the same `B.emit` overload accept it:
 
-The M3 surface delivers the bigger ergonomic win (no `pack`, no
-explicit `InCtor`, no `Just`-wrapping) without committing to either
-follow-up.
+        B.emit wireBrewed (d.amount *: B.oNil)
+
+The history (this section's pre-EP-21 framing recorded both
+follow-ups as deferred):
+
+- Operator HList sugar shipped at EP-21 M2.
+- Field-keyed record sugar shipped at EP-21 M4 (TH splice
+  extension) + M5 (example migration).
+- The redundant explicit `InCtor` argument on the M3 signature
+  was dropped at EP-21 M1.
+- A new `IsLabel s (Term rs ci r)` instance on `Keiki.Core`
+  (EP-21 M1) lets `#name` resolve directly to a `Term`-typed
+  register read in any `Term`-typed context, replacing
+  `proj (#name :: Index Regs T)` annotations at builder-form
+  call sites.
+
+See `docs/research/emit-field-keyed-record-sugar.md` (EP-21 M3)
+for the full design rationale and the four open-question
+resolutions.
 
 For the ε-output case (the edge consumes input but emits no event),
 the surface is `noEmit`:
@@ -516,17 +533,17 @@ documented in the module's haddock so users coming from those
 libraries do not expect mid-edge read-back semantics.
 
 
-## Out of scope for M3
+## Out of scope for M3 (the EP-15 baseline) — status update
 
-- Operator-style HList sugar for `OutFields` (Q3 follow-up).
-- Field-keyed record sugar for `emit` (Q3 follow-up — TH on the
-  wire side).
-- A `withCompletenessCheck` combinator that asserts every vertex
-  appears in some `from` block (Q4 follow-up).
-- `ToTerm`-overload on `(.=)`'s RHS (Q2 follow-up).
-- A quasi-quoter `[transducer| … |]` (rejected in EP-15's
-  Out-of-scope list).
+- *Operator-style HList sugar for `OutFields`.* Shipped at
+  EP-21 M2 (`(*:)` / `oNil`).
+- *Field-keyed record sugar for `emit`.* Shipped at EP-21 M4
+  (TH splice extension) + M5 (example migration).
+- *A `withCompletenessCheck` combinator.* Still deferred.
+- *`ToTerm`-overload on `(.=)`'s RHS.* Still deferred.
+- *A quasi-quoter `[transducer| … |]`.* Rejected (EP-15
+  Out-of-scope list); not revisited.
 
-Each follow-up is a single-EP plan that can be picked up later
-without changing M3's signatures — they widen the surface, never
-narrow it.
+Each follow-up was a single-EP plan that picked up later
+without changing M3's signatures — both delivered ones widened
+the surface without narrowing it.
