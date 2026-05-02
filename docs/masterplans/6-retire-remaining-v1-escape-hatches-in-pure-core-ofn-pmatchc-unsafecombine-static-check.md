@@ -223,7 +223,7 @@ implementation work is split.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Design milestone — decompose v1 escape hatch retirements (OFn, PMatchC, unsafeCombine static check) | docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md | None | EP-7 (external), MP-4 children | Complete |
 | 2 | Retire OFn and mkOut from Keiki.Core | docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md | None | EP-15 | Complete |
-| 3 | Retire PMatchC and matchCmd from Keiki.Core | docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md | None | EP-15 | Not Started |
+| 3 | Retire PMatchC and matchCmd from Keiki.Core | docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md | None | EP-15 | Complete |
 | 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -410,16 +410,16 @@ EP-16 — Retire OFn and mkOut (Complete):
 - [x] EP-16 M4: Tick OFn bullet in retirement-block comments
 - [x] EP-16 M5: Verdict
 
-EP-17 — Retire PMatchC and matchCmd (Not Started):
+EP-17 — Retire PMatchC and matchCmd (Complete):
 
-- [ ] EP-17 M0: Verify prerequisites
-- [ ] EP-17 M1: Remove PMatchC / matchCmd from Keiki.Core
-- [ ] EP-17 M2: Remove PMatchC clause from Keiki.Symbolic.translatePred
-- [ ] EP-17 M3: Remove PMatchC clauses from Keiki.Composition
-- [ ] EP-17 M4: Rewrite test/Keiki/CoreSpec.hs synthetic-PMatchC fixtures
-- [ ] EP-17 M5: Update sbv-boolalg-design.md
-- [ ] EP-17 M6: Tick PMatchC bullet in retirement-block comments
-- [ ] EP-17 M7: Verdict
+- [x] EP-17 M0: Verify prerequisites
+- [x] EP-17 M1: Remove PMatchC / matchCmd from Keiki.Core
+- [x] EP-17 M2: Remove PMatchC clause from Keiki.Symbolic.translatePred
+- [x] EP-17 M3: Remove PMatchC clauses from Keiki.Composition
+- [x] EP-17 M4: Rewrite test/Keiki/CoreSpec.hs synthetic-PMatchC fixtures
+- [x] EP-17 M5: Update sbv-boolalg-design.md
+- [x] EP-17 M6: Tick PMatchC bullet in retirement-block comments
+- [x] EP-17 M7: Verdict
 
 EP-18 — Static Disjoint check; retire unsafeCombine (Not Started):
 
@@ -466,6 +466,15 @@ evidence.
   rather than against EP-15's recorded number. This is the expected
   shape under sequential EP landings; no action needed beyond
   recording the new baseline at each plan's M0.
+
+- **EP-17 reused EP-16 fixtures cleanly** (EP-17 M4, 2026-05-02).
+  The `inCtorTrue :: InCtor Bool '[]` introduced in EP-16's M3 for
+  the synthetic transducer's structural OPack output turned out to
+  be exactly the right shape for EP-17's structural guard rewrite:
+  `matchInCtor inCtorTrue` has the same truth-table as the v1
+  `matchCmd id`. Suggests structural fixtures introduced by sibling
+  retirement EPs should be reviewed before authoring new test
+  machinery — they may already cover the new EP's fixture needs.
 
 
 ## Decision Log

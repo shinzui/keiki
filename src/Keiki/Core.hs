@@ -24,9 +24,6 @@
 -- which begins with a single design milestone EP-15 in
 -- @docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md@):
 --
---   * 'PMatchC' carries an opaque @ci -> Bool@; replaced with a richer
---     pattern AST per MP-6. EP-2 of MasterPlan 2 documents how the
---     SBV-backed 'BoolAlg' instance falls back on 'PMatchC'.
 --   * 'unsafeCombine' bypasses the distinct-targets check that
 --     'combine' enforces; MP-6 makes the check static (likely by
 --     indexing 'Update' over a type-level set of written slots).
@@ -60,7 +57,6 @@ module Keiki.Core
   , Edge (..)
   , SymTransducer (..)
     -- * Helpers (the user-facing DSL surface)
-  , matchCmd
   , matchInCtor
   , proj
   , inpCtor
@@ -350,14 +346,11 @@ data HsPred (rs :: [Slot]) (ci :: Type) where
   PEq     :: (Eq r, Typeable r)
           => Term rs ci r -> Term rs ci r -> HsPred rs ci
   -- | Structural input-constructor guard: @True@ iff the input symbol
-  -- is the constructor named by the carried 'InCtor'. Added in EP-2 of
-  -- MasterPlan 2 so the SBV-backed 'BoolAlg' instance can recognize
-  -- constructor mutual exclusion symbolically. The opaque-function
-  -- alternative ('PMatchC') stays for back-compat. See
+  -- is the constructor named by the carried 'InCtor'. The SBV-backed
+  -- 'BoolAlg' instance recognises constructor mutual exclusion
+  -- symbolically through this constructor. See
   -- @docs/research/sbv-boolalg-design.md@.
   PInCtor :: InCtor ci ifs -> HsPred rs ci
-  -- | v1 escape hatch: opaque predicate over the input symbol.
-  PMatchC :: (ci -> Bool) -> HsPred rs ci
 
 
 -- * Effective Boolean algebra ----------------------------------------------
@@ -413,21 +406,11 @@ data SymTransducer phi rs s ci co = SymTransducer
 
 -- * Helpers (DSL surface) --------------------------------------------------
 
--- | v1 escape-hatch guard. MasterPlan 6 retires this in favour of a
--- structural pattern AST; for now prefer 'matchInCtor' where the guard
--- is a constructor-equality check.
-matchCmd :: (ci -> Bool) -> HsPred rs ci
-matchCmd = PMatchC
-
-
 -- | Structural input-constructor guard: @True@ iff the input symbol
--- is the constructor named by the supplied 'InCtor'. Added in EP-2 of
--- MasterPlan 2 as a structural alternative to 'matchCmd'/'PMatchC' so
--- the SBV-backed 'BoolAlg' instance can decide constructor-mutual-
--- exclusion symbolically. The semantics is
--- @evalPred (matchInCtor ic) regs ci == isJust (icMatch ic ci)@; the
--- v1 'matchCmd' escape hatch stays available for users who want to
--- opt out of structural recognition.
+-- is the constructor named by the supplied 'InCtor'. The SBV-backed
+-- 'BoolAlg' instance can decide constructor-mutual-exclusion
+-- symbolically through this guard. The semantics is
+-- @evalPred (matchInCtor ic) regs ci == isJust (icMatch ic ci)@.
 matchInCtor :: InCtor ci ifs -> HsPred rs ci
 matchInCtor = PInCtor
 
@@ -506,7 +489,6 @@ evalPred (PEq a b)     r    c  = evalTerm a r c == evalTerm b r c
 evalPred (PInCtor ic)  _    c  = case icMatch ic c of
                                    Just _  -> True
                                    Nothing -> False
-evalPred (PMatchC f)   _    c  = f c
 
 
 -- | Apply an 'Update' to the register file. 'UCombine' applies left

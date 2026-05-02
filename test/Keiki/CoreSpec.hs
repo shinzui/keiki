@@ -59,7 +59,7 @@ wcStringTrue = WireCtor
 synthetic :: SymTransducer (HsPred '[] Bool) '[] Bool Bool String
 synthetic = SymTransducer
   { edgesOut = \case
-      False -> [ Edge { guard  = matchCmd id
+      False -> [ Edge { guard  = matchInCtor inCtorTrue
                       , update = UKeep
                       , output = Just (pack inCtorTrue wcStringTrue OFNil)
                       , target = True
@@ -114,8 +114,6 @@ spec = do
       evalPred (PBot  :: HsPred '[] ()) RNil () `shouldBe` False
     it "PEq compares equal terms" $
       evalPred (TLit (1 :: Int) .== TLit 1 :: HsPred '[] ()) RNil () `shouldBe` True
-    it "PMatchC dispatches to the carried predicate" $
-      evalPred (matchCmd id :: HsPred '[] Bool) RNil True `shouldBe` True
 
   describe "synthetic 2-vertex transducer" $ do
     it "delta moves False -> True on input True (state)" $

@@ -270,8 +270,6 @@ indexName (SIdx i)  = indexName i
 --   * 'PInCtor' emits @seInputCtor .== literal (icName ic)@; the
 --     shared 'seInputCtor' makes constructor-mutual-exclusion
 --     decidable.
---   * 'PMatchC' (the v1 escape hatch) emits a fresh 'SBool': the
---     opaque Haskell function is unanalyzable.
 translatePred
   :: forall rs ci. SymEnv -> HsPred rs ci -> SBV.Symbolic SBV.SBool
 translatePred env = go
@@ -284,7 +282,6 @@ translatePred env = go
     go (PNot p)     = SBV.sNot  <$> go p
     go (PEq a b)    = goEq a b
     go (PInCtor ic) = pure (seInputCtor env SBV..== SBV.literal (icName ic))
-    go (PMatchC _)  = SBV.free "pmatchc"
 
     goEq :: forall r. Typeable r
          => Term rs ci r -> Term rs ci r -> SBV.Symbolic SBV.SBool
@@ -512,8 +509,8 @@ class KnownInCtors ci where
 --    witness that doesn't satisfy the predicate's structural
 --    equality. The User Registration test target has no repeated
 --    reads. Memoization is a future improvement.
--- 2. /Escape-hatch terms/ ('TApp1', 'TApp2', 'PMatchC', and 'PEq'
---    over a non-'Sym' operand type, the @neq@ fallback in 'goEq').
+-- 2. /Escape-hatch terms/ ('TApp1', 'TApp2', and 'PEq' over a
+--    non-'Sym' operand type, the @neq@ fallback in 'goEq').
 --    These translate to fresh anonymous SBV variables; their values
 --    are not extracted. The witness reflects only the slots and
 --    input-fields the predicate references through 'TReg' and

@@ -1001,11 +1001,6 @@ defines the contract)**
 **v1 surfaces still pending retirement — owned by MasterPlan 6**
 (`docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md`)
 
-- `PMatchC` (replace with `PCtor` or pattern AST). EP-2 of MasterPlan
-  2 documents how the SBV-backed `BoolAlg` instance falls back on
-  `PMatchC`. MP-2 EP-2 added `PInCtor`/`matchInCtor` as a structural
-  alternative for the constructor-equality case; MP-6 decides whether
-  that subsumes `PMatchC` entirely.
 - `unsafeCombine` (every call site moves to `combine` once a static
   check covers the "distinct targets" invariant — likely by indexing
   `Update` over a type-level set of written slots; the design

@@ -134,7 +134,6 @@ weakenLPred (PNot p)      = PNot (weakenLPred @rs1 @rs2 p)
 weakenLPred (PEq a b)     = PEq  (weakenLTerm @rs1 @rs2 a)
                                   (weakenLTerm @rs1 @rs2 b)
 weakenLPred (PInCtor ic)  = PInCtor ic
-weakenLPred (PMatchC f)   = PMatchC f
 
 
 -- | Walk an 'Update' and weaken every register write + every
@@ -254,12 +253,6 @@ substPred (PInCtor ic2)  o1 =
     OPack _ wc1 _
       | icName ic2 == wcName wc1 -> PTop
       | otherwise                -> PBot
-substPred (PMatchC _)   _o1 = error
-  "Keiki.Composition.compose: t2's guard uses PMatchC over mid \
-  \(opaque). Restructure t2's guard with PInCtor / PEq / \
-  \TInpCtorField so the substitution can preserve symbolic \
-  \single-valuedness. PMatchC over mid is the v1 escape hatch and \
-  \is not supported by compose."
 
 
 -- | Substitute a t2-side 'Update' against t1's edge output.

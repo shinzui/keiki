@@ -77,40 +77,44 @@ must be documented here, even if it requires splitting a partially
 completed task into two ("done" vs. "remaining"). This section must
 always reflect the actual current state of the work.
 
-- [ ] M0: Verify prerequisites — `cabal build && cabal test all` is
-  green; record GHC version if it differs from EP-15's M0 baseline
-  (GHC 9.12.3, 107 examples passing).
-- [ ] M1: Remove `PMatchC` constructor and `matchCmd` helper from
-  `src/Keiki/Core.hs`; update the export list and the `evalPred`
-  clause.
-- [ ] M2: Remove the `PMatchC` clause from
-  `src/Keiki/Symbolic.hs`'s `translatePred` (the SBV-fallback `SBV.free
-  "pmatchc"` line) and from the function's Haddock list of supported
-  constructors. Update any other internal references to `PMatchC`
-  in the symbolic layer.
-- [ ] M3: Remove the `PMatchC` clauses in
-  `src/Keiki/Composition.hs` (`weakenLPred` passthrough at line ~137;
-  `substPred` defensive `error` at lines ~264-269). After M1's
-  GADT-narrowing the `substPred` case is unreachable; this milestone
-  deletes both clauses and confirms the file still type-checks.
-- [ ] M4: Rewrite `test/Keiki/CoreSpec.hs` — replace the
-  `matchCmd id` guard in the synthetic transducer with a structural
-  alternative, and delete the "PMatchC dispatches to the carried
-  predicate" test case. Confirm the rewritten test count and the
-  file passes.
-- [ ] M5: Update `docs/research/sbv-boolalg-design.md` to remove the
-  PMatchC-fallback section (lines ~280-289 and lines ~315-331), or
-  rewrite those sections to record that the fallback is now gone
-  because the constructor is gone. Keep the historical context (a
-  "PMatchC was retired by EP-17 of MP-6 on 2026-05-XX" note pointing
-  forward).
-- [ ] M6: Tick the PMatchC bullet in the module-header retirement
-  block of `src/Keiki/Core.hs:22-33` and the corresponding bullet in
-  `docs/research/dsl-shape-for-symbolic-register.md` (lines
-  1001-1015). Leave the block in place because unsafeCombine remains
-  (and the block on Core may already be smaller after EP-16).
-- [ ] M7: Verdict — `cabal build && cabal test all` green; commit;
-  update MP-6 registry; write Outcomes & Retrospective entry.
+- [x] M0: Verify prerequisites — `cabal build && cabal test all` was
+  green at end of EP-16 (108 examples passing, GHC 9.12.3). EP-17
+  resumed from that state without an additional rerun.
+- [x] M1: Removed `PMatchC` constructor and `matchCmd` helper from
+  `src/Keiki/Core.hs`; updated the export list and the `evalPred`
+  clause; revised `PInCtor` and `matchInCtor` Haddock to drop
+  back-compat references to `PMatchC`/`matchCmd`.
+- [x] M2: Removed the `PMatchC` clause from
+  `src/Keiki/Symbolic.hs`'s `translatePred` (the SBV-fallback
+  `SBV.free "pmatchc"` line) and trimmed both Haddock references
+  (the constructor list at lines ~273 and the escape-hatch
+  enumeration at line ~512).
+- [x] M3: Removed the `PMatchC` clauses in
+  `src/Keiki/Composition.hs` (`weakenLPred` passthrough; `substPred`
+  defensive `error`). Library type-checks with all six surviving
+  `HsPred` constructors handled exhaustively.
+- [x] M4: Rewrote `test/Keiki/CoreSpec.hs` — replaced `matchCmd id`
+  in the synthetic transducer's guard with `matchInCtor inCtorTrue`
+  (reusing the `inCtorTrue` defined for EP-16's M3; same truth-table
+  on `Bool`). Deleted the "PMatchC dispatches to the carried
+  predicate" test case. Test count: 107 (down from M0's 108 by
+  exactly the one PMatchC-dispatch case).
+- [x] M5: Updated `docs/research/sbv-boolalg-design.md` — replaced
+  the "PMatchC fallback (the load-bearing decision)" section with a
+  "Historical: the PMatchC fallback (retired by EP-17 of MP-6,
+  2026-05-02)" note that preserves the EP-2 motivation context;
+  removed the constructor-list `PMatchC f` bullet; updated the
+  "Translation refuses" failure-mode entry; removed the future-work
+  PMatchC retirement bullet.
+- [x] M6: Removed the PMatchC bullet from the module-header
+  retirement block of `src/Keiki/Core.hs:22-33`. Same removal applied
+  to the closing list in
+  `docs/research/dsl-shape-for-symbolic-register.md`. Both blocks
+  now show only the unsafeCombine bullet pending EP-18.
+- [x] M7: Verdict — `cabal build && cabal test all` green (107/107);
+  `grep "PMatchC\|matchCmd" src/Keiki/Core.hs src/Keiki/Symbolic.hs
+  src/Keiki/Composition.hs` empty; commit and MP-6 registry update
+  next.
 
 
 ## Surprises & Discoveries
@@ -118,7 +122,19 @@ always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights
 discovered during implementation. Provide concise evidence.
 
-(None yet.)
+- **EP-16's `inCtorTrue` was directly reusable as the synthetic
+  transducer's structural guard.** The plan anticipated either a
+  `PEq (TLit True) (TLit True)` always-true guard or a custom
+  singleton-input rewrite. In practice the `inCtorTrue :: InCtor
+  Bool '[]` defined for EP-16's M3 (matches `True` only, empty
+  payload) was already the right structural shape: `matchInCtor
+  inCtorTrue` has the same truth-table as `matchCmd id` over
+  `Bool`. Zero new test machinery required for M4. Worth noting for
+  the EP-18 author: structural fixtures introduced by sibling EPs
+  may compose cleanly with later retirements.
+
+- **Test count dropped by exactly 1 at M4** (108 → 107), matching
+  the plan's prediction. No incidental regressions.
 
 
 ## Decision Log
@@ -151,7 +167,45 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or
 at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome.** EP-17 landed as designed — pure mechanical deletion.
+`HsPred` has seven constructors now (PTop, PBot, PAnd, POr, PNot,
+PEq, PInCtor). `matchCmd` is no longer exported. The SBV
+`translatePred` handles the surviving constructors exhaustively and
+has no predicate-level fallback. The composition substitution
+helpers (`weakenLPred`, `substPred`) are exhaustive with no
+defensive errors.
+
+**Acceptance gates met.**
+
+- `cabal build && cabal test all` green (107/107, GHC 9.12.3).
+- `grep "PMatchC\|matchCmd" src/Keiki/Core.hs src/Keiki/Symbolic.hs
+  src/Keiki/Composition.hs` returns empty.
+- `Keiki.Symbolic.translatePred` no longer has a `PMatchC` clause
+  and its Haddock no longer enumerates `PMatchC`.
+- Importing `matchCmd` from `Keiki.Core` is a compile error.
+- Constructing a `PMatchC` value is a compile error.
+- The retirement-block comments in `Keiki.Core` and
+  `dsl-shape-for-symbolic-register.md` no longer mention `PMatchC`.
+
+**Test count delta.** 108 → 107 (M0 → M7). Exactly one case removed
+as planned: the "PMatchC dispatches to the carried predicate"
+assertion in the `evalPred` describe block. No other test cases
+were affected. The symbolic gates
+(`isSingleValuedSym (withSymPred userReg) == True`, `symSatExt`
+round-trips) continue to pass — they were already structural
+through `PInCtor` since EP-2 of MP-2.
+
+**Lessons for EP-18.**
+
+- The retirement-block comments in `Keiki.Core` and
+  `dsl-shape-for-symbolic-register.md` now contain only the
+  `unsafeCombine` bullet. EP-18's M9 (IP-5 sweep) removes the entire
+  block in both files.
+- EP-17's M5 design-note rewrite preserved historical EP-2 context
+  as a "Historical: ..." subsection rather than deleting it. EP-18
+  may face a similar choice with the `unsafeCombine` static-check
+  rationale in `dsl-shape-for-symbolic-register.md`'s section 8 —
+  preserve, don't delete, the design rationale.
 
 
 ## Context and Orientation

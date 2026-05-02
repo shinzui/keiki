@@ -201,9 +201,10 @@ Helpers:
 
 The translation walks `Term rs ci r` and `HsPred rs ci` structurally,
 producing SBV expressions in the `Symbolic` monad. The walk is total
-modulo two opaque escape hatches (`TApp1`/`TApp2` outside a curated
-whitelist; `PMatchC` over an opaque `ci -> Bool`) which become free
-symbolic variables (i.e. "unknown to the solver").
+modulo one remaining opaque escape hatch (`TApp1`/`TApp2` outside a
+curated whitelist) which becomes a free symbolic variable (i.e.
+"unknown to the solver"). The `HsPred` side has no escape hatches
+since EP-17 of MasterPlan 6 retired `PMatchC` (2026-05-02).
 
 ### Translation environment
 
@@ -273,33 +274,17 @@ The current `HsPred rs ci` set:
 - `PEq a b` — translate both terms. If both translations succeed, emit
   `(.==)`. If either has a non-`Sym`-able type, fall back to a fresh
   `SBool` (lose precision).
-- `PMatchC f` — opaque function. Fall back to a fresh `SBool` (lose
-  precision).
-- `PInCtor ic` (new — see below) → `seInputCtor .== literal (icName ic)`.
+- `PInCtor ic` → `seInputCtor .== literal (icName ic)`.
 
-### PMatchC fallback (the load-bearing decision)
+### Historical: the PMatchC fallback (retired by EP-17 of MP-6, 2026-05-02)
 
-`PMatchC :: (ci -> Bool) -> HsPred rs ci` carries an opaque function the
-translation cannot inspect. The User Registration aggregate's
-`isStart`/`isConfirm`/`isResend`/`isGdpr`/`isContinue` helpers
-currently build `PMatchC` values from `\case StartRegistration{} ->
-True; _ -> False`-style patterns. For the M7 acceptance criterion
-`isSingleValuedSym userReg == True`, the translation must recognize
-that `isConfirm AND isResend` is unsat — and that recognition cannot
-come from `PMatchC` (opaque) alone.
-
-**The plan's recommended path** is option 3 from EP-2 §"What the User
-Registration aggregate's single-valuedness question is": pull EP-1's
-`InCtor` infrastructure into the predicate language by adding a new
-`HsPred` constructor:
-
-    PInCtor :: InCtor ci ifs -> HsPred rs ci
-
-with semantics: `evalPred (PInCtor ic) _ ci = isJust (icMatch ic ci)`.
-A helper `matchInCtor :: InCtor ci ifs -> HsPred rs ci` exposes it on
-the DSL surface.
-
-The User Registration helpers are then:
+The v1 `HsPred` carried a `PMatchC :: (ci -> Bool) -> HsPred rs ci`
+escape hatch over an opaque Haskell function. EP-2 of MasterPlan 2
+(this design note's home) added `PInCtor` so the User Registration
+aggregate's constructor guards
+(`isStart`/`isConfirm`/`isResend`/`isGdpr`/`isContinue`) could be
+authored structurally and the SBV translation could decide
+constructor mutual exclusion symbolically:
 
     isStart    = matchInCtor inCtorStart
     isConfirm  = matchInCtor inCtorConfirm
@@ -312,24 +297,16 @@ conjunction `isConfirm AND isResend` translates to
 `seInputCtor == "ConfirmAccount" AND seInputCtor == "ResendConfirmation"`,
 which SBV's z3 dispatches and recognizes as unsat in microseconds. ✓
 
-`PMatchC` stays in the language as a v1-grandfathered escape hatch.
-Anyone still using `matchCmd` directly gets imprecise analysis (the
-translation falls back to a fresh `SBool`); the User Registration
-aggregate no longer goes through that path.
-
-### Decision: cross-cut into `Keiki.Core`
-
-This adds `PInCtor` to `HsPred`, `matchInCtor` to the helper surface,
-and updates `evalPred` and the User Registration helpers. **It crosses
-into EP-1's territory** (modifying `Keiki.Core` and the example
-modules). Per the plan's M7 instructions, this is acknowledged as a
-documented cross-cut; record in the EP-2 Decision Log and the
-MasterPlan's Surprises & Discoveries.
-
-The alternatives — refusing to translate `PMatchC` (insufficient,
-`isSingleValued userReg` returns `False`) or pattern-recognizing
-`PMatchC` functions (impossible, the function is opaque) — were
-rejected explicitly.
+EP-2 deferred *retirement* of `PMatchC` to MasterPlan 6, where it
+would have remained available as a v1-grandfathered escape hatch
+trading symbolic precision for ergonomics. EP-17 of MP-6
+(`docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md`)
+removed `PMatchC` and `matchCmd` entirely on 2026-05-02 — the survey
+in `docs/research/v1-escape-hatch-retirements-design.md` confirmed
+zero aggregate uses, so the back-compat hatch had no users to
+preserve. The `translatePred` function now handles the seven
+remaining `HsPred` constructors exhaustively and the SBV side has no
+predicate-level fallback.
 
 
 ## Purity model: `unsafePerformIO`
@@ -596,9 +573,11 @@ checkHiddenInputs) must continue to pass after the helpers migrate to
 - **Solver timeout.** SBV's default has no timeout. M2 sets a
   conservative 5-second timeout via `SBV.SatConfig`'s `timeOut` field.
   Timeouts are treated as `Unknown`.
-- **Translation refuses (e.g. PMatchC, opaque TApp1/TApp2).** The
-  translation emits a fresh `SBool` and the test loses precision. Not
-  a runtime failure; documented as a known limitation.
+- **Translation refuses (opaque TApp1/TApp2).** The translation
+  emits a fresh `SBool` and the test loses precision. Not a runtime
+  failure; documented as a known limitation. (`PMatchC` was the
+  other historical refusal site; retired by EP-17 of MP-6 on
+  2026-05-02.)
 - **Unsupported slot type (no `Sym` instance).** Compile-time error
   pointing at the missing instance. The user adds a `Sym` instance or
   reshapes the slot.
@@ -606,10 +585,8 @@ checkHiddenInputs) must continue to pass after the helpers migrate to
 
 ## Out of scope (deferred to later MasterPlans)
 
-- `OFn` retirement (opaque output) — separate v3 escape hatch.
-- `PMatchC` retirement (opaque guard) — partially addressed by adding
-  `PInCtor`, but the `PMatchC` constructor stays for back-compat.
-- Static check on `unsafeCombine` — separate cleanup.
+- Static check on `unsafeCombine` — separate cleanup, owned by EP-18
+  of MP-6.
 - Curated `TApp1`/`TApp2` whitelist (integer arithmetic, string ops) —
   the User Registration aggregate doesn't need it.
 - Parallel solver backends (CVC4, Boolector) — z3 is enough for v2.
