@@ -35,6 +35,7 @@ common shared-extensions
 library
     import:             warnings, shared-extensions
     exposed-modules:    Keiki.Acceptor
+                        Keiki.Builder
                         Keiki.Composition
                         Keiki.Core
                         Keiki.Decider
