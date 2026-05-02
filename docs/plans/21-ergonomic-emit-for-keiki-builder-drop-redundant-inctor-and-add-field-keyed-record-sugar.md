@@ -114,7 +114,7 @@ This section tracks granular progress. Update at every stopping point: tick
 completed items with a date, split partial items into "done" and "remaining"
 entries, add new items as discovered.
 
-- [ ] M0: Verify prerequisites — record baseline test count, build state, current `emit` LOC totals across the two examples.
+- [x] M0 (2026-05-02): Verify prerequisites — record baseline test count, build state, current `emit` LOC totals across the two examples. Baseline recorded in Decision Log: 138 tests pass; EmailDelivery 220 LOC, UserRegistration 464 LOC; emit sites 1/5; `:: Index ` annotations 0/10.
 - [ ] M1: Two related ergonomic fixes shipped together:
   1. **Drop the redundant `InCtor` argument from `B.emit`.** Add a `peInCtor :: Maybe (SomeInCtor ci)` field to `PartialEdge` (set by `onCmd`, `Nothing` in `onEpsilon`). The new `B.emit wc fs` reads `peInCtor` and errors at finalize time if `Nothing`. Add `B.emitWith :: InCtor ci ifs -> WireCtor co fs -> OutFields rs ci fs -> EdgeBuilder ...` for `onEpsilon` callers and as a fallback.
   2. **Eliminate `proj (#name :: Index Regs T)` boilerplate at call sites.** Add a new instance `IsLabel s (Term rs ci r)` to `src/Keiki/Core.hs` (next to the existing `IsLabel s (Index rs r)` instance) so `#name` resolves directly to a `Term`-typed register read in any context that expects a `Term`. Remove the `proj (#name :: Index Regs T)` annotations from the 5 builder-form sites in `src/Keiki/Examples/UserRegistration.hs` (none in EmailDelivery's builder form). Migrate the two example aggregates' builder forms and the spike to drop both the InCtor and the Index annotations.
@@ -245,6 +245,18 @@ Subsequent decisions made during implementation append below them with a date.
   the operator form unused, it can be retired via a deletion-only
   follow-up. The intermediate state is not an end state but is
   a useful intermediate.
+  Date: 2026-05-02
+
+- M0 baseline (2026-05-02):
+  - `cabal build` clean under GHC 9.12.3.
+  - `cabal test`: 138 examples, 0 failures.
+  - `wc -l src/Keiki/Examples/EmailDelivery.hs` → 220.
+  - `wc -l src/Keiki/Examples/UserRegistration.hs` → 464.
+  - `grep -c "B.emit" src/Keiki/Examples/EmailDelivery.hs` → 1.
+  - `grep -c "B.emit" src/Keiki/Examples/UserRegistration.hs` → 5.
+  - `grep -c ":: Index " src/Keiki/Examples/EmailDelivery.hs` → 0.
+  - `grep -c ":: Index " src/Keiki/Examples/UserRegistration.hs` → 10
+    (5 builder + 5 AST).
   Date: 2026-05-02
 
 
