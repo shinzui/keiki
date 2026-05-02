@@ -157,11 +157,11 @@ section must always reflect the actual current state of the work.
       immediately before "Vocabulary recap", pointing at
       `inputAcceptor`/`outputAcceptor`/`accepts` and explaining
       that the output acceptor's `aStep` is the chapter's `evolve`.
-- [ ] **Milestone 5 — Commit.** A single conventional commit
-      `feat(acceptor): EP-12 — Acceptor projections on
-      SymTransducer` with the trailers `MasterPlan: ...`,
-      `ExecPlan: ...`, `Intention: ...`. (Or one commit per
-      milestone if logical splits emerge.)
+- [x] **Milestone 5 — Commit** (2026-05-02). Single conventional
+      commit `338fcc5` `feat(acceptor): EP-12 — Acceptor
+      projections on SymTransducer` with all three required
+      trailers (`MasterPlan:`, `ExecPlan:`, `Intention:`). 8
+      files changed, 1712 insertions, 2 deletions.
 
 
 ## Surprises & Discoveries
