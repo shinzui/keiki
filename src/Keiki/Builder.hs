@@ -200,7 +200,9 @@ import Keiki.Core
   , combine
   , inpCtor
   , matchInCtor
+  , oNil
   , pack
+  , (*:)
   )
 import Keiki.Core qualified as K
 import Keiki.Internal.Slots
@@ -414,25 +416,6 @@ emitWith ic wc rec = EdgeBuilder $ \pe ->
 -- exists only so the user can be explicit about intent.
 noEmit :: EdgeBuilder rs ci co v w w ()
 noEmit = EdgeBuilder $ \pe -> ((), pe)
-
-
--- | Right-associative HList constructor synonym for 'OFCons'.
--- Lets 'emit' call sites read top-to-bottom in the wire ctor's
--- field order:
---
--- > B.emit wireEmailSent (d.recipient *: d.subject *: d.at *: oNil)
---
--- Identical AST: @t1 *: t2 *: oNil@ produces the same 'OutFields'
--- value as @OFCons t1 (OFCons t2 OFNil)@. Provided as the
--- intermediate step before the field-keyed record form (M5).
-(*:) :: Term rs ci f -> OutFields rs ci fs -> OutFields rs ci (f, fs)
-(*:) = OFCons
-infixr 5 *:
-
-
--- | The empty 'OutFields' HList. Synonym for 'OFNil'.
-oNil :: OutFields rs ci ()
-oNil = OFNil
 
 
 -- * Field-keyed record sugar ---------------------------------------------

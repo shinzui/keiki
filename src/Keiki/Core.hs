@@ -49,6 +49,8 @@ module Keiki.Core
     -- * Output term language
   , WireCtor (..)
   , OutFields (..)
+  , (*:)
+  , oNil
   , OutTerm (..)
     -- * Predicate carrier (v1 first-class AST)
   , HsPred (..)
@@ -344,6 +346,26 @@ data OutFields rs ci fs where
   OFCons :: Term rs ci f
          -> OutFields rs ci fs
          -> OutFields rs ci (f, fs)
+
+
+-- | Right-associative HList constructor synonym for 'OFCons'. Lets
+-- 'OutFields' literals read top-to-bottom in the wire ctor's field
+-- order:
+--
+-- > d.recipient *: d.subject *: d.at *: oNil
+--
+-- Identical AST: @t1 *: t2 *: oNil@ produces the same 'OutFields'
+-- value as @OFCons t1 (OFCons t2 OFNil)@. Available at the AST
+-- layer (here) so authors who skip the builder can use it; also
+-- re-exported by "Keiki.Builder" for builder-form call sites.
+(*:) :: Term rs ci f -> OutFields rs ci fs -> OutFields rs ci (f, fs)
+(*:) = OFCons
+infixr 5 *:
+
+
+-- | The empty 'OutFields' HList. Synonym for 'OFNil'.
+oNil :: OutFields rs ci ()
+oNil = OFNil
 
 
 -- | A pure expression yielding an output value @co@.
