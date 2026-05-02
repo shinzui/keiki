@@ -40,6 +40,7 @@ library
                         Keiki.Decider
                         Keiki.Generics
                         Keiki.Generics.TH
+                        Keiki.Internal.Slots
                         Keiki.Symbolic
                         Keiki.Examples.EmailDelivery
                         Keiki.Examples.UserRegistration

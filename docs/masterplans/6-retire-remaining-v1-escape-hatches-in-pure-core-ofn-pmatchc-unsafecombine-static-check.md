@@ -224,7 +224,7 @@ implementation work is split.
 | 1 | Design milestone — decompose v1 escape hatch retirements (OFn, PMatchC, unsafeCombine static check) | docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md | None | EP-7 (external), MP-4 children | Complete |
 | 2 | Retire OFn and mkOut from Keiki.Core | docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md | None | EP-15 | Complete |
 | 3 | Retire PMatchC and matchCmd from Keiki.Core | docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md | None | EP-15 | Complete |
-| 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | Not Started |
+| 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix

@@ -129,16 +129,28 @@ must be documented here, even if it requires splitting a partially
 completed task into two ("done" vs. "remaining"). This section must
 always reflect the actual current state of the work.
 
-- [ ] M0: Verify prerequisites — `cabal build && cabal test all` is
+- [x] M0: Verify prerequisites — `cabal build && cabal test all` is
   green; record GHC version (GHC 9.12.3, EP-7 baseline). Record the
-  starting test count.
-- [ ] M1: Spike — implement `Disjoint :: [Symbol] -> [Symbol] ->
+  starting test count. **Done 2026-05-02:** GHC 9.12.3; 107 examples,
+  0 failures (matches EP-15's M0 baseline; EP-16/EP-17's synthetic
+  fixture removals netted out). Working tree dirty with the MP-6
+  registry edit and pre-existing untracked plan files; no source
+  changes outstanding.
+- [x] M1: Spike — implement `Disjoint :: [Symbol] -> [Symbol] ->
   Constraint`, `Concat :: [Symbol] -> [Symbol] -> [Symbol]`, and
   `IndexN (s :: Symbol) rs r` in a small standalone module
   (`src/Keiki/Internal/Slots.hs` is the natural home, or inline in
   `Keiki.Core` if the surface is small). Confirm GHC produces a
   legible error message on a deliberate overlap. Recover from the
   spike by either keeping the module or folding it into Core.
+  **Done 2026-05-02.** Module created at `src/Keiki/Internal/Slots.hs`
+  exporting `Concat`, `Member`, `Disjoint`, `Names`, `IndexN`,
+  `HasIndexN`, `indexNToInt`, `indexNName`. Negative spike on
+  `Disjoint '["foo","bar"] '["baz","foo"]` (forced via a top-level
+  `print bad`) compiled to the designed `TypeError`:
+  *"Keiki.Internal.Slots.Disjoint: slot \"foo\" is written by both
+  halves of \`combine\`. Each register slot may be written at most
+  once per edge update."* Module added to `keiki.cabal`.
 - [ ] M2: Refactor `Update` to carry the `(w :: [Symbol])` index.
   Update `UKeep`, `USet`, `UCombine` constructors. Provide a
   migration shim — the smart `combine` exposes the new signature,
