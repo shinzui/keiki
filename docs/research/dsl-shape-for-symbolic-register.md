@@ -31,9 +31,13 @@ does not re-litigate:
 - **Predicate carrier in v1 is a first-class AST.** Synthesis §7,
   option (b). v2 may swap in an SBV-backed instance; the carrier this
   note defines is the v1 AST.
-- **Single-valuedness is a Hedgehog property test in v1, smart-constructor
-  enforcement in v2.** Synthesis §7. This note assumes runtime checks on
-  `Combine`'s "distinct targets" invariant rather than type-level proofs.
+- **Single-valuedness is a Hedgehog property test in v1; symbolic
+  decision via SBV in v2 (MasterPlan 2 EP-2 `isSingleValuedSym`).**
+  Synthesis §7. This note assumes runtime checks on `Combine`'s
+  "distinct targets" invariant rather than type-level proofs; static
+  enforcement of that invariant is deferred to a future MasterPlan
+  (no successor drafted yet — see MP-2's decision log entry dated
+  2026-05-01).
 - **v1 ships with no SMT.** Updates and outputs are evaluated by a pure
   Haskell evaluator (synthesis §6). `solveOutput` is purely structural
   walking of the `OutTerm` AST.
@@ -994,16 +998,21 @@ defines the contract)**
 - ~~`OPack`'s hand-written inverse field~~ — replaced by mechanical
   inversion against `OPack`'s `InCtor`.
 
-**v1 surfaces still pending retirement (out of scope for MasterPlan 2)**
+**v1 surfaces still pending retirement — owned by MasterPlan 6**
+(`docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md`)
 
 - `OFn` (every output authored through `mkOut` becomes a structural
-  `OPack`).
+  `OPack`, or — per MP-6's design milestone — a successor opaque
+  hatch with a smaller scope).
 - `PMatchC` (replace with `PCtor` or pattern AST). EP-2 of MasterPlan
   2 documents how the SBV-backed `BoolAlg` instance falls back on
-  `PMatchC`.
-- `unsafeCombine` (every call site moves to `combine` once
-  smart-constructor enforcement covers the "distinct targets"
-  invariant).
+  `PMatchC`. MP-2 EP-2 added `PInCtor`/`matchInCtor` as a structural
+  alternative for the constructor-equality case; MP-6 decides whether
+  that subsumes `PMatchC` entirely.
+- `unsafeCombine` (every call site moves to `combine` once a static
+  check covers the "distinct targets" invariant — likely by indexing
+  `Update` over a type-level set of written slots; the design
+  milestone in MP-6's EP-15 settles the encoding).
 
 The prototype is judged complete (against this design note) when every
 item above exists, the User Registration smoke test runs end-to-end,

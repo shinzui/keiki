@@ -19,15 +19,19 @@
 --     inversion in 'solveOutput' that walks 'OutFields' against the
 --     'InCtor' carried on 'OPack'.
 --
--- v1 escape hatches still pending v2 retirement (out of scope for this
--- MasterPlan):
+-- v1 escape hatches still pending retirement, all owned by MasterPlan 6
+-- (@docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md@,
+-- which begins with a single design milestone EP-15 in
+-- @docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md@):
 --
---   * 'OFn' carries an opaque @RegFile rs -> ci -> co@; v3 replaces.
---   * 'PMatchC' carries an opaque @ci -> Bool@; v3 replaces with a
---     pattern AST. EP-2 of MasterPlan 2 documents how the SBV-backed
---     'BoolAlg' instance falls back on 'PMatchC'.
---   * 'unsafeCombine' bypasses the distinct-targets check that 'combine'
---     enforces; later MasterPlan makes the check static.
+--   * 'OFn' carries an opaque @RegFile rs -> ci -> co@; replaced with a
+--     structural form per MP-6.
+--   * 'PMatchC' carries an opaque @ci -> Bool@; replaced with a richer
+--     pattern AST per MP-6. EP-2 of MasterPlan 2 documents how the
+--     SBV-backed 'BoolAlg' instance falls back on 'PMatchC'.
+--   * 'unsafeCombine' bypasses the distinct-targets check that
+--     'combine' enforces; MP-6 makes the check static (likely by
+--     indexing 'Update' over a type-level set of written slots).
 module Keiki.Core
   ( -- * Slots and the register file
     Slot
@@ -280,7 +284,8 @@ combine a b
 
 
 -- | Unchecked 'UCombine'. Use only when you have proven distinct targets
--- by hand. v2 retires this in favour of the static check.
+-- by hand. MasterPlan 6 retires this in favour of a static check (see
+-- the module-header note on pending v1 escape hatches).
 unsafeCombine :: Update rs ci -> Update rs ci -> Update rs ci
 unsafeCombine = UCombine
 
@@ -340,8 +345,9 @@ data OutTerm (rs :: [Slot]) (ci :: Type) (co :: Type) where
 
 -- * Predicate carrier ------------------------------------------------------
 
--- | The v1 predicate AST. Carries enough structure to evaluate guards
--- and (eventually) be translated to SMT in v2.
+-- | The predicate AST. Carries enough structure to evaluate guards and
+-- to translate to SMT through the SBV-backed 'BoolAlg' instance in
+-- "Keiki.Symbolic" (added in EP-2 of MasterPlan 2).
 data HsPred (rs :: [Slot]) (ci :: Type) where
   PTop    :: HsPred rs ci
   PBot    :: HsPred rs ci
@@ -372,7 +378,9 @@ class BoolAlg phi a | phi -> a where
   disj   :: phi -> phi -> phi
   neg    :: phi -> phi
   models :: phi -> a -> Bool
-  -- | v1 returns 'Nothing'; v2's SBV-backed instance produces witnesses.
+  -- | The default 'HsPred' instance below returns 'Nothing'; the
+  -- SBV-backed instance in "Keiki.Symbolic" (MasterPlan 2 EP-2)
+  -- produces concrete witnesses.
   sat    :: phi -> Maybe a
   isBot  :: phi -> Bool
 
@@ -412,7 +420,9 @@ data SymTransducer phi rs s ci co = SymTransducer
 
 -- * Helpers (DSL surface) --------------------------------------------------
 
--- | v1 escape-hatch guard. v2 retires in favour of structural pattern AST.
+-- | v1 escape-hatch guard. MasterPlan 6 retires this in favour of a
+-- structural pattern AST; for now prefer 'matchInCtor' where the guard
+-- is a constructor-equality check.
 matchCmd :: (ci -> Bool) -> HsPred rs ci
 matchCmd = PMatchC
 
@@ -429,7 +439,9 @@ matchInCtor :: InCtor ci ifs -> HsPred rs ci
 matchInCtor = PInCtor
 
 
--- | v1 escape-hatch output. v2 retires in favour of structural 'OPack'.
+-- | v1 escape-hatch output. MasterPlan 6 retires this in favour of
+-- structural 'OPack'; the helper is kept for outputs whose shape
+-- doesn't fit the structural form.
 mkOut :: (RegFile rs -> ci -> co) -> OutTerm rs ci co
 mkOut = OFn
 
