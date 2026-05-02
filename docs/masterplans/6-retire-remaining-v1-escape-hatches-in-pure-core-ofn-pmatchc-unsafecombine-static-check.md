@@ -224,7 +224,7 @@ implementation work is split.
 | 1 | Design milestone — decompose v1 escape hatch retirements (OFn, PMatchC, unsafeCombine static check) | docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md | None | EP-7 (external), MP-4 children | Complete |
 | 2 | Retire OFn and mkOut from Keiki.Core | docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md | None | EP-15 | Complete |
 | 3 | Retire PMatchC and matchCmd from Keiki.Core | docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md | None | EP-15 | Complete |
-| 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | In Progress |
+| 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -421,19 +421,19 @@ EP-17 — Retire PMatchC and matchCmd (Complete):
 - [x] EP-17 M6: Tick PMatchC bullet in retirement-block comments
 - [x] EP-17 M7: Verdict
 
-EP-18 — Static Disjoint check; retire unsafeCombine (Not Started):
+EP-18 — Static Disjoint check; retire unsafeCombine (Complete):
 
-- [ ] EP-18 M0: Verify prerequisites
-- [ ] EP-18 M1: Spike — Disjoint, Concat, IndexN type-level machinery
-- [ ] EP-18 M2: Refactor Update to carry the (w :: [Symbol]) index
-- [ ] EP-18 M3: IsLabel for IndexN; preserve aggregate authoring syntax
-- [ ] EP-18 M4: Update evaluator / analyses; existential w in Edge
-- [ ] EP-18 M5: Lift weakenLUpdate / substUpdate; add Disjoint constraint to compose
-- [ ] EP-18 M6: Migrate example aggregates from unsafeCombine to combine
-- [ ] EP-18 M7: Migrate composition tests
-- [ ] EP-18 M8: Remove unsafeCombine from Keiki.Core exports
-- [ ] EP-18 M9: IP-5 sweep — remove retirement-block comments entirely
-- [ ] EP-18 M10: Verdict
+- [x] EP-18 M0: Verify prerequisites
+- [x] EP-18 M1: Spike — Disjoint, Concat, IndexN type-level machinery
+- [x] EP-18 M2: Refactor Update to carry the (w :: [Symbol]) index
+- [x] EP-18 M3: IsLabel for IndexN; preserve aggregate authoring syntax
+- [x] EP-18 M4: Update evaluator / analyses; existential w in Edge
+- [x] EP-18 M5: Lift weakenLUpdate / substUpdate; add Disjoint constraint to compose
+- [x] EP-18 M6: Migrate example aggregates from unsafeCombine to combine
+- [x] EP-18 M7: Migrate composition tests
+- [x] EP-18 M8: Remove unsafeCombine from Keiki.Core exports
+- [x] EP-18 M9: IP-5 sweep — remove retirement-block comments entirely
+- [x] EP-18 M10: Verdict
 
 
 ## Surprises & Discoveries
@@ -476,6 +476,43 @@ evidence.
   retirement EPs should be reviewed before authoring new test
   machinery — they may already cover the new EP's fixture needs.
 
+- **EP-18 settled on smart-constructor `Disjoint`, raw-constructor
+  `UCombine`** (EP-18 M2 Decision Log, 2026-05-02). The design
+  note's ideal-end-state put the `Disjoint` constraint on `UCombine`
+  itself; in practice that cascades into `unsafeCoerce`-flavoured
+  bypasses at every internal reconstruction site (`weakenLUpdate
+  (UCombine a b) = UCombine …`) and forces the v1 `unsafeCombine`'s
+  body to use `unsafeCoerce`. Putting the constraint only on the
+  smart `combine` keeps internal walks dictionary-free and
+  preserves the static check at the introduction point that
+  matters (aggregate authoring). MP-6's MasterPlan-level acceptance
+  criterion (`unsafeCombine` removed; example aggregates compile;
+  smoke + symbolic gate green) is satisfied without the
+  ideal-end-state shape.
+
+- **`Edge`'s existential `w` killed `update e` field selectors**
+  (EP-18 M4, 2026-05-02). GADT record syntax with an
+  existentially-quantified field is the right shape, but every
+  consumer of `update e` (including all of `Keiki.Composition`'s
+  weakening + substitution call sites, `Keiki.Symbolic.liftEdge`,
+  the `delta` / `applyEvent` / `checkHiddenInputs` consumers in
+  `Keiki.Core`, and the `test/Keiki/Examples/UserRegistrationSpec`
+  re-implementation of `applyEvent`) had to migrate to either a
+  helper function (`applyEdgeUpdate`, `edgeReadsInput`) or a
+  pattern-binding (`Edge { update = u } -> …`). Future EPs adding
+  a similar existential should land typed helpers in the same
+  patch so the existential refactor is a single typecheck-clean
+  commit.
+
+- **`-Wredundant-constraints` fires on the static check** (EP-18
+  M2/M5, 2026-05-02). The `Disjoint w1 w2` constraint on `combine`
+  and `Disjoint (Names rs1) (Names rs2)` on `compose` are both
+  flagged "redundant" by GHC because the bodies don't consume a
+  dictionary value. Suppressed at module level for `Keiki.Core` and
+  `Keiki.Composition` with a comment justifying why; same pragma
+  will be needed for any future helper that re-exports a typed
+  `Disjoint` / `Concat` witness.
+
 
 ## Decision Log
 
@@ -512,10 +549,116 @@ evidence.
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at
-completion. Compare the result against the original vision.
+MP-6 closed 2026-05-02 with all four child plans (EP-15 design, EP-16
+`OFn`, EP-17 `PMatchC`, EP-18 `unsafeCombine`) complete. The
+MasterPlan-level acceptance criterion is met:
 
-(To be filled during and after implementation.)
+- `OFn`, `PMatchC`, and `unsafeCombine` are removed from
+  `Keiki.Core`'s exported surface.
+- Every example aggregate (`Keiki.Examples.UserRegistration`,
+  `Keiki.Examples.UserRegistrationV0`,
+  `Keiki.Examples.EmailDelivery`) compiles without them.
+- The User Registration smoke test
+  (`reconstitute userReg canonicalLog == Just (Deleted,
+  expectedSnapshot)`) and the symbolic gate
+  (`isSingleValuedSym (withSymPred userReg) == True`) both pass.
+- `cabal test all` is green: 107 examples, 0 failures.
+
+Compared to the original Vision & Scope:
+
+- *Successor surfaces.* The Vision section anticipated a
+  *structural successor* for each retirement. EP-15's M1 survey
+  found that `OFn` and `PMatchC` had zero aggregate uses on master
+  — `OPack` and `PInCtor` (added in MP-2 EP-2) had already absorbed
+  every example use. EP-16 and EP-17 became *mechanical deletions*
+  rather than successor designs. The substantive engineering of
+  MP-6 concentrated in EP-18 as anticipated.
+- *Static `Disjoint` check.* Shipped via `(w :: [Symbol])` index on
+  `Update`, `IndexN s rs r` slot-name-tagged register index, and
+  `Disjoint :: [Symbol] -> [Symbol] -> Constraint` using `CmpSymbol`
+  + `TypeError`. Authoring `USet #email t1 \`combine\` USet #email
+  t2` over `UserRegRegs` produces the designed compile-time error
+  naming `"email"`. The smart `combine`'s `Either String` shape
+  collapsed: the runtime check is now statically unreachable.
+- *Composition use site.* The Vision's "use the smart combine at
+  line 416" goal was *not* met as stated; we landed on raw
+  `UCombine` there instead. The structural disjointness at that
+  call site cannot be promoted to a type-level constraint without
+  carrying `Subset w (Names rs)` witnesses through `Edge`'s
+  existential `w`. The MasterPlan's acceptance criterion is still
+  satisfied — external aggregate authors get the static check
+  where it matters; the internal composition algorithm uses the
+  raw constructor with a documented structural argument. EP-18's
+  Decision Log carries the rationale and trade-off analysis.
+- *Compose's `Disjoint (Names rs1) (Names rs2)` precondition.*
+  Shipped as planned. This formalises a precondition the
+  composition design note already documented in prose form.
+- *Stale-comment cleanup (IP-5).* Done by EP-18's M9 sweep. The
+  module-header retirement-block in `src/Keiki/Core.hs` is now a
+  one-paragraph "All v1 escape hatches were retired by MP-6"
+  record with EP attribution. The closing block in
+  `docs/research/dsl-shape-for-symbolic-register.md` reformatted
+  to match.
+
+Decomposition retrospective:
+
+- *Two-stage shape.* EP-15 design milestone first, fan-out into
+  three per-retirement EPs after. The shape paid off: the
+  encoding decisions for EP-18 (`Disjoint` on which constructor;
+  whether to demand structural lemmas at the composition use site)
+  are non-trivial; locking them down before fan-out kept EP-16 /
+  EP-17 mechanical and EP-18 substantive.
+- *EP-16 → EP-17 → EP-18 landing order.* Conventional and
+  followed in practice. Each retirement was independently
+  mergeable; the IP-5 sweep moved with the last EP (EP-18) as
+  designed.
+- *Three EPs over bundling.* The right call. Bundling `OFn` and
+  `PMatchC` (sometimes argued for in the design phase because they
+  share the "opaque-function constructor" theme) would have
+  conflated two distinct mechanical deletions into a single
+  larger patch with no benefit; bundling either with EP-18 would
+  have buried two trivial deletions inside the substantive `w`
+  refactor and made the EP-18 commit much harder to review.
+
+Lessons:
+
+- *Static-invariant promotion patterns.* For a runtime invariant
+  on a GADT, the cleanest type-level promotion is a constraint on
+  the *smart constructor* with the data constructor left
+  unconstrained. The smart constructor is the only public
+  introduction point for end users; internal walks (weakening,
+  substitution, evaluation) reconstruct via the raw data
+  constructor without dictionary plumbing. Putting the constraint
+  on the data constructor itself sounds tighter but cascades into
+  `unsafeCoerce` workarounds at every internal reconstruction
+  site. This pattern will recur in any future MP that promotes
+  another runtime invariant (e.g. v3 topology safety, item G of
+  `keiki-generics-design.md`).
+- *Existential record fields require helper functions.* GHC won't
+  generate a field selector for an existentially-quantified field.
+  Plan helper functions next to the constructor *before* changing
+  the field, then migrate consumers one-by-one. Ideally the
+  helpers land first so the existential refactor is a single
+  typecheck-clean commit.
+- *Survey before designing successors.* EP-15 M1's "OFn / PMatchC
+  have zero aggregate uses on master" finding (recorded in MP-6's
+  Surprises section) was a non-trivial scope sharpening. Vision &
+  Scope had assumed both constructors were "currently used"
+  somewhere. A `grep` survey at design time saved EP-16 and EP-17
+  from designing successor surfaces that would not have served
+  any actual call site.
+- *MasterPlan acceptance criteria should distinguish "external
+  surface clean" from "internal implementation clean".* EP-18's
+  composition use site landed on raw `UCombine` rather than smart
+  `combine`. The MasterPlan-level acceptance criterion ("removed
+  from `Keiki.Core`'s exported surface; every example aggregate
+  compiles without them") is met because external users *cannot*
+  bypass `Disjoint`; internal modules *can* (via the raw data
+  constructor) but with documented justification. Future
+  invariant-promotion MasterPlans should bake this distinction
+  into their acceptance criteria so the question "does the line-N
+  internal use site have to use the smart constructor too?" is
+  decided up front rather than rediscovered during M5.
 
 
 ---

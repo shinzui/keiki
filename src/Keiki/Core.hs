@@ -16,22 +16,13 @@
 -- (the working baseline). See those notes for the rationale behind every
 -- shape declared here.
 --
--- v1 escape hatches retired in EP-1 of MasterPlan 2:
---
---   * @TInpField :: (ci -> r) -> Term rs ci r@ replaced by
---     'TInpCtorField' + 'InCtor' (structural input projection).
---   * 'OPack''s hand-written inverse field replaced by mechanical
---     inversion in 'solveOutput' that walks 'OutFields' against the
---     'InCtor' carried on 'OPack'.
---
--- v1 escape hatches still pending retirement, all owned by MasterPlan 6
--- (@docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md@,
--- which begins with a single design milestone EP-15 in
--- @docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md@):
---
---   * 'unsafeCombine' bypasses the distinct-targets check that
---     'combine' enforces; MP-6 makes the check static (likely by
---     indexing 'Update' over a type-level set of written slots).
+-- All v1 escape hatches were retired by MasterPlan 6 (see the
+-- Outcomes section of
+-- @docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md@):
+-- @TInpField@ / @OPack@'s hand-written inverse (MP-2 EP-1), 'OFn' /
+-- 'mkOut' (MP-6 EP-16), 'PMatchC' / 'matchCmd' (MP-6 EP-17), and
+-- 'unsafeCombine' (MP-6 EP-18, replaced by the static 'Disjoint'
+-- check on 'combine').
 module Keiki.Core
   ( -- * Slots and the register file
     Slot
@@ -55,7 +46,6 @@ module Keiki.Core
     -- * Update language
   , Update (..)
   , combine
-  , unsafeCombine
     -- * Output term language
   , WireCtor (..)
   , OutFields (..)
@@ -290,9 +280,9 @@ instance (KnownSymbol s, AssembleRegFile rs)
 -- the invariant is enforced at the smart-constructor introduction
 -- point ('combine'). This keeps internal pattern-matches in
 -- "Keiki.Composition" (which reconstruct 'UCombine' values during
--- weakening / substitution) cheap, and lets the v1 'unsafeCombine'
--- escape hatch (removed in EP-18 M8) be a one-liner during the
--- migration window.
+-- weakening / substitution) cheap. EP-18 M8 retired the v1
+-- 'unsafeCombine' escape hatch; aggregate authors use 'combine'
+-- exclusively.
 data Update (rs :: [Slot]) (w :: [Symbol]) (ci :: Type) where
   UKeep    :: Update rs '[] ci
   USet     :: KnownSymbol s
@@ -316,17 +306,6 @@ combine
 combine = UCombine
 
 
--- | Unchecked combine. Equivalent to 'UCombine' with a friendlier
--- name; bypasses the static disjointness check by simply not
--- demanding it. MasterPlan 6 retires this surface in EP-18 M8 in
--- favour of the smart 'combine'; aggregates should never use it.
--- During the migration window M2-M7 the helper still exists to keep
--- pre-migration call sites compiling.
-unsafeCombine
-  :: Update rs w1 ci
-  -> Update rs w2 ci
-  -> Update rs (Concat w1 w2) ci
-unsafeCombine = UCombine
 
 
 -- * Output term language ---------------------------------------------------

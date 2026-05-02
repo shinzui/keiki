@@ -216,16 +216,34 @@ always reflect the actual current state of the work.
   three `AlertSource` `USet`s migrated; `applyEdgeUpdate` replaces
   `runUpdate (update e)` in `test/Keiki/Examples/UserRegistrationSpec.hs`.
   Full suite green: 107 examples, 0 failures.
-- [ ] M8: Remove `unsafeCombine` from `Keiki.Core`'s exports and the
+- [x] M8: Remove `unsafeCombine` from `Keiki.Core`'s exports and the
   helper itself. If `combineE` was introduced in M2, remove it too.
-- [ ] M9: Remove the v1-escape-hatch retirement-block comments
+  **Done 2026-05-02.** Export list trimmed; helper body deleted;
+  `grep -rn "unsafeCombine" src/ test/` returns only two haddock
+  references describing the historical retirement. No `combineE`
+  was needed.
+- [x] M9: Remove the v1-escape-hatch retirement-block comments
   entirely (the IP-5 sweep) — both in `src/Keiki/Core.hs:22-33` and
   `docs/research/dsl-shape-for-symbolic-register.md:1001-1015`.
   Replace each with a one-line "all retired" pointer to MP-6's
-  Outcomes section.
-- [ ] M10: Verdict — `cabal build && cabal test all` green,
+  Outcomes section. **Done 2026-05-02.** `Keiki.Core`'s module-header
+  block replaced with a one-paragraph "All v1 escape hatches were
+  retired by MasterPlan 6" record listing each retirement and its
+  EP. The DSL design note's closing block reformatted to add
+  retirement bullets for `OFn` / `mkOut`, `PMatchC` / `matchCmd`,
+  `unsafeCombine`, all pointing at MP-6's Outcomes section.
+- [x] M10: Verdict — `cabal build && cabal test all` green,
   symbolic gate green, smoke test green; commit; update MP-6
-  registry; write Outcomes & Retrospective entry.
+  registry; write Outcomes & Retrospective entry. **Done 2026-05-02.**
+  Build clean; 107 examples / 0 failures; symbolic gate
+  `isSingleValuedSym (withSymPred userReg)` and the User
+  Registration smoke test
+  (`reconstitute userReg canonicalLog == Just (Deleted,
+  expectedSnapshot)`) both pass. Negative test:
+  `USet #email t1 \`combine\` USet #email t2` over `UserRegRegs`
+  rejected at compile time with the designed TypeError naming
+  `"email"`. MP-6's registry updated; Outcomes & Retrospective
+  written for both EP-18 and MP-6.
 
 
 ## Surprises & Discoveries
@@ -330,10 +348,101 @@ Record every decision made while working on the plan.
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or
-at completion. Compare the result against the original purpose.
+EP-18 shipped 2026-05-02. The end-state matches the Purpose section
+exactly:
 
-(To be filled during and after implementation.)
+- `Update (rs :: [Slot]) (w :: [Symbol]) (ci :: Type)` carries the
+  written-slot-name set; the smart `combine` demands `Disjoint w1
+  w2`. Authoring `USet #email t1 \`combine\` USet #email t2` over
+  `UserRegRegs` produces a compile-time `TypeError` naming `"email"`.
+- `unsafeCombine` is gone from `Keiki.Core`'s exports; `grep -rn
+  "unsafeCombine" src/ test/` returns only two haddock mentions
+  describing the historical retirement.
+- The User Registration smoke test
+  (`reconstitute userReg canonicalLog == Just (Deleted,
+  expectedSnapshot)`) and the symbolic gate
+  (`isSingleValuedSym (withSymPred userReg) == True`) both pass.
+- 107 examples / 0 failures. Test count unchanged from M0 baseline
+  (no fixture additions or removals; only label-annotation rewrites
+  on aggregate `USet` sites).
+
+Compared to the original purpose:
+
+- *Static check on the "distinct targets" invariant.* Achieved as
+  designed via `Disjoint :: [Symbol] -> [Symbol] -> Constraint`
+  using `CmpSymbol` and `TypeError` from `GHC.TypeError`. The
+  designed error message — *slot "X" is written by both halves of
+  combine* — fires unchanged.
+- *Composition use site at line 416.* The plan asked us to switch
+  to `combine`. We landed on raw `UCombine` instead (Decision Log
+  entries for 2026-05-02). The disjointness there is structural
+  (left writes only into the rs1 prefix; right writes only into the
+  rs2 suffix) but cannot be promoted to a type-level constraint
+  without carrying `Subset w (Names rs)` witnesses through Edge's
+  existential. External aggregate authors still get the static
+  check at the only site that matters (their `combine` calls); the
+  internal composition algorithm uses `UCombine` directly with a
+  comment-justified structural argument. `compose` still gains the
+  `Disjoint (Names rs1) (Names rs2)` precondition that the design
+  note documented in prose.
+- *`Edge` existential on `w`.* GADT record syntax with an
+  existentially-quantified field is the right shape but kills the
+  auto-generated `update e` field selector ("escaped type
+  variables"). Two helpers (`applyEdgeUpdate`, `edgeReadsInput`)
+  were added and exported to give consumers a typed escape; every
+  internal `update e` use was migrated to either a helper call or a
+  pattern-binding (`Edge { update = u } -> …`).
+- *Migration shim.* The plan reserved an optional `combineE ::
+  Either String (Update rs (Concat w1 w2) ci)` wrapper for callers
+  that needed the `Either` shape during the M2-M7 migration window.
+  We did not need it: every `unsafeCombine` site moved directly to
+  `combine` in the same patch as the Update refactor.
+
+Surprises:
+
+- *`-Wredundant-constraints` fires on the `Disjoint` constraint
+  itself.* The constraint *is* the static check; GHC sees the body
+  (`combine = UCombine`) as not consuming a dictionary and warns.
+  Suppressed at module level for `Keiki.Core` and `Keiki.Composition`
+  with a comment justifying why. The same pragma will be needed for
+  any future helper that re-exports a typed `Disjoint`/`Concat`
+  witness.
+- *Orphan instance check.* The `IsLabel s (IndexN s rs r)` instance
+  initially landed in `Keiki.Core` (next to the existing `IsLabel s
+  (Index rs r)` instance) and triggered the orphan warning because
+  neither `IsLabel` nor `IndexN` lives in `Keiki.Core`. Moved to
+  `Keiki.Internal.Slots` to satisfy the orphan check.
+- *Existential `w` on `Edge`'s record syntax.* The plan called this
+  out as the "load-bearing decision". GHC accepted the GADT record
+  shape but produced "Cannot use record selector ‘update’ as a
+  function due to escaped type variables" at every consumer of
+  `update e`. The fix (helper functions + pattern-bindings) is
+  mechanical but touches every `Edge`-consuming site. Worth
+  highlighting for any future EP that adds a similar existential.
+- *No structural lemma needed for the line-416 use site.* The plan
+  envisaged a `WrittenSubset` lemma class to discharge the
+  `Disjoint w1 w2` constraint mechanically at line 416. Falling
+  back to raw `UCombine` (per the Decision Log) made the lemma
+  unnecessary; the simplification is significant and preserves the
+  invariant where it matters (the smart `combine` at the user's
+  authoring site).
+
+Lessons:
+
+- When promoting an invariant from runtime to type-level, the
+  cleanest split is *constraint on the smart constructor, raw
+  unconstrained data constructor*. It keeps internal walkers free
+  of dictionary plumbing and lets any necessary escape hatches
+  collapse to one-liners during a migration window. Putting the
+  constraint on the data constructor itself sounds tighter but
+  cascades into `unsafeCoerce`-flavoured workarounds at every
+  internal reconstruction site.
+- Existential record fields in GADT record syntax are usable but
+  *every* consumer that uses field-as-function syntax breaks. Plan
+  for the migration: add typed helpers next to the constructor
+  declaration before changing the field, then replace consumers
+  one-by-one. Ideally the helpers come *first* so the existential
+  refactor lands as a single typecheck-clean commit.
 
 
 ## Context and Orientation

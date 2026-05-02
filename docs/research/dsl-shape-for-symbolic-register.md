@@ -997,14 +997,16 @@ defines the contract)**
   `docs/research/tinpproj-design.md`.
 - ~~`OPack`'s hand-written inverse field~~ — replaced by mechanical
   inversion against `OPack`'s `InCtor`.
-
-**v1 surfaces still pending retirement — owned by MasterPlan 6**
-(`docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md`)
-
-- `unsafeCombine` (every call site moves to `combine` once a static
-  check covers the "distinct targets" invariant — likely by indexing
-  `Update` over a type-level set of written slots; the design
-  milestone in MP-6's EP-15 settles the encoding).
+- ~~`OFn` / `mkOut`~~ — retired by MP-6 EP-16; `OPack` is the only
+  output-term constructor.
+- ~~`PMatchC` / `matchCmd`~~ — retired by MP-6 EP-17; structural
+  guards (`PInCtor` / `matchInCtor`) cover every aggregate.
+- ~~`unsafeCombine`~~ — retired by MP-6 EP-18; `Update` carries a
+  type-level `(w :: [Symbol])` index of written slot names, and the
+  smart `combine` demands `Disjoint w1 w2`. See MP-6's Outcomes
+  section
+  (`docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md`)
+  for the full retirement record.
 
 The prototype is judged complete (against this design note) when every
 item above exists, the User Registration smoke test runs end-to-end,
