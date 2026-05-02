@@ -123,7 +123,7 @@ entries, add new items as discovered.
 - [x] M2 (2026-05-02): Added `(*:)` (right-assoc fixity 5) and `oNil` to `Keiki.Builder`, exported alongside `(.=)`. Imported unqualified at example sites for readability (matching the existing `(.=)` convention). Migrated both example aggregates and `BuilderSpike`; left `BuilderSpec` on bare `OFCons`/`OFNil` per the plan (its call sites are not user-facing tutorials). Module-level haddock example updated to show the operator form. 138 tests still pass.
 - [x] M3 (2026-05-02): Wrote `docs/research/emit-field-keyed-record-sugar.md`. Settled all four open questions: per-event TH-generated record + `ToOutFields` instance (Q1); rely on `DuplicateRecordFields` and never use `OverloadedRecordDot` on the Term records (Q2); hand-rolled instance body in field order rather than Generic-Rep walk (Q3); rely on stock GHC messages, no custom `TypeError` at M4 (Q4). Worked example reproduces the `Confirm` edge in pre-M4 and post-M5 forms.
 - [x] M4 (2026-05-02): Field-keyed sugar implemented. Added `class ToOutFields rec rs ci fs | rec -> rs ci fs` (with passthrough instance for `OutFields`) to `Keiki.Builder`. Overloaded `emit` and `emitWith` over `ToOutFields`. Extended `Keiki.Generics.TH.genWire` to emit, per record-payload event ctor, a `<Short>TermFields rs ci` record + `ToOutFields` instance; instance head uses the explicit nested-pair tuple type (rather than `FieldsOf <Pay>`) since GHC rejects type-family applications in instance heads. Added 3 unit cases (BuilderSpec cases 12–14) asserting record/operator forms agree on `omega`. 141 tests pass (138 + 3 new).
-- [ ] M5: Migrate the two example aggregates to the field-keyed form. Confirm equivalence specs (`EmailDeliveryBuilderSpec`, `UserRegistrationBuilderSpec`) still pass byte-identically.
+- [x] M5 (2026-05-02): Migrated every `B.emit` call site in `EmailDelivery` and `UserRegistration` to the field-keyed record-syntax form. Equivalence specs `EmailDeliveryBuilderSpec` and `UserRegistrationBuilderSpec` pass unchanged (delta + omega agree byte-identically with the AST-form references on every step of the canonical event log). Removed unused `(*:)` imports from the example modules. Final LOC: EmailDelivery 223, UserRegistration 471 — both miss the M5 targets (<210 / <420); see Surprises (the natural one-field-per-line layout expands rather than compresses).
 - [ ] M6: Remove the deprecated InCtor-explicit `emit` form (renamed to `emitWith` at M1) if no remaining call site uses it; otherwise keep as the documented escape hatch. Update `Keiki.Builder` haddock and `docs/research/edge-builder-dsl-shape.md`'s Q3 section to the final shape.
 
 
@@ -143,6 +143,23 @@ entries, add new items as discovered.
   formatting; the *user-visible* improvement (no `InCtor`-typed
   argument on `B.emit`, no `proj (#name :: Index Regs T)`
   annotation in builder forms) is fully delivered.
+
+- 2026-05-02 — *M5's field-keyed form increases LOC, not
+  decreases.* The record literal's natural layout is one field
+  per line keyed by name. After migration, EmailDelivery is at
+  223 LOC (M5 target < 210; baseline 220) and UserRegistration
+  is at 471 LOC (M5 target < 420; baseline 464). Both targets
+  presumed the field-keyed form would compress; in practice it
+  expands per-emit because each named field deserves its own
+  line for readability. The *user-visible* improvement is fully
+  delivered: every emit now reads top-to-bottom keyed by the
+  event's payload field names, with a wrong-field-order or
+  missing-field error caught at compile time. Compressing back
+  to single-line records would defeat the readability purpose
+  the plan was solving for. Recording this as a Surprise rather
+  than gold-plating the format. The plan's stronger acceptance
+  criteria (Validation #3 and #4 — record-form coverage and
+  byte-identical equivalence specs) are both met.
 
 - 2026-05-02 — *Type-family applications are rejected in instance
   heads.* The TH-emitted `ToOutFields` instance for each per-event

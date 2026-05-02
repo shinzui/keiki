@@ -80,7 +80,7 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
-import Keiki.Builder ((.=), (*:))
+import Keiki.Builder ((.=))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -294,14 +294,18 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
       B.slot @"email"        .= d.email
       B.slot @"confirmCode"  .= d.confirmCode
       B.slot @"registeredAt" .= d.at
-      B.emit wireRegistrationStarted
-        (d.email *: d.confirmCode *: d.at *: B.oNil)
+      B.emit wireRegistrationStarted RegistrationStartedTermFields
+        { email       = d.email
+        , confirmCode = d.confirmCode
+        , at          = d.at
+        }
       B.goto Registering
 
   B.from Registering do
     -- Internal Continue command emits ConfirmationEmailSent.
     B.onCmd inCtorContinue $ \_d -> B.do
-      B.emit wireConfirmationEmailSent (#email *: B.oNil)
+      B.emit wireConfirmationEmailSent
+        ConfirmationEmailSentTermFields { email = #email }
       B.goto RequiresConfirmation
 
   B.from RequiresConfirmation do
@@ -311,16 +315,22 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
     B.onCmd inCtorConfirm $ \d -> B.do
       B.requireEq d.confirmCode #confirmCode
       B.slot @"confirmedAt" .= d.at
-      B.emit wireAccountConfirmed
-        (#email *: d.confirmCode *: d.at *: B.oNil)
+      B.emit wireAccountConfirmed AccountConfirmedTermFields
+        { email       = #email
+        , confirmCode = d.confirmCode
+        , at          = d.at
+        }
       B.goto Confirmed
 
     -- Resend: rotate the code (code arrives in the command).
     B.onCmd inCtorResend $ \d -> B.do
       B.slot @"confirmCode"  .= d.code
       B.slot @"registeredAt" .= d.at
-      B.emit wireConfirmationResent
-        (#email *: d.code *: d.at *: B.oNil)
+      B.emit wireConfirmationResent ConfirmationResentTermFields
+        { email       = #email
+        , confirmCode = d.code
+        , at          = d.at
+        }
       B.goto RequiresConfirmation
 
     -- GDPR before confirmation: silent ε-edge (no event).
@@ -332,7 +342,10 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
   B.from Confirmed do
     B.onCmd inCtorGdpr $ \d -> B.do
       B.slot @"deletedAt" .= d.at
-      B.emit wireAccountDeleted (#email *: d.at *: B.oNil)
+      B.emit wireAccountDeleted AccountDeletedTermFields
+        { email = #email
+        , at    = d.at
+        }
       B.goto Deleted
 
   -- Deleted is terminal; defaults to [] without an explicit `from`.
