@@ -140,6 +140,8 @@ module Keiki.Builder
     -- ** Output-fields HList sugar
   , (*:)
   , oNil
+    -- ** Field-keyed record sugar
+  , ToOutFields (..)
     -- ** Guards
   , requireEq
   , requireGuard
@@ -348,19 +350,23 @@ goto v = EdgeBuilder $ \pe ->
 
 -- * Outputs ---------------------------------------------------------------
 
--- | Emit an event. Takes the wire-side 'WireCtor' and an 'OutFields'
--- HList of 'Term's matching the wire ctor's field schema. The
--- input-side 'InCtor' is recovered from the enclosing 'onCmd'; an
--- 'emit' inside 'onEpsilon' (where no 'InCtor' is bound) raises a
--- finalize-time error directing the user to 'emitWith'.
+-- | Emit an event. Takes the wire-side 'WireCtor' and an output
+-- description that resolves to an 'OutFields' via 'ToOutFields' —
+-- either a per-event @\<CtorName\>TermFields rs ci@ record (emitted
+-- by 'Keiki.Generics.TH.deriveWireCtors') or a bare 'OutFields'
+-- HList constructed with '(*:)' / 'oNil'. The input-side 'InCtor'
+-- is recovered from the enclosing 'onCmd'; an 'emit' inside
+-- 'onEpsilon' (where no 'InCtor' is bound) raises a finalize-time
+-- error directing the user to 'emitWith'.
 emit
-  :: forall co fs rs ci v w.
-     WireCtor co fs
-  -> OutFields rs ci fs
+  :: forall co fs rs ci v w rec.
+     ToOutFields rec rs ci fs
+  => WireCtor co fs
+  -> rec
   -> EdgeBuilder rs ci co v w w ()
-emit wc fs = EdgeBuilder $ \pe -> case peInCtor pe of
+emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
   Just (PeInCtor ic) ->
-    ((), pe { peOutput = Just (pack ic wc fs) })
+    ((), pe { peOutput = Just (pack ic wc (toOutFields rec)) })
   Nothing ->
     error "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
           \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
@@ -372,13 +378,14 @@ emit wc fs = EdgeBuilder $ \pe -> case peInCtor pe of
 -- caller that needs to override the one bound by the enclosing
 -- 'onCmd'. Inside 'onCmd' the InCtor-less 'emit' is preferred.
 emitWith
-  :: forall co fs rs ci v w ifs.
-     InCtor ci ifs
+  :: forall co fs rs ci v w ifs rec.
+     ToOutFields rec rs ci fs
+  => InCtor ci ifs
   -> WireCtor co fs
-  -> OutFields rs ci fs
+  -> rec
   -> EdgeBuilder rs ci co v w w ()
-emitWith ic wc fs = EdgeBuilder $ \pe ->
-  ((), pe { peOutput = Just (pack ic wc fs) })
+emitWith ic wc rec = EdgeBuilder $ \pe ->
+  ((), pe { peOutput = Just (pack ic wc (toOutFields rec)) })
 
 
 -- | Mark the edge as ε-output (no event). Idempotent: an edge with
@@ -405,6 +412,39 @@ infixr 5 *:
 -- | The empty 'OutFields' HList. Synonym for 'OFNil'.
 oNil :: OutFields rs ci ()
 oNil = OFNil
+
+
+-- * Field-keyed record sugar ---------------------------------------------
+
+-- | Convert a value of any type bearing the wire-side fields of an
+-- event to the 'OutFields' HList that 'pack' (and therefore 'OPack')
+-- consumes.
+--
+-- Two kinds of inhabitant matter:
+--
+--   * The TH-emitted per-event record type
+--     @\<CtorName\>TermFields rs ci@ (one record per event ctor in
+--     'Keiki.Generics.TH.deriveWireCtors''s spec list). Its fields
+--     are 'Term'-typed mirrors of the payload's fields, so call
+--     sites read top-to-bottom keyed by name.
+--
+--   * The bare 'OutFields' value built with '(*:)' \/ 'oNil', for
+--     which the passthrough instance (id) makes the same 'B.emit'
+--     overload accept the operator form unchanged.
+--
+-- The functional dependency @rec -> rs ci fs@ ensures a record type
+-- uniquely determines all of @rs@, @ci@, and @fs@, so type
+-- inference at call sites is local: GHC propagates them from the
+-- record's type alone.
+class ToOutFields rec rs ci fs | rec -> rs ci fs where
+  toOutFields :: rec -> OutFields rs ci fs
+
+
+-- | Passthrough: a bare 'OutFields' is its own conversion. Lets
+-- 'B.emit' accept either a per-event record or an
+-- @(t1 *: t2 *: oNil)@ chain through the same overload.
+instance ToOutFields (OutFields rs ci fs) rs ci fs where
+  toOutFields = id
 
 
 -- * Guards ----------------------------------------------------------------

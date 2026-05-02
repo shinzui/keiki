@@ -122,7 +122,7 @@ entries, add new items as discovered.
   Acceptance: `cabal test` green at 138 examples; `grep -c ":: Index " src/Keiki/Examples/UserRegistration.hs` reports 5 (AST-only); EmailDelivery 0. LOC: 220 / 458 (M1 acceptance targets of <215/<440 not met — see Surprises; user-visible boilerplate removal is fully delivered).
 - [x] M2 (2026-05-02): Added `(*:)` (right-assoc fixity 5) and `oNil` to `Keiki.Builder`, exported alongside `(.=)`. Imported unqualified at example sites for readability (matching the existing `(.=)` convention). Migrated both example aggregates and `BuilderSpike`; left `BuilderSpec` on bare `OFCons`/`OFNil` per the plan (its call sites are not user-facing tutorials). Module-level haddock example updated to show the operator form. 138 tests still pass.
 - [x] M3 (2026-05-02): Wrote `docs/research/emit-field-keyed-record-sugar.md`. Settled all four open questions: per-event TH-generated record + `ToOutFields` instance (Q1); rely on `DuplicateRecordFields` and never use `OverloadedRecordDot` on the Term records (Q2); hand-rolled instance body in field order rather than Generic-Rep walk (Q3); rely on stock GHC messages, no custom `TypeError` at M4 (Q4). Worked example reproduces the `Confirm` edge in pre-M4 and post-M5 forms.
-- [ ] M4: Implement field-keyed sugar. Extend `Keiki.Generics.TH.deriveWireCtors` (or add a new splice `deriveWireCtorsAndTermRecords`) to emit a per-event `<EventName>TermFields rs ci` record type whose fields are `Term rs ci T` for each wire-side field, plus a typeclass instance `ToOutFields` (or similar) connecting it to the existing `OutFields rs ci fs`. `B.emit wc rec` becomes overloaded over the typeclass.
+- [x] M4 (2026-05-02): Field-keyed sugar implemented. Added `class ToOutFields rec rs ci fs | rec -> rs ci fs` (with passthrough instance for `OutFields`) to `Keiki.Builder`. Overloaded `emit` and `emitWith` over `ToOutFields`. Extended `Keiki.Generics.TH.genWire` to emit, per record-payload event ctor, a `<Short>TermFields rs ci` record + `ToOutFields` instance; instance head uses the explicit nested-pair tuple type (rather than `FieldsOf <Pay>`) since GHC rejects type-family applications in instance heads. Added 3 unit cases (BuilderSpec cases 12–14) asserting record/operator forms agree on `omega`. 141 tests pass (138 + 3 new).
 - [ ] M5: Migrate the two example aggregates to the field-keyed form. Confirm equivalence specs (`EmailDeliveryBuilderSpec`, `UserRegistrationBuilderSpec`) still pass byte-identically.
 - [ ] M6: Remove the deprecated InCtor-explicit `emit` form (renamed to `emitWith` at M1) if no remaining call site uses it; otherwise keep as the documented escape hatch. Update `Keiki.Builder` haddock and `docs/research/edge-builder-dsl-shape.md`'s Q3 section to the final shape.
 
@@ -143,6 +143,16 @@ entries, add new items as discovered.
   formatting; the *user-visible* improvement (no `InCtor`-typed
   argument on `B.emit`, no `proj (#name :: Index Regs T)`
   annotation in builder forms) is fully delivered.
+
+- 2026-05-02 — *Type-family applications are rejected in instance
+  heads.* The TH-emitted `ToOutFields` instance for each per-event
+  record initially used `FieldsOf <Pay>` for the `fs` parameter
+  of the class. GHC rejects this with `[GHC-73138] Illegal type
+  synonym family application`. Resolved by computing the
+  nested-pair tuple shape `(t1, (t2, ..., (tn, ())))` explicitly
+  in TH from the payload's reified field list. The shape
+  matches what `FieldsOf` reduces to; at use site GHC unifies
+  the two via type-family reduction.
 
 - 2026-05-02 — *`Keiki.Builder` did not previously depend on
   `Keiki.Symbolic`.* The plan suggested reusing

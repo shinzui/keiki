@@ -295,3 +295,66 @@ spec = do
           target e1 `shouldBe` B   -- Tick goes to B (first onCmd)
           target e2 `shouldBe` A   -- Idle goes to A (second onCmd)
         es -> expectationFailure ("expected exactly 2 edges, got " <> show (length es))
+
+
+  describe "EP-21 M4: field-keyed record sugar for B.emit" $ do
+
+    -- Case 12: emit with the per-event record form produces the
+    -- same omega output as the operator form for the same data.
+    it "case 12: record-form emit and operator-form emit agree on omega" $ do
+      let trRec = B.buildTransducer A emptyR (const False) do
+                    B.from A do
+                      B.onCmd inCtorTick $ \d -> B.do
+                        B.slot @"counter" .= d.count
+                        B.emit wireTicked TickedTermFields { count = d.count }
+                        B.goto B
+          trOp  = B.buildTransducer A emptyR (const False) do
+                    B.from A do
+                      B.onCmd inCtorTick $ \d -> B.do
+                        B.slot @"counter" .= d.count
+                        B.emit wireTicked (OFCons d.count OFNil)
+                        B.goto B
+          cmd = Tick (TickData 17)
+      omega trRec A emptyR cmd `shouldBe` omega trOp A emptyR cmd
+
+    -- Case 13: multi-field record form preserves field-name order.
+    -- Two events with shared field names compile and produce the
+    -- correct OutFields under DuplicateRecordFields.
+    it "case 13: record-form emit on a 2-field event applies fields in order" $ do
+      let trRec = B.buildTransducer A emptyTwoR (const False) do
+                    B.from A do
+                      B.onCmd inCtorTwo $ \d -> B.do
+                        B.slot @"x" .= d.x
+                        B.slot @"y" .= d.y
+                        B.emit wireTwoEv
+                          TwoEvTermFields { x = d.x, y = d.y }
+                        B.goto B
+          trOp  = B.buildTransducer A emptyTwoR (const False) do
+                    B.from A do
+                      B.onCmd inCtorTwo $ \d -> B.do
+                        B.slot @"x" .= d.x
+                        B.slot @"y" .= d.y
+                        B.emit wireTwoEv (OFCons d.x (OFCons d.y OFNil))
+                        B.goto B
+          cmd = Two (TwoData 7 11)
+      omega trRec A emptyTwoR cmd `shouldBe` omega trOp A emptyTwoR cmd
+
+    -- Case 14: emitWith (explicit InCtor) accepts the record form.
+    -- Useful inside onEpsilon and as an escape hatch.
+    it "case 14: emitWith with the record form produces the same omega" $ do
+      let trEmitWith = B.buildTransducer A emptyR (const False) do
+                        B.from A do
+                          B.onCmd inCtorTick $ \d -> B.do
+                            B.slot @"counter" .= d.count
+                            B.emitWith inCtorTick wireTicked
+                              TickedTermFields { count = d.count }
+                            B.goto B
+          trEmit     = B.buildTransducer A emptyR (const False) do
+                        B.from A do
+                          B.onCmd inCtorTick $ \d -> B.do
+                            B.slot @"counter" .= d.count
+                            B.emit wireTicked
+                              TickedTermFields { count = d.count }
+                            B.goto B
+          cmd = Tick (TickData 5)
+      omega trEmitWith A emptyR cmd `shouldBe` omega trEmit A emptyR cmd

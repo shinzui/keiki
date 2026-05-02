@@ -50,7 +50,18 @@ module Keiki.Generics.TH
 import Data.Char (isUpper, toLower, toUpper)
 import Data.List (group, nub, sort, (\\))
 import Language.Haskell.TH
-import Keiki.Core (HsPred, InCtor, Index, RegFile, Term (..), WireCtor, (!), matchInCtor)
+import Keiki.Core
+  ( HsPred
+  , InCtor
+  , Index
+  , OutFields (..)
+  , RegFile
+  , Term (..)
+  , WireCtor
+  , (!)
+  , matchInCtor
+  )
+import Keiki.Builder (ToOutFields (..))
 import Keiki.Generics
   ( FieldsOf
   , RegFieldsOf
@@ -374,10 +385,102 @@ genWire evtName ctorMap (ctorStr, shortStr) =
                                    (litT (strTyLit ctorStr))))
                          []
                      ]
-        pure [wireSig, wireDef]
+        termRecDecs <- genTermFieldsRecord shortStr payTy
+        pure ([wireSig, wireDef] ++ termRecDecs)
       _ -> fail $ "deriveWireCtors: ctor " <> show ctorStr
                <> " has unsupported payload shape (singleton or "
                <> "multi-arg/record-syntax)"
+
+
+-- | Per-event field-keyed record for 'B.emit' (EP-21 M4).
+--
+-- For each event ctor with a record payload @<Pay>@ whose fields are
+-- @f1 :: T1@, @f2 :: T2@, ..., @fn :: Tn@, this emits two decls:
+--
+-- > data <Short>TermFields rs ci = <Short>TermFields
+-- >   { f1 :: Term rs ci T1
+-- >   , f2 :: Term rs ci T2
+-- >   , ...
+-- >   }
+--
+-- > instance ToOutFields (<Short>TermFields rs ci) rs ci
+-- >                      (FieldsOf <Pay>) where
+-- >   toOutFields <Short>TermFields { f1 = v1, f2 = v2, ... } =
+-- >     OFCons v1 (OFCons v2 ... OFNil)
+--
+-- Field-name disambiguation across multiple events with shared
+-- field names is handled by 'DuplicateRecordFields' (already on at
+-- the project level); the record pattern in the instance body
+-- pins the constructor explicitly so the field lookup is
+-- unambiguous.
+genTermFieldsRecord :: String -> Type -> Q [Dec]
+genTermFieldsRecord shortStr payTy = do
+  payName <- typeConstructorName payTy
+  payInfo <- reify payName
+  fields  <- case payInfo of
+    TyConI (DataD _ _ _ _ [RecC _ fs] _) -> pure fs
+    TyConI (NewtypeD _ _ _ _ (RecC _ fs) _) -> pure fs
+    _ -> fail $ "deriveWireCtors: TermFields generation requires "
+             <> "a single record-syntax constructor on payload "
+             <> show payName <> ", got " <> show payInfo
+  let recName = mkName (shortStr <> "TermFields")
+  rsN <- newName "rs"
+  ciN <- newName "ci"
+  let lazyBang = Bang NoSourceUnpackedness NoSourceStrictness
+      mkField (selN, _, ty) =
+        ( mkName (nameBase selN)
+        , lazyBang
+        , ConT ''Term `AppT` VarT rsN `AppT` VarT ciN `AppT` ty
+        )
+      recCtor   = RecC recName (map mkField fields)
+      recDataDec = DataD [] recName
+                          [ PlainTV rsN BndrReq
+                          , PlainTV ciN BndrReq
+                          ]
+                          Nothing [recCtor] []
+      recTy = ConT recName `AppT` VarT rsN `AppT` VarT ciN
+      -- The 'OutFields' type's @fs@ parameter is the same nested-
+      -- pair tuple @FieldsOf <Pay>@ reduces to. Compute it
+      -- explicitly so the instance head does not carry a type-
+      -- family application (which GHC rejects in instance heads).
+      fsTy  = mkNestedPairTuple [ty | (_, _, ty) <- fields]
+      instHead = ConT ''ToOutFields
+                  `AppT` recTy
+                  `AppT` VarT rsN
+                  `AppT` VarT ciN
+                  `AppT` fsTy
+  vars <- mapM (\(selN, _, _) -> newName ("v_" <> nameBase selN)) fields
+  let recPat   = RecP recName
+                   [ (mkName (nameBase fn), VarP vn)
+                   | ((fn, _, _), vn) <- zip fields vars
+                   ]
+      buildBody []     = ConE 'OFNil
+      buildBody (v:vs) = ConE 'OFCons `AppE` VarE v `AppE` buildBody vs
+      methodDef = FunD 'toOutFields
+                    [Clause [recPat] (NormalB (buildBody vars)) []]
+      instDec = InstanceD Nothing [] instHead [methodDef]
+  pure [recDataDec, instDec]
+
+
+-- | Extract a type's head constructor name. Accepts @ConT@ and the
+-- common forms it might wear after kind-elaboration; rejects
+-- function/forall/promoted shapes.
+typeConstructorName :: Type -> Q Name
+typeConstructorName (ConT n)   = pure n
+typeConstructorName (SigT t _) = typeConstructorName t
+typeConstructorName other =
+  fail $ "deriveWireCtors: payload type must be a type constructor, "
+      <> "got " <> show other
+
+
+-- | Build the nested-pair tuple type @(t1, (t2, ..., (tn, ())))@
+-- from a list of element types. This is the same shape that
+-- 'Keiki.Generics.FieldsOf' reduces a record's 'Rep' to, computed
+-- explicitly here so instance heads that mention the shape avoid
+-- the type-family application GHC rejects.
+mkNestedPairTuple :: [Type] -> Type
+mkNestedPairTuple []     = TupleT 0
+mkNestedPairTuple (t:ts) = AppT (AppT (TupleT 2) t) (mkNestedPairTuple ts)
 
 
 -- * deriveView internals -------------------------------------------------
