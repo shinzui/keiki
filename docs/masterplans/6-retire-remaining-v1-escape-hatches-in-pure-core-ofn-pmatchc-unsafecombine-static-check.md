@@ -221,7 +221,10 @@ implementation work is split.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Design milestone — decompose v1 escape hatch retirements (OFn, PMatchC, unsafeCombine static check) | docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md | None | EP-7 (external), MP-4 children | In Progress |
+| 1 | Design milestone — decompose v1 escape hatch retirements (OFn, PMatchC, unsafeCombine static check) | docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md | None | EP-7 (external), MP-4 children | Complete |
+| 2 | Retire OFn and mkOut from Keiki.Core | docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md | None | EP-15 | Not Started |
+| 3 | Retire PMatchC and matchCmd from Keiki.Core | docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md | None | EP-15 | Not Started |
+| 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -232,10 +235,13 @@ child plans (EP-11 and any per-combinator EPs that follow), because
 the `unsafeCombine` static check must accommodate
 `src/Keiki/Composition.hs`'s composition-side use of `unsafeCombine`.
 
-This registry will grow when EP-15's design milestone fans out into
-per-retirement EPs (see the Vision & Scope and Decomposition Strategy
-sections above). EP-15's revision step appends rows for each
-retirement that survives the design milestone.
+The three per-retirement EPs (EP-16, EP-17, EP-18) are independently
+mergeable — each has its own validation gate. EP-15's M2 decision
+(`docs/plans/14-...md` Decision Log dated 2026-05-02) settled on
+three EPs over bundling. The conventional landing order is EP-16 →
+EP-17 → EP-18 because the IP-5 retirement-block-comment sweep is
+cleanest when EP-18 (last) removes the whole block. But any order is
+permitted; the IP-5 sweep moves with the last EP to land.
 
 
 ## Dependency Graph
@@ -248,104 +254,138 @@ retirement that survives the design milestone.
                            │ (soft)
                            ▼
                     ┌─────────────┐
-                    │   EP-15     │
+                    │   EP-15     │   ← Complete
                     │  Design     │
                     │  milestone  │
                     └──────┬──────┘
-                           │
-                           │ (after design milestone)
-                           ▼
-              ┌────────────┴─────────────┐
-              │  Per-retirement EPs      │
-              │  (added by MP revision)  │
-              └──────────────────────────┘
+                           │ (soft; design rationale)
+            ┌──────────────┼──────────────┐
+            │              │              │
+            ▼              ▼              ▼
+      ┌─────────┐    ┌─────────┐   ┌──────────────┐
+      │  EP-16  │    │  EP-17  │   │    EP-18     │
+      │  OFn    │    │ PMatchC │   │ unsafeCombine│
+      │ retire  │    │ retire  │   │  static check│
+      └─────────┘    └─────────┘   └──────────────┘
+                                         ▲
+                                         │ (soft)
+                           ┌─────────────┴─────────────┐
+                           │  EP-7 (external; GHC      │
+                           │       9.12 type-level set │
+                           │       machinery)          │
+                           │  MP-4 children (composes  │
+                           │       use of combine)     │
+                           └───────────────────────────┘
 ```
 
-**EP-15 has no hard dependencies.** Its design milestone reads
-`Keiki.Core`, `Keiki.Symbolic`, `Keiki.Composition`, and the example
-aggregates; it produces a design note and a recommendation. No code
-in the design milestone touches the user-facing API.
+**No hard dependencies between child plans.** EP-15 (Complete)
+produced the design note that EP-16, EP-17, and EP-18 reference;
+the dependency is soft (rationale, not artifacts). The three
+per-retirement EPs touch three different datatypes (`OutTerm`,
+`HsPred`, `Update`) and can land in any order.
 
-**Soft external deps:**
+**Soft external deps (apply primarily to EP-18):**
 
-- *EP-7 (GHC 9.12 upgrade).* Recommended-soft-dep: type-level set
-  manipulation (likely needed for the `unsafeCombine` static check)
-  benefits from boot-library bumps, and CI alignment with sibling
-  projects reduces friction. Each child EP's M0 milestone records
-  the GHC version it was implemented under.
-- *MP-4 children.* The `unsafeCombine` static check must accommodate
-  `src/Keiki/Composition.hs:416`, where `weakenLUpdate (update e1)
-  \`unsafeCombine\` substUpdate (update e2) o1` builds a composite
-  edge update whose two halves are disjoint by construction (left
-  writes into `rs1`'s prefix, right writes into `rs2`'s suffix). Any
-  static encoding must admit this case without per-call-site proof
-  obligations. If MP-4 introduces further combinators that use
-  `unsafeCombine` internally, the static encoding must accommodate
-  those too. The dependency is soft: EP-15's design milestone may
-  proceed before further MP-4 combinators land, but its
-  recommendation should anticipate them.
+- *EP-7 (GHC 9.12 upgrade).* Already on master at MP-6 start
+  (GHC 9.12.3 baseline; recorded in EP-15's M0). EP-18's
+  type-level set machinery (`Disjoint`, `Concat`, `Names`) relies on
+  features stable from much earlier GHC versions but benefits from
+  9.12's improved error messages.
+- *MP-4 children.* EP-18's static-disjointness encoding must
+  accommodate `src/Keiki/Composition.hs:416`, where `weakenLUpdate
+  (update e1) \`combine\` substUpdate (update e2) o1` builds a
+  composite edge update whose two halves are disjoint by construction
+  (left writes into `rs1`'s prefix, right writes into `rs2`'s
+  suffix). EP-18's design (carried in
+  `docs/research/v1-escape-hatch-retirements-design.md`) lifts both
+  helpers to thread the slot-name index and adds a `Disjoint (Names
+  rs1) (Names rs2)` constraint to `compose` so the composite
+  disjointness is mechanical. If MP-4 introduces further combinators
+  after EP-11 that use `unsafeCombine` internally, they must be
+  migrated alongside EP-18 (or the new combinator's EP picks up the
+  migration).
 
 
 ## Integration Points
 
 ### IP-1: `src/Keiki/Core.hs` — `Update`, `OutTerm`, `HsPred` constructor sets
 
-**Plans involved:** EP-15 (design); per-retirement EPs (impl).
+**Plans involved:** EP-15 (design, Complete); EP-16 (`OutTerm`),
+EP-17 (`HsPred`), EP-18 (`Update`) — each per-retirement EP owns
+exactly one datatype.
 
-**Owner:** EP-15's design milestone owns the constructor-set
-decisions. Each per-retirement EP owns its constructor-set change.
+**Owner:** EP-16 owns `OutTerm` (removes `OFn`); EP-17 owns
+`HsPred` (removes `PMatchC`); EP-18 owns `Update` (replaces with
+the indexed `Update rs w ci` shape and removes `unsafeCombine`). No
+two retirements touch the same datatype.
 
-**Coordination rule:** if two retirements affect the same datatype
-(none expected — `OFn` is in `OutTerm`, `PMatchC` is in `HsPred`,
-`unsafeCombine` is in `Update`), the design milestone names which EP
-owns the datatype during the migration window.
+**Coordination rule:** each retirement EP also ticks its own bullet
+in the module-header retirement-block comment in
+`src/Keiki/Core.hs:22-33`. The whole block is removed by the last
+EP to land (see IP-5).
 
 ### IP-2: `src/Keiki/Composition.hs` — internal `unsafeCombine` use
 
-**Plans involved:** the `unsafeCombine` retirement EP (per-retirement
-EP-18 or whatever the design milestone names).
+**Plans involved:** EP-18 (`unsafeCombine` retirement / static
+check). EP-16 and EP-17 also touch `Keiki/Composition.hs`
+incidentally — EP-16 deletes the four `OFn _ -> error` clauses
+that become unreachable; EP-17 deletes the `weakenLPred` PMatchC
+passthrough and the `substPred` PMatchC error.
 
-**Owner:** the `unsafeCombine` retirement EP.
+**Owner:** EP-18 for the line-416 `unsafeCombine` use site and the
+`weakenLUpdate` / `substUpdate` lift. EP-16 and EP-17 for their
+respective constructor-narrowing cleanups.
 
-**Coordination rule:** the new static-disjointness encoding must let
-`weakenLUpdate (update e1) \`combine\` substUpdate (update e2) o1` (or
-the renamed-static-`combine`) type-check without a per-call-site proof
-obligation. The likely shape is that `weakenLUpdate` and `substUpdate`
-each carry a `Disjoint`-friendly written-slot index, so the composite
-disjointness witness is mechanical.
+**Coordination rule:** EP-18's static-disjointness encoding lets
+`weakenLUpdate (update e1) \`combine\` substUpdate (update e2) o1`
+type-check without a per-call-site proof obligation. EP-18 lifts
+`weakenLUpdate` and `substUpdate` to thread the slot-name index and
+adds the `Disjoint (Names rs1) (Names rs2)` constraint to `compose`.
+See EP-18's Plan of Work M5 for the precise shape.
 
 ### IP-3: `src/Keiki/Examples/UserRegistration.hs`, `UserRegistrationV0.hs`, `EmailDelivery.hs`
 
-**Plans involved:** every per-retirement EP (each owns its own DSL
-migration; the example aggregates are the smoke test for each
-retirement).
+**Plans involved:** EP-18 only. EP-16 and EP-17 do not touch the
+example aggregates (the survey in EP-15's design note found zero
+aggregate uses of `OFn` / `mkOut` / `PMatchC` / `matchCmd`).
 
-**Owner:** each retirement EP migrates the constructs it retires; the
-last EP to land sweeps any remaining mixed-form usage.
+**Owner:** EP-18 migrates the `\`unsafeCombine\`` chains in every
+example aggregate to `\`combine\``.
 
-**Coordination rule:** each EP's smoke test reuses the canonical User
-Registration log (`reconstitute userReg canonicalLog == Just (Deleted,
-expectedSnapshot)`) and the symbolic `isSingleValuedSym (withSymPred
-userReg) == True` test. After all retirements land, both still pass.
+**Coordination rule:** EP-18's smoke tests reuse the canonical User
+Registration log (`reconstitute userReg canonicalLog == Just
+(Deleted, expectedSnapshot)`) and the symbolic
+`isSingleValuedSym (withSymPred userReg) == True` test. After EP-18
+lands, both still pass.
 
-### IP-4: New design notes in `docs/research/`
+### IP-4: Design note in `docs/research/`
 
-**Plans involved:** EP-15 (creates the design note(s)); per-retirement
-EPs (amend their entry as the impl confirms or revises the design).
+**Plans involved:** EP-15 owns
+`docs/research/v1-escape-hatch-retirements-design.md` (Complete).
+EP-16, EP-17, EP-18 may amend their respective subsections of the
+note as implementation reveals wrinkles (see each EP's Decision Log
+for the revision protocol).
 
-**Owner:** EP-15 owns the file structure. The design milestone may
-decide to write one combined retirement note or one per retirement;
-either is valid as long as the rationale is captured.
+**Owner:** EP-15. Per-retirement amendments are recorded in the
+amending EP's Decision Log with rationale.
 
 ### IP-5: Stale-comment cleanup in `Keiki.Core` and `dsl-shape-for-symbolic-register.md`
 
-**Plans involved:** every per-retirement EP that lands a retirement
-removes its corresponding "future MasterPlan retires this" comment.
+**Plans involved:** EP-16, EP-17, and EP-18 each tick their own
+bullet on:
 
-**Owner:** the last per-retirement EP to land sweeps the module-header
-"v1 escape hatches still pending retirement" block in
-`src/Keiki/Core.hs:22-33` and the closing list in
-`docs/research/dsl-shape-for-symbolic-register.md:997-1006`.
+- the module-header "v1 escape hatches still pending retirement"
+  block in `src/Keiki/Core.hs:22-33`, and
+- the closing list in
+  `docs/research/dsl-shape-for-symbolic-register.md:1001-1015`.
+
+**Owner:** the last per-retirement EP to land removes the entire
+block in both files and replaces it with a single "all v1 escape
+hatches retired by MP-6" pointer to MP-6's Outcomes section. The
+conventional landing order (EP-16 → EP-17 → EP-18) puts this sweep
+on EP-18, but if a different order lands the assignment moves with
+the last EP. Each EP's M-final milestone records who performed the
+sweep.
 
 
 ## Progress
@@ -353,10 +393,47 @@ removes its corresponding "future MasterPlan retires this" comment.
 This section aggregates milestone-level progress across all child
 plans for an at-a-glance view.
 
-- [ ] EP-15: Verify prerequisites — Keiki.Core builds, all tests pass; record GHC version (M0)
-- [ ] EP-15: Survey the three v1 escape hatches against the current Keiki.Core surface; pick retirement strategies; write design note(s) (M1)
-- [ ] EP-15: Decide decomposition; if fan-out is needed, revise this MasterPlan to add per-retirement EPs (M2)
-- [ ] EP-15: Verdict and handoff (M3)
+EP-15 — Design milestone (Complete):
+
+- [x] EP-15 M0: Verify prerequisites — Keiki.Core builds, all tests pass (107/107, GHC 9.12.3)
+- [x] EP-15 M1: Survey the three v1 escape hatches; design note at `docs/research/v1-escape-hatch-retirements-design.md`
+- [x] EP-15 M2: Decompose into three EPs (EP-16 OFn, EP-17 PMatchC, EP-18 unsafeCombine)
+- [x] EP-15 M3: Apply MasterPlan revision; create EP-16, EP-17, EP-18
+- [x] EP-15 M4: Verdict and handoff
+
+EP-16 — Retire OFn and mkOut (Not Started):
+
+- [ ] EP-16 M0: Verify prerequisites
+- [ ] EP-16 M1: Remove OFn / mkOut from Keiki.Core
+- [ ] EP-16 M2: Remove OFn-handling clauses in Keiki.Composition
+- [ ] EP-16 M3: Rewrite test/Keiki/CoreSpec.hs synthetic-OFn fixtures
+- [ ] EP-16 M4: Tick OFn bullet in retirement-block comments
+- [ ] EP-16 M5: Verdict
+
+EP-17 — Retire PMatchC and matchCmd (Not Started):
+
+- [ ] EP-17 M0: Verify prerequisites
+- [ ] EP-17 M1: Remove PMatchC / matchCmd from Keiki.Core
+- [ ] EP-17 M2: Remove PMatchC clause from Keiki.Symbolic.translatePred
+- [ ] EP-17 M3: Remove PMatchC clauses from Keiki.Composition
+- [ ] EP-17 M4: Rewrite test/Keiki/CoreSpec.hs synthetic-PMatchC fixtures
+- [ ] EP-17 M5: Update sbv-boolalg-design.md
+- [ ] EP-17 M6: Tick PMatchC bullet in retirement-block comments
+- [ ] EP-17 M7: Verdict
+
+EP-18 — Static Disjoint check; retire unsafeCombine (Not Started):
+
+- [ ] EP-18 M0: Verify prerequisites
+- [ ] EP-18 M1: Spike — Disjoint, Concat, IndexN type-level machinery
+- [ ] EP-18 M2: Refactor Update to carry the (w :: [Symbol]) index
+- [ ] EP-18 M3: IsLabel for IndexN; preserve aggregate authoring syntax
+- [ ] EP-18 M4: Update evaluator / analyses; existential w in Edge
+- [ ] EP-18 M5: Lift weakenLUpdate / substUpdate; add Disjoint constraint to compose
+- [ ] EP-18 M6: Migrate example aggregates from unsafeCombine to combine
+- [ ] EP-18 M7: Migrate composition tests
+- [ ] EP-18 M8: Remove unsafeCombine from Keiki.Core exports
+- [ ] EP-18 M9: IP-5 sweep — remove retirement-block comments entirely
+- [ ] EP-18 M10: Verdict
 
 
 ## Surprises & Discoveries
@@ -365,7 +442,21 @@ Document cross-plan insights, dependency changes, scope adjustments,
 or unexpected interactions between child plans. Provide concise
 evidence.
 
-(None yet.)
+- **OFn and PMatchC have zero aggregate uses** (EP-15 M1 survey,
+  2026-05-02). MP-6's original Vision & Scope assumed both were
+  "currently used" by `Keiki.Examples.UserRegistration`; the survey
+  found that PInCtor / matchInCtor (added in EP-2 of MP-2) had
+  already absorbed every aggregate guard, and no aggregate ever
+  needed `mkOut`. Consequence: EP-16 and EP-17 are mechanical
+  deletions; the substantive engineering of MP-6 is concentrated in
+  EP-18 (`unsafeCombine` static check). The design note revises
+  Vision & Scope's assumed structural-successor obligations.
+  Evidence:
+
+      $ grep -rn "OFn\|mkOut\|PMatchC\|matchCmd" src/Keiki/Examples/
+      src/Keiki/Examples/UserRegistrationV0.hs:89:-- | Per-constructor guards. Migrated from v1 'matchCmd' to v2
+
+  Single match, and it's a historical comment.
 
 
 ## Decision Log
@@ -407,3 +498,38 @@ Summarize outcomes, gaps, and lessons learned at major milestones or at
 completion. Compare the result against the original vision.
 
 (To be filled during and after implementation.)
+
+
+---
+
+## Revisions
+
+### 2026-05-02 — EP-15 Complete; fan-out into three per-retirement EPs
+
+EP-15's design milestone landed. Changes applied to this MasterPlan
+by EP-15's M3 step:
+
+- Exec-Plan Registry: marked EP-15 **Complete**; added rows for
+  EP-16 (`docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md`),
+  EP-17 (`docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md`),
+  EP-18 (`docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md`).
+- Dependency Graph: redrew the post-design-milestone shape; the
+  three per-retirement EPs are independent (no hard deps between
+  them).
+- Integration Points: rewrote IP-1 / IP-2 / IP-3 / IP-4 / IP-5 to
+  name the actual per-retirement EPs and assign owners. The
+  previously hypothetical "the unsafeCombine retirement EP" is now
+  EP-18.
+- Progress: replaced EP-15-only checklist with per-EP checklists
+  covering EP-15 (Complete), EP-16, EP-17, EP-18.
+- Surprises & Discoveries: recorded the M1 finding that OFn and
+  PMatchC have zero aggregate uses on master.
+
+The changes do not alter MP-6's Vision & Scope. They sharpen the
+scope of EP-16 and EP-17 (mechanical deletion, no successor surface)
+and confirm EP-18 carries the substantive engineering. The
+MasterPlan-level acceptance criterion remains as written: `OFn`,
+`PMatchC`, and `unsafeCombine` are removed from Keiki.Core's
+exported surface; every example aggregate compiles without them; the
+User Registration smoke test and the symbolic `isSingleValuedSym`
+test both pass.

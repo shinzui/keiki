@@ -102,8 +102,8 @@ always reflect the actual current state of the work.
 - [x] M0: Verify prerequisites — `cabal build` and `cabal test all` are green on master (107 examples, 0 failures, GHC 9.12.3, cabal 3.16.1.0). Done 2026-05-02.
 - [x] M1: Survey the three escape hatches against the current Keiki.Core/Keiki.Symbolic/Keiki.Composition surface. Design note written at `docs/research/v1-escape-hatch-retirements-design.md` (single combined note — see Decision Log). Done 2026-05-02.
 - [x] M2: Decide decomposition. **Three EPs**: EP-16 (OFn), EP-17 (PMatchC), EP-18 (unsafeCombine static check). See Decision Log entry dated 2026-05-02. Done 2026-05-02.
-- [ ] M3: Apply MasterPlan revision — update MP-6's Exec-Plan Registry, Dependency Graph, Integration Points, and append a revision note. Create the per-retirement child ExecPlans via `bun .claude/skills/exec-plan/init-plan.ts`.
-- [ ] M4: Verdict — write the Outcomes & Retrospective entry; mark this plan Complete in MP-6's registry.
+- [x] M3: Applied MasterPlan revision — MP-6's Exec-Plan Registry now lists EP-16, EP-17, EP-18; Dependency Graph redrawn to show post-fan-out shape; IP-1 through IP-5 rewritten to name the per-retirement EPs and assign owners; Progress section gained per-EP checklists; revision note appended at the bottom of MP-6. Per-retirement child ExecPlans created via `bun .claude/skills/exec-plan/init-plan.ts`: `docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md`, `docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md`, `docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md`. Each populated per `agents/skills/exec-plan/PLANS.md` (self-contained, novice-readable, with milestone-based Plan of Work, Concrete Steps, Validation, Idempotence, Interfaces). Done 2026-05-02.
+- [x] M4: Verdict — `cabal build && cabal test all` confirmed green (107/107) post-revision; no source drift. Outcomes & Retrospective entry written below. EP-15 marked Complete in MP-6's Exec-Plan Registry. Done 2026-05-02.
 
 
 ## Surprises & Discoveries
@@ -196,7 +196,71 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or
 at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Outcome (2026-05-02)
+
+The design milestone produced what the Purpose / Big Picture asked
+for: a recommendation that decomposes MP-6 into per-retirement
+implementation plans and a written rationale at
+`docs/research/v1-escape-hatch-retirements-design.md`.
+
+The four questions set out in Purpose / Big Picture were settled:
+
+1. **Successor surfaces.** *No successor* for `OFn` or `PMatchC`
+   (zero aggregate uses; the structural-successor obligations
+   assumed by MP-6's Vision & Scope dissolved on contact with the
+   actual call-site survey). For `unsafeCombine`: a slot-name-set
+   index `(w :: [Symbol])` on `Update`, with a closed `Disjoint`
+   type family producing readable type errors on overlap.
+2. **Decomposition.** Three EPs — EP-16, EP-17, EP-18 — created.
+3. **Migration story.** EP-16 and EP-17 touch only Core, Symbolic
+   (PMatchC only), Composition (constructor-narrowing cleanup), and
+   `test/Keiki/CoreSpec.hs`. Aggregates are unaffected. EP-18
+   migrates aggregates and the composition use site at line 416 to
+   the static `combine`.
+4. **MasterPlan revision.** Applied: registry, dependency graph,
+   integration points, progress section, surprises, and a revision
+   note at the bottom of MP-6.
+
+Acceptance gates (from Validation and Acceptance):
+
+- The design note exists at
+  `docs/research/v1-escape-hatch-retirements-design.md` and answers
+  all four questions. ✓
+- MP-6's Exec-Plan Registry names the implementation EPs by path. ✓
+- MP-6 has a revision note appended describing the decomposition. ✓
+- `cabal build && cabal test all` is still green. ✓ (107 examples,
+  0 failures)
+
+### Lessons / surprises
+
+- **Always survey before designing.** MP-6's Vision & Scope was
+  written based on memory of MP-2's deferral list, which was written
+  before EP-2 of MP-2 added `PInCtor` / `matchInCtor`. The actual
+  state of master had two of the three retirements already
+  effectively done at the call-site level, with only the
+  constructor-and-helper exhaust remaining. The design milestone
+  exists in part to perform exactly this kind of "test the assumed
+  premise against reality" pass; doing so saved EP-16 and EP-17
+  from over-engineering speculative successor surfaces.
+- **Three EPs vs. bundling.** The temptation to bundle OFn + PMatchC
+  was real (both are mechanical deletions). The clarity of one EP
+  per concern won; PMatchC's PR will touch `Keiki.Symbolic` and the
+  SBV design note, which OFn's PR has no business touching.
+- **The substantive work is all in EP-18.** The slot-name set
+  encoding, the auxiliary `WrittenSubset` lemma, the `compose`
+  constraint addition — these are real type-level engineering. EP-18
+  is the load-bearing milestone of MP-6.
+
+### Gaps / what remains
+
+- Per-retirement implementation (EP-16, EP-17, EP-18) is the
+  remaining work in MP-6. The next contributor picks any of the
+  three (no hard deps between them) and follows the EP's
+  self-contained instructions.
+- The `IP-5` block-removal sweep is assigned to whichever EP lands
+  last; the conventional order EP-16 → EP-17 → EP-18 puts it on
+  EP-18, but the assignment is mechanical and moves with the actual
+  landing order.
 
 
 ## Context and Orientation
