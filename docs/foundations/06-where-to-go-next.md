@@ -69,6 +69,12 @@ design. Useful when you want to know "why didn't we do X."
 - **`performance-analysis-projection-costs-and-production-architecture.md`**
   Performance considerations for projections and the runtime.
 
+- **`symbolic-analysis-and-runtime-implications.md`**
+  What "symbolic analysis" means in keiki, what `Keiki.Symbolic`
+  buys you over `Keiki.Core`, and what it costs (SBV cabal dep, z3
+  in `PATH`, ~10ms per solver call). Read before deciding whether
+  to import `Keiki.Symbolic` or whether to install z3 in CI.
+
 - **`data-direction-b-indexed-state-per-vertex.md`** and
   **`data-direction-c-symbolic-and-register-automata.md`**
   The parallel exploration that produced the synthesis. Read these if
