@@ -141,7 +141,7 @@ spec = do
                  B.from A do
                    B.onCmd inCtorTick $ \d -> B.do
                      B.slot @"counter" .= d.count
-                     B.emit inCtorTick wireTicked (OFCons d.count OFNil)
+                     B.emit wireTicked (OFCons d.count OFNil)
                      B.goto B
           cmd = Tick (TickData 42)
       case delta tr A emptyR cmd of
@@ -156,7 +156,7 @@ spec = do
                     B.onCmd inCtorTwo $ \d -> B.do
                       B.slot @"x" .= d.x
                       B.slot @"y" .= d.y
-                      B.emit inCtorTwo wireTwoEv (OFCons d.x (OFCons d.y OFNil))
+                      B.emit wireTwoEv (OFCons d.x (OFCons d.y OFNil))
                       B.goto B
           cmd = Two (TwoData 7 11)
       case delta tr2 A emptyTwoR cmd of
@@ -183,7 +183,7 @@ spec = do
                  B.from A do
                    B.onCmd inCtorTick $ \d -> B.do
                      B.slot @"counter" .= d.count
-                     B.emit inCtorTick wireTicked (OFCons d.count OFNil)
+                     B.emit wireTicked (OFCons d.count OFNil)
                      B.goto B
           cmd = Tick (TickData 9)
       case delta tr A emptyR cmd of

@@ -153,7 +153,7 @@ coffeeBuilt = B.buildTransducer Idle emptyCoffeeRegs (const False) do
       B.onCmd inCtorInsert $ \d -> B.do
         B.slot @"price"         .= d.amount
         B.slot @"brewStartedAt" .= d.at
-        B.emit inCtorInsert wireBrewed (OFCons d.amount OFNil)
+        B.emit wireBrewed (OFCons d.amount OFNil)
         B.goto Brewing
 
     B.from Brewing do

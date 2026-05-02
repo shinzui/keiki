@@ -158,6 +158,22 @@ instance forall s rs r.
       => IsLabel s (Index rs r) where
   fromLabel = indexOf @s @rs @r
 
+-- | Resolve a label directly to a 'Term' that reads the named register.
+-- This instance lets call sites write @#name@ in any 'Term'-typed
+-- context (the arguments of 'requireEq', the elements of 'OutFields',
+-- etc.) without the @proj (#name :: Index Regs T)@ annotation that
+-- 'IsLabel s (Index rs r)' alone would require.
+--
+-- The two 'IsLabel' instances ('Index' and 'Term') coexist because GHC
+-- dispatches by the expected result type: a context expecting an
+-- 'Index' (e.g. 'inpFoo'\'s argument) selects the 'Index' instance; a
+-- context expecting a 'Term' (e.g. 'requireEq'\'s arguments) selects
+-- this one.
+instance forall s rs ci r.
+         HasIndex s rs r
+      => IsLabel s (Term rs ci r) where
+  fromLabel = TReg (indexOf @s @rs @r)
+
 -- The @IsLabel s (IndexN s rs r)@ instance lives next to 'IndexN' in
 -- "Keiki.Internal.Slots" so the orphan check is satisfied.
 

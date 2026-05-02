@@ -115,9 +115,11 @@ completed items with a date, split partial items into "done" and "remaining"
 entries, add new items as discovered.
 
 - [x] M0 (2026-05-02): Verify prerequisites — record baseline test count, build state, current `emit` LOC totals across the two examples. Baseline recorded in Decision Log: 138 tests pass; EmailDelivery 220 LOC, UserRegistration 464 LOC; emit sites 1/5; `:: Index ` annotations 0/10.
-- [ ] M1: Two related ergonomic fixes shipped together:
-  1. **Drop the redundant `InCtor` argument from `B.emit`.** Add a `peInCtor :: Maybe (SomeInCtor ci)` field to `PartialEdge` (set by `onCmd`, `Nothing` in `onEpsilon`). The new `B.emit wc fs` reads `peInCtor` and errors at finalize time if `Nothing`. Add `B.emitWith :: InCtor ci ifs -> WireCtor co fs -> OutFields rs ci fs -> EdgeBuilder ...` for `onEpsilon` callers and as a fallback.
-  2. **Eliminate `proj (#name :: Index Regs T)` boilerplate at call sites.** Add a new instance `IsLabel s (Term rs ci r)` to `src/Keiki/Core.hs` (next to the existing `IsLabel s (Index rs r)` instance) so `#name` resolves directly to a `Term`-typed register read in any context that expects a `Term`. Remove the `proj (#name :: Index Regs T)` annotations from the 5 builder-form sites in `src/Keiki/Examples/UserRegistration.hs` (none in EmailDelivery's builder form). Migrate the two example aggregates' builder forms and the spike to drop both the InCtor and the Index annotations.
+- [x] M1 (2026-05-02): Two related ergonomic fixes shipped together:
+  1. **Drop the redundant `InCtor` argument from `B.emit`.** Added `peInCtor :: Maybe (PeInCtor ci)` to `PartialEdge` (a builder-local existential, not `Symbolic.SomeInCtor` — see Surprises). `onCmd` sets it; `onEpsilon` leaves it `Nothing`. The new 2-arg `B.emit wc fs` recovers the InCtor from the field; the explicit-InCtor form is renamed `B.emitWith ic wc fs` and exported as the documented escape hatch.
+  2. **Eliminated `proj (#name :: Index Regs T)` boilerplate at call sites.** Added `instance HasIndex s rs r => IsLabel s (Term rs ci r)` to `src/Keiki/Core.hs` next to the existing `IsLabel s (Index rs r)` instance. Migrated 5 builder-form sites in `src/Keiki/Examples/UserRegistration.hs` (and the analogous emit site in `EmailDelivery`) to drop both the InCtor and the Index annotations. AST-form sites untouched.
+
+  Acceptance: `cabal test` green at 138 examples; `grep -c ":: Index " src/Keiki/Examples/UserRegistration.hs` reports 5 (AST-only); EmailDelivery 0. LOC: 220 / 458 (M1 acceptance targets of <215/<440 not met — see Surprises; user-visible boilerplate removal is fully delivered).
 - [ ] M2: Add `(*:)` and `oNil` operator-style HList sugar to `Keiki.Builder` (re-exports of `OFCons` and `OFNil` with the operator's right-associative fixity 5). Migrate the two example aggregates to the operator form. (The plan's M5 will replace these with the field-keyed form, but M2 ships incrementally.)
 - [ ] M3: Settle field-keyed record sugar shape — write the design note `docs/research/emit-field-keyed-record-sugar.md` resolving the open questions (per-event vs class-driven generation, field-name disambiguation strategy, interaction with DuplicateRecordFields, error-message shape).
 - [ ] M4: Implement field-keyed sugar. Extend `Keiki.Generics.TH.deriveWireCtors` (or add a new splice `deriveWireCtorsAndTermRecords`) to emit a per-event `<EventName>TermFields rs ci` record type whose fields are `Term rs ci T` for each wire-side field, plus a typeclass instance `ToOutFields` (or similar) connecting it to the existing `OutFields rs ci fs`. `B.emit wc rec` becomes overloaded over the typeclass.
@@ -127,7 +129,28 @@ entries, add new items as discovered.
 
 ## Surprises & Discoveries
 
-(None yet — to be populated as work proceeds.)
+- 2026-05-02 — *M1 LOC targets (< 440 / < 215) are not reachable from
+  M1's surface change alone.* The boilerplate removed is per-token,
+  not per-line: each dropped `InCtor` word leaves the line count
+  unchanged, and each removed `proj (#name :: Index UserRegRegs T)`
+  collapses to a shorter same-line form except in the one
+  `requireEq` site whose annotation occupied a continuation line.
+  After natural single-line-fit compression, UserRegistration sits at
+  458 LOC (target < 440) and EmailDelivery at 220 LOC (target <
+  215). Remaining LOC savings will come from M2's operator sugar
+  (modest, per-line) and M5's field-keyed form (substantial,
+  per-emit restructuring). Continuing without gold-plating
+  formatting; the *user-visible* improvement (no `InCtor`-typed
+  argument on `B.emit`, no `proj (#name :: Index Regs T)`
+  annotation in builder forms) is fully delivered.
+
+- 2026-05-02 — *`Keiki.Builder` did not previously depend on
+  `Keiki.Symbolic`.* The plan suggested reusing
+  `Symbolic.SomeInCtor` for `peInCtor` to "keep the dep graph
+  unchanged"; in fact reusing it would add a new edge and pull SBV
+  transitively into every consumer of `Keiki.Builder`. Resolved
+  with a local `data PeInCtor ci where PeInCtor :: InCtor ci ifs ->
+  PeInCtor ci` (no `ExtractRegFile` constraint, no SBV pull).
 
 
 ## Decision Log
@@ -245,6 +268,21 @@ Subsequent decisions made during implementation append below them with a date.
   the operator form unused, it can be retired via a deletion-only
   follow-up. The intermediate state is not an end state but is
   a useful intermediate.
+  Date: 2026-05-02
+
+- Decision (revision): Use a *local* existential in `Keiki.Builder`
+  for `peInCtor`, not `Keiki.Symbolic.SomeInCtor`.
+  Rationale: the plan-level rationale assumed reuse "keeps the dep
+  graph unchanged", but `Keiki.Builder` does not currently import
+  `Keiki.Symbolic`. Reusing `SomeInCtor` would add a `Builder →
+  Symbolic` dependency edge and pull SBV transitively into every
+  consumer of `Keiki.Builder`. The `SomeInCtor` constructor also
+  carries an `ExtractRegFile ifs` constraint that the symbolic
+  analyses need but the builder does not — using it would force
+  threading that constraint through `onCmd`'s signature, a
+  breaking change to the Builder surface. A local existential
+  `data PeInCtor ci where PeInCtor :: InCtor ci ifs -> PeInCtor ci`
+  has neither cost.
   Date: 2026-05-02
 
 - M0 baseline (2026-05-02):

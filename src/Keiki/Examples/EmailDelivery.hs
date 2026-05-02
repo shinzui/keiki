@@ -164,7 +164,7 @@ emailDelivery = B.buildTransducer EmailPending emptyEmailRegs
         B.slot @"emailRecipient" .= d.recipient
         B.slot @"emailSubject"   .= d.subject
         B.slot @"emailSentAt"    .= d.at
-        B.emit inCtorSendEmail wireEmailSent
+        B.emit wireEmailSent
           (OFCons d.recipient (OFCons d.subject (OFCons d.at OFNil)))
         B.goto EmailSentVertex
 

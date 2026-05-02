@@ -294,15 +294,14 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
       B.slot @"email"        .= d.email
       B.slot @"confirmCode"  .= d.confirmCode
       B.slot @"registeredAt" .= d.at
-      B.emit inCtorStart wireRegistrationStarted
+      B.emit wireRegistrationStarted
         (OFCons d.email (OFCons d.confirmCode (OFCons d.at OFNil)))
       B.goto Registering
 
   B.from Registering do
     -- Internal Continue command emits ConfirmationEmailSent.
     B.onCmd inCtorContinue $ \_d -> B.do
-      B.emit inCtorContinue wireConfirmationEmailSent
-        (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
+      B.emit wireConfirmationEmailSent (OFCons #email OFNil)
       B.goto RequiresConfirmation
 
   B.from RequiresConfirmation do
@@ -310,21 +309,18 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
     -- short-circuits the d.confirmCode read for non-ConfirmAccount
     -- inputs.
     B.onCmd inCtorConfirm $ \d -> B.do
-      B.requireEq d.confirmCode
-                  (proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
+      B.requireEq d.confirmCode #confirmCode
       B.slot @"confirmedAt" .= d.at
-      B.emit inCtorConfirm wireAccountConfirmed
-        (OFCons (proj (#email :: Index UserRegRegs Email))
-          (OFCons d.confirmCode (OFCons d.at OFNil)))
+      B.emit wireAccountConfirmed
+        (OFCons #email (OFCons d.confirmCode (OFCons d.at OFNil)))
       B.goto Confirmed
 
     -- Resend: rotate the code (code arrives in the command).
     B.onCmd inCtorResend $ \d -> B.do
       B.slot @"confirmCode"  .= d.code
       B.slot @"registeredAt" .= d.at
-      B.emit inCtorResend wireConfirmationResent
-        (OFCons (proj (#email :: Index UserRegRegs Email))
-          (OFCons d.code (OFCons d.at OFNil)))
+      B.emit wireConfirmationResent
+        (OFCons #email (OFCons d.code (OFCons d.at OFNil)))
       B.goto RequiresConfirmation
 
     -- GDPR before confirmation: silent ε-edge (no event).
@@ -336,9 +332,7 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
   B.from Confirmed do
     B.onCmd inCtorGdpr $ \d -> B.do
       B.slot @"deletedAt" .= d.at
-      B.emit inCtorGdpr wireAccountDeleted
-        (OFCons (proj (#email :: Index UserRegRegs Email))
-          (OFCons d.at OFNil))
+      B.emit wireAccountDeleted (OFCons #email (OFCons d.at OFNil))
       B.goto Deleted
 
   -- Deleted is terminal; defaults to [] without an explicit `from`.

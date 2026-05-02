@@ -136,6 +136,7 @@ module Keiki.Builder
   , (.=)
     -- ** Outputs
   , emit
+  , emitWith
   , noEmit
     -- ** Guards
   , requireEq
@@ -211,7 +212,24 @@ data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
   , peTargets :: [v]
     -- ^ Reverse-order list of every 'goto' invocation in the body.
     -- Finalization requires exactly one element.
+  , peInCtor  :: Maybe (PeInCtor ci)
+    -- ^ The 'InCtor' bound by the enclosing 'onCmd', so that the
+    -- 2-argument 'emit' can recover it without the user repeating
+    -- it. 'Nothing' inside an 'onEpsilon' body — 'emit' there must
+    -- use 'emitWith' to supply the 'InCtor' explicitly.
   }
+
+
+-- | Existential wrapper hiding the @ifs@ slot list of an 'InCtor'.
+-- Stored on 'PartialEdge' by 'onCmd' and read back by 'emit'.
+--
+-- This is a builder-local existential rather than a reuse of
+-- 'Keiki.Symbolic.SomeInCtor' because the latter carries an
+-- 'ExtractRegFile' constraint the builder does not need and lives
+-- in a module that pulls SBV; reusing it would add an SBV edge to
+-- every consumer of "Keiki.Builder".
+data PeInCtor ci where
+  PeInCtor :: InCtor ci ifs -> PeInCtor ci
 
 
 -- | The per-edge indexed-state monad. The two phantom slot-set
@@ -310,8 +328,8 @@ slot = indexN @name @rs @r
   => IndexN name rs r
   -> Term rs ci r
   -> EdgeBuilder rs ci co v w (Concat '[name] w) ()
-ix .= t = EdgeBuilder $ \(PartialEdge g u o tgs) ->
-  ((), PartialEdge g (USet ix t `combine` u) o tgs)
+ix .= t = EdgeBuilder $ \pe ->
+  ((), pe { peUpdate = USet ix t `combine` peUpdate pe })
 infixr 6 .=
 
 
@@ -322,29 +340,43 @@ infixr 6 .=
 -- naming the source vertex and edge index, and so does multiple
 -- 'goto's in the same body.
 goto :: v -> EdgeBuilder rs ci co v w w ()
-goto v = EdgeBuilder $ \(PartialEdge g u o tgs) ->
-  ((), PartialEdge g u o (v : tgs))
+goto v = EdgeBuilder $ \pe ->
+  ((), pe { peTargets = v : peTargets pe })
 
 
 -- * Outputs ---------------------------------------------------------------
 
--- | Emit an event. Takes the input-side 'InCtor' (typically the
--- same one bound by the enclosing 'onCmd'), the wire-side
--- 'WireCtor', and an explicit 'OutFields' HList of 'Term's matching
--- the wire ctor's field schema.
---
--- The InCtor is supplied explicitly (rather than recovered from the
--- enclosing 'onCmd') to keep the signature regular and to leave room
--- for future ε-emit cases where 'onCmd' is not in the enclosing
--- scope.
+-- | Emit an event. Takes the wire-side 'WireCtor' and an 'OutFields'
+-- HList of 'Term's matching the wire ctor's field schema. The
+-- input-side 'InCtor' is recovered from the enclosing 'onCmd'; an
+-- 'emit' inside 'onEpsilon' (where no 'InCtor' is bound) raises a
+-- finalize-time error directing the user to 'emitWith'.
 emit
+  :: forall co fs rs ci v w.
+     WireCtor co fs
+  -> OutFields rs ci fs
+  -> EdgeBuilder rs ci co v w w ()
+emit wc fs = EdgeBuilder $ \pe -> case peInCtor pe of
+  Just (PeInCtor ic) ->
+    ((), pe { peOutput = Just (pack ic wc fs) })
+  Nothing ->
+    error "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
+          \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
+          \emit inside an 'onCmd' block."
+
+
+-- | Emit an event with an explicit 'InCtor'. The escape hatch for
+-- 'onEpsilon' bodies (which do not pin an 'InCtor') and for any
+-- caller that needs to override the one bound by the enclosing
+-- 'onCmd'. Inside 'onCmd' the InCtor-less 'emit' is preferred.
+emitWith
   :: forall co fs rs ci v w ifs.
      InCtor ci ifs
   -> WireCtor co fs
   -> OutFields rs ci fs
   -> EdgeBuilder rs ci co v w w ()
-emit ic wc fs = EdgeBuilder $ \(PartialEdge g u _o tgs) ->
-  ((), PartialEdge g u (Just (pack ic wc fs)) tgs)
+emitWith ic wc fs = EdgeBuilder $ \pe ->
+  ((), pe { peOutput = Just (pack ic wc fs) })
 
 
 -- | Mark the edge as ε-output (no event). Idempotent: an edge with
@@ -361,8 +393,8 @@ noEmit = EdgeBuilder $ \pe -> ((), pe)
 -- (e.g. for negated predicates, disjunctions, or guards constructed
 -- by helper functions).
 requireGuard :: HsPred rs ci -> EdgeBuilder rs ci co v w w ()
-requireGuard p = EdgeBuilder $ \(PartialEdge g u o tgs) ->
-  ((), PartialEdge (PAnd g p) u o tgs)
+requireGuard p = EdgeBuilder $ \pe ->
+  ((), pe { peGuard = PAnd (peGuard pe) p })
 
 
 -- | Conjoin an equality predicate (@a '==' b@) with the edge's
@@ -455,6 +487,7 @@ onCmd ic body = EdgeListBuilder $ \src edges ->
         , peUpdate  = UKeep
         , peOutput  = Nothing
         , peTargets = []
+        , peInCtor  = Just (PeInCtor ic)
         }
       (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
       edgeIx       = length edges
@@ -478,6 +511,7 @@ onEpsilon body = EdgeListBuilder $ \src edges ->
         , peUpdate  = UKeep
         , peOutput  = Nothing
         , peTargets = []
+        , peInCtor  = Nothing
         }
       (_, finalPE) = runEdgeBuilder body initial
       edgeIx       = length edges
@@ -494,8 +528,12 @@ finalizeEdge
   -> v
   -> PartialEdge rs ci co v w
   -> Edge (HsPred rs ci) rs ci co v
-finalizeEdge n src (PartialEdge g u o tgs) = case tgs of
-  [t]      -> Edge { guard = g, update = u, output = o, target = t }
+finalizeEdge n src pe = case peTargets pe of
+  [t]      -> Edge { guard  = peGuard pe
+                   , update = peUpdate pe
+                   , output = peOutput pe
+                   , target = t
+                   }
   []       -> error $ "Keiki.Builder: edge #" <> show n <> " from "
                    <> show src <> ": goto missing. Each onCmd/"
                    <> "onEpsilon body must end with exactly one goto V."
