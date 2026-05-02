@@ -194,7 +194,7 @@ into its own EP. The dependency between "generate the GADT" and
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Acceptor projections (input/output) for SymTransducer | docs/plans/12-acceptor-projections-input-output-for-symtransducer.md | None | None | Complete |
-| 2 | genView TH splice and B-presentation View v GADT | docs/plans/13-genview-th-splice-and-b-presentation-view-v-gadt.md | None | EP-1 (Examples.UserRegistration coordination) | Not Started |
+| 2 | genView TH splice and B-presentation View v GADT | docs/plans/13-genview-th-splice-and-b-presentation-view-v-gadt.md | None | EP-1 (Examples.UserRegistration coordination) | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -304,8 +304,8 @@ plans for an at-a-glance view.
 - [x] EP-1: `Keiki.Acceptor` module with `Acceptor`, `inputAcceptor`, `outputAcceptor`, `runAcceptor`, `accepts` (M2) (2026-05-02)
 - [x] EP-1: `test/Keiki/AcceptorSpec.hs` exercising input/output acceptors on `userReg` and `emailDelivery`; round-trip property test (M3) (2026-05-02; 6 new tests, 101 total examples, 0 failures)
 - [x] EP-1: Foundations doc 04 pointer paragraph; commit (M4/M5) (2026-05-02; commit pending)
-- [ ] EP-2: Verify prerequisites — TH machinery from EP-8 still works; record GHC version (M0)
-- [ ] EP-2: genView TH splice design note (M1)
+- [x] EP-2: Verify prerequisites — TH machinery from EP-8 still works; record GHC version (M0) (2026-05-02; GHC 9.12.3, baseline 101 examples)
+- [x] EP-2: genView TH splice design note (M1) (2026-05-02; docs/research/genview-th-splice-design.md)
 - [ ] EP-2: `deriveView` splice in `Keiki.Generics.TH` (M2)
 - [ ] EP-2: Wire splice into `Keiki.Examples.UserRegistration`; export `UserView` and `SUserVertex` (M3)
 - [ ] EP-2: `test/Keiki/Examples/UserRegistrationViewSpec.hs` (M4)
