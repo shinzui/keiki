@@ -194,7 +194,7 @@ written for it. This decision is recorded in the Decision Log below.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | TH deriveAggregateCtors and FieldsOf slot-list type family | docs/plans/8-th-deriveaggregatectors-and-fieldsof-slot-list-type-family.md | None | EP-7 (external) | Not Started |
+| 1 | TH deriveAggregateCtors and FieldsOf slot-list type family | docs/plans/8-th-deriveaggregatectors-and-fieldsof-slot-list-type-family.md | None | EP-7 (external) | Complete |
 | 2 | Generic-derived WitnessExtract for symSatExt round-trip | docs/plans/9-generic-derived-witnessextract-for-symsatext-round-trip.md | None | EP-7 (external) | Not Started |
 | 3 | Keiki.Decider facade for naive-decider migration | docs/plans/10-keiki-decider-facade-for-naive-decider-migration.md | None | EP-7 (external) | Complete |
 
@@ -364,13 +364,13 @@ unrelated dep tree, expected reuse).
 This section aggregates milestone-level progress across all child
 plans for an at-a-glance view.
 
-- [ ] EP-8: Verify prerequisites — Keiki.Core builds, all tests pass; record GHC version (M0)
-- [ ] EP-8: Survey TH-vs-typeclass shapes; pick TH; reject item C; write design note amendment (M1)
-- [ ] EP-8: Add `RegFieldsOf` type family + payload-shape Generic walk to `Keiki.Generics` (M2)
-- [ ] EP-8: Implement TH splice `deriveAggregateCtors` (and `deriveWireCtors` if scoped) (M3)
-- [ ] EP-8: Add splice unit tests on a toy 2-ctor sum (M4)
-- [ ] EP-8: Migrate `Keiki.Examples.UserRegistration` (V5) to the splice form (M5)
-- [ ] EP-8: Update design note's item A + B entries; capture verdict (M6)
+- [x] EP-8: Verify prerequisites — Keiki.Core builds, all tests pass; record GHC version (M0) — 2026-05-01: GHC 9.12.3 + template-haskell 2.23.0.0; baseline 75 examples (post-EP-10).
+- [x] EP-8: Survey TH-vs-typeclass shapes; pick TH; reject item C; write design note amendment (M1) — 2026-05-01: design paragraphs appended to items A, B, C.
+- [x] EP-8: Add `RegFieldsOf` type family + payload-shape Generic walk to `Keiki.Generics` (M2) — 2026-05-01: `RegFieldsOf` and `RegFieldsOfRep` exported; `:kind!` matches existing slot aliases.
+- [x] EP-8: Implement TH splice `deriveAggregateCtors` (and `deriveWireCtors` if scoped) (M3) — 2026-05-01: both splices in `Keiki.Generics.TH`; `template-haskell ^>= 2.23` added; cabal exposes new module.
+- [x] EP-8: Add splice unit tests on a toy 2-ctor sum (M4) — 2026-05-01: `Keiki.Generics.THSpec` adds 10 cases (record-payload + singleton paths); test count 85.
+- [x] EP-8: Migrate `Keiki.Examples.UserRegistration` (V5) to the splice form (M5) — 2026-05-01: 4 slot aliases + 5 `inCtor*` + 4 `inp*` + 5 `is*` + 5 `wire*` replaced by two splice forms; file dropped 403 → 339 lines (-64); all existing tests still pass.
+- [x] EP-8: Update design note's item A + B entries; capture verdict (M6) — 2026-05-01: items A, B marked **Implemented**; item C marked **Considered and rejected**.
 - [ ] EP-9: Verify prerequisites — record EP-2 status, EP-7 status, build passes (M0)
 - [ ] EP-9: Survey witness shapes; pick generic-walk approach; design note amendment (M1)
 - [ ] EP-9: Add `WitnessExtract` typeclass + Generic instances to `Keiki.Generics` (M2)
@@ -419,6 +419,26 @@ evidence.
   expose a shared `canonicalCmds` from a test-helper module could
   remove the duplication when EP-9 lands. Not addressed by EP-10
   to stay in scope.
+
+- **EP-8 line-count reduction is moderate (~16%), not the plan's
+  ~30%** (2026-05-01). UserRegistration dropped from 403 → 339
+  lines after migration. The plan estimated ~120 lines because it
+  counted decl-lines uniformly; the actual pre-migration code was
+  already condensed via `mkInCtorVia` (one line each), and the
+  retained per-section haddock + headers absorbed the savings.
+  The per-aggregate authoring win is real but a `wc -l` count
+  understates it — for new aggregates the win is closer to "two
+  splice forms vs. ~30 hand-written declarations". Cross-plan
+  implication: none for EP-9; documented for retrospective
+  accuracy.
+
+- **`RegFieldsOf` lives in `Keiki.Generics`, not a sub-module**
+  (2026-05-01). Per IP-4 of MP-3, the default is "flat module,
+  additive exports". EP-8 followed it: `RegFieldsOf` + the
+  `Keiki.Generics.TH` sub-module are the surface change. EP-9 may
+  follow the same pattern (flat extension to `Keiki.Generics` for
+  the `WitnessExtract` typeclass, no sub-module split) unless
+  its M1 design milestone documents a clear reason to split.
 
 
 ## Decision Log
@@ -476,3 +496,15 @@ or at completion. Compare the result against the original vision.
   export list (one line); no other Core surface change. 75
   examples, 0 failures (z3 required). EP-8 and EP-9 still
   pending; both remain unblocked.
+
+- **2026-05-01 — EP-8 complete.** `Keiki.Generics.TH` ships
+  `deriveAggregateCtors` and `deriveWireCtors`; `Keiki.Generics`
+  ships `RegFieldsOf` / `RegFieldsOfRep`. The User Registration
+  aggregate's per-constructor declarations (4 slot aliases + 5
+  `inCtor*` + 4 `inp*` + 5 `is*` + 5 `wire*`) are now produced
+  by two splice forms; the example file dropped 403 → 339 lines.
+  Item A ("TH splice") and item B ("`RegFieldsOf`") in the
+  design note are marked Implemented; item C
+  ("`HasInpHelpers`") is marked Considered-and-rejected. 85
+  examples, 0 failures. EP-9 is the only remaining child plan
+  and is fully unblocked.

@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | The User Registration aggregate from synthesis §4, transcribed in
 -- the v1 'Keiki.Core' DSL. This module is the smoke test for the
@@ -71,7 +72,8 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
-import Keiki.Generics (FieldsOf, emptyRegFile, mkInCtor0, mkInCtorVia, mkWireCtorVia)
+import Keiki.Generics (emptyRegFile)
+import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 
 
 -- * Domain types ------------------------------------------------------------
@@ -179,113 +181,47 @@ emptyRegs :: RegFile UserRegRegs
 emptyRegs = emptyRegFile
 
 
--- * Per-constructor input projections (v2 structural surface) -------------
+-- * Per-constructor input projections + guards (TH-derived) --------------
 --
 -- One 'InCtor' value per command constructor describes how to match
 -- and re-build the constructor's payload as a typed 'RegFile'. The
 -- per-constructor 'inpFoo' helpers turn an 'Index' (typically written
 -- via 'OverloadedLabels' as @inpStart #email@) into a 'Term' that
 -- structurally projects the named field of the named command
--- constructor. 'solveOutput' walks the 'OutFields' bound by an edge's
--- @output@ and reconstructs the input @ci@ mechanically; no per-edge
--- inverse function is needed.
-
-type StartFields   =
-  '[ '("email", Email)
-   , '("confirmCode", ConfirmationCode)
-   , '("at", UTCTime)
-   ]
-
-type ConfirmFields =
-  '[ '("confirmCode", ConfirmationCode)
-   , '("at", UTCTime)
-   ]
-
-type ResendFields  =
-  '[ '("code", ConfirmationCode)
-   , '("at", UTCTime)
-   ]
-
-type GdprFields    =
-  '[ '("at", UTCTime) ]
-
-
--- All five 'InCtor' values below are 'mkInCtorVia'-built: the
--- constructor name, the sum-side match\/wrap, the slot list, and the
--- 'RegFile' inversion are all derived from 'UserCmd' and the payload
--- record's 'Generic' instances. 'inCtorContinue' uses 'mkInCtor0'
--- because 'Continue' is a singleton value rather than a record-payload
--- constructor; 'mkInCtorVia' would also work via the unit-payload
--- 'GHasCtor' instance, but 'mkInCtor0' is the more direct expression.
-
-inCtorStart    :: InCtor UserCmd StartFields
-inCtorStart     = mkInCtorVia @"StartRegistration"
-
-inCtorConfirm  :: InCtor UserCmd ConfirmFields
-inCtorConfirm   = mkInCtorVia @"ConfirmAccount"
-
-inCtorResend   :: InCtor UserCmd ResendFields
-inCtorResend    = mkInCtorVia @"ResendConfirmation"
-
-inCtorGdpr     :: InCtor UserCmd GdprFields
-inCtorGdpr      = mkInCtorVia @"FulfillGDPRRequest"
-
-inCtorContinue :: InCtor UserCmd '[]
-inCtorContinue  = mkInCtor0 "Continue" Continue
-
-
-inpStart   :: Index StartFields   r -> Term UserRegRegs UserCmd r
-inpStart    = TInpCtorField inCtorStart
-
-inpConfirm :: Index ConfirmFields r -> Term UserRegRegs UserCmd r
-inpConfirm  = TInpCtorField inCtorConfirm
-
-inpResend  :: Index ResendFields  r -> Term UserRegRegs UserCmd r
-inpResend   = TInpCtorField inCtorResend
-
-inpGdpr    :: Index GdprFields    r -> Term UserRegRegs UserCmd r
-inpGdpr     = TInpCtorField inCtorGdpr
-
-
--- * Per-constructor guards -------------------------------------------------
+-- constructor. The matching @isFoo@ guards reduce to
+-- @PInCtor@ atoms that the SBV-backed 'BoolAlg' instance recognizes
+-- symbolically. 'solveOutput' walks the 'OutFields' bound by an
+-- edge's @output@ and reconstructs the input @ci@ mechanically; no
+-- per-edge inverse function is needed.
 --
--- These were 'matchCmd'-built v1 'PMatchC' atoms in earlier
--- revisions; EP-2 of MasterPlan 2 migrated them to 'matchInCtor' so
--- the SBV-backed 'BoolAlg' instance recognizes constructor mutual
--- exclusion symbolically. The v1 'evalPred' semantics is preserved:
--- @evalPred (matchInCtor ic) regs ci == isJust (icMatch ic ci)@,
--- which is identical in behavior to the pattern-match closures the
--- previous form used.
+-- All declarations in this section are emitted by the splice below;
+-- the slot-list types come from 'Keiki.Generics.RegFieldsOf' applied
+-- to each command payload's 'Generic' representation. Singleton
+-- 'Continue' uses 'mkInCtor0' under the hood (no @inp@ projection
+-- because @'Index' \'[]@ is uninhabited).
 
-isStart, isConfirm, isResend, isGdpr, isContinue
-  :: HsPred UserRegRegs UserCmd
-isStart    = matchInCtor inCtorStart
-isConfirm  = matchInCtor inCtorConfirm
-isResend   = matchInCtor inCtorResend
-isGdpr     = matchInCtor inCtorGdpr
-isContinue = matchInCtor inCtorContinue
+$(deriveAggregateCtors ''UserCmd ''UserRegRegs
+    [ ("StartRegistration",  "Start")
+    , ("ConfirmAccount",     "Confirm")
+    , ("ResendConfirmation", "Resend")
+    , ("FulfillGDPRRequest", "Gdpr")
+    , ("Continue",           "Continue")
+    ])
 
 
--- * Wire constructors for events -------------------------------------------
+-- * Wire constructors for events (TH-derived) ----------------------------
+--
+-- One 'WireCtor' value per event constructor. The nested-pair field
+-- tuple comes from each event record's 'Generic' instance via
+-- 'Keiki.Generics.FieldsOf'.
 
--- All five 'WireCtor' values below are 'mkWireCtorVia'-built; both
--- the sum-side match\/wrap and the nested-pair field tuple come from
--- 'UserEvent' and each event record's 'Generic' instances.
-
-wireRegistrationStarted   :: WireCtor UserEvent (FieldsOf RegistrationStartedData)
-wireRegistrationStarted    = mkWireCtorVia @"RegistrationStarted"
-
-wireConfirmationEmailSent :: WireCtor UserEvent (FieldsOf ConfirmationEmailSentData)
-wireConfirmationEmailSent  = mkWireCtorVia @"ConfirmationEmailSent"
-
-wireAccountConfirmed      :: WireCtor UserEvent (FieldsOf AccountConfirmedData)
-wireAccountConfirmed       = mkWireCtorVia @"AccountConfirmed"
-
-wireConfirmationResent    :: WireCtor UserEvent (FieldsOf ConfirmationResentData)
-wireConfirmationResent     = mkWireCtorVia @"ConfirmationResent"
-
-wireAccountDeleted        :: WireCtor UserEvent (FieldsOf AccountDeletedData)
-wireAccountDeleted         = mkWireCtorVia @"AccountDeleted"
+$(deriveWireCtors ''UserEvent
+    [ ("RegistrationStarted",   "RegistrationStarted")
+    , ("ConfirmationEmailSent", "ConfirmationEmailSent")
+    , ("AccountConfirmed",      "AccountConfirmed")
+    , ("ConfirmationResent",    "ConfirmationResent")
+    , ("AccountDeleted",        "AccountDeleted")
+    ])
 
 
 -- * The transducer ---------------------------------------------------------

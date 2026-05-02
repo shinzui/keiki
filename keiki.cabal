@@ -37,12 +37,14 @@ library
     exposed-modules:    Keiki.Core
                         Keiki.Decider
                         Keiki.Generics
+                        Keiki.Generics.TH
                         Keiki.Symbolic
                         Keiki.Examples.UserRegistration
                         Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
                         sbv >= 11.7 && < 15,
+                        template-haskell ^>= 2.23,
                         text ^>= 2.1,
                         time ^>= 1.12
 
@@ -53,6 +55,7 @@ test-suite keiki-test
     main-is:            Spec.hs
     other-modules:      Keiki.CoreSpec
                         Keiki.DeciderSpec
+                        Keiki.Generics.THSpec
                         Keiki.SymbolicSpec
                         Keiki.Examples.UserRegistrationSpec
                         Keiki.Examples.UserRegistrationSymbolicSpec

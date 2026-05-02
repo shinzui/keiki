@@ -511,6 +511,71 @@ and the indirection it introduces. Effort: ~4 hours including a
 working splice and a test. Net leverage: another ~50 lines saved at
 the example layer, plus per-new-aggregate savings at scale.
 
+**EP-8 design choices (2026-05-01).** The splice is *two* splices,
+not one: `deriveAggregateCtors` for the command sum and
+`deriveWireCtors` for the event sum. Two splices read clearer at
+the call site than a single splice with five arguments — the user
+sees what's being generated.
+
+    deriveAggregateCtors
+      :: Name              -- ''UserCmd
+      -> Name              -- ''UserRegRegs (the slot-list type alias)
+      -> [(String, String)]
+      -> Q [Dec]
+
+    deriveWireCtors
+      :: Name              -- ''UserEvent
+      -> [(String, String)]
+      -> Q [Dec]
+
+The `(String, String)` pair is `(constructorName, shortName)`. The
+short name is *explicit* (rather than auto-derived from the
+constructor) for one reason: existing call sites use short names
+like `inpStart`, `inpConfirm`, etc., not `inpStartRegistration`.
+Auto-deriving short names from constructor names would force a
+~19-call-site rename in `userRegEdges` for no leverage.
+
+For each spec entry the splice emits, in module scope:
+
+    inCtor<Short>  :: InCtor <CmdSum> (RegFieldsOf <PayloadType>)
+    inCtor<Short>   = mkInCtorVia @<ctorName>
+
+    inp<Short>     :: Index (RegFieldsOf <PayloadType>) r
+                            -> Term <Regs> <CmdSum> r
+    inp<Short>      = TInpCtorField inCtor<Short>
+
+    is<Short>      :: HsPred <Regs> <CmdSum>
+    is<Short>       = matchInCtor inCtor<Short>
+
+Singleton constructors (zero-payload `NormalC`, e.g. `Continue`) are
+detected during TH introspection. The splice emits only `inCtor` and
+`is` for them, using `mkInCtor0` (which compares the value via `Eq`):
+
+    inCtor<Short>  :: InCtor <CmdSum> '[]
+    inCtor<Short>   = mkInCtor0 <ctorName> <CtorRef>
+
+    is<Short>      :: HsPred <Regs> <CmdSum>
+    is<Short>       = matchInCtor inCtor<Short>
+
+`inp<Short>` is omitted because `Index '[]` is uninhabited; emitting
+it would add useless boilerplate.
+
+`deriveWireCtors` is the dual on the event side, emitting:
+
+    wire<Short>    :: WireCtor <EventSum> (FieldsOf <PayloadType>)
+    wire<Short>     = mkWireCtorVia @<ctorName>
+
+per spec entry. Singleton events are not currently supported (they
+would require a different `mkWireCtor`-shape variant; out of scope
+because no existing example uses one).
+
+**Implemented (see EP-8).** `Keiki.Generics.TH` ships both splices;
+`Keiki.Examples.UserRegistration` uses them in place of the four
+slot-list aliases, five `inCtor*`, four `inp*`, five `is*`, one
+singleton `inCtorContinue`, and five `wire*` declarations. See
+`docs/plans/8-th-deriveaggregatectors-and-fieldsof-slot-list-type-family.md`
+and `src/Keiki/Generics/TH.hs`.
+
 ### B. `FieldsOf` deriving for `RegFile` slot lists
 
 Currently the user writes the slot-list type alias by hand:
@@ -534,6 +599,28 @@ type family and `GRecord`-like instance walks, ~1 hour. The trade-off:
 type-family-derived slot lists are less readable in error messages
 than hand-written aliases. Currently neutral.
 
+**Implemented (see EP-8) as `RegFieldsOf`.** The type family lives
+in `Keiki.Generics`:
+
+    type RegFieldsOf d = RegFieldsOfRep (Rep d)
+
+    type family RegFieldsOfRep (rep :: Type -> Type) :: [Slot] where
+      RegFieldsOfRep (M1 D _ inner) = RegFieldsOfRep inner
+      RegFieldsOfRep (M1 C _ inner) = RegFieldsOfRep inner
+      RegFieldsOfRep (M1 S ('MetaSel ('Just n) _ _ _) (K1 _ t))
+                                    = '[ '(n, t) ]
+      RegFieldsOfRep U1             = '[]
+      RegFieldsOfRep (l :*: r)      = Append (RegFieldsOfRep l)
+                                             (RegFieldsOfRep r)
+
+It is bundled with item A because the EP-8 splice's
+`InCtor <Cmd> (RegFieldsOf <Payload>)` signature consumes it
+directly — without `RegFieldsOf`, the splice would need either
+per-ctor slot-list aliases as additional input or hand-derived
+inline `'[ '("name", T), ... ]` lists. The non-`Reg` `FieldsOf`
+(already shipped for `WireCtor`'s nested-pair tuples) is
+unchanged. See `src/Keiki/Generics.hs`.
+
 ### C. Generic-derived `Term` projection helpers
 
 The `inpStart` / `inpConfirm` / ... helpers boil down to
@@ -547,6 +634,16 @@ so `inpStart` becomes `inp @"StartRegistration"` everywhere. Cost:
 medium; the typeclass interaction with the slot lookup is fiddly.
 Probably not worth it without (A) — TH does the same job more
 directly.
+
+**Considered and rejected (see EP-8).** Item A's splice generates
+the same three declarations item C's typeclass would expose at use
+sites: `inp @"StartRegistration" #email` and `inpStart #email` are
+indistinguishable surface forms. With A landed, C would mean
+maintaining a second derivation path for one extra typeclass-level
+indirection — at the call site no measurably different.
+Maintaining two paths is the cost without a leverage gain. EP-8's
+Decision Log records the rejection. No `HasInpHelpers` typeclass is
+shipped.
 
 ### D. Symbolic `WitnessExtract` instances via Generics
 

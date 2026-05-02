@@ -19,6 +19,9 @@ module Keiki.Generics
   , mkWireCtorVia
   , FieldsOf
   , FieldsOfRep
+    -- * Slot-list deriving
+  , RegFieldsOf
+  , RegFieldsOfRep
     -- * Empty register file
   , EmptyRegFile (..)
     -- * Sum-walking machinery
@@ -233,6 +236,26 @@ type family FieldsOfRep (rep :: Type -> Type) :: Type where
   FieldsOfRep (M1 S _ (K1 _ t))      = (t, ())
   FieldsOfRep U1                     = ()
   FieldsOfRep (l :*: r)              = ConcatT (FieldsOfRep l) (FieldsOfRep r)
+
+
+-- | Resolve a record type to its 'RegFile' slot list. With this
+-- alias, @InCtor UserCmd (RegFieldsOf StartRegistrationData)@
+-- replaces the hand-written @InCtor UserCmd '[ '("email", Email),
+-- '("confirmCode", ConfirmationCode), '("at", UTCTime) ]@.
+type RegFieldsOf d = RegFieldsOfRep (Rep d)
+
+
+-- | The slot-list shape derived from a 'GHC.Generics' Rep. Mirrors
+-- 'FieldsOfRep' but emits @[Slot]@ instead of a nested-pair tuple,
+-- preserving the selector name on every field.
+type family RegFieldsOfRep (rep :: Type -> Type) :: [Slot] where
+  RegFieldsOfRep (M1 D _ inner) = RegFieldsOfRep inner
+  RegFieldsOfRep (M1 C _ inner) = RegFieldsOfRep inner
+  RegFieldsOfRep (M1 S ('MetaSel ('Just n) _ _ _) (K1 _ t))
+                                = '[ '(n, t) ]
+  RegFieldsOfRep U1             = '[]
+  RegFieldsOfRep (l :*: r)      = Append (RegFieldsOfRep l)
+                                         (RegFieldsOfRep r)
 
 
 -- | Build a 'WireCtor' from a constructor name, a sum-side matcher,
