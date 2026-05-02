@@ -1,6 +1,8 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | The User Registration aggregate from synthesis §4, transcribed in
@@ -49,6 +51,7 @@ module Keiki.Examples.UserRegistration
   , Vertex (..)
     -- * The transducer
   , userReg
+  , userRegAST
   , emptyRegs
     -- * Wire constructors (exported for testing)
   , wireRegistrationStarted
@@ -76,6 +79,8 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
+import qualified Keiki.Builder as B
+import Keiki.Builder ((.=))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -272,23 +277,97 @@ $(deriveView ''Vertex ''UserRegRegs
 
 -- * The transducer ---------------------------------------------------------
 
+-- | The aggregate's transducer, authored with 'Keiki.Builder'. This
+-- is the canonical form every downstream consumer
+-- ('Keiki.Composition.compose', the deciders, the symbolic
+-- analyses, the example specs) uses by name.
 userReg :: SymTransducer (HsPred UserRegRegs UserCmd)
                          UserRegRegs
                          Vertex
                          UserCmd
                          UserEvent
-userReg = SymTransducer
-  { edgesOut = userRegEdges
+userReg = B.buildTransducer PotentialCustomer emptyRegs
+            (\case Deleted -> True; _ -> False) do
+
+  B.from PotentialCustomer do
+    B.onCmd inCtorStart $ \d -> B.do
+      B.slot @"email"        .= d.email
+      B.slot @"confirmCode"  .= d.confirmCode
+      B.slot @"registeredAt" .= d.at
+      B.emit inCtorStart wireRegistrationStarted
+        (OFCons d.email (OFCons d.confirmCode (OFCons d.at OFNil)))
+      B.goto Registering
+
+  B.from Registering do
+    -- Internal Continue command emits ConfirmationEmailSent.
+    B.onCmd inCtorContinue $ \_d -> B.do
+      B.emit inCtorContinue wireConfirmationEmailSent
+        (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
+      B.goto RequiresConfirmation
+
+  B.from RequiresConfirmation do
+    -- Right code: confirm. The InCtor-match guard from `onCmd`
+    -- short-circuits the d.confirmCode read for non-ConfirmAccount
+    -- inputs.
+    B.onCmd inCtorConfirm $ \d -> B.do
+      B.requireEq d.confirmCode
+                  (proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
+      B.slot @"confirmedAt" .= d.at
+      B.emit inCtorConfirm wireAccountConfirmed
+        (OFCons (proj (#email :: Index UserRegRegs Email))
+          (OFCons d.confirmCode (OFCons d.at OFNil)))
+      B.goto Confirmed
+
+    -- Resend: rotate the code (code arrives in the command).
+    B.onCmd inCtorResend $ \d -> B.do
+      B.slot @"confirmCode"  .= d.code
+      B.slot @"registeredAt" .= d.at
+      B.emit inCtorResend wireConfirmationResent
+        (OFCons (proj (#email :: Index UserRegRegs Email))
+          (OFCons d.code (OFCons d.at OFNil)))
+      B.goto RequiresConfirmation
+
+    -- GDPR before confirmation: silent ε-edge (no event).
+    B.onCmd inCtorGdpr $ \d -> B.do
+      B.slot @"deletedAt" .= d.at
+      B.noEmit
+      B.goto Deleted
+
+  B.from Confirmed do
+    B.onCmd inCtorGdpr $ \d -> B.do
+      B.slot @"deletedAt" .= d.at
+      B.emit inCtorGdpr wireAccountDeleted
+        (OFCons (proj (#email :: Index UserRegRegs Email))
+          (OFCons d.at OFNil))
+      B.goto Deleted
+
+  -- Deleted is terminal; defaults to [] without an explicit `from`.
+
+
+-- * AST form (legacy, retained for the M5 equivalence test) ----------------
+
+-- | The same transducer hand-authored against the post-MP-6
+-- "Keiki.Core" AST. Retained as a side-by-side reference for the
+-- 'Keiki.Examples.UserRegistrationBuilderSpec' equivalence test;
+-- removable in a follow-up plan once the migration is judged
+-- stable.
+userRegAST :: SymTransducer (HsPred UserRegRegs UserCmd)
+                            UserRegRegs
+                            Vertex
+                            UserCmd
+                            UserEvent
+userRegAST = SymTransducer
+  { edgesOut    = userRegASTEdges
   , initial     = PotentialCustomer
   , initialRegs = emptyRegs
   , isFinal     = \case Deleted -> True; _ -> False
   }
 
 
-userRegEdges
+userRegASTEdges
   :: Vertex
   -> [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEvent Vertex]
-userRegEdges = \case
+userRegASTEdges = \case
 
   PotentialCustomer ->
     [ Edge

@@ -10,6 +10,7 @@ import qualified Keiki.Generics.THSpec
 import qualified Keiki.SymbolicSpec
 import qualified Keiki.Examples.EmailDeliveryBuilderSpec
 import qualified Keiki.Examples.EmailDeliveryViewSpec
+import qualified Keiki.Examples.UserRegistrationBuilderSpec
 import qualified Keiki.Examples.UserRegistrationSpec
 import qualified Keiki.Examples.UserRegistrationSymbolicSpec
 import qualified Keiki.Examples.UserRegistrationV0Spec
@@ -27,6 +28,7 @@ main = hspec $ do
   describe "Keiki.Examples.EmailDelivery (builder)"       Keiki.Examples.EmailDeliveryBuilderSpec.spec
   describe "Keiki.Examples.EmailDelivery (view)"          Keiki.Examples.EmailDeliveryViewSpec.spec
   describe "Keiki.Examples.UserRegistration"              Keiki.Examples.UserRegistrationSpec.spec
+  describe "Keiki.Examples.UserRegistration (builder)"    Keiki.Examples.UserRegistrationBuilderSpec.spec
   describe "Keiki.Examples.UserRegistration (symbolic)"   Keiki.Examples.UserRegistrationSymbolicSpec.spec
   describe "Keiki.Examples.UserRegistration (view)"       Keiki.Examples.UserRegistrationViewSpec.spec
   describe "Keiki.Examples.UserRegistrationV0"            Keiki.Examples.UserRegistrationV0Spec.spec

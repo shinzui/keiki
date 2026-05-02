@@ -67,6 +67,7 @@ test-suite keiki-test
                         Keiki.SymbolicSpec
                         Keiki.Examples.EmailDeliveryBuilderSpec
                         Keiki.Examples.EmailDeliveryViewSpec
+                        Keiki.Examples.UserRegistrationBuilderSpec
                         Keiki.Examples.UserRegistrationSpec
                         Keiki.Examples.UserRegistrationSymbolicSpec
                         Keiki.Examples.UserRegistrationV0Spec
