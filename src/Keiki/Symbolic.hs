@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | SBV-backed symbolic surface for 'Keiki.Core' predicates.
@@ -50,6 +51,11 @@ module Keiki.Symbolic
     -- * Solver-backed analyses
   , symIsBot
   , symSat
+  , symSatExt
+    -- * Witness extraction
+  , ExtractRegFile (..)
+  , SomeInCtor (..)
+  , KnownInCtors (..)
     -- * Single-valuedness
   , isSingleValuedSym
   , withSymPred
@@ -58,12 +64,14 @@ module Keiki.Symbolic
   ) where
 
 import Data.Kind (Type)
+import Data.Proxy (Proxy (..))
 import qualified Data.SBV as SBV
 import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Typeable (Typeable)
+import GHC.TypeLits (KnownSymbol, symbolVal)
 import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
 
@@ -80,34 +88,45 @@ import Keiki.Core
 --
 -- The 'SBV.SymVal' superclass on 'SymRep' gives us 'SBV.literal',
 -- 'SBV.free', and 'SBV.unliteral' for free.
+--
+-- 'symDefault' is consumed by 'symSatExt': when the solver's model
+-- has no value for a slot or input field that the predicate did not
+-- reference, the witness extractor falls back to 'symDefault'. Sound
+-- because such slots are unconstrained — any value satisfies the
+-- predicate.
 class (SBV.SymVal (SymRep a), Typeable a) => Sym a where
   type SymRep a :: Type
-  toSym   :: a         -> SymRep a
-  fromSym :: SymRep a  -> a
+  toSym      :: a         -> SymRep a
+  fromSym    :: SymRep a  -> a
+  symDefault :: a
 
 
 instance Sym Bool where
   type SymRep Bool = Bool
-  toSym   = id
-  fromSym = id
+  toSym      = id
+  fromSym    = id
+  symDefault = False
 
 instance Sym Integer where
   type SymRep Integer = Integer
-  toSym   = id
-  fromSym = id
+  toSym      = id
+  fromSym    = id
+  symDefault = 0
 
 -- | Encoded as 'Integer'. SBV does not provide an 'SInt'-of-arbitrary-
 -- size; using 'Integer' avoids overflow surprises during translation.
 instance Sym Int where
   type SymRep Int = Integer
-  toSym   = fromIntegral
-  fromSym = fromIntegral
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
 
 -- | 'Text' is encoded as Haskell 'String' for SBV's 'SString' theory.
 instance Sym Text where
   type SymRep Text = String
-  toSym   = T.unpack
-  fromSym = T.pack
+  toSym      = T.unpack
+  fromSym    = T.pack
+  symDefault = T.empty
 
 -- | 'UTCTime' is encoded as Unix epoch seconds (an 'Integer').
 -- The round-trip drops sub-second precision; this is intentional —
@@ -116,8 +135,9 @@ instance Sym Text where
 -- supported by SBV's z3 backend.
 instance Sym UTCTime where
   type SymRep UTCTime = Integer
-  toSym   = round . utcTimeToPOSIXSeconds
-  fromSym = posixSecondsToUTCTime . fromIntegral
+  toSym      = round . utcTimeToPOSIXSeconds
+  fromSym    = posixSecondsToUTCTime . fromIntegral
+  symDefault = posixSecondsToUTCTime 0
 
 
 -- | Reify a 'Sym' instance so it can be passed around as a
@@ -194,16 +214,48 @@ mkSymEnv = do
 -- but imprecise. The User Registration aggregate uses none of these
 -- escape hatches, so the loss of precision is purely aspirational
 -- for v2's scope.
+--
+-- Variable naming (consumed by 'symSatExt' for witness extraction):
+--
+--   * 'TReg' allocates @"reg/<slotName>"@ where @slotName@ is the
+--     slot's label recovered from the 'Index'\'s 'KnownSymbol'
+--     evidence on its leaf 'ZIdx'.
+--   * 'TInpCtorField' allocates
+--     @"inp/<icName>/<slotName>"@ — the 'InCtor''s name plus the
+--     field's slot label.
+--   * 'TApp1' / 'TApp2' keep their anonymous names; their values are
+--     not extracted as part of the witness.
+--
+-- Note on repeated reads: SBV's 'SBV.free' uniquifies repeated
+-- variable names by appending @_N@. Two reads of the same slot
+-- (e.g. @proj #x .== proj #x@) produce two independent SBV variables
+-- in the model. For sat\/unsat answers this is sound (it
+-- over-approximates SAT). For 'symSatExt' witness extraction this
+-- means a witness reconstructed by name lookup may not satisfy a
+-- predicate with repeated reads. The User Registration test target
+-- has no repeated reads and is sound. Memoization (via an 'IORef'
+-- cache in 'SymEnv') is a future improvement; see EP-9 design log.
 translateTermSym
   :: forall rs ci r. Sym r
   => SymEnv
   -> Term rs ci r
   -> SBV.Symbolic (SBV.SBV (SymRep r))
 translateTermSym _env  (TLit r)              = pure (symLit r)
-translateTermSym _env  (TReg _ix)            = SBV.free "reg"
-translateTermSym _env  (TInpCtorField ic _ix) = SBV.free ("inp/" <> icName ic)
+translateTermSym _env  (TReg ix)             =
+  SBV.free ("reg/" <> indexName ix)
+translateTermSym _env  (TInpCtorField ic ix) =
+  SBV.free ("inp/" <> icName ic <> "/" <> indexName ix)
 translateTermSym _env  (TApp1 _f _t)         = SBV.free "app1"
 translateTermSym _env  (TApp2 _f _a _b)      = SBV.free "app2"
+
+
+-- | Recover the slot name an 'Index' points at by walking to the
+-- leaf 'ZIdx' and reading off the 'KnownSymbol' evidence the
+-- constructor carries. Used for deterministic SBV variable naming
+-- in 'translateTermSym'.
+indexName :: forall rs r. Index rs r -> String
+indexName (ZIdx @s) = symbolVal (Proxy @s)
+indexName (SIdx i)  = indexName i
 
 
 -- | Translate an 'HsPred' to an SBV 'SBool'. The translation is
@@ -373,3 +425,163 @@ withSymPred t = SymTransducer
       , output = output e
       , target = target e
       }
+
+
+-- * Witness extraction -----------------------------------------------------
+
+-- | Materialize a 'RegFile' from a name-keyed reader. The reader's
+-- input is a slot name (the same string 'translateTermSym' allocates
+-- under @"reg/" <> slotName@); the reader's output is the slot's
+-- value, of any 'Sym'-supported type. The reader is total: callers
+-- (notably 'symSatExt') fall back to 'symDefault' for slots whose
+-- names the SBV model did not bind.
+--
+-- Two instances cover the slot list:
+--
+--   * @ExtractRegFile \'[]@ — return 'RNil' regardless of the reader.
+--   * @ExtractRegFile (\'(s, t) ': rs)@ — read the head slot's name
+--     via the reader, recurse on the tail, build an 'RCons'.
+--
+-- The instance constraints @KnownSymbol s@ and @Sym t@ make this
+-- automatic for any concrete slot list whose value types are in the
+-- curated 'Sym' registry ('Bool', 'Int', 'Integer', 'Text',
+-- 'UTCTime'). User Registration's 'UserRegRegs' shape qualifies
+-- without further user code.
+class ExtractRegFile (rs :: [Slot]) where
+  extractRegFile :: (forall r. Sym r => String -> r) -> RegFile rs
+
+instance ExtractRegFile '[] where
+  extractRegFile _ = RNil
+
+instance ( KnownSymbol s
+         , Sym t
+         , ExtractRegFile rs
+         ) => ExtractRegFile ('(s, t) ': rs) where
+  extractRegFile reader =
+    RCons (Proxy @s)
+          (reader @t (symbolVal (Proxy @s)))
+          (extractRegFile @rs reader)
+
+
+-- | Existential wrapper around an 'InCtor' that hides the
+-- input-field slot list. The hidden 'ExtractRegFile' constraint lets
+-- 'symSatExt' rebuild the input register file once the constructor
+-- tag is known from the SBV model.
+data SomeInCtor (ci :: Type) where
+  SomeInCtor :: ExtractRegFile ifs => InCtor ci ifs -> SomeInCtor ci
+
+
+-- | A 'ci' type whose set of 'InCtor's is statically known. Each
+-- 'SomeInCtor' bag entry pairs an 'InCtor' value with the
+-- 'ExtractRegFile' evidence its field-list shape requires.
+--
+-- For the User Registration aggregate, the instance is a five-line
+-- list pairing the existing @inCtorStart@ … @inCtorContinue@
+-- declarations:
+--
+-- > instance KnownInCtors UserCmd where
+-- >   allInCtors =
+-- >     [ SomeInCtor inCtorStart
+-- >     , SomeInCtor inCtorConfirm
+-- >     , SomeInCtor inCtorResend
+-- >     , SomeInCtor inCtorGdpr
+-- >     , SomeInCtor inCtorContinue
+-- >     ]
+--
+-- Future work: a Generic-derived default via 'GHasCtor' so users
+-- get the instance for free with @deriving (Generic)@. Out of scope
+-- for EP-9 because the explicit list is already one line per
+-- constructor.
+class KnownInCtors ci where
+  allInCtors :: [SomeInCtor ci]
+
+
+-- * symSatExt ---------------------------------------------------------------
+
+-- | Symbolic satisfiability with full witness extraction. On a
+-- satisfiable predicate, returns @Just (regs, cmd)@ where @regs@
+-- and @cmd@ are concrete values reconstructed from the SBV model.
+-- @models p (regs, cmd) == True@ holds for the returned witness,
+-- modulo two known limitations:
+--
+-- 1. /Repeated reads of the same slot or input field/. The
+--    translator allocates each occurrence as a fresh SBV variable
+--    (SBV uniquifies repeated names by appending @_N@). The witness
+--    extractor reads the first allocation by name, so a predicate
+--    with @proj #x .== proj #x@-style structure may produce a
+--    witness that doesn't satisfy the predicate's structural
+--    equality. The User Registration test target has no repeated
+--    reads. Memoization is a future improvement.
+-- 2. /Escape-hatch terms/ ('TApp1', 'TApp2', 'PMatchC', and 'PEq'
+--    over a non-'Sym' operand type, the @neq@ fallback in 'goEq').
+--    These translate to fresh anonymous SBV variables; their values
+--    are not extracted. The witness reflects only the slots and
+--    input-fields the predicate references through 'TReg' and
+--    'TInpCtorField'.
+--
+-- 'symSatExt' is /pure/ via 'unsafePerformIO' on the SBV solver
+-- call (deterministic for a given predicate, side-effect-free
+-- outside the solver process). The 'BoolAlg' typeclass method 'sat'
+-- continues to return the placeholder witness from 'symSat';
+-- 'symSatExt' is a separate function because 'BoolAlg.sat'\'s
+-- signature can't carry the 'ExtractRegFile' / 'KnownInCtors'
+-- constraints.
+{-# NOINLINE symSatExt #-}
+symSatExt
+  :: forall rs ci.
+     ( ExtractRegFile rs
+     , KnownInCtors ci
+     )
+  => HsPred rs ci -> Maybe (RegFile rs, ci)
+symSatExt p = unsafePerformIO $ do
+  res <- SBV.sat $ do
+    env <- mkSymEnv
+    translatePred env p
+  pure $
+    if SBV.modelExists res
+      then do
+        ctorTag <- SBV.getModelValue "inputCtor" res
+        let regReader :: forall r. Sym r => String -> r
+            regReader name = readModel res ("reg/" <> name)
+        let regs = extractRegFile @rs regReader
+        ci <- pickCi @ci ctorTag
+                       (\icN fieldName ->
+                          readModel res
+                            ("inp/" <> icN <> "/" <> fieldName))
+        pure (regs, ci)
+      else Nothing
+
+
+-- | Look up @name@ in @res@'s SBV model; on a hit return @fromSym@
+-- of the model value, on a miss return @symDefault@. Used by
+-- 'symSatExt' to convert SBV's typed model lookups into Haskell
+-- values for any 'Sym'-supported slot type.
+readModel :: forall r. Sym r => SBV.SatResult -> String -> r
+readModel res name =
+  case SBV.getModelValue name res :: Maybe (SymRep r) of
+    Just rep -> fromSym rep
+    Nothing  -> symDefault
+
+
+-- | Walk the 'allInCtors' list, find the entry whose 'icName'
+-- matches the model's input-constructor tag, then 'extractRegFile'
+-- over the matched 'InCtor''s field list and call 'icBuild' to
+-- assemble a @ci@. Returns 'Nothing' when no entry matches the tag
+-- — this is the case when the predicate over-allocated the
+-- @"inputCtor"@ slot (the solver picked a string that isn't any
+-- known constructor name, which can happen if the predicate
+-- doesn't include any 'PInCtor' atom).
+pickCi
+  :: forall ci.
+     KnownInCtors ci
+  => String
+  -> (forall r. Sym r => String -> String -> r)
+  -> Maybe ci
+pickCi tag readField = go (allInCtors @ci)
+  where
+    go []                            = Nothing
+    go (SomeInCtor ic@InCtor{} : rest)
+      | icName ic == tag =
+          let regs = extractRegFile (readField (icName ic))
+          in Just (icBuild ic regs)
+      | otherwise = go rest

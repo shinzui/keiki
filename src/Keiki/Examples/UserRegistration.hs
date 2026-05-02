@@ -74,6 +74,7 @@ import GHC.Generics (Generic)
 import Keiki.Core
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
+import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
 
 
 -- * Domain types ------------------------------------------------------------
@@ -207,6 +208,21 @@ $(deriveAggregateCtors ''UserCmd ''UserRegRegs
     , ("FulfillGDPRRequest", "Gdpr")
     , ("Continue",           "Continue")
     ])
+
+
+-- | Enumerate the five 'InCtor' values of 'UserCmd' so 'symSatExt'
+-- can rebuild a concrete 'UserCmd' from an SBV model: the model's
+-- @"inputCtor"@ string is matched against these entries' 'icName',
+-- and the matching entry's @icBuild@ is called over a 'RegFile'
+-- assembled from the @"inp/<icName>/<slot>"@ model values.
+instance KnownInCtors UserCmd where
+  allInCtors =
+    [ SomeInCtor inCtorStart
+    , SomeInCtor inCtorConfirm
+    , SomeInCtor inCtorResend
+    , SomeInCtor inCtorGdpr
+    , SomeInCtor inCtorContinue
+    ]
 
 
 -- * Wire constructors for events (TH-derived) ----------------------------

@@ -657,6 +657,93 @@ plumbing. Net win: the User Registration symbolic spec gains a
 "build a concrete `(regs, cmd)` witness from a `sat` query and
 verify `models` agrees" round-trip test.
 
+**EP-9 design choices (2026-05-01).** The witness-extract surface
+ships as two typeclasses plus an existential wrapper:
+
+    class ExtractRegFile (rs :: [Slot]) where
+      extractRegFile :: (forall r. Sym r => String -> r) -> RegFile rs
+
+    data SomeInCtor (ci :: Type) where
+      SomeInCtor :: ExtractRegFile ifs => InCtor ci ifs -> SomeInCtor ci
+
+    class KnownInCtors ci where
+      allInCtors :: [SomeInCtor ci]
+
+Five small choices fix the shape:
+
+1. *Module placement: `Keiki.Symbolic`, not `Keiki.Generics`.* The
+   plan's default was Generics. Override: the classes depend on
+   `Sym` (which lives in `Keiki.Symbolic`). Putting them in
+   `Keiki.Generics` would force a `Generics → Symbolic` dependency
+   that pulls SBV into `Keiki.Generics.TH`'s transitive imports
+   (every TH-using example module would then compile-depend on
+   SBV). `Keiki.Symbolic` is the natural home for "extract concrete
+   witnesses from SBV models". `Keiki.Generics` stays
+   SBV-independent.
+
+2. *SBV variable naming scheme.* `TReg ix` allocates with the name
+   `"reg/" <> indexName ix`; `TInpCtorField ic ix` with
+   `"inp/" <> icName ic <> "/" <> indexName ix`. The shared input
+   constructor tag stays `"inputCtor"`. Escape-hatch terms
+   (`TApp1`, `TApp2`, `PMatchC`, the `neq` fallback in `goEq`) keep
+   their existing anonymous names — their values are not extracted
+   (the witness extractor walks `rs` and `ifs`, not opaque function
+   results). The slot/field name comes from the existing
+   `KnownSymbol` evidence on `Index`'s `ZIdx` constructor; a small
+   helper `indexName :: Index rs r -> String` walks the index.
+
+3. *No memoization in v1.* SBV's `free name` uniquifies repeated
+   names by appending `_N` — two calls to `free "x"` produce `x`
+   and `x_0`, both with their own model value. For predicates with
+   repeated reads of the same slot or input field
+   (e.g. `proj #x .== proj #x`), the two allocations are independent
+   SBV variables; the solver may pick distinct values and the
+   witness extractor's name lookup returns only the first
+   allocation. The reconstructed witness then *might not* satisfy
+   the original predicate's structural-equality reads. The User
+   Registration test target — the `RequiresConfirmation`
+   ConfirmAccount edge guard — has no repeated reads, so the
+   round-trip is sound. Memoization (via an `IORef`-cached
+   `Map String SomeSBV` in `SymEnv`) is a documented follow-up;
+   `symSatExt`'s haddock states the limitation and the workaround
+   (split a repeated-read predicate into a fresh-variable form).
+
+4. *`Sym` typeclass extension.* Add a `symDefault :: a` method.
+   Defaults: `Bool→False`, `Int→0`, `Integer→0`, `Text→""`,
+   `UTCTime→epoch (1970-01-01T00:00:00Z)`. Unconstrained slots —
+   slots not referenced by the predicate — have no value in the
+   SBV model; the extractor falls back to `symDefault`. This is
+   sound because the predicate doesn't constrain those slots, so
+   any value satisfies it. Without `symDefault`, extraction would
+   fail (return `Nothing`) for any predicate that doesn't mention
+   every slot — a strict sub-set of the test surface.
+
+5. *Keep `symSat` alongside `symSatExt`.* The plan considered
+   merging them. Override: `BoolAlg.sat`'s typeclass signature
+   (`phi -> Maybe a`) cannot carry the extra
+   `ExtractRegFile`/`KnownInCtors` constraints. `symSat` stays the
+   `BoolAlg`-routed entry point with the `unsafeWitness`
+   placeholder; `symSatExt` is the new constraint-carrying variant
+   for callers that have the constraints in scope. The translation
+   is shared — both functions call `translatePred` over an env
+   built by `mkSymEnv`.
+
+**Implemented (see EP-9).** `Keiki.Symbolic` ships
+`symSatExt :: (ExtractRegFile rs, KnownInCtors ci) =>
+HsPred rs ci -> Maybe (RegFile rs, ci)` plus the
+`ExtractRegFile`/`SomeInCtor`/`KnownInCtors` typeclasses.
+The `Sym` typeclass gained a `symDefault :: a` method; the five
+curated instances (`Bool`, `Int`, `Integer`, `Text`, `UTCTime`)
+return `False`/`0`/`""`/epoch. `Keiki.Examples.UserRegistration`
+ships a `KnownInCtors UserCmd` instance bagging its five
+`InCtor` values. Round-trip tests in
+`UserRegistrationSymbolicSpec` cover the
+`RequiresConfirmation`/`ConfirmAccount` edge guard, a literal-
+backed `PEq`, the constructor-mutex unsat case, and the
+singleton-`Continue` reconstruction. See
+`docs/plans/9-generic-derived-witnessextract-for-symsatext-round-trip.md`
+and `src/Keiki/Symbolic.hs`.
+
 ### E. Generic-derived Decider façade
 
 For users coming from the naive-decider world, exposing a

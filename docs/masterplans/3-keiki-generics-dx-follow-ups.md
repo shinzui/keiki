@@ -195,7 +195,7 @@ written for it. This decision is recorded in the Decision Log below.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | TH deriveAggregateCtors and FieldsOf slot-list type family | docs/plans/8-th-deriveaggregatectors-and-fieldsof-slot-list-type-family.md | None | EP-7 (external) | Complete |
-| 2 | Generic-derived WitnessExtract for symSatExt round-trip | docs/plans/9-generic-derived-witnessextract-for-symsatext-round-trip.md | None | EP-7 (external) | Not Started |
+| 2 | Generic-derived WitnessExtract for symSatExt round-trip | docs/plans/9-generic-derived-witnessextract-for-symsatext-round-trip.md | None | EP-7 (external) | Complete |
 | 3 | Keiki.Decider facade for naive-decider migration | docs/plans/10-keiki-decider-facade-for-naive-decider-migration.md | None | EP-7 (external) | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -371,13 +371,14 @@ plans for an at-a-glance view.
 - [x] EP-8: Add splice unit tests on a toy 2-ctor sum (M4) — 2026-05-01: `Keiki.Generics.THSpec` adds 10 cases (record-payload + singleton paths); test count 85.
 - [x] EP-8: Migrate `Keiki.Examples.UserRegistration` (V5) to the splice form (M5) — 2026-05-01: 4 slot aliases + 5 `inCtor*` + 4 `inp*` + 5 `is*` + 5 `wire*` replaced by two splice forms; file dropped 403 → 339 lines (-64); all existing tests still pass.
 - [x] EP-8: Update design note's item A + B entries; capture verdict (M6) — 2026-05-01: items A, B marked **Implemented**; item C marked **Considered and rejected**.
-- [ ] EP-9: Verify prerequisites — record EP-2 status, EP-7 status, build passes (M0)
-- [ ] EP-9: Survey witness shapes; pick generic-walk approach; design note amendment (M1)
-- [ ] EP-9: Add `WitnessExtract` typeclass + Generic instances to `Keiki.Generics` (M2)
-- [ ] EP-9: Implement `symSatExt` in `Keiki.Symbolic` driving Sym dispatch from SBV model (M3)
-- [ ] EP-9: Add round-trip test (`sat` → witness → `models` agrees) on a toy predicate (M4)
-- [ ] EP-9: Add round-trip test on a `withSymPred userReg` edge guard (M5)
-- [ ] EP-9: Update design note's item D entry; capture verdict (M6)
+- [x] EP-9: Verify prerequisites — record EP-2 status, EP-7 status, build passes (M0) — 2026-05-01: GHC 9.12.3, SBV 14.0, z3 4.16.0; baseline 85 examples (post-EP-8 + EP-10).
+- [x] EP-9: Design milestone — module placement, naming, memoization, symDefault, symSat-vs-symSatExt (M1) — 2026-05-01: design paragraph appended to item D; classes placed in `Keiki.Symbolic` (override of plan default).
+- [x] EP-9: Named SBV translation in `Keiki.Symbolic` (M2) — 2026-05-01: `translateTermSym` allocates `reg/<slot>` and `inp/<icName>/<slot>`; `indexName` helper uses `TypeAbstractions @s` pattern; existing tests still 85/0.
+- [x] EP-9: `ExtractRegFile` typeclass (M3) — 2026-05-01: shipped in `Keiki.Symbolic` with two instances; reader is total via `symDefault` fallback.
+- [x] EP-9: `KnownInCtors` typeclass + `UserCmd` instance (M4) — 2026-05-01: `SomeInCtor` existential + `KnownInCtors` class; one-line instance per UserCmd ctor (5 entries).
+- [x] EP-9: Implement `symSatExt` (M5) — 2026-05-01: exported from `Keiki.Symbolic`; shares translation with `symSat`; `symSat`'s placeholder unchanged.
+- [x] EP-9: Round-trip tests on `userReg` (M6) — 2026-05-01: 4 cases added (ConfirmAccount edge guard, literal PEq, ctor mutex unsat, singleton Continue); 85 → 89 examples, 0 failures.
+- [x] EP-9: Update design note's item D entry; capture verdict (M7) — 2026-05-01: item D marked **Implemented (see EP-9)** with a pointer paragraph.
 - [x] EP-10: Verify prerequisites — build passes; record GHC version (M0) — 2026-05-01: GHC 9.12.3, cabal 3.16.1.0, sbv >= 11.7 && < 15; baseline 70 examples, 0 failures (under `nix-shell -p z3`).
 - [x] EP-10: Survey Decider shape; pick Chassaing canonical record; design note amendment (M1) — 2026-05-01: design paragraph appended to `docs/research/keiki-generics-design.md` item E.
 - [x] EP-10: Add `Keiki.Decider` module exposing `Decider c e s` and `toDecider` (M2) — 2026-05-01: `src/Keiki/Decider.hs` ships record + projection + haddock; `keiki.cabal` exposes the module.
@@ -439,6 +440,31 @@ evidence.
   follow the same pattern (flat extension to `Keiki.Generics` for
   the `WitnessExtract` typeclass, no sub-module split) unless
   its M1 design milestone documents a clear reason to split.
+
+- **EP-9 placed witness-extract classes in `Keiki.Symbolic`,
+  not `Keiki.Generics`** (2026-05-01). EP-9's plan defaulted to
+  `Keiki.Generics`; M1 overrode to `Keiki.Symbolic`. The
+  classes' reader function `forall r. Sym r => String -> r`
+  threads the `Sym` typeclass through, and `Sym` lives in
+  `Keiki.Symbolic`. Putting them in `Keiki.Generics` would force
+  a `Generics → Symbolic` dependency that pulls SBV into every
+  TH-using example module's transitive compile graph. The
+  override preserves `Keiki.Generics`'s SBV-independence. IP-4's
+  "no sub-module fragmentation" principle is preserved — the
+  classes live flat in `Keiki.Symbolic` alongside `Sym` and
+  `symSat`/`symSatExt`. Cross-plan implication: future plans
+  adding `Sym`-using machinery should default to `Keiki.Symbolic`
+  unless the machinery is purely structural (no SBV/`Sym`
+  contact).
+
+- **`Sym` typeclass gained a `symDefault :: a` method**
+  (2026-05-01). Required by EP-9's `symSatExt`: when the SBV
+  model has no value for a slot or input field the predicate
+  did not constrain, the witness extractor falls back to
+  `symDefault`. Defaults are `False`/`0`/`""`/epoch for the
+  five curated instances. Cross-plan implication: any future
+  `Sym` instance must provide a `symDefault` value. The
+  contract is documented in `Keiki.Symbolic`'s `Sym` haddock.
 
 
 ## Decision Log
@@ -508,3 +534,30 @@ or at completion. Compare the result against the original vision.
   ("`HasInpHelpers`") is marked Considered-and-rejected. 85
   examples, 0 failures. EP-9 is the only remaining child plan
   and is fully unblocked.
+
+- **2026-05-01 — EP-9 complete; MasterPlan 3 closes.**
+  `Keiki.Symbolic` ships `symSatExt` plus the
+  `ExtractRegFile`/`SomeInCtor`/`KnownInCtors` surface;
+  `Keiki.Examples.UserRegistration` ships a `KnownInCtors
+  UserCmd` instance. The User Registration
+  `RequiresConfirmation`/`ConfirmAccount` edge guard
+  round-trips: `symSatExt` returns `Just (regs, cmd)` and
+  `evalPred guard regs cmd == True`. 85 → 89 examples, 0
+  failures. Item D in the design note is marked
+  **Implemented (see EP-9)**. The MasterPlan-level acceptance
+  criterion — "the symbolic `sat` round-trip test on `userReg`
+  returns `Just (regs, cmd)` with `models p (regs, cmd) == True`"
+  — is satisfied via `symSatExt` (a sibling function); `symSat`
+  retains its placeholder for `BoolAlg.sat` typeclass-method
+  back-compat. All three children of MP-3 are Complete.
+
+  *Cross-plan note for retrospective.* The plan defaulted to
+  placing `ExtractRegFile`/`KnownInCtors` in `Keiki.Generics`;
+  M1 moved them to `Keiki.Symbolic` to keep `Keiki.Generics`
+  SBV-independent (otherwise `Keiki.Generics.TH`'s transitive
+  imports would pull SBV into every TH-using example module's
+  compile graph). This contradicts IP-4's "default flat module"
+  guidance but the override is a deliberate dependency-isolation
+  choice, recorded in the EP-9 Decision Log. IP-4's original
+  intent (avoid sub-module fragmentation) is preserved — no
+  `Keiki.Generics.Witness` was created.
