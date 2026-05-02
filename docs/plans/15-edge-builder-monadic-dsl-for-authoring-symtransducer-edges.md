@@ -101,7 +101,7 @@ completed items with a date, split partial items into "done" and "remaining"
 entries, add new items as discovered.
 
 - [x] M0: Verify prerequisites — record GHC version, baseline test count, baseline LOC of both example files. (MP-6 is Complete on master at draft time; no per-child status record needed.) Completed 2026-05-02.
-- [ ] M1: Settle builder shape — write the design note `docs/research/edge-builder-dsl-shape.md` resolving the open questions (do-notation mechanism `QualifiedDo`-vs-`RebindableSyntax`, `(.=)` lifting, `emit` shape, `from`/`onCmd` shape, error-message shape, error reporting). Append a paragraph to `docs/research/dsl-shape-for-symbolic-register.md`'s "Open follow-ups" section pointing at the new note.
+- [x] M1: Settle builder shape — write the design note `docs/research/edge-builder-dsl-shape.md` resolving the open questions (do-notation mechanism `QualifiedDo`-vs-`RebindableSyntax`, `(.=)` lifting, `emit` shape, `from`/`onCmd` shape, error-message shape, error reporting). Append a paragraph to `docs/research/dsl-shape-for-symbolic-register.md`'s "Open follow-ups" section pointing at the new note. Completed 2026-05-02.
 - [ ] M2: Spike — implement a throwaway `EdgeBuilderSpike.hs` against a coffee-dispenser two-vertex toy. Show the builder compiles to the same `Edge` AST as a hand-written reference; validated by per-edge `delta`/`omega` agreement on a short input log. Decide whether the spike's shape is what M3 ships or needs revision; record verdict.
 - [ ] M3: Implement the production module `src/Keiki/Builder.hs` and expose it from `keiki.cabal`. Surface includes `buildTransducer`, `from`, `onCmd`, `onEpsilon`, `(.=)`, `emit`, `noEmit`, `goto`, `requireEq`, `requireGuard`. Distinct-targets check happens at builder-finalize time and produces a precise error message.
 - [ ] M4: Migrate `Keiki.Examples.EmailDelivery`'s `emailDeliveryEdges` to the builder. Keep the AST-form value behind a new internal name (`emailDeliveryAST`) for the equivalence test. Add `test/Keiki/Examples/EmailDeliveryBuilderSpec.hs` asserting `delta`/`omega` agree on the single canonical command. Confirm the migrated file's LOC dropped by the targeted amount.
@@ -122,6 +122,15 @@ any discovered limit of the builder DSL with concise evidence.)
   test` directly works; the plan's `nix-shell -p z3 --run "..."` form
   is still the documented portable entry point but the shorter form
   is what M0 actually executed.
+
+- 2026-05-02 (M1) — The design note overshot the plan's
+  ≤300-line target (came in at ~470 lines). The overshoot is in the
+  per-question prose and the worked-example section; the seven
+  questions each justify their answer with ≥1 paragraph of context
+  rather than a one-liner. M2/M3 consume the note verbatim, so the
+  note stays at its current length; if the longer form turns out to
+  hide the contract, M2's spike-completion will note it and a follow-
+  up commit will tighten.
 
 
 ## Decision Log

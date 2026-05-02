@@ -1012,3 +1012,25 @@ The prototype is judged complete (against this design note) when every
 item above exists, the User Registration smoke test runs end-to-end,
 and the hidden-input check produces an actionable warning on at least
 one structural-output edge in the User Registration aggregate.
+
+
+## Authoring DSL on top of the AST
+
+The shapes settled in this note describe the *AST* of a
+`SymTransducer`. A separate authoring DSL — `Keiki.Builder`, designed
+in `docs/research/edge-builder-dsl-shape.md` (EP-15 M1) — sits on top
+of that AST and is the recommended way for users to write
+transducers. The builder is purely additive: it consumes the AST
+constructors declared here and produces values of the same
+`SymTransducer` type, so every downstream module
+(`Keiki.Acceptor`, `Keiki.Composition`, `Keiki.Decider`,
+`Keiki.Symbolic`, the example specs) keeps working unchanged. The
+AST remains the load-bearing source of truth for the formalism;
+users who need full expressive control drop down to it.
+
+The builder note settles seven shape questions (carrier monad,
+`(.=)` shape, `emit` shape, vertex grouping, distinct-targets
+enforcement, `goto` and termination, module placement) and
+contains a side-by-side comparison of `EmailDelivery` in the AST
+form and the builder form. See that note for the operator surface;
+this note remains the contract for the underlying AST.
