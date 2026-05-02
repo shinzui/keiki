@@ -36,6 +36,10 @@ module Keiki.Examples.EmailDelivery
     -- * Input constructors (exported for testing / composition)
   , inCtorSendEmail
   , inpSendEmail
+    -- * B-presentation views (TH-derived; see EP-13 / MP-5)
+  , SEmailVertex (..)
+  , EmailView (..)
+  , emailView
   ) where
 
 import Data.Text (Text)
@@ -43,7 +47,7 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
 import Keiki.Generics (emptyRegFile)
-import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
+import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
 
 
@@ -116,6 +120,22 @@ instance KnownInCtors EmailCmd where
 
 $(deriveWireCtors ''EmailEvent
     [ ("EmailSent", "EmailSent")
+    ])
+
+
+-- * B-presentation views (TH-derived) ------------------------------------
+--
+-- The B-view exposes only the slots that are live in each control
+-- vertex. 'EmailPending' is the initial state — no slots are bound,
+-- so 'EmailPendingV' is nullary. 'EmailSentVertex' is terminal after
+-- a 'SendEmail' command, by which point all three slots
+-- ('emailRecipient', 'emailSubject', 'emailSentAt') are live, so
+-- 'EmailSentVertexV' carries them as record fields.
+
+$(deriveView ''EmailVertex ''EmailRegs
+    "SEmailVertex" "EmailView" "emailView"
+    [ ("EmailPending",     [])
+    , ("EmailSentVertex",  ["emailRecipient", "emailSubject", "emailSentAt"])
     ])
 
 
