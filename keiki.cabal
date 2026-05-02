@@ -79,3 +79,15 @@ test-suite keiki-test
                         sbv >= 11.7 && < 15,
                         text ^>= 2.1,
                         time ^>= 1.12
+
+benchmark keiki-bench
+    import:             warnings, shared-extensions
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     bench
+    main-is:            Bench.hs
+    ghc-options:        -with-rtsopts=-A32m -fproc-alignment=64
+    build-depends:      base ^>= 4.21,
+                        keiki,
+                        tasty-bench >= 0.4 && < 0.6,
+                        text ^>= 2.1,
+                        time ^>= 1.12
