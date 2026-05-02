@@ -570,6 +570,60 @@ reformulation built atop `applyEvent`/`solveOutput`. The keiki
 formalism guarantees they agree. This is ~2 hours of plumbing on a
 new module `Keiki.Decider`.
 
+**EP-10 design choices (2026-05-01).** `Keiki.Decider` ships the
+four-field Chassaing canonical record verbatim:
+
+    data Decider c e s = Decider
+      { decide       :: c -> s -> [e]
+      , evolve       :: s -> e -> s
+      , initialState :: s
+      , isTerminal   :: s -> Bool
+      }
+
+with the projection
+
+    toDecider
+      :: BoolAlg phi (RegFile rs, ci)
+      => SymTransducer phi rs s ci co
+      -> Decider ci co (s, RegFile rs)
+
+Three small choices fix the shape:
+
+1. *State carrier `(s, RegFile rs)`.* The same pair `delta` and
+   `applyEvent` operate on. Alternative shapes that fold the
+   register file into `s` were rejected because keiki's `omega`
+   needs the registers to evaluate edge guards; carrying the pair
+   keeps the façade's `decide` a pure function of its arguments.
+
+2. *`Maybe co` lifts to `[e]`.* `Just co → [co]`, `Nothing → []`.
+   The Chassaing `decide` returns a list because some aggregates
+   emit zero-or-many events per command; the keiki transducer
+   emits at most one. A future *MultiDecider* (synthesis §5) is
+   the relaxation point, but it is out of scope for EP-10.
+
+3. *ε-edges are silent for the façade.* When an edge has
+   `output = Nothing`, `omega` returns `Nothing`, and the façade's
+   `decide` returns `[]`. A subsequent `evolve` over `[]` is a
+   no-op, so the state does **not** transition — even though the
+   keiki `delta` for the same edge would. This is documented in
+   the module haddock and reproduced as an explicit test in
+   `test/Keiki/DeciderSpec.hs`. The User Registration aggregate's
+   `FulfillGDPRRequest` edge from `RequiresConfirmation` is the
+   worked instance: ε-deletion before confirmation. Callers who
+   need ε-driven state must call `delta` directly, or pair
+   `decide` with their own no-event-case logic. Encoding ε-edges
+   as synthetic events was rejected because it would either
+   change the `Decider` record's shape (no longer "Chassaing
+   canonical") or place internal events on the wire (defeats the
+   point of the façade — keiki's events are wire events).
+
+**Implemented (see EP-10).** `Keiki.Decider` exports the record
+and `toDecider` per the design above; the round-trip on
+`userReg`'s canonical log lands in `(Deleted, expectedSnapshot)`,
+matching `reconstitute`. See
+`docs/plans/10-keiki-decider-facade-for-naive-decider-migration.md`
+and `src/Keiki/Decider.hs`.
+
 ### F. crem-style composition combinators on `SymTransducer`
 
 The crem comparison note proposes `compose`, `feedback`,

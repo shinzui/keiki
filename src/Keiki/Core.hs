@@ -76,6 +76,7 @@ module Keiki.Core
     -- * Pure-layer entry points (effects-boundary note)
   , step
   , reconstitute
+  , applyEvent
     -- * Build-time analyses
   , solveOutput
   , HiddenInputWarning (..)
@@ -578,7 +579,9 @@ step t (s, regs) ci = case delta t s regs ci of
 -- | Apply one observed output to the state by walking outgoing edges,
 -- inverting each edge's @output@ via 'solveOutput', verifying the
 -- guard on the recovered input, and applying the edge's @update@.
--- Internal helper for 'reconstitute'.
+-- Used by 'reconstitute' for full-log replay and exposed so that
+-- single-event façades (notably 'Keiki.Decider.toDecider') can
+-- implement an @evolve :: s -> e -> s@ step on top of it.
 applyEvent
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co

@@ -35,6 +35,7 @@ common shared-extensions
 library
     import:             warnings, shared-extensions
     exposed-modules:    Keiki.Core
+                        Keiki.Decider
                         Keiki.Generics
                         Keiki.Symbolic
                         Keiki.Examples.UserRegistration
@@ -51,6 +52,7 @@ test-suite keiki-test
     hs-source-dirs:     test
     main-is:            Spec.hs
     other-modules:      Keiki.CoreSpec
+                        Keiki.DeciderSpec
                         Keiki.SymbolicSpec
                         Keiki.Examples.UserRegistrationSpec
                         Keiki.Examples.UserRegistrationSymbolicSpec
