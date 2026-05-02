@@ -132,29 +132,49 @@ section must always reflect the actual current state of the work.
       mechanical `filter isUpper >>> map toLower` rule because
       no uniform derivation produced both `cf` for `Confirmed`
       and `d` for `Deleted`.)*
-- [ ] **Milestone 2 — Splice scaffolding.** Add `deriveView` to
+- [x] **Milestone 2 — Splice scaffolding.** Add `deriveView` to
       `src/Keiki/Generics/TH.hs` (signature + validation +
       error-message plumbing) but leave the code-gen body as a
       `fail` placeholder. Add the new top-level export. Verify
       `cabal build all` still succeeds. This milestone exists
       so M3's code-gen edits are isolated to one function.
-- [ ] **Milestone 3 — Splice code-gen.** Implement the body of
+      *(2026-05-02; signature + reifySlotList +
+      validateSpecCoverage + validateSpecSlots +
+      validatePrefixUniqueness + vertexFieldPrefix + showList'
+      added; `cabal build all` clean.)*
+- [x] **Milestone 3 — Splice code-gen.** Implement the body of
       `deriveView` to emit the singletons GADT, the View GADT,
       and the projection function. Cover empty-payload
       vertices (nullary GADT constructors), single-slot
       vertices, multi-slot vertices. Verify `cabal build all`
       still succeeds.
-- [ ] **Milestone 4 — Wire splice into UserRegistration.** Add
+      *(2026-05-02; code-gen produces 8 declarations per
+      invocation: SDataD + 2 standalone deriving for the
+      singletons GADT; ViewDataD + 2 standalone deriving for
+      the View GADT; SigD + FunD for the projection. Empty
+      slots use `GadtC` + `WildP` patterns; non-empty use
+      `RecGadtC` + `VarP` + `(!)`/`LabelE` reads. Two name-
+      shadowing warnings on `bang`/`sigT` were renamed to
+      `lazyBang`/`funTy`.)*
+- [x] **Milestone 4 — Wire splice into UserRegistration.** Add
       the splice invocation to
       `src/Keiki/Examples/UserRegistration.hs`. Extend the
       module's exports list to include `UserView (..)` and
       `SUserVertex (..)`. Verify `cabal build all` still
       succeeds.
-- [ ] **Milestone 5 — Test module.** Create
+      *(2026-05-02; splice invocation placed after
+      deriveWireCtors with a haddock paragraph pointing at the
+      design note; export block extended with a "B-presentation
+      views (TH-derived; see EP-13 / MP-5)" subsection.)*
+- [x] **Milestone 5 — Test module.** Create
       `test/Keiki/Examples/UserRegistrationViewSpec.hs` with
       tests asserting per-vertex projection results. Wire into
       `test/Spec.hs` and `keiki.cabal`. Run `nix-shell -p z3
       --run "cabal test all"`.
+      *(2026-05-02; six tests — one per vertex plus an
+      "ignores slots not named in the spec" test that binds
+      irrelevant slots to bottom and confirms the projection
+      doesn't read them. Test count 101 → 107, 0 failures.)*
 - [ ] **Milestone 6 — Docs update + commit.** Update
       `docs/research/keiki-generics-design.md` to mark the
       `genView` entry Implemented (with a pointer to MP-5 /
@@ -276,7 +296,68 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-02).** EP-13 ships `Keiki.Generics.TH.deriveView`
+and a worked example on `Keiki.Examples.UserRegistration`.
+`SUserVertex`, `UserView`, and `userView` are exported and exercised
+by six tests in `test/Keiki/Examples/UserRegistrationViewSpec.hs`.
+Test suite: 101 → 107 examples, 0 failures.
+
+Against the original purpose:
+
+- **The user-visible win lands.** `userView SConfirmed regs`
+  returns `ConfirmedV "alice@x" t100` with field selectors
+  `cEmail`/`cConfirmedAt`. Pattern-matching on `UserView v` makes
+  the live slots per vertex statically visible.
+
+- **Validation diagnostics are precise.** The five splice-time
+  checks named in the design note are all in place
+  (`validateSpecCoverage` covers vertex coverage + duplicates;
+  `validateSpecSlots` covers slot membership + per-entry slot
+  duplicates; `validatePrefixUniqueness` covers prefix
+  collisions). Each `fail`s with a message naming the offending
+  symbol(s).
+
+- **The transducer stays unchanged.** `userReg` does not
+  reference `userView`; the projection is downstream of `step` /
+  `applyEvent` exactly as the synthesis note prescribes.
+
+Lessons:
+
+1. *The plan's "retire the genView entry in keiki-generics-design"
+   step rested on a wrong premise.* No such entry existed;
+   `genView` was only ever mentioned in the synthesis note. M6
+   added a fresh `### H` entry to keiki-generics-design.md
+   instead. Worth checking referenced documents exist before
+   committing the plan to a "retire X" step.
+
+2. *Field-name derivation rules deserve more scrutiny than they
+   got in the design phase.* The plan committed to `cfEmail`
+   (Confirmed) and `dEmail` (Deleted) as illustrative examples in
+   the Decision Log, but no uniform mechanical rule produces both
+   `cf` and `d`. The implementation switched to a one-liner
+   (`filter isUpper >>> map toLower`) that yields `cEmail` and
+   `dEmail`. Distinct prefixes for the worked aggregate are
+   guaranteed by the `validatePrefixUniqueness` check.
+
+3. *`-ddump-splices` was useful conceptually but `cabal build`
+   wouldn't recompile to surface the dump even after `touch`-ing
+   the file.* Skipping the dump in favour of letting the test
+   module's compile catch any code-gen mistake worked fine; the
+   tests passed first try. Future TH-splice work might prefer a
+   thin `runQ` smoke test in GHCi.
+
+Gaps left open (intentional, per the design note's "What is
+deliberately deferred" section):
+
+- No default `View v = RegFile rs` for non-opted-in aggregates.
+- No shared `Keiki.View` module exposing a kind-generic
+  `Singleton` class.
+- No edge-driven cross-validation of the spec (slots written by
+  incoming edges vs. slots named live in the spec).
+- `viewFor` is not lifted into the transducer's evolution loop.
+
+A future EP can pick any of these up if a real authoring need
+surfaces.
 
 
 ## Context and Orientation

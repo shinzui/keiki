@@ -851,6 +851,57 @@ MasterPlan-sized initiative; out of scope for the authoring DX
 discussion.
 
 
+### H. `genView` TH splice for B-presentation `View v` GADT
+
+The synthesis note's §3 ("Where indexed state (B) fits") proposes
+a per-vertex projection on top of the shared register file: for
+each control vertex `v` define a GADT constructor that exposes
+only the slots live in that vertex, then write `viewFor :: SVertex
+v -> RegFile rs -> View v`. The synthesis note flagged the
+codegen for this shape as opt-in: *"A `genView` TH helper is a
+nice-to-have, not a v1 requirement."* Until EP-13, no aggregate in
+`src/Keiki/Examples/` had a B-view; users would hand-write the
+singletons GADT, the View GADT, and the projection function (~40
+lines for a five-vertex aggregate, easy to get wrong — a missed
+vertex turns into a non-exhaustive pattern; a typoed slot name
+turns into a type error pages from the authoring site).
+
+**Implemented (see EP-13 / MP-5).** `Keiki.Generics.TH` ships
+`deriveView`, the third splice in the family alongside
+`deriveAggregateCtors` (item A) and `deriveWireCtors` (item A).
+The user-facing surface is one Q-action with three `String`
+name arguments and a `[(vertexCtor, [slot])]` spec list:
+
+    $(deriveView ''Vertex ''UserRegRegs
+        "SUserVertex" "UserView" "userView"
+        [ ("PotentialCustomer",    [])
+        , ("Registering",          [])
+        , ("RequiresConfirmation", ["email", "confirmCode"])
+        , ("Confirmed",            ["email", "confirmedAt"])
+        , ("Deleted",              ["email", "deletedAt"])
+        ])
+
+The splice runs five splice-time validation checks (vertex enum
+shape, total-coverage spec dedup, slot-list shape, slot membership
++ dedup, prefix uniqueness) and emits a per-aggregate singletons
+GADT (`SUserVertex`), a per-aggregate View GADT (`UserView`) with
+one constructor per vertex carrying the live slots as record
+fields named `<prefix><Slot>` (where `<prefix>` is the
+lower-cased upper-case letters of the vertex name), and the
+projection function (`userView`). Worked example:
+`Keiki.Examples.UserRegistration` exports `UserView (..)`,
+`SUserVertex (..)`, and `userView`; six tests in
+`test/Keiki/Examples/UserRegistrationViewSpec.hs` exercise the
+projection on hand-constructed register files. See
+`docs/research/genview-th-splice-design.md` for the full design,
+`docs/plans/13-genview-th-splice-and-b-presentation-view-v-gadt.md`
+for the implementation plan, and the synthesis note's §3 + §4.4
+for the motivating shape. Default `View v = RegFile rs` for
+non-opted-in aggregates, a shared `Singleton` class, and
+edge-driven cross-validation of the spec are deferred until a real
+need surfaces.
+
+
 ## Summary table
 
     Dimension                    Naive decider   crem            keiki + Keiki.Generics

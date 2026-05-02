@@ -44,10 +44,13 @@
 module Keiki.Generics.TH
   ( deriveAggregateCtors
   , deriveWireCtors
+  , deriveView
   ) where
 
+import Data.Char (isUpper, toLower, toUpper)
+import Data.List (group, nub, sort, (\\))
 import Language.Haskell.TH
-import Keiki.Core (HsPred, InCtor, Index, Term (..), WireCtor, matchInCtor)
+import Keiki.Core (HsPred, InCtor, Index, RegFile, Term (..), WireCtor, (!), matchInCtor)
 import Keiki.Generics
   ( FieldsOf
   , RegFieldsOf
@@ -89,6 +92,156 @@ deriveWireCtors evtName specs = do
   ctors <- reifyCtors evtName "deriveWireCtors"
   let ctorMap = [ (nameBase n, c) | c <- ctors, n <- conNames c ]
   fmap concat . mapM (genWire evtName ctorMap) $ specs
+
+
+-- | Generate the per-aggregate B-presentation view: a singletons GADT
+-- (one constructor per vertex, indexed by the promoted vertex type),
+-- a per-vertex View GADT (one constructor per vertex carrying the
+-- live slots as record fields), and the projection function
+-- @viewFor :: SVertex v -> RegFile rs -> View v@.
+--
+-- See @docs/research/genview-th-splice-design.md@ for the full
+-- design — splice signature, spec format, validation rules, and
+-- worked expansion against 'Keiki.Examples.UserRegistration'.
+--
+-- == Worked invocation
+--
+-- @
+-- $('deriveView' \'\'Vertex \'\'UserRegRegs
+--     "SUserVertex" "UserView" "userView"
+--     [ ("PotentialCustomer",    [])
+--     , ("Registering",          [])
+--     , ("RequiresConfirmation", ["email", "confirmCode"])
+--     , ("Confirmed",            ["email", "confirmedAt"])
+--     , ("Deleted",              ["email", "deletedAt"])
+--     ])
+-- @
+deriveView
+  :: Name              -- ^ vertex enum, e.g. @\'\'Vertex@
+  -> Name              -- ^ register-file slot list, e.g. @\'\'UserRegRegs@
+  -> String            -- ^ name of the singletons GADT to generate,
+                       --   e.g. @"SUserVertex"@
+  -> String            -- ^ name of the View GADT, e.g. @"UserView"@
+  -> String            -- ^ name of the projection function,
+                       --   e.g. @"userView"@
+  -> [(String, [String])]
+                       -- ^ per-vertex spec: pairs of
+                       --   (vertex constructor name,
+                       --    list of slot names live in that vertex)
+  -> Q [Dec]
+deriveView vertexName regsName sVertexNameStr viewNameStr
+           viewFunNameStr spec = do
+  -- Phase 1: reify the vertex enum.
+  ctors <- reifyCtors vertexName "deriveView"
+  let vertexCtorNames = concatMap conNames ctors
+      vertexCtorByBase =
+        [ (nameBase n, n) | n <- vertexCtorNames ]
+  -- Phase 2: reify the slot list.
+  slotPairs <- reifySlotList regsName
+  let slotNamesInRegs = map fst slotPairs
+  -- Phase 3: validate (five checks).
+  validateSpecCoverage vertexName vertexCtorNames spec
+  validateSpecSlots regsName slotNamesInRegs spec
+  validatePrefixUniqueness spec
+  -- Phase 4: code-gen.
+  let sVertexN   = mkName sVertexNameStr
+      viewN      = mkName viewNameStr
+      viewFunN   = mkName viewFunNameStr
+      vIdx       = mkName "v"
+      vertexCtor name = case lookup name vertexCtorByBase of
+        Just n  -> n
+        Nothing -> error $ "deriveView: bug — validated vertex "
+                        <> show name <> " missing from reified ctor list"
+      slotType slotName = case lookup slotName slotPairs of
+        Just t  -> t
+        Nothing -> error $ "deriveView: bug — validated slot "
+                        <> show slotName <> " missing from reified slot list"
+
+  -- (a) Singletons GADT.
+  let sCtors =
+        [ GadtC [mkName ("S" <> vName)] []
+            (AppT (ConT sVertexN) (PromotedT (vertexCtor vName)))
+        | (vName, _) <- spec
+        ]
+      sDataDec = DataD [] sVertexN
+                       [KindedTV vIdx BndrReq (ConT vertexName)]
+                       Nothing sCtors []
+      sShowDec = StandaloneDerivD Nothing []
+                   (AppT (ConT ''Show)
+                         (AppT (ConT sVertexN) (VarT vIdx)))
+      sEqDec   = StandaloneDerivD Nothing []
+                   (AppT (ConT ''Eq)
+                         (AppT (ConT sVertexN) (VarT vIdx)))
+
+  -- (b) View GADT.
+  let lazyBang = Bang NoSourceUnpackedness NoSourceStrictness
+      mkViewCtor (vName, slots) =
+        let viewCtorN = mkName (vName <> "V")
+            resultT   = AppT (ConT viewN) (PromotedT (vertexCtor vName))
+            prefix    = vertexFieldPrefix vName
+        in case slots of
+             [] -> GadtC [viewCtorN] [] resultT
+             _  -> RecGadtC [viewCtorN]
+                     [ ( mkName (vertexFieldName prefix s)
+                       , lazyBang
+                       , slotType s
+                       )
+                     | s <- slots
+                     ] resultT
+      viewCtors  = map mkViewCtor spec
+      viewDataDec = DataD [] viewN
+                          [KindedTV vIdx BndrReq (ConT vertexName)]
+                          Nothing viewCtors []
+      viewShowDec = StandaloneDerivD Nothing []
+                      (AppT (ConT ''Show)
+                            (AppT (ConT viewN) (VarT vIdx)))
+      viewEqDec   = StandaloneDerivD Nothing []
+                      (AppT (ConT ''Eq)
+                            (AppT (ConT viewN) (VarT vIdx)))
+
+  -- (c) Projection function.
+  let regsTy   = AppT (ConT ''RegFile) (ConT regsName)
+      funTy    = ForallT [PlainTV vIdx SpecifiedSpec] []
+                   (arrows [ AppT (ConT sVertexN) (VarT vIdx)
+                           , regsTy
+                           , AppT (ConT viewN) (VarT vIdx)
+                           ])
+      viewFunSig = SigD viewFunN funTy
+  regsVar <- newName "regs"
+  let mkClause (vName, slots) =
+        let sCtorN    = mkName ("S" <> vName)
+            viewCtorN = mkName (vName <> "V")
+            (regsPat, body) = case slots of
+              [] -> (WildP, ConE viewCtorN)
+              _  ->
+                let reads_ = [ AppE (AppE (VarE '(!))
+                                          (VarE regsVar))
+                                    (LabelE s)
+                             | s <- slots
+                             ]
+                in (VarP regsVar, foldl AppE (ConE viewCtorN) reads_)
+        in Clause [ConP sCtorN [] [], regsPat] (NormalB body) []
+      viewFunDef = FunD viewFunN (map mkClause spec)
+
+  pure
+    [ sDataDec, sShowDec, sEqDec
+    , viewDataDec, viewShowDec, viewEqDec
+    , viewFunSig, viewFunDef
+    ]
+  where
+    arrows :: [Type] -> Type
+    arrows []     = error "deriveView: arrows on empty list"
+    arrows [t]    = t
+    arrows (t:ts) = AppT (AppT ArrowT t) (arrows ts)
+
+
+-- | Field name from a vertex prefix and a slot name:
+-- @\"<prefix><Slot>\"@ where the slot name's first letter is
+-- upper-cased.
+vertexFieldName :: String -> String -> String
+vertexFieldName prefix slotName = case slotName of
+  []     -> prefix
+  (c:cs) -> prefix <> (toUpper c : cs)
 
 
 -- * Internal helpers -----------------------------------------------------
@@ -225,3 +378,127 @@ genWire evtName ctorMap (ctorStr, shortStr) =
       _ -> fail $ "deriveWireCtors: ctor " <> show ctorStr
                <> " has unsupported payload shape (singleton or "
                <> "multi-arg/record-syntax)"
+
+
+-- * deriveView internals -------------------------------------------------
+
+
+-- | Walk a type-synonym whose right-hand side is a promoted @[Slot]@
+-- list, extracting the @(slotName, slotType)@ pairs. The walk
+-- pattern-matches @PromotedConsT@ \/ @PromotedNilT@ at the list level
+-- and @PromotedTupleT 2@ over @LitT (StrTyLit name)@ + slot type at
+-- each cell.
+reifySlotList :: Name -> Q [(String, Type)]
+reifySlotList n = do
+  info <- reify n
+  case info of
+    TyConI (TySynD _ _ rhs) -> walkList rhs
+    _ -> fail $ "deriveView: expected a type synonym for "
+             <> show n <> " whose right-hand side is a promoted "
+             <> "[Slot] list, got " <> show info
+  where
+    walkList :: Type -> Q [(String, Type)]
+    walkList (SigT t _) = walkList t
+    walkList PromotedNilT = pure []
+    walkList (AppT (AppT PromotedConsT headPair) tailList) = do
+      pair <- walkPair headPair
+      rest <- walkList tailList
+      pure (pair : rest)
+    walkList other =
+      fail $ "deriveView: expected a promoted-list type at "
+          <> show n <> ", got " <> show other
+
+    walkPair :: Type -> Q (String, Type)
+    walkPair (SigT t _) = walkPair t
+    walkPair (AppT (AppT (PromotedTupleT 2) (LitT (StrTyLit name))) ty) =
+      pure (name, ty)
+    walkPair other =
+      fail $ "deriveView: expected a promoted (Symbol, Type) pair "
+          <> "in slot list of " <> show n <> ", got " <> show other
+
+
+-- | Validate that the spec lists every vertex constructor exactly
+-- once. Missing, extra, and duplicate spec entries each produce a
+-- precise message naming the offenders.
+validateSpecCoverage
+  :: Name -> [Name] -> [(String, [String])] -> Q ()
+validateSpecCoverage vertexName vertexCtorNames spec = do
+  let vertexNames = map nameBase vertexCtorNames
+      specNames   = map fst spec
+      duplicates  = [ n | (n : _ : _) <- group (sort specNames) ]
+      missing     = vertexNames \\ specNames
+      extras      = specNames   \\ vertexNames
+  case duplicates of
+    [] -> pure ()
+    _  -> fail $ "deriveView: spec lists vertex(es) " <> showList' duplicates
+              <> " more than once"
+  case missing of
+    [] -> pure ()
+    _  -> fail $ "deriveView: spec is missing constructors of "
+              <> show vertexName <> ": " <> showList' missing
+  case extras of
+    [] -> pure ()
+    _  -> fail $ "deriveView: spec names constructors not in "
+              <> show vertexName <> ": " <> showList' extras
+
+
+-- | Validate that every named slot exists in the register-file slot
+-- list, and that no spec entry names the same slot twice.
+validateSpecSlots
+  :: Name -> [String] -> [(String, [String])] -> Q ()
+validateSpecSlots regsName slotNamesInRegs spec =
+  mapM_ checkOne spec
+  where
+    checkOne (vertexCtorName, slots) = do
+      let dupSlots = [ s | (s : _ : _) <- group (sort slots) ]
+      case dupSlots of
+        [] -> pure ()
+        _  -> fail $ "deriveView: spec entry " <> show vertexCtorName
+                  <> " lists slot(s) " <> showList' dupSlots
+                  <> " more than once"
+      let missing = slots \\ slotNamesInRegs
+      case missing of
+        [] -> pure ()
+        _  -> fail $ "deriveView: spec entry " <> show vertexCtorName
+                  <> " names slot(s) " <> showList' missing
+                  <> " which are not slots of " <> show regsName
+                  <> "; known slots: " <> showList' slotNamesInRegs
+
+
+-- | Validate that the per-vertex field-name prefixes
+-- (@filter isUpper >>> map toLower@) are pairwise distinct so the
+-- generated View GADT has no field-name collisions across
+-- constructors.
+validatePrefixUniqueness :: [(String, [String])] -> Q ()
+validatePrefixUniqueness spec =
+  case collisions of
+    []                -> pure ()
+    ((pref, ns) : _)  ->
+      fail $ "deriveView: vertices " <> showList' ns
+          <> " produce the same field-name prefix " <> show pref
+          <> "; rename one"
+  where
+    prefixed   = [ (vertexFieldPrefix n, n) | (n, _) <- spec ]
+    collisions =
+      [ (pref, [ n | (p', n) <- prefixed, p' == pref ])
+      | pref <- nub (map fst prefixed)
+      , length [ () | (p', _) <- prefixed, p' == pref ] > 1
+      ]
+
+
+-- | Field-name prefix for a vertex name: lower-cased concatenation
+-- of the vertex name's upper-case letters. Examples:
+-- @\"PotentialCustomer\" -> \"pc\"@,
+-- @\"RequiresConfirmation\" -> \"rc\"@,
+-- @\"Confirmed\" -> \"c\"@,
+-- @\"Deleted\" -> \"d\"@.
+vertexFieldPrefix :: String -> String
+vertexFieldPrefix = map toLower . filter isUpper
+
+
+-- | Show a list of strings in @{ "a", "b", "c" }@ form for error
+-- messages.
+showList' :: [String] -> String
+showList' []     = "{}"
+showList' [x]    = "{ " <> show x <> " }"
+showList' (x:xs) = "{ " <> show x <> concatMap (\y -> ", " <> show y) xs <> " }"

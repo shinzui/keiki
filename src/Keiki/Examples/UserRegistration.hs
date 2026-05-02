@@ -66,6 +66,10 @@ module Keiki.Examples.UserRegistration
   , inpConfirm
   , inpResend
   , inpGdpr
+    -- * B-presentation views (TH-derived; see EP-13 / MP-5)
+  , SUserVertex (..)
+  , UserView (..)
+  , userView
   ) where
 
 import Data.Text (Text)
@@ -73,7 +77,7 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
 import Keiki.Generics (emptyRegFile)
-import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
+import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
 
 
@@ -237,6 +241,32 @@ $(deriveWireCtors ''UserEvent
     , ("AccountConfirmed",      "AccountConfirmed")
     , ("ConfirmationResent",    "ConfirmationResent")
     , ("AccountDeleted",        "AccountDeleted")
+    ])
+
+
+-- * B-presentation views (TH-derived) ------------------------------------
+--
+-- The B-view is a per-vertex projection on top of the shared
+-- 'RegFile UserRegRegs'. For each control vertex 'v' the splice
+-- generates a 'UserView' constructor that exposes only the slots the
+-- vertex actually uses (the "live" slots). Pattern-matching on
+-- @userView SConfirmed regs@ yields a @ConfirmedV { cEmail = …,
+-- cConfirmedAt = … }@ value whose record selectors are the live
+-- slots only — the type system blocks the reader from asking
+-- @SPotentialCustomer@ for @cConfirmedAt@.
+--
+-- The projection is opt-in and downstream of the transducer: nothing
+-- in 'userReg' below references 'userView'. See
+-- @docs/research/genview-th-splice-design.md@ and the synthesis
+-- note's §3 for the design rationale.
+
+$(deriveView ''Vertex ''UserRegRegs
+    "SUserVertex" "UserView" "userView"
+    [ ("PotentialCustomer",    [])
+    , ("Registering",          [])
+    , ("RequiresConfirmation", ["email", "confirmCode"])
+    , ("Confirmed",            ["email", "confirmedAt"])
+    , ("Deleted",              ["email", "deletedAt"])
     ])
 
 

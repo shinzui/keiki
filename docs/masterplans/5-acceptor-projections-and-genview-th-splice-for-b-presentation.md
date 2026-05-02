@@ -194,7 +194,7 @@ into its own EP. The dependency between "generate the GADT" and
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Acceptor projections (input/output) for SymTransducer | docs/plans/12-acceptor-projections-input-output-for-symtransducer.md | None | None | Complete |
-| 2 | genView TH splice and B-presentation View v GADT | docs/plans/13-genview-th-splice-and-b-presentation-view-v-gadt.md | None | EP-1 (Examples.UserRegistration coordination) | In Progress |
+| 2 | genView TH splice and B-presentation View v GADT | docs/plans/13-genview-th-splice-and-b-presentation-view-v-gadt.md | None | EP-1 (Examples.UserRegistration coordination) | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -306,10 +306,10 @@ plans for an at-a-glance view.
 - [x] EP-1: Foundations doc 04 pointer paragraph; commit (M4/M5) (2026-05-02; commit pending)
 - [x] EP-2: Verify prerequisites — TH machinery from EP-8 still works; record GHC version (M0) (2026-05-02; GHC 9.12.3, baseline 101 examples)
 - [x] EP-2: genView TH splice design note (M1) (2026-05-02; docs/research/genview-th-splice-design.md)
-- [ ] EP-2: `deriveView` splice in `Keiki.Generics.TH` (M2)
-- [ ] EP-2: Wire splice into `Keiki.Examples.UserRegistration`; export `UserView` and `SUserVertex` (M3)
-- [ ] EP-2: `test/Keiki/Examples/UserRegistrationViewSpec.hs` (M4)
-- [ ] EP-2: Update `keiki-generics-design.md`; commit (M5/M6)
+- [x] EP-2: `deriveView` splice in `Keiki.Generics.TH` (M2/M3) (2026-05-02; scaffolding + code-gen, ~200 lines)
+- [x] EP-2: Wire splice into `Keiki.Examples.UserRegistration`; export `UserView` and `SUserVertex` (M4) (2026-05-02; splice invocation + export block updated)
+- [x] EP-2: `test/Keiki/Examples/UserRegistrationViewSpec.hs` (M5) (2026-05-02; 6 new tests, 107 total examples, 0 failures)
+- [x] EP-2: Update `keiki-generics-design.md`; commit (M6) (2026-05-02; new ### H entry added; synthesis note's two genView pointers updated)
 
 
 ## Surprises & Discoveries
@@ -318,7 +318,25 @@ Document cross-plan insights, dependency changes, scope adjustments,
 or unexpected interactions between child plans. Provide concise
 evidence.
 
-(None yet.)
+- **2026-05-02 (EP-2 / M1).** EP-13's M6 step assumed
+  `docs/research/keiki-generics-design.md` carried a `genView`
+  "Future improvements" entry to retire. It did not — items A–G
+  of that document covered other axes (TH for InCtor/Wire,
+  RegFieldsOf, Generic-Term helpers, WitnessExtract, Decider
+  façade, composition combinators, compile-time topology).
+  Adjusted M6 to *add* a fresh `### H` entry to keiki-generics-
+  design.md (marked Implemented from the start, mirroring items
+  A/B/D/E/F's Implemented additions) plus update the synthesis
+  note's two `genView` pointers. No other child plan affected.
+
+- **2026-05-02 (EP-2 / M1).** The EP-13 plan's draft Decision
+  Log committed to field-name examples `cfEmail` (Confirmed) and
+  `dEmail` (Deleted). No mechanical rule produces both `cf` and
+  `d`. Adopted `filter isUpper >>> map toLower` as the prefix
+  rule (UserRegistration's five vertices yield distinct prefixes
+  `pc`, `r`, `rc`, `c`, `d`); added a fifth splice-time check
+  (`validatePrefixUniqueness`) so future aggregates with
+  colliding initials fail at the splice site. EP-12 unaffected.
 
 
 ## Decision Log
@@ -393,4 +411,83 @@ evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original vision.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-02).** Both child ExecPlans landed in a single
+session. The repository now ships:
+
+- `Keiki.Acceptor` (EP-12) exporting `Acceptor`, `inputAcceptor`,
+  `outputAcceptor`, `runAcceptor`, `accepts`. Six tests in
+  `test/Keiki/AcceptorSpec.hs` exercise input/output acceptors on
+  `userReg` and `emailDelivery` plus the round-trip property
+  `runAcceptor (outputAcceptor t) log == fmap fst (reconstitute t
+  log)`.
+
+- `Keiki.Generics.TH.deriveView` (EP-13) plus the worked example
+  `UserView` / `SUserVertex` / `userView` on
+  `Keiki.Examples.UserRegistration`. Six tests in
+  `test/Keiki/Examples/UserRegistrationViewSpec.hs` exercise the
+  per-vertex projection on hand-constructed register files.
+
+Two design notes (`acceptor-projections-design.md`,
+`genview-th-splice-design.md`), one foundations-doc pointer (chapter
+04), one keiki-generics-design `### H` entry, and two synthesis-note
+pointers complete the documentation surface.
+
+Test count: 95 (MP-2/3/4 baseline) → 101 (after EP-12) → 107 (after
+EP-13). 0 failures throughout under `nix-shell -p z3 --run "cabal
+test all"`.
+
+Against the original vision:
+
+- **The user-visible wins land verbatim.** "How do I get the command
+  acceptor for `userReg`?" → `inputAcceptor userReg`. "How do I get
+  a typed view of the `Confirmed` state's live registers?" →
+  `userView SConfirmed regs` returns `ConfirmedV "alice@x" t100`.
+
+- **Both surfaces are pure projections.** Neither EP modified
+  `Keiki.Core` or the transducer formalism. `userReg` doesn't know
+  about `Acceptor` or `UserView`; both layers sit downstream of
+  `step` / `applyEvent` exactly as the vision prescribed.
+
+- **The two-EP decomposition held.** No cross-plan coordination
+  beyond IP-2's edits to `Keiki.Examples.UserRegistration` (EP-12
+  reads it, EP-13 extends its export block) was needed. The
+  initiative was implementable as one session because both work
+  streams have well-understood targets; the parallel-implementable
+  shape from "Why two EPs and not three" turned out to be right.
+
+Lessons for future MasterPlans:
+
+1. *Verify "retire X" steps reference real artifacts.* EP-13's M6
+   listed a `keiki-generics-design.md` entry for `genView` that
+   never existed. Cheap to discover at implementation time, but
+   would have been cheaper at MasterPlan-authoring time. A future
+   MasterPlan that lists "retire entry X in note Y" should
+   `grep` first.
+
+2. *Field-name conventions deserve a worked example, not a list of
+   illustrative pairs.* EP-13's draft Decision Log committed to
+   `cfEmail`/`rcEmail` as examples but no mechanical rule produces
+   both `cf` and `d`. The implementation switched to a one-liner
+   (`filter isUpper >>> map toLower`); the in-tree field names are
+   `cEmail`, `rcEmail`, `dEmail`. Future TH-codegen plans should
+   either commit to a mechanical rule outright or take the
+   per-vertex prefix as an explicit spec argument.
+
+3. *A new TH splice in an existing splice family is cheap.* EP-13
+   reused EP-8's `reifyCtors` / `conNames` plumbing, the same five
+   `fail`-with-precise-message validation pattern, and the same
+   placement rule (one module export, no new module). The whole
+   splice plus validation came in at ~200 lines.
+
+Gaps left open (intentional, per each EP's "What is deliberately
+deferred" sections):
+
+- No composition over `Acceptor`s (intersection / union /
+  language-equivalence). A future EP can pick this up if a real
+  workflow demands it.
+- No default `View v = RegFile rs` for non-opted-in aggregates;
+  no shared `Singleton` class; no edge-driven cross-validation of
+  the spec; no lifting of `viewFor` into the transducer's
+  evolution loop.
+- No update to `Keiki.Decider` to project via `Acceptor`s. Decider
+  stays as it is.

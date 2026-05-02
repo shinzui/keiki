@@ -153,7 +153,9 @@ type system letting them ask `Pending` for `approvedBy`.
 The library can ship a default `View v = RegFile rs` (no projection) for
 simple aggregates. Users opt into a per-vertex GADT only when the
 vertex shapes genuinely diverge enough to be worth naming. A `genView`
-TH helper is a nice-to-have, not a v1 requirement.
+TH helper now exists as `Keiki.Generics.TH.deriveView` (see EP-13 / MP-5
+and `docs/research/genview-th-splice-design.md`); the default
+`View v = RegFile rs` for non-opted-in aggregates is still deferred.
 
 The B note's existential `SomeState` becomes the natural pair
 `(SVertex v, View v)`, materialized as `(s, RegFile rs)` underneath. The
@@ -932,9 +934,11 @@ upgrades.
 ### From B
 
 - **Singletons, vertex kind boilerplate.** Only relevant once a user
-  opts into a B-view. Defer. When we hit a real workflow that needs it,
-  hand-roll. If hand-rolling becomes routine, write a `genView` TH
-  helper. Not a v1 concern.
+  opts into a B-view. The `genView` TH helper now ships as
+  `Keiki.Generics.TH.deriveView` (EP-13 / MP-5); a per-aggregate
+  invocation generates the singletons GADT, the View GADT, and the
+  projection function from a `[(vertexCtor, [slot])]` spec. Worked
+  example on `Keiki.Examples.UserRegistration`.
 
 ---
 

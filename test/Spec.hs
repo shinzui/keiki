@@ -10,6 +10,7 @@ import qualified Keiki.SymbolicSpec
 import qualified Keiki.Examples.UserRegistrationSpec
 import qualified Keiki.Examples.UserRegistrationSymbolicSpec
 import qualified Keiki.Examples.UserRegistrationV0Spec
+import qualified Keiki.Examples.UserRegistrationViewSpec
 
 main :: IO ()
 main = hspec $ do
@@ -21,4 +22,5 @@ main = hspec $ do
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
   describe "Keiki.Examples.UserRegistration"              Keiki.Examples.UserRegistrationSpec.spec
   describe "Keiki.Examples.UserRegistration (symbolic)"   Keiki.Examples.UserRegistrationSymbolicSpec.spec
+  describe "Keiki.Examples.UserRegistration (view)"       Keiki.Examples.UserRegistrationViewSpec.spec
   describe "Keiki.Examples.UserRegistrationV0"            Keiki.Examples.UserRegistrationV0Spec.spec

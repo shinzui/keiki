@@ -65,6 +65,7 @@ test-suite keiki-test
                         Keiki.Examples.UserRegistrationSpec
                         Keiki.Examples.UserRegistrationSymbolicSpec
                         Keiki.Examples.UserRegistrationV0Spec
+                        Keiki.Examples.UserRegistrationViewSpec
     build-depends:      base ^>= 4.21,
                         keiki,
                         hspec ^>= 2.11,
