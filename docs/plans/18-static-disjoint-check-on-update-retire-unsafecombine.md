@@ -151,30 +151,71 @@ always reflect the actual current state of the work.
   *"Keiki.Internal.Slots.Disjoint: slot \"foo\" is written by both
   halves of \`combine\`. Each register slot may be written at most
   once per edge update."* Module added to `keiki.cabal`.
-- [ ] M2: Refactor `Update` to carry the `(w :: [Symbol])` index.
+- [x] M2: Refactor `Update` to carry the `(w :: [Symbol])` index.
   Update `UKeep`, `USet`, `UCombine` constructors. Provide a
   migration shim — the smart `combine` exposes the new signature,
   and a temporary `combineE :: Either String (Update rs (Concat w1
   w2) ci)` wrapper for any caller that still needs `Either` (delete
-  before M-final).
-- [ ] M3: Update `IsLabel` for `Index` (or expose `IndexN` directly)
+  before M-final). **Done 2026-05-02.** `Update rs w ci` shipped;
+  `UCombine` left without a `Disjoint` constraint (Decision Log
+  entry); `combine :: Disjoint w1 w2 => …` becomes the smart entry
+  point; runtime `targets` / overlap helper deleted; the
+  `combineE`/`Either String` shim was unnecessary because every
+  call site migrated to `combine` directly in M6/M7.
+- [x] M3: Update `IsLabel` for `Index` (or expose `IndexN` directly)
   so `#email :: Index UserRegRegs Email` continues to compile, but
   resolved against the new `IndexN` shape. The label-driven syntax
-  in aggregates must not require a rewrite.
-- [ ] M4: Update `evalOut` / `evalPred` / `runUpdate` / `delta` /
+  in aggregates must not require a rewrite. **Done 2026-05-02.**
+  Added `instance HasIndexN s rs r => IsLabel s (IndexN s rs r)` in
+  `Keiki.Internal.Slots` (next to `IndexN` to satisfy the orphan
+  check). Aggregate authors annotate
+  `#name :: IndexN "name" Regs T` at `USet` sites; legacy `Index
+  Regs T` annotations at `proj` / `OFCons` sites still work because
+  the original `IsLabel s (Index rs r)` instance is unchanged.
+- [x] M4: Update `evalOut` / `evalPred` / `runUpdate` / `delta` /
   `omega` and the `targets` debug helper as needed. The runtime check
   in `combine` collapses (the invariant is now type-level).
-- [ ] M5: Lift `weakenLUpdate` and `substUpdate` in
+  **Done 2026-05-02.** `runUpdate` now takes `Update rs w ci`;
+  `setSlot` replaced with `setSlotN :: IndexN s rs r -> r -> RegFile
+  rs -> RegFile rs`. `Edge` switched to GADT record syntax with an
+  *existential* `w`; this killed the auto-generated `update e`
+  selector. Two helpers added (`applyEdgeUpdate`, `edgeReadsInput`)
+  and exported from `Keiki.Core` to give consumers a typed escape
+  for the existential. `delta` / `applyEvent` / `checkHiddenInputs`
+  switched to the helpers; `Keiki.Symbolic.liftEdge` and
+  `Keiki.Composition`'s `epsilonEdge` / `productEdge` switched to
+  pattern-binding (`Edge { update = u } -> …`). `targets` and the
+  global `indexInt` removed; `detectMissingInCtorFields` carries a
+  local `indexPos` for its still-positional `Index` walk.
+- [x] M5: Lift `weakenLUpdate` and `substUpdate` in
   `src/Keiki/Composition.hs` to thread the slot-name index. Add the
   `Disjoint (Names rs1) (Names rs2)` constraint to `compose`.
   Replace the line-416 `unsafeCombine` with `combine` (or the
   renamed structural combinator) and confirm it type-checks.
-- [ ] M6: Migrate `src/Keiki/Examples/UserRegistration.hs`,
+  **Done 2026-05-02.** `weakenLUpdate :: Update rs1 w ci -> Update
+  (Append rs1 rs2) w ci` and `substUpdate :: Update rs2 w mid ->
+  OutTerm rs1 ci1 mid -> Update (Append rs1 rs2) w ci1` now thread
+  `w`. `WeakenR` gained `weakenRIndexN` alongside `weakenR` so
+  `substUpdate (USet ix t) o1` produces an `IndexN`-typed write.
+  `compose` carries `(WeakenR rs1, Disjoint (Names rs1) (Names
+  rs2))`. Per the Decision Log, `productEdge`'s composite update
+  uses raw `UCombine` rather than the smart `combine` — the
+  structural disjointness here cannot be promoted to a type-level
+  constraint without `Subset w (Names rs)` witnesses through
+  `Edge`'s existential and a hand-written lemma; see Decision Log.
+- [x] M6: Migrate `src/Keiki/Examples/UserRegistration.hs`,
   `src/Keiki/Examples/UserRegistrationV0.hs`, and
   `src/Keiki/Examples/EmailDelivery.hs` from `\`unsafeCombine\`` to
-  `\`combine\``.
-- [ ] M7: Migrate `test/Keiki/CompositionSpec.hs` from
-  `\`unsafeCombine\`` to `\`combine\``.
+  `\`combine\``. **Done 2026-05-02.** All 8 chains migrated;
+  `Index Regs T` → `IndexN "name" Regs T` annotations on every
+  `USet` site (the `#name` label resolves through the new instance,
+  but the explicit annotation pins `s` for documentation and avoids
+  ambiguity at edges with single-`USet` updates).
+- [x] M7: Migrate `test/Keiki/CompositionSpec.hs` from
+  `\`unsafeCombine\`` to `\`combine\``. **Done 2026-05-02.** The
+  three `AlertSource` `USet`s migrated; `applyEdgeUpdate` replaces
+  `runUpdate (update e)` in `test/Keiki/Examples/UserRegistrationSpec.hs`.
+  Full suite green: 107 examples, 0 failures.
 - [ ] M8: Remove `unsafeCombine` from `Keiki.Core`'s exports and the
   helper itself. If `combineE` was introduced in M2, remove it too.
 - [ ] M9: Remove the v1-escape-hatch retirement-block comments
@@ -244,6 +285,46 @@ Record every decision made while working on the plan.
   case becomes statically impossible. Keeping the `Either` for
   back-compat would force every caller to thread the never-fired
   failure through their code. Cleaner to drop it.
+  Date: 2026-05-02
+
+- Decision: `Disjoint w1 w2` constraint lives on the smart constructor
+  `combine`, **not** on the `UCombine` data constructor. The design
+  note's ideal-end-state shape `UCombine :: Disjoint w1 w2 => …` is
+  set aside in favour of `UCombine :: Update rs w1 ci -> Update rs w2
+  ci -> Update rs (Concat w1 w2) ci` (no constraint).
+  Rationale: putting `Disjoint` on `UCombine` forces every consumer
+  that *reconstructs* a `UCombine` (e.g. `weakenLUpdate (UCombine a b)
+  = UCombine …`) to carry the dictionary, and forces `unsafeCombine`'s
+  body to use `unsafeCoerce` to bypass it. Putting it on `combine`
+  preserves the smart-constructor invariant for *external* aggregate
+  authors (who get the static check at the point of authoring) while
+  letting internal pattern-matches in `Keiki.Composition` reconstruct
+  `UCombine` values without dragging proofs around. The escape-hatch
+  removal at M8 still removes `unsafeCombine` from Core's exports;
+  the line-416 composite update construction switches to raw
+  `UCombine` (decision logged at M5 below) rather than `combine`,
+  because the structural disjointness there cannot be promoted to a
+  type-level constraint without carrying `Subset w (Names rs)`
+  witnesses through Edge's existential.
+  Date: 2026-05-02
+
+- Decision: At `Keiki.Composition.compose`'s `productEdge` line-416
+  composite update construction, use the unconstrained data
+  constructor `UCombine` directly rather than the smart `combine`.
+  Rationale: disjointness here is structural (left writes only into
+  the rs1 prefix; right writes only into the rs2 suffix), but
+  promoting that to a type-level `Disjoint w1 w2` would require
+  carrying a `Subset w (Names rs)` witness through `Edge`'s
+  existential `w` and a hand-written lemma function combining
+  `Disjoint (Names rs1) (Names rs2)` with the per-edge subset
+  witnesses. The cost (pervasive constraint bookkeeping in every
+  aggregate's Edge construction; a hand-written lemma using
+  `unsafeCoerce` to discharge what GHC's solver cannot prove) far
+  exceeds the benefit (one internal call site avoiding a clarifying
+  comment about structural disjointness). External aggregate authors
+  still get the full static check via `combine`. M8 removes
+  `unsafeCombine` from Core's exports; the line-416 idiom does not
+  need it because `UCombine` is already the natural escape hatch.
   Date: 2026-05-02
 
 

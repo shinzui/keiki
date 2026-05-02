@@ -38,6 +38,7 @@ module Keiki.Internal.Slots
   ) where
 
 import Data.Kind (Constraint, Type)
+import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeError (ErrorMessage (..), TypeError)
 import GHC.TypeLits (CmpSymbol, KnownSymbol, Symbol, symbolVal)
 import Data.Proxy (Proxy (..))
@@ -115,6 +116,16 @@ instance {-# OVERLAPPABLE #-} forall s s' r r' rs.
          (HasIndexN s rs r)
       => HasIndexN s ('(s', r') ': rs) r where
   indexN = IS (indexN @s @rs @r)
+
+
+-- | Slot-name-tagged label resolution. Lets aggregate authors write
+-- @USet (#email :: IndexN "email" UserRegRegs Email) ...@ (or just
+-- @USet #email ...@ when GHC can infer the type) and pick up the
+-- @s@ phantom that 'Keiki.Core.USet' demands.
+instance forall s rs r.
+         HasIndexN s rs r
+      => IsLabel s (IndexN s rs r) where
+  fromLabel = indexN @s @rs @r
 
 
 -- | The integer position of an 'IndexN' in its slot list.

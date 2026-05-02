@@ -147,12 +147,12 @@ userRegV0Edges = \case
     [ Edge
         { guard  = isStart
         , update =
-            USet (#email :: Index UserRegRegs Email) (inpStart #email)
-              `unsafeCombine`
-            USet (#confirmCode :: Index UserRegRegs ConfirmationCode)
+            USet (#email :: IndexN "email" UserRegRegs Email) (inpStart #email)
+              `combine`
+            USet (#confirmCode :: IndexN "confirmCode" UserRegRegs ConfirmationCode)
                  (inpStart #confirmCode)
-              `unsafeCombine`
-            USet (#registeredAt :: Index UserRegRegs UTCTime)
+              `combine`
+            USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpStart #at)
         , output = Just $ pack
             inCtorStart
@@ -187,7 +187,7 @@ userRegV0Edges = \case
         { guard  = PAnd isConfirm
             (inpConfirm #confirmCode
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
-        , update = USet (#confirmedAt :: Index UserRegRegs UTCTime)
+        , update = USet (#confirmedAt :: IndexN "confirmedAt" UserRegRegs UTCTime)
                         (inpConfirm #at)
         , output = Just $ pack
             inCtorConfirm
@@ -199,10 +199,10 @@ userRegV0Edges = \case
     , Edge
         { guard  = isResend
         , update =
-            USet (#confirmCode :: Index UserRegRegs ConfirmationCode)
+            USet (#confirmCode :: IndexN "confirmCode" UserRegRegs ConfirmationCode)
                  (inpResend #code)
-              `unsafeCombine`
-            USet (#registeredAt :: Index UserRegRegs UTCTime)
+              `combine`
+            USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpResend #at)
         , output = Just $ pack
             inCtorResend
@@ -214,7 +214,7 @@ userRegV0Edges = \case
         }
     , Edge
         { guard  = isGdpr
-        , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
+        , update = USet (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
                         (inpGdpr #at)
         , output = Nothing
         , target = Deleted
@@ -224,7 +224,7 @@ userRegV0Edges = \case
   Confirmed ->
     [ Edge
         { guard  = isGdpr
-        , update = USet (#deletedAt :: Index UserRegRegs UTCTime)
+        , update = USet (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
                         (inpGdpr #at)
         , output = Just $ pack
             inCtorGdpr

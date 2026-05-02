@@ -1,6 +1,11 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE UndecidableInstances #-}
+-- 'combine''s 'Disjoint' constraint is the static check itself; GHC
+-- sees it as unused (the body is @UCombine@) and would otherwise warn.
+-- Same reasoning for any future helpers that re-export the constraint
+-- as a typed witness.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | The pure core of keiki: the symbolic-register transducer.
 --
@@ -41,6 +46,12 @@ module Keiki.Core
   , InCtor (..)
   , AssembleRegFile
   , KnownSlotNames
+    -- * Slot-name machinery (re-exported from "Keiki.Internal.Slots")
+  , IndexN (..)
+  , HasIndexN (..)
+  , Disjoint
+  , Concat
+  , Names
     -- * Update language
   , Update (..)
   , combine
@@ -56,6 +67,8 @@ module Keiki.Core
     -- * Edges and the transducer
   , Edge (..)
   , SymTransducer (..)
+  , applyEdgeUpdate
+  , edgeReadsInput
     -- * Helpers (the user-facing DSL surface)
   , matchInCtor
   , proj
@@ -93,6 +106,14 @@ import Data.Typeable (Typeable)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Unsafe.Coerce (unsafeCoerce)
+
+import Keiki.Internal.Slots
+  ( Concat
+  , Disjoint
+  , HasIndexN (..)
+  , IndexN (..)
+  , Names
+  )
 
 
 -- | A register slot is a label paired with the type of its value.
@@ -146,6 +167,9 @@ instance forall s rs r.
          HasIndex s rs r
       => IsLabel s (Index rs r) where
   fromLabel = indexOf @s @rs @r
+
+-- The @IsLabel s (IndexN s rs r)@ instance lives next to 'IndexN' in
+-- "Keiki.Internal.Slots" so the orphan check is satisfied.
 
 
 -- * Term language ----------------------------------------------------------
@@ -256,42 +280,53 @@ instance (KnownSymbol s, AssembleRegFile rs)
 
 -- * Update language --------------------------------------------------------
 
--- | The copyless update language. Each register is written at most once
--- per 'UCombine'-tree on a single edge — enforced at construction time
--- by 'combine'.
-data Update (rs :: [Slot]) (ci :: Type) where
-  UKeep    :: Update rs ci
-  USet     :: Index rs r -> Term rs ci r -> Update rs ci
-  UCombine :: Update rs ci -> Update rs ci -> Update rs ci
+-- | The copyless update language. The @(w :: [Symbol])@ index
+-- records the set of slot names this update writes; the smart
+-- constructor 'combine' demands @'Disjoint' w1 w2@ to combine two
+-- updates, so "each register is written at most once per edge
+-- update" becomes a type-level invariant rather than a runtime check.
+--
+-- The 'UCombine' raw constructor is *not* constrained by 'Disjoint':
+-- the invariant is enforced at the smart-constructor introduction
+-- point ('combine'). This keeps internal pattern-matches in
+-- "Keiki.Composition" (which reconstruct 'UCombine' values during
+-- weakening / substitution) cheap, and lets the v1 'unsafeCombine'
+-- escape hatch (removed in EP-18 M8) be a one-liner during the
+-- migration window.
+data Update (rs :: [Slot]) (w :: [Symbol]) (ci :: Type) where
+  UKeep    :: Update rs '[] ci
+  USet     :: KnownSymbol s
+           => IndexN s rs r -> Term rs ci r -> Update rs '[s] ci
+  UCombine :: Update rs w1 ci
+           -> Update rs w2 ci
+           -> Update rs (Concat w1 w2) ci
 
 
--- | Smart constructor for 'UCombine' that rejects updates writing to the
--- same slot twice.
-combine :: Update rs ci -> Update rs ci -> Either String (Update rs ci)
-combine a b
-  | null overlap = Right (UCombine a b)
-  | otherwise    = Left ("combine: overlapping targets at indices "
-                          ++ show overlap)
-  where
-    overlap = [t | t <- targets a, t `elem` targets b]
+-- | Smart constructor for 'UCombine'. The @'Disjoint' w1 w2@
+-- constraint statically enforces that the two halves write to
+-- disjoint slot-name sets; an aggregate that writes the same slot
+-- twice (e.g. @'USet' #email t1 \`combine\` 'USet' #email t2@) is
+-- rejected at compile time with a 'GHC.TypeError.TypeError' naming
+-- the offending slot.
+combine
+  :: Disjoint w1 w2
+  => Update rs w1 ci
+  -> Update rs w2 ci
+  -> Update rs (Concat w1 w2) ci
+combine = UCombine
 
 
--- | Unchecked 'UCombine'. Use only when you have proven distinct targets
--- by hand. MasterPlan 6 retires this in favour of a static check (see
--- the module-header note on pending v1 escape hatches).
-unsafeCombine :: Update rs ci -> Update rs ci -> Update rs ci
+-- | Unchecked combine. Equivalent to 'UCombine' with a friendlier
+-- name; bypasses the static disjointness check by simply not
+-- demanding it. MasterPlan 6 retires this surface in EP-18 M8 in
+-- favour of the smart 'combine'; aggregates should never use it.
+-- During the migration window M2-M7 the helper still exists to keep
+-- pre-migration call sites compiling.
+unsafeCombine
+  :: Update rs w1 ci
+  -> Update rs w2 ci
+  -> Update rs (Concat w1 w2) ci
 unsafeCombine = UCombine
-
-
-targets :: Update rs ci -> [Int]
-targets UKeep          = []
-targets (USet ix _)    = [indexInt ix]
-targets (UCombine a b) = targets a ++ targets b
-
-
-indexInt :: Index rs r -> Int
-indexInt ZIdx     = 0
-indexInt (SIdx i) = 1 + indexInt i
 
 
 -- * Output term language ---------------------------------------------------
@@ -386,12 +421,23 @@ instance BoolAlg (HsPred rs ci) (RegFile rs, ci) where
 -- * Edges and the transducer -----------------------------------------------
 
 -- | A single transition. 'Nothing' on 'output' is the ε-edge.
-data Edge phi rs ci co s = Edge
-  { guard  :: phi
-  , update :: Update rs ci
-  , output :: Maybe (OutTerm rs ci co)
-  , target :: s
-  }
+--
+-- The @(w :: [Symbol])@ index on 'update' (the slot-name set the
+-- update writes) is *existentially* quantified at the 'Edge' record
+-- — different edges out of the same vertex write different slot
+-- sets, but the homogeneous list @[Edge phi rs ci co s]@ in
+-- 'edgesOut' demands a single @Edge@ type. The existential preserves
+-- the static disjointness check at the *introduction* point of any
+-- 'Update' value (via 'combine') without polluting the @Edge@'s
+-- public type with a per-edge @w@ parameter.
+data Edge phi rs ci co s where
+  Edge
+    :: { guard  :: phi
+       , update :: Update rs w ci
+       , output :: Maybe (OutTerm rs ci co)
+       , target :: s
+       }
+    -> Edge phi rs ci co s
 
 
 -- | The single source of truth: a finite control graph plus a register
@@ -402,6 +448,21 @@ data SymTransducer phi rs s ci co = SymTransducer
   , initialRegs :: RegFile rs
   , isFinal     :: s -> Bool
   }
+
+
+-- | Apply an edge's update to the register file. The 'Edge''s
+-- existentially-quantified @w@ index makes @'update' e@ unusable as
+-- a function (GHC rejects with "escaped type variables"); this
+-- helper hides the existential by pattern-matching internally.
+applyEdgeUpdate
+  :: Edge phi rs ci co s -> RegFile rs -> ci -> RegFile rs
+applyEdgeUpdate Edge{ update = u } regs ci = runUpdate u regs ci
+
+
+-- | Does an edge's update read the input symbol via 'TInpCtorField'?
+-- Existential-hiding companion to 'updateReadsInput'.
+edgeReadsInput :: Edge phi rs ci co s -> Bool
+edgeReadsInput Edge{ update = u } = updateReadsInput u
 
 
 -- * Helpers (DSL surface) --------------------------------------------------
@@ -492,19 +553,19 @@ evalPred (PInCtor ic)  _    c  = case icMatch ic c of
 
 
 -- | Apply an 'Update' to the register file. 'UCombine' applies left
--- then right; the user's 'combine' smart constructor (or hand-checked
--- 'unsafeCombine' use) is responsible for distinct targets so that the
--- order does not matter.
-runUpdate :: Update rs ci -> RegFile rs -> ci -> RegFile rs
+-- then right; the smart 'combine''s 'Disjoint' constraint guarantees
+-- the two halves write to disjoint slots, so the application order
+-- does not affect the result.
+runUpdate :: Update rs w ci -> RegFile rs -> ci -> RegFile rs
 runUpdate UKeep          regs _  = regs
-runUpdate (USet ix t)    regs ci = setSlot ix (evalTerm t regs ci) regs
+runUpdate (USet ix t)    regs ci = setSlotN ix (evalTerm t regs ci) regs
 runUpdate (UCombine a b) regs ci = runUpdate b (runUpdate a regs ci) ci
 
 
--- | Pure register-file slot update at the index.
-setSlot :: Index rs r -> r -> RegFile rs -> RegFile rs
-setSlot ZIdx     v regs = case regs of RCons p _ rest -> RCons p v rest
-setSlot (SIdx i) v regs = case regs of RCons p x rest -> RCons p x (setSlot i v rest)
+-- | Pure register-file slot update at a slot-name-tagged 'IndexN'.
+setSlotN :: IndexN s rs r -> r -> RegFile rs -> RegFile rs
+setSlotN IZ     v regs = case regs of RCons p _ rest -> RCons p v rest
+setSlotN (IS i) v regs = case regs of RCons p x rest -> RCons p x (setSlotN i v rest)
 
 
 -- | Single-step transition. Returns 'Just (s', regs')' iff exactly one
@@ -514,7 +575,7 @@ delta
   => SymTransducer phi rs s ci co
   -> s -> RegFile rs -> ci -> Maybe (s, RegFile rs)
 delta t s regs ci =
-  case [ (target e, runUpdate (update e) regs ci)
+  case [ (target e, applyEdgeUpdate e regs ci)
        | e <- edgesOut t s
        , models (guard e) (regs, ci)
        ] of
@@ -566,7 +627,7 @@ applyEvent
   => SymTransducer phi rs s ci co
   -> s -> RegFile rs -> co -> Maybe (s, RegFile rs)
 applyEvent t s regs co =
-  case [ (target e, runUpdate (update e) regs ci)
+  case [ (target e, applyEdgeUpdate e regs ci)
        | e <- edgesOut t s
        , Just o  <- [output e]
        , Just ci <- [solveOutput o regs co]
@@ -673,7 +734,7 @@ checkHiddenInputs t =
     edgeReasons :: Int -> Edge phi rs ci co s -> [String]
     edgeReasons n e = case output e of
       Nothing
-        | updateReadsInput (update e) ->
+        | edgeReadsInput e ->
             [ "edge #" <> show n <> ": ε-edge with input read in update" ]
         | otherwise -> []
       Just (OPack ic _ fields)
@@ -692,7 +753,7 @@ checkHiddenInputs t =
 
 
 -- | Does the 'Update' read the input symbol via 'TInpCtorField'?
-updateReadsInput :: Update rs ci -> Bool
+updateReadsInput :: Update rs w ci -> Bool
 updateReadsInput UKeep          = False
 updateReadsInput (USet _ t)     = termReadsInput t
 updateReadsInput (UCombine a b) = updateReadsInput a || updateReadsInput b
@@ -756,11 +817,15 @@ detectMissingInCtorFields ic@InCtor{} fields =
     goTerm :: forall r. Term rs ci r -> [String]
     goTerm (TInpCtorField ic2 ix)
       | icName ic2 == icName ic =
-          [allSlots !! indexInt ix]
+          [allSlots !! indexPos ix]
       | otherwise = []
     goTerm (TApp1 _ t')   = goTerm t'
     goTerm (TApp2 _ a b)  = goTerm a ++ goTerm b
     goTerm _              = []
+
+    indexPos :: forall rs' r. Index rs' r -> Int
+    indexPos ZIdx     = 0
+    indexPos (SIdx i) = 1 + indexPos i
 
 
 -- | Read the slot-name list out of an 'InCtor' (uses the

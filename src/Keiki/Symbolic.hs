@@ -416,9 +416,9 @@ withSymPred t = SymTransducer
   where
     liftEdge :: Edge (HsPred rs ci) rs ci co s
              -> Edge (SymPred rs ci) rs ci co s
-    liftEdge e = Edge
+    liftEdge e@Edge{ update = u } = Edge
       { guard  = SymPred (guard e)
-      , update = update e
+      , update = u
       , output = output e
       , target = target e
       }

@@ -105,7 +105,7 @@ spec = do
     -- Re-implement applyEvent locally, since the library does not
     -- export its internal helper.
     stepEvent s regs co =
-      case [ (target e, runUpdate (update e) regs ci)
+      case [ (target e, applyEdgeUpdate e regs ci)
            | e <- edgesOut userReg s
            , Just o  <- [output e]
            , Just ci <- [solveOutput o regs co]

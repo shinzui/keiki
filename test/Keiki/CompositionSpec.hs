@@ -118,13 +118,13 @@ alertEdges = \case
     [ Edge
         { guard  = isTrigger
         , update =
-            USet (#alertRecipient :: Index AlertRegs Text)
+            USet (#alertRecipient :: IndexN "alertRecipient" AlertRegs Text)
                  (inpTrigger #recipient)
-              `unsafeCombine`
-            USet (#alertSubject :: Index AlertRegs Text)
+              `combine`
+            USet (#alertSubject :: IndexN "alertSubject" AlertRegs Text)
                  (inpTrigger #subject)
-              `unsafeCombine`
-            USet (#alertAt :: Index AlertRegs UTCTime)
+              `combine`
+            USet (#alertAt :: IndexN "alertAt" AlertRegs UTCTime)
                  (inpTrigger #at)
           -- The output is EmailCmd — built from the trigger's payload.
         , output = Just $ pack

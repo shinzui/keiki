@@ -164,13 +164,13 @@ emailDeliveryEdges = \case
     [ Edge
         { guard  = isSendEmail
         , update =
-            USet (#emailRecipient :: Index EmailRegs Email)
+            USet (#emailRecipient :: IndexN "emailRecipient" EmailRegs Email)
                  (inpSendEmail #recipient)
-              `unsafeCombine`
-            USet (#emailSubject :: Index EmailRegs Subject)
+              `combine`
+            USet (#emailSubject :: IndexN "emailSubject" EmailRegs Subject)
                  (inpSendEmail #subject)
-              `unsafeCombine`
-            USet (#emailSentAt :: Index EmailRegs UTCTime)
+              `combine`
+            USet (#emailSentAt :: IndexN "emailSentAt" EmailRegs UTCTime)
                  (inpSendEmail #at)
         , output = Just $ pack
             inCtorSendEmail

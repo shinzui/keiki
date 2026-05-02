@@ -3,6 +3,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+-- 'compose''s @Disjoint (Names rs1) (Names rs2)@ constraint is the
+-- documented precondition that @rs1@ and @rs2@ have disjoint
+-- slot-name domains; the body uses raw 'UCombine' (decision logged
+-- in EP-18) so GHC sees the constraint as unused. Same reasoning as
+-- "Keiki.Core"'s 'combine'.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | Sequential composition of two 'SymTransducer's.
 --
@@ -83,18 +89,24 @@ instance ( Bounded s1, Enum s1
 
 -- * WeakenR: lift an Index over rs2 to (Append rs1 rs2) -------------------
 
--- | Lift a tail-side 'Index' across an rs1 prefix. The class is
--- indexed by @rs1@; instances walk rs1's slot list with 'SIdx'
--- prepends, converting an @'Index' rs2 r@ into an
--- @'Index' (Append rs1 rs2) r@.
+-- | Lift a tail-side 'Index' (or 'IndexN') across an rs1 prefix.
+-- The class is indexed by @rs1@; instances walk rs1's slot list with
+-- 'SIdx' / 'IS' prepends, converting an @'Index' rs2 r@ into an
+-- @'Index' (Append rs1 rs2) r@ and an @'IndexN' s rs2 r@ into an
+-- @'IndexN' s (Append rs1 rs2) r@.
 class WeakenR (rs1 :: [Slot]) where
-  weakenR :: forall rs2 r. Index rs2 r -> Index (Append rs1 rs2) r
+  weakenR
+    :: forall rs2 r. Index rs2 r -> Index (Append rs1 rs2) r
+  weakenRIndexN
+    :: forall rs2 s r. IndexN s rs2 r -> IndexN s (Append rs1 rs2) r
 
 instance WeakenR '[] where
-  weakenR i = i
+  weakenR       i = i
+  weakenRIndexN i = i
 
 instance WeakenR rs1 => WeakenR ('(s, t) ': rs1) where
-  weakenR i = SIdx (weakenR @rs1 i)
+  weakenR       i = SIdx (weakenR       @rs1 i)
+  weakenRIndexN i = IS   (weakenRIndexN @rs1 i)
 
 
 -- * weakenL: lift an Index over rs1 to (Append rs1 rs2) -------------------
@@ -137,15 +149,25 @@ weakenLPred (PInCtor ic)  = PInCtor ic
 
 
 -- | Walk an 'Update' and weaken every register write + every
--- right-hand-side 'Term'.
+-- right-hand-side 'Term'. The slot-name index @w@ is preserved by
+-- weakening — adding new slots to the right of @rs1@ does not change
+-- which slot names the update writes.
 weakenLUpdate
-  :: forall rs1 rs2 ci.
-     Update rs1 ci -> Update (Append rs1 rs2) ci
+  :: forall rs1 rs2 w ci.
+     Update rs1 w ci -> Update (Append rs1 rs2) w ci
 weakenLUpdate UKeep          = UKeep
-weakenLUpdate (USet ix t)    = USet (weakenL @rs1 @rs2 ix)
+weakenLUpdate (USet ix t)    = USet (weakenLIndexN @rs1 @rs2 ix)
                                      (weakenLTerm @rs1 @rs2 t)
 weakenLUpdate (UCombine a b) = UCombine (weakenLUpdate @rs1 @rs2 a)
                                          (weakenLUpdate @rs1 @rs2 b)
+
+
+-- | Slot-name-tagged analogue of 'weakenL'. Walks an existing
+-- 'IndexN' shape; @IZ@ stays @IZ@, @IS i@ recurses. Preserves the
+-- slot symbol carried by the index.
+weakenLIndexN :: forall rs1 rs2 s r. IndexN s rs1 r -> IndexN s (Append rs1 rs2) r
+weakenLIndexN IZ     = IZ
+weakenLIndexN (IS i) = IS (weakenLIndexN @_ @rs2 i)
 
 
 -- * Substitution algorithm -------------------------------------------------
@@ -255,18 +277,23 @@ substPred (PInCtor ic2)  o1 =
       | otherwise                -> PBot
 
 
--- | Substitute a t2-side 'Update' against t1's edge output.
+-- | Substitute a t2-side 'Update' against t1's edge output. The
+-- slot-name index @w@ is preserved by substitution — substituting
+-- input reads inside the right-hand-side 'Term's does not change
+-- which slot names the update writes.
 substUpdate
-  :: forall rs1 rs2 ci1 mid.
+  :: forall rs1 rs2 w ci1 mid.
      WeakenR rs1
-  => Update rs2 mid
+  => Update rs2 w mid
   -> OutTerm rs1 ci1 mid
-  -> Update (Append rs1 rs2) ci1
+  -> Update (Append rs1 rs2) w ci1
 substUpdate UKeep            _o1 = UKeep
-substUpdate (USet ix2 t)      o1 = USet (weakenR @rs1 ix2)
+substUpdate (USet ix2 t)      o1 = USet (weakenRIndexN @rs1 ix2)
                                           (substTerm @rs1 @rs2 t o1)
 substUpdate (UCombine a b)    o1 = UCombine (substUpdate @rs1 @rs2 a o1)
                                               (substUpdate @rs1 @rs2 b o1)
+
+
 
 
 -- | Substitute a t2-side 'OutFields' chain against t1's edge output.
@@ -343,6 +370,7 @@ unsafeCoerceInCtor = unsafeCoerce
 compose
   :: forall rs1 rs2 s1 s2 ci1 mid co.
      ( WeakenR rs1
+     , Disjoint (Names rs1) (Names rs2)
      )
   => SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 mid
   -> SymTransducer (HsPred rs2 mid) rs2 s2 mid co
@@ -378,12 +406,13 @@ compose t1 t2 = SymTransducer
       :: Edge (HsPred rs1 ci1) rs1 ci1 mid s1 -> s2
       -> Edge (HsPred (Append rs1 rs2) ci1)
               (Append rs1 rs2) ci1 co (Composite s1 s2)
-    epsilonEdge e1 s2 = Edge
-      { guard  = weakenLPred @rs1 @rs2 (guard e1)
-      , update = weakenLUpdate @rs1 @rs2 (update e1)
-      , output = Nothing
-      , target = Composite (target e1) s2
-      }
+    epsilonEdge e1 s2 = case e1 of
+      Edge { update = u1 } -> Edge
+        { guard  = weakenLPred @rs1 @rs2 (guard e1)
+        , update = weakenLUpdate @rs1 @rs2 u1
+        , output = Nothing
+        , target = Composite (target e1) s2
+        }
 
     productEdge
       :: Edge (HsPred rs1 ci1) rs1 ci1 mid s1
@@ -391,12 +420,26 @@ compose t1 t2 = SymTransducer
       -> Edge (HsPred rs2 mid)  rs2  mid co s2
       -> Edge (HsPred (Append rs1 rs2) ci1)
               (Append rs1 rs2) ci1 co (Composite s1 s2)
-    productEdge e1 o1 e2 = Edge
-      { guard  = PAnd (weakenLPred @rs1 @rs2 (guard e1))
-                      (substPred  @rs1 @rs2 (guard e2) o1)
-      , update = unsafeCombine
-                   (weakenLUpdate @rs1 @rs2 (update e1))
-                   (substUpdate   @rs1 @rs2 (update e2) o1)
-      , output = fmap (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2)
-      , target = Composite (target e1) (target e2)
-      }
+    productEdge e1 o1 e2 = case (e1, e2) of
+      -- Pattern-match brings each Edge's existential @w1@ / @w2@ into
+      -- scope so that 'weakenLUpdate' / 'substUpdate' can pin their
+      -- result types to the inputs' indices. The composite @w@
+      -- becomes 'Concat w1 w2'; we use the raw 'UCombine' constructor
+      -- (no 'Disjoint' constraint) because the structural
+      -- disjointness here — left writes only into the rs1 prefix,
+      -- right writes only into the rs2 suffix — cannot be promoted
+      -- to a type-level constraint without carrying a @Subset w
+      -- (Names rs)@ witness through 'Edge'\'s existential and a
+      -- hand-written lemma function. External aggregate authors
+      -- still get the static 'Disjoint' check via 'combine'; this
+      -- internal call site is the documented exception. See EP-18's
+      -- Decision Log entry dated 2026-05-02.
+      (Edge { update = u1 }, Edge { update = u2 }) -> Edge
+        { guard  = PAnd (weakenLPred @rs1 @rs2 (guard e1))
+                        (substPred  @rs1 @rs2 (guard e2) o1)
+        , update = UCombine
+                     (weakenLUpdate @rs1 @rs2 u1)
+                     (substUpdate   @rs1 @rs2 u2 o1)
+        , output = fmap (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2)
+        , target = Composite (target e1) (target e2)
+        }
