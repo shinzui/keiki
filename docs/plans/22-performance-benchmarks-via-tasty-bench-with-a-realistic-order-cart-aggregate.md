@@ -100,12 +100,13 @@ entries, add new items as discovered.
   caret bound the plan suggested to admit both 0.4.x and 0.5.x).
   Created `bench/Bench.hs` with a smoke benchmark; `cabal bench`
   runs `OK` in 2.38s. (2026-05-02)
-- [ ] M2 — `Keiki.Examples.OrderCart` aggregate (builder form +
+- [x] M2 — `Keiki.Examples.OrderCart` aggregate (builder form +
   AST form, mirroring the `userReg`/`userRegAST` shape). Ships
   with `Keiki.Examples.OrderCartBuilderSpec` (byte-identical
   equivalence) and `Keiki.Examples.OrderCartSpec` (one
   end-to-end replay through the canonical event log). Test
-  count rises from 141 to ~145–147.
+  count rose from 141 to 149 (+8 new cases). 10 commands,
+  10 events, 8 vertices, 11 registers, 12 edges. (2026-05-02)
 - [ ] M3 — Real benchmark module: replace the M1 smoke bench
   with grouped benches for `delta`, `omega`, `step`,
   `reconstitute`, `applyEvent`, exercised across both example
@@ -234,6 +235,70 @@ Subsequent decisions made during implementation append below them with a date.
   lines; `src/Keiki/Examples/EmailDelivery.hs` is 223 lines.
   These anchor the post-EP-21 starting point against which M2's
   test-count rise (≥145) will be measured.
+  Date: 2026-05-02
+
+- Decision: event renaming. Five OrderCart event constructors
+  (`Reserved`, `Shipped`, `Delivered`, `Cancelled`, `Refunded`)
+  collide with same-named vertex constructors of `OrderVertex`;
+  GHC rejects duplicate data-constructor names within a module
+  even when the constructors live in distinct sum types. Renamed
+  the conflicting events with an `Order` prefix:
+  `OrderReserved`, `OrderShipped`, `OrderDelivered`,
+  `OrderCancelled`, `OrderRefunded`. Vertex names match the
+  plan literally (`Empty`, `OpenWithItems`, `Reserved`, `Paid`,
+  `Shipped`, `Delivered`, `Cancelled`, `Refunded`). The plan's
+  narrative event names (without prefix) are deviated; the
+  prefix encodes "this is an event about the Order, not the
+  vertex it lands in".
+  Date: 2026-05-02
+
+- Decision: register simplification — `cartItems :: [CartItem]`
+  collapsed to `itemCount :: Word32`. The plan called for a list
+  register; encoding "append" as a `Term` requires `TApp2 (:)`
+  with a constructed `CartItem`, and "remove by sku" requires a
+  filter helper that adds noise without exercising any new
+  interpreter path the bench cares about. A `Word32` counter
+  evolved by `TApp1 (+ 1)` / `TApp1 (subtract 1)` exercises the
+  same `Update` shape (a register write whose RHS reads the
+  register itself) at materially less authoring overhead. The
+  register count is 11, matching the plan's "≈11 registers".
+  Date: 2026-05-02
+
+- Decision: no `KnownInCtors OrderCmd` instance. The `SomeInCtor`
+  data constructor demands `ExtractRegFile ifs`, which transitively
+  requires `Sym t` for every slot type `t`. The curated `Sym`
+  registry covers `Bool`, `Int`, `Integer`, `Text`, `UTCTime` —
+  not `Word16`, `Word32`, or `Word64`, three types `OrderCartRegs`
+  uses (basis-point discount, item count, fixed-point currency).
+  Two paths considered: (a) widen `Keiki.Symbolic` with new `Sym`
+  instances, (b) skip the `KnownInCtors` instance for OrderCmd.
+  Chose (b) because: M3 declares SBV-bound analyses out of scope
+  for the bench, the `Sym` instances would be a public-surface
+  widening that belongs in its own plan, and the pure-core
+  operations the bench measures (`delta`, `omega`, `step`,
+  `applyEvent`, `reconstitute`) are unaffected. The OrderCart
+  module's Haddock records the omission and points at this entry.
+  Date: 2026-05-02
+
+- Decision: nine vertices considered, eight chosen. An earlier
+  draft inserted a `RefundPending` vertex between `Paid` and
+  `Refunded` so that `RequestRefund` and `ProcessRefund` would
+  both contribute non-trivial transitions. Collapsed to
+  `RequestRefund` self-looping on `Paid` (emit-only, no register
+  write) so the vertex count lands at exactly 8 per the plan.
+  `ProcessRefund` remains the actual refund step (Paid →
+  Refunded with `refundedAt` set).
+  Date: 2026-05-02
+
+- Decision: per-scenario logs in `OrderCartBuilderSpec`. The
+  aggregate has three terminal vertices (`Delivered`,
+  `Cancelled`, `Refunded`); a single canonical log walks one of
+  them. The equivalence spec ships three deterministic logs —
+  happy-path (9 events ending in `Delivered`), cancel-path (2
+  events), refund-path (5 events) — so all three terminal
+  branches are exercised. The bench-side `canonicalLog` (M3) is
+  inflated to ≥32 events on the happy path only; that's where
+  per-step amortisation matters.
   Date: 2026-05-02
 
 

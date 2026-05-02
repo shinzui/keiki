@@ -44,6 +44,7 @@ library
                         Keiki.Internal.Slots
                         Keiki.Symbolic
                         Keiki.Examples.EmailDelivery
+                        Keiki.Examples.OrderCart
                         Keiki.Examples.UserRegistration
                         Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
@@ -68,6 +69,8 @@ test-suite keiki-test
                         Keiki.SymbolicSpec
                         Keiki.Examples.EmailDeliveryBuilderSpec
                         Keiki.Examples.EmailDeliveryViewSpec
+                        Keiki.Examples.OrderCartBuilderSpec
+                        Keiki.Examples.OrderCartSpec
                         Keiki.Examples.UserRegistrationBuilderSpec
                         Keiki.Examples.UserRegistrationSpec
                         Keiki.Examples.UserRegistrationSymbolicSpec

@@ -11,6 +11,8 @@ import qualified Keiki.Generics.THSpec
 import qualified Keiki.SymbolicSpec
 import qualified Keiki.Examples.EmailDeliveryBuilderSpec
 import qualified Keiki.Examples.EmailDeliveryViewSpec
+import qualified Keiki.Examples.OrderCartBuilderSpec
+import qualified Keiki.Examples.OrderCartSpec
 import qualified Keiki.Examples.UserRegistrationBuilderSpec
 import qualified Keiki.Examples.UserRegistrationSpec
 import qualified Keiki.Examples.UserRegistrationSymbolicSpec
@@ -29,6 +31,8 @@ main = hspec $ do
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
   describe "Keiki.Examples.EmailDelivery (builder)"       Keiki.Examples.EmailDeliveryBuilderSpec.spec
   describe "Keiki.Examples.EmailDelivery (view)"          Keiki.Examples.EmailDeliveryViewSpec.spec
+  describe "Keiki.Examples.OrderCart"                     Keiki.Examples.OrderCartSpec.spec
+  describe "Keiki.Examples.OrderCart (builder)"           Keiki.Examples.OrderCartBuilderSpec.spec
   describe "Keiki.Examples.UserRegistration"              Keiki.Examples.UserRegistrationSpec.spec
   describe "Keiki.Examples.UserRegistration (builder)"    Keiki.Examples.UserRegistrationBuilderSpec.spec
   describe "Keiki.Examples.UserRegistration (symbolic)"   Keiki.Examples.UserRegistrationSymbolicSpec.spec
