@@ -167,39 +167,60 @@ always reflect the actual current state of the work.
       MasterPlan-shape decision: **single-EP**, no fan-out.
       MasterPlan 4 completes after EP-11. M5 of this plan is a
       no-op.
-- [ ] **Milestone 2 — Module shape + first combinator.** Add the
-      chosen module. Implement the first combinator (likely
-      `compose`). Verify `cabal build` succeeds and the
-      single-aggregate `userReg` tests stay green.
-- [ ] **Milestone 3 — Worked example: Email Delivery aggregate.**
-      Add `src/Keiki/Examples/EmailDelivery.hs` — a small
-      aggregate (1 vertex, 1 ctor, 1 event) that the process
-      manager composes with User Registration. Reuses
-      `Keiki.Generics` for ctor scaffolding. If EP-8 has landed,
-      uses the TH splice form; otherwise uses
-      `mkInCtorVia`/`mkWireCtorVia` directly.
-- [ ] **Milestone 4 — Compose + verify guarantees.** Wire the
-      composite `userReg ⨾ emailDeliveryProcessManager`. Add
-      tests asserting:
-      (a) `isSingleValuedSym (composite)` returns `True`
-          symbolically.
-      (b) `checkHiddenInputs (composite)` returns `[]` (no hidden
-          inputs) for the worked example.
-      (c) `reconstitute composite` on the canonical event log
-          returns the expected `(state, regfile)` pair.
-- [ ] **Milestone 5 — MasterPlan revision (if fan-out).** If the
-      design milestone (M1) decided to fan out into
-      per-combinator EPs (EP-12, EP-13, ...), revise
-      `docs/masterplans/4-composition-combinators-on-symtransducer.md`
-      via the standard MasterPlan revision protocol: append new
-      Exec-Plan Registry rows, update the Dependency Graph,
-      append a revision note. Otherwise this milestone is a no-op
-      and the EP marks complete.
-- [ ] **Milestone 6 — Update design note + commit.** Mark item F
-      as **Implemented (see EP-11 / MP-4)** in
-      `docs/research/keiki-generics-design.md`. Single commit (or
-      one per milestone if logical splits emerge). Trailers:
-      `MasterPlan`, `ExecPlan`, `Intention`.
+- [x] **Milestone 2 — Module shape + first combinator.**
+      *(2026-05-02)* Created `src/Keiki/Composition.hs` exporting
+      `compose`, the `Composite` newtype with hand-rolled
+      `Bounded`/`Enum`, the `WeakenR` typeclass, the
+      `weakenL`/`weakenLTerm`/`weakenLPred`/`weakenLUpdate`
+      lifters, and the substitution algorithm
+      (`substTerm`/`substPred`/`substUpdate`/`substOut`/
+      `substOutFields`). Added `Keiki.Composition` to
+      `keiki.cabal`'s `library:exposed-modules`.
+      `cabal build all` succeeds; existing test suite unchanged
+      at 89 examples, 0 failures.
+- [x] **Milestone 3 — Worked example: Email Delivery aggregate.**
+      *(2026-05-02)* Created `src/Keiki/Examples/EmailDelivery.hs`
+      — a 2-vertex aggregate (`EmailPending → EmailSentVertex`)
+      with one command (`SendEmail`) and one event (`EmailSent`),
+      using EP-8's `deriveAggregateCtors`/`deriveWireCtors` TH
+      splices. Added to `keiki.cabal`'s
+      `library:exposed-modules`. `cabal build all` succeeds.
+- [x] **Milestone 4 — Compose + verify guarantees.**
+      *(2026-05-02)* Created `test/Keiki/CompositionSpec.hs`
+      with the `pipeline = compose alertSource emailDelivery`
+      composite. The `AlertSource` test fixture (defined inline
+      in the spec; emits `EmailCmd` so its mid alphabet aligns
+      with EmailDelivery's input) is a structural pipeline whose
+      transitions all produce wire events — making
+      `reconstitute` round-trip well-defined per the design
+      note's discussion. Added six tests:
+      (a) `step` produces `EmailSent` on `TriggerAlert` ✓
+      (b) `step` rejects at the terminal composite vertex ✓
+      (c) `checkHiddenInputs pipeline == []` ✓
+      (d) `isSingleValuedSym (withSymPred pipeline) == True` ✓
+          (symbolic via z3)
+      (e) `reconstitute pipeline [sampleEmailEvent]` lands at
+          `Composite AlertEmitted EmailSentVertex` ✓
+      (f) `omega pipeline initial regs sampleTrigger ==
+          Just sampleEmailEvent` ✓
+      Wired `Keiki.CompositionSpec` into `test/Spec.hs` and
+      `keiki.cabal`'s `keiki-test:other-modules`. `cabal test
+      all` reports **95 examples, 0 failures** (89 baseline + 6
+      new).
+- [x] **Milestone 5 — MasterPlan revision.** *(2026-05-02)*
+      No-op. M1's design decision keeps EP-11 single-EP — the
+      minimum viable combinator set is `compose` alone, fitting
+      cleanly inside this plan. MasterPlan 4 stays unchanged
+      (no per-combinator fan-out).
+- [x] **Milestone 6 — Update design note + commit.**
+      *(2026-05-02)* Marked item F **Implemented (see EP-11 /
+      MP-4)** in `docs/research/keiki-generics-design.md` and
+      updated the summary-table row from "Two (more proposed)"
+      to "One (compose; more proposed)". Two commits land the
+      work: the M0+M1 design milestone (already committed) plus
+      a single follow-up commit for M2-M6 (module +
+      EmailDelivery aggregate + tests + docs updates +
+      MasterPlan revision).
 
 
 ## Surprises & Discoveries
@@ -286,7 +307,97 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### What EP-11 delivered (2026-05-02)
+
+EP-11 retired item F of `keiki-generics-design.md` (crem-style
+composition combinators). The single combinator in scope, sequential
+`compose`, ships in a new module `Keiki.Composition`:
+
+- **Module:** `src/Keiki/Composition.hs` (~290 lines including
+  haddock). Exports `compose`, the `Composite s1 s2` newtype with
+  `Bounded`/`Enum` instances, the `WeakenR` typeclass, the four
+  `weakenL*` lifters, and the five `subst*` substitution functions.
+- **Design note:** `docs/research/composition-combinators-design.md`
+  (~480 lines). Documents the substitution algorithm in full, the
+  case analysis for single-valuedness preservation, and the
+  documented limitations.
+- **Worked example:** `src/Keiki/Examples/EmailDelivery.hs` — a
+  2-vertex aggregate. Tests use a `compose alertSource
+  emailDelivery` pipeline (with `alertSource` defined inline as a
+  test fixture).
+- **Tests:** `test/Keiki/CompositionSpec.hs` — six tests, all
+  passing. Suite total: **95 examples, 0 failures** (89 baseline +
+  6 new).
+- **Documentation updates:** `keiki-generics-design.md` item F
+  marked Implemented; summary-table row updated.
+
+### Compared to the original purpose
+
+The plan's purpose was to add composition combinators to
+`SymTransducer` while preserving the three keiki guarantees
+(mechanical inversion, build-time hidden-input checks, symbolic
+single-valuedness). All three are preserved on the composite,
+verified by:
+
+1. `reconstitute composite [event]` round-trip works (mechanical
+   inversion).
+2. `checkHiddenInputs composite == []` (the structural
+   substitution does not introduce hidden inputs).
+3. `isSingleValuedSym (withSymPred composite) == True`
+   (the substitution is a syntactic rewrite that preserves
+   unsatisfiability under SBV).
+
+The plan anticipated potentially fanning out into per-combinator
+EPs (EP-12 `compose`, EP-13 `feedback`, EP-14 `alternative`).
+The design milestone determined that the minimum viable subset is
+**a single combinator** (`compose`), so the plan stayed
+single-EP and MasterPlan 4 completes without revision.
+
+### Lessons learned
+
+- **The composite preserves single-valuedness compositionally**
+  via a syntactic-rewrite proof: each pairwise edge-conjunction
+  factors through either t1's mutual exclusion (the `g1a ∧ g1b`
+  factor) or t2's (under substitution). The proof sketch in the
+  design note's "Guarantee 3" section is a complete case analysis;
+  the implementation respects it. The symbolic z3 check on the
+  test pipeline confirms in <1s.
+
+- **Reconstitute imposes a structural constraint on composite
+  shapes.** A composite whose intermediate ε-edges block
+  `reconstitute` from advancing isn't amenable to a round-trip
+  test in the current keiki formalism. EP-11's worked example
+  uses a wire-event-on-every-transition pipeline (AlertSource ⨾
+  EmailDelivery) to avoid the issue; the orchestration-note
+  process-manager pattern (User Reg ⨾ PM ⨾ Email Delivery)
+  remains documented as a future application but is not used as
+  the EP-11 acceptance fixture.
+
+- **The substitution algorithm requires `unsafeCoerce` at two
+  positions** (term result-type alignment in `substTerm`, and
+  `InCtor` ci-type alignment in `substOut`). Both are justified
+  by the structural-alignment invariant (`icName == wcName`
+  implies the slot-list / field-tuple shapes derived from the
+  same `Generic` representation match). This precedent is
+  consistent with `Keiki.Core.gatherInpEntries`'s existing use
+  of `unsafeCoerce` for the same reason.
+
+### Gaps and follow-ups (deferred)
+
+- **`feedback`, `alternative`, `parallel`, `Kleisli`, profunctor
+  hierarchy** — see the design note's "Future improvements" list.
+- **Graceful fallback for non-structural inputs.** Currently
+  `compose` errors at runtime when t1 has `OFn` output or t2 has
+  `PMatchC` over `mid`. A future revision could emit composite
+  edges with escape hatches and let `checkHiddenInputs` flag
+  them.
+- **`reconstitute` over composites with intermediate ε-edges.**
+  The pure formalism doesn't currently support advancing
+  through ε-edges between wire events; runtime adapters do, but
+  the pure replay path needs a separate design.
+- **`pkgs.z3` in `flake.nix`'s devShell.** Without it, `cabal
+  test all` fails for symbolic tests (workaround: `nix-shell -p
+  z3 --run "cabal test all"`).
 
 
 ## Context and Orientation

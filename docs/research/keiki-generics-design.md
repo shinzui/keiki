@@ -818,6 +818,29 @@ significant (each combinator needs a careful semantics worked out
 against the formal projection); independent of `Keiki.Generics`'
 DX scope.
 
+**Implemented (see EP-11 / MP-4).** `Keiki.Composition` ships
+sequential `compose` as the minimum viable combinator. The
+implementation walks t2's `HsPred` / `Term` / `Update` / `OutTerm`
+ASTs and substitutes `mid`-reads with structural references to
+t1's edge output, preserving the keiki guarantees end-to-end:
+mechanical inversion via `solveOutput` chained through the
+composite's `OPack`, hidden-input check on transitively-hidden
+fields, and symbolic single-valuedness when both underlying
+transducers are individually single-valued. The substitution
+restricts t1 outputs to `OPack` and t2 mid-side guards to
+structural patterns (`PInCtor` / `PEq` / `TInpCtorField`); v1
+escape hatches (`OFn`, `PMatchC` over `mid`) raise a runtime
+error naming the offending edge. `feedback`, `alternative`,
+`parallel`, `Kleisli`, and the profunctor hierarchy are deferred
+to follow-up EPs as authoring needs surface. The worked example
+at `test/Keiki/CompositionSpec.hs` composes a tiny `AlertSource`
+fixture with `Keiki.Examples.EmailDelivery`; six tests verify
+`step`, `omega`, `reconstitute`, `checkHiddenInputs`, and
+`isSingleValuedSym` on the composite. See
+`docs/plans/11-composition-combinators-on-symtransducer.md`,
+`docs/research/composition-combinators-design.md`, and
+`src/Keiki/Composition.hs`.
+
 ### G. Compile-time transition safety (singletons-style)
 
 The biggest crem advantage that DX can't reclaim without invasive
@@ -837,7 +860,7 @@ discussion.
     Hidden-input detection       —               —               Build-time check
     Single-valuedness            Property test   —               Symbolic (z3)
     Compile-time topology        —               Yes (heavy)     —
-    Composition combinators      —               Six             Two (more proposed)
+    Composition combinators      —               Six             One (compose; more proposed)
     Built-in visualization       —               Mermaid         —
     Vertex-indexed state         —               GADT per vtx    Plain enum
     Dependency surface           base            singletons-base, base, sbv, generics

@@ -164,7 +164,7 @@ sibling EPs without forcing them to share an ExecPlan envelope.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Composition combinators on SymTransducer | docs/plans/11-composition-combinators-on-symtransducer.md | None | EP-7 (external), MP-3 children | In Progress |
+| 1 | Composition combinators on SymTransducer | docs/plans/11-composition-combinators-on-symtransducer.md | None | EP-7 (external), MP-3 children | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -259,12 +259,12 @@ the splice form; otherwise it uses `mkInCtorVia`/`mkWireCtorVia`.
 This section aggregates milestone-level progress across all child
 plans for an at-a-glance view.
 
-- [ ] EP-11: Verify prerequisites — Keiki.Core builds, all tests pass; record GHC version (M0)
-- [ ] EP-11: Survey crem and orchestration notes; pick minimum viable combinator set; write design note (M1)
-- [ ] EP-11: Decide module shape (`Keiki.Core` extension vs. new `Keiki.Composition`); add chosen combinators (M2)
-- [ ] EP-11: Add second worked-example aggregate for process-manager demo (M3)
-- [ ] EP-11: Implement composition; verify mechanical inversion / hidden-input check / symbolic single-valuedness all hold on the composite (M4)
-- [ ] EP-11: Update keiki-generics-design.md item F entry; capture verdict; revise this MasterPlan if fan-out is needed (M5)
+- [x] EP-11: Verify prerequisites — Keiki.Core builds, all tests pass; record GHC version (M0) *(2026-05-02; baseline 89 examples, GHC 9.12.3)*
+- [x] EP-11: Survey crem and orchestration notes; pick minimum viable combinator set; write design note (M1) *(2026-05-02; chose `compose` only; ~480-line design note)*
+- [x] EP-11: Decide module shape (`Keiki.Core` extension vs. new `Keiki.Composition`); add chosen combinators (M2) *(2026-05-02; new module Keiki.Composition)*
+- [x] EP-11: Add second worked-example aggregate for process-manager demo (M3) *(2026-05-02; Keiki.Examples.EmailDelivery)*
+- [x] EP-11: Implement composition; verify mechanical inversion / hidden-input check / symbolic single-valuedness all hold on the composite (M4) *(2026-05-02; 6 new tests pass, 95 examples 0 failures)*
+- [x] EP-11: Update keiki-generics-design.md item F entry; capture verdict; revise this MasterPlan if fan-out is needed (M5/M6) *(2026-05-02; no fan-out, item F retired)*
 
 
 ## Surprises & Discoveries
@@ -273,7 +273,31 @@ Document cross-plan insights, dependency changes, scope adjustments,
 or unexpected interactions between child plans. Provide concise
 evidence.
 
-(None yet.)
+- *(EP-11 M0, 2026-05-02)* **Neither `union` nor `compose` existed
+  in the codebase at EP-11 start.** `keiki-generics-design.md`'s
+  claim that the library "ships `union`" was aspirational; both
+  operators were net-new for EP-11. The design milestone treated
+  them as such; `union` was not included in the minimum viable
+  set (it has its own non-local single-valuedness invariant
+  warranting a separate design pass).
+
+- *(EP-11 M0, 2026-05-02)* **`cabal test all` requires `z3` in
+  PATH; the devShell does not include it.** Workaround:
+  `nix-shell -p z3 --run "cabal test all"`. Adding `pkgs.z3` to
+  `flake.nix`'s devShell is a small follow-up; out of scope for
+  EP-11.
+
+- *(EP-11 M1, 2026-05-02)* **Reconstitute on a composite requires
+  every composite transition to produce a wire event.** The
+  initial worked-example design (User Registration ⨾ Process
+  Manager ⨾ Email Delivery) had ε-edges in the process manager's
+  state machine for non-target events; on the composite this
+  meant `reconstitute` couldn't move past states with only
+  ε-outgoing edges. The fix was to use a simpler 2-aggregate
+  pipeline (AlertSource ⨾ EmailDelivery) where every transition
+  is wire-producing. The orchestration-note process-manager
+  pattern remains documented as a future application; EP-11
+  validates the composition mechanism on the simpler shape.
 
 
 ## Decision Log
@@ -311,4 +335,99 @@ evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original vision.
 
-(To be filled during and after implementation.)
+### What MP-4 delivered (2026-05-02)
+
+- A **new `Keiki.Composition` module** exporting `compose`, the
+  `Composite s1 s2` newtype with hand-rolled `Bounded`/`Enum`
+  instances, the `WeakenR` typeclass, the
+  `weakenL`/`weakenLTerm`/`weakenLPred`/`weakenLUpdate` lifters,
+  and the substitution algorithm
+  (`substTerm`/`substPred`/`substUpdate`/`substOut`/
+  `substOutFields`). Source: `src/Keiki/Composition.hs` (~290
+  lines including haddock).
+
+- A **new design note**
+  `docs/research/composition-combinators-design.md` (~480 lines)
+  capturing the formal semantics: the substitution algorithm in
+  full, the case analysis for single-valuedness preservation,
+  the documented limitations (t1 outputs must be `OPack`; t2
+  mid-side guards must be structural), and the future-improvement
+  list (`feedback`, `alternative`, `parallel`, `Kleisli`,
+  profunctor hierarchy).
+
+- A **second worked-example aggregate**
+  `Keiki.Examples.EmailDelivery` — a 2-vertex aggregate with one
+  command (`SendEmail`) and one event (`EmailSent`), built using
+  EP-8's TH splices. Source: `src/Keiki/Examples/EmailDelivery.hs`.
+
+- A **composite test suite** `test/Keiki/CompositionSpec.hs` —
+  six tests asserting `step`, `omega`, `reconstitute`,
+  `checkHiddenInputs`, and `isSingleValuedSym (withSymPred ...)`
+  on a composite of an inline `AlertSource` fixture and the
+  `EmailDelivery` aggregate. The pipeline shape (every transition
+  produces a wire event) makes the round-trip well-defined.
+
+- Updates to `docs/research/keiki-generics-design.md` retiring
+  item F with a reference to MP-4 / EP-11.
+
+Test count: **89 → 95 examples, 0 failures**.
+
+### How the result compares to the original vision
+
+The MasterPlan vision was to "deliver a working set of composition
+combinators on `SymTransducer` while preserving the keiki
+guarantees (mechanical inversion, build-time hidden-input checks,
+symbolic single-valuedness)." The chosen subset is a single
+combinator (`compose`); the design milestone ruled out the other
+five crem combinators with documented rationale and deferred them
+to follow-up EPs. The three load-bearing guarantees are preserved
+end-to-end on the composite, verified by symbolic z3 single-
+valuedness, structural hidden-input check, and full-log
+`reconstitute` round-trip.
+
+### Lessons learned
+
+- **The pure-formalism reconstitute path constrains what
+  composite shapes are usable.** A composite whose intermediate
+  ε-edges block `reconstitute` from advancing past a state isn't
+  amenable to a round-trip test as currently shaped. EP-11
+  worked around this by using a wire-event-on-every-transition
+  pipeline; a future EP could relax the constraint by extending
+  `reconstitute` to advance through ε-edges between events. This
+  is non-trivial — runtime semantics of "advance until a wire
+  event lands or no edge fires" is a separate design.
+
+- **Substitution preserves single-valuedness mechanically.** The
+  proof sketch in the design note's "Guarantee 3" section is a
+  case analysis that the implementation respects. The composite
+  is single-valued whenever the underlying transducers are
+  individually single-valued — the symbolic z3 check on the
+  pipeline (passing in <1s) confirms this for the test fixture.
+
+- **Structural alignment between t1's `WireCtor` and t2's
+  `InCtor` is load-bearing.** The substitution relies on
+  `icName ic2 == wcName wc1` to discharge `PInCtor` atoms and to
+  align `OutFields`-positional reads with `InCtor` slot-list
+  positions. The `Generic` derivations in `Keiki.Generics` already
+  enforce shape consistency (slot list of an `InCtor` matches
+  the field tuple of a `WireCtor` of the same payload type), so
+  in practice `compose userReg ...` over the canonical worked
+  examples works without alignment headaches.
+
+### Gaps and follow-ups (deferred)
+
+- **`feedback`** — fixed-point combinator for aggregate ↔ policy
+  loops. Requires either bounded iteration or a termination
+  proof. Defer to a follow-up EP.
+- **`alternative`** — disjoint-input parallel composition with
+  its own non-local single-valuedness invariant.
+- **`parallel`**, **`Kleisli`**, **profunctor hierarchy** — see
+  the design note's "Future improvements (deferred)" section.
+- **Graceful fallback for non-structural transducers.**
+  Currently `compose` errors when t1 has `OFn` outputs or t2 has
+  `PMatchC` over `mid`. A future revision could emit composite
+  edges with appropriate escape hatches and let
+  `checkHiddenInputs` flag them.
+- **z3 in the devShell.** `flake.nix` should include `pkgs.z3`
+  so `cabal test all` runs without `nix-shell -p z3`. Small
+  follow-up.

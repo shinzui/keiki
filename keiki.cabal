@@ -34,11 +34,13 @@ common shared-extensions
 
 library
     import:             warnings, shared-extensions
-    exposed-modules:    Keiki.Core
+    exposed-modules:    Keiki.Composition
+                        Keiki.Core
                         Keiki.Decider
                         Keiki.Generics
                         Keiki.Generics.TH
                         Keiki.Symbolic
+                        Keiki.Examples.EmailDelivery
                         Keiki.Examples.UserRegistration
                         Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
@@ -53,7 +55,8 @@ test-suite keiki-test
     type:               exitcode-stdio-1.0
     hs-source-dirs:     test
     main-is:            Spec.hs
-    other-modules:      Keiki.CoreSpec
+    other-modules:      Keiki.CompositionSpec
+                        Keiki.CoreSpec
                         Keiki.DeciderSpec
                         Keiki.Generics.THSpec
                         Keiki.SymbolicSpec
