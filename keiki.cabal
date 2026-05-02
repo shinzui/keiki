@@ -63,7 +63,9 @@ test-suite keiki-test
                         Keiki.BuilderSpec
                         Keiki.BuilderSpike
                         Keiki.CompositionSpec
+                        Keiki.CoreApplyEventsSpec
                         Keiki.CoreSpec
+                        Keiki.DeciderMultiSpec
                         Keiki.DeciderSpec
                         Keiki.Generics.THSpec
                         Keiki.SymbolicSpec
@@ -72,6 +74,8 @@ test-suite keiki-test
                         Keiki.Examples.OrderCartBuilderSpec
                         Keiki.Examples.OrderCartSpec
                         Keiki.Examples.UserRegistrationBuilderSpec
+                        Keiki.Examples.UserRegistrationChainedSpec
+                        Keiki.Examples.UserRegistrationMultiSpec
                         Keiki.Examples.UserRegistrationSpec
                         Keiki.Examples.UserRegistrationSymbolicSpec
                         Keiki.Examples.UserRegistrationV0Spec

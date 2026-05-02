@@ -79,6 +79,7 @@ module Keiki.Core
   , step
   , reconstitute
   , applyEvent
+  , applyEvents
     -- * Build-time analyses
   , solveOutput
   , HiddenInputWarning (..)
@@ -668,6 +669,35 @@ reconstitute t = go (initial t, initialRegs t)
     go (s, regs) (co : rest) = do
       next <- applyEvent t s regs co
       go next rest
+
+
+-- | Replay a chunk of events through 'applyEvent' from a
+-- caller-supplied @(state, registers)@ start. Structurally identical
+-- to 'reconstitute' except that the start state is an argument
+-- rather than the transducer's initial state, so a runtime adapter
+-- can chunk-replay the events corresponding to one logical command
+-- from any current state.
+--
+-- Useful when the runtime preserves command boundaries (event store
+-- with command-id tags, transactional batches, deterministic test
+-- fixtures): replay one command's events as one atomic step and
+-- consume the unwrapped final state. For event-by-event streaming
+-- replay without command boundaries, callers iterate 'applyEvent'
+-- directly.
+--
+-- Returns 'Nothing' if any event in the chunk fails to replay (e.g.
+-- a malformed log or an event that does not match any active edge's
+-- output at the current vertex).
+applyEvents
+  :: BoolAlg phi (RegFile rs, ci)
+  => SymTransducer phi rs s ci co
+  -> (s, RegFile rs)
+  -> [co]
+  -> Maybe (s, RegFile rs)
+applyEvents _ acc []                    = Just acc
+applyEvents t (s, regs) (co : rest)     = do
+  next <- applyEvent t s regs co
+  applyEvents t next rest
 
 
 -- * Build-time analyses ----------------------------------------------------

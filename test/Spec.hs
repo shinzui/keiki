@@ -5,7 +5,9 @@ import qualified Keiki.AcceptorSpec
 import qualified Keiki.BuilderSpec
 import qualified Keiki.BuilderSpike
 import qualified Keiki.CompositionSpec
+import qualified Keiki.CoreApplyEventsSpec
 import qualified Keiki.CoreSpec
+import qualified Keiki.DeciderMultiSpec
 import qualified Keiki.DeciderSpec
 import qualified Keiki.Generics.THSpec
 import qualified Keiki.SymbolicSpec
@@ -14,6 +16,8 @@ import qualified Keiki.Examples.EmailDeliveryViewSpec
 import qualified Keiki.Examples.OrderCartBuilderSpec
 import qualified Keiki.Examples.OrderCartSpec
 import qualified Keiki.Examples.UserRegistrationBuilderSpec
+import qualified Keiki.Examples.UserRegistrationChainedSpec
+import qualified Keiki.Examples.UserRegistrationMultiSpec
 import qualified Keiki.Examples.UserRegistrationSpec
 import qualified Keiki.Examples.UserRegistrationSymbolicSpec
 import qualified Keiki.Examples.UserRegistrationV0Spec
@@ -26,7 +30,9 @@ main = hspec $ do
   describe "Keiki.BuilderSpike (EP-15 M2)"                Keiki.BuilderSpike.spec
   describe "Keiki.Composition"                            Keiki.CompositionSpec.spec
   describe "Keiki.Core"                                   Keiki.CoreSpec.spec
+  describe "Keiki.Core.applyEvents (EP-20 M2)"            Keiki.CoreApplyEventsSpec.spec
   describe "Keiki.Decider"                                Keiki.DeciderSpec.spec
+  describe "Keiki.Decider.toMultiDecider (EP-20 M3)"      Keiki.DeciderMultiSpec.spec
   describe "Keiki.Generics.TH"                            Keiki.Generics.THSpec.spec
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
   describe "Keiki.Examples.EmailDelivery (builder)"       Keiki.Examples.EmailDeliveryBuilderSpec.spec
@@ -35,6 +41,8 @@ main = hspec $ do
   describe "Keiki.Examples.OrderCart (builder)"           Keiki.Examples.OrderCartBuilderSpec.spec
   describe "Keiki.Examples.UserRegistration"              Keiki.Examples.UserRegistrationSpec.spec
   describe "Keiki.Examples.UserRegistration (builder)"    Keiki.Examples.UserRegistrationBuilderSpec.spec
+  describe "Keiki.Examples.UserRegistration (chained EP-20)" Keiki.Examples.UserRegistrationChainedSpec.spec
+  describe "Keiki.Examples.UserRegistration (multi EP-20)" Keiki.Examples.UserRegistrationMultiSpec.spec
   describe "Keiki.Examples.UserRegistration (symbolic)"   Keiki.Examples.UserRegistrationSymbolicSpec.spec
   describe "Keiki.Examples.UserRegistration (view)"       Keiki.Examples.UserRegistrationViewSpec.spec
   describe "Keiki.Examples.UserRegistrationV0"            Keiki.Examples.UserRegistrationV0Spec.spec

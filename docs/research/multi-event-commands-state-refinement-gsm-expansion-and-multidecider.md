@@ -461,20 +461,50 @@ Ergonomics          ★★☆                     ★☆☆                     
 
 ### Recommendation
 
-**Default to Approach 3** for most aggregates. It's the most ergonomic, the
-intermediate states are easy to name and understand, and the event-determinism
-contract is trivially testable with `(Enum, Bounded)` types. It's also the
-closest to how the Haskell ecosystem already models event sourcing (Chassaing's
-Decider), but with the mathematical grounding of deriving `exec` from a
-formal GSM.
+**Approach 1 (state refinement) is the canonical path.** MasterPlan 7
+selected it over Approach 2 (GSM expansion) and explicitly excluded
+Approach 3 (hand-written apply) as theoretically incompatible with
+the symbolic-register foundation — the foundation rests on
+mechanically-derived `apply`, which Approach 3 surrenders by
+definition.
 
-**Use Approach 1** when the intermediate states have genuine domain significance
-and you want the compiler to enforce consistency with no manual verification.
+EP-20 ships ergonomic support so the cost of authoring intermediate
+vertices is one declared constructor and one declared command per
+multi-event command, hidden from callers:
 
-**Use Approach 2** when you need library-managed expansion and are willing to
-work with wrapped types — useful for generic tooling (visualization, testing
-infrastructure) that operates on the expanded FST uniformly.
+- **`Keiki.Core.applyEvents`** — chunk replay for runtimes that
+  preserve command boundaries. Folds `applyEvent` over a list of
+  events from a caller-supplied `(state, registers)` start.
+- **`Keiki.Decider.DriverConfig` + `Keiki.Decider.toMultiDecider`** —
+  a façade `Decider` whose `decide` drives multi-event letter chains
+  end-to-end through user-declared internal vertices, returning the
+  full event list of length ≥ 2 transparently. The underlying letter
+  FST is unchanged; the existing `toDecider` is preserved.
+- **`Keiki.Builder.chainTo`** — a builder DSL verb that compiles a
+  multi-`emit` block into a chain of letter edges through a
+  user-named intermediate vertex. The intermediate vertex's edge is
+  registered automatically; the user does not need a separate
+  `from Intermediate …` block.
 
-All three approaches produce identical event streams and support correct
-reconstitution. The difference is where the complexity lives: in the state
-type (1 and 3), in wrapper types (2), or in a user-provided function (3).
+Approach 2 (GSM expansion) is documented above and was deliberately
+not selected. The reasoning is in MasterPlan 7's Vision & Scope:
+widening `Edge.output` from `Maybe (OutTerm rs ci co)` to
+`[OutTerm rs ci co]` weakens the per-edge `checkHiddenInputs` to a
+union check across the list, complicates diagram generation
+(multi-event edges become noisy multi-line labels), and frustrates
+a future move toward dependent typing where edges are indexed by
+the event constructor they emit.
+
+Approach 3 (direct MultiDecider with hand-written apply) is rejected
+as theoretically incompatible: the synthesis foundation note's §1
+names mechanical `apply` derivation as "the decisive technical win"
+of the symbolic-register formalism. Approach 3 surrenders this
+property; the library cannot certify the
+reconstitution-event-determinism contract at build time.
+
+All three approaches produce identical event streams and support
+correct reconstitution. The choice between them is about *where the
+semantic complexity lives*: in the user's domain state type (1 and
+3) or in library-synthesized wrapper types (2). EP-20 puts the
+complexity in user-declared intermediate vertices and adds library
+ergonomics to keep the cost low; this is the canonical path.

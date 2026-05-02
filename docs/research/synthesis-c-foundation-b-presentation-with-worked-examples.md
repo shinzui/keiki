@@ -970,9 +970,14 @@ upgrades.
 The headline of this plan is that **none of the existing research notes
 need to be rewritten**. The `Transducer` they describe becomes the
 `SymTransducer` with `rs = '[]`, every `Update` `Keep`, every guard a
-single-input-equality. The multi-event document's three approaches still
-apply (state refinement is the cleanest under the symbolic-register
-formalism, as the User Registration example shows). The workflow runtime
-document's runtime loop is unchanged. What changes is that data flow
-becomes a first-class part of the formalism, not a graft, and `apply`
-returns to being derivable.
+single-input-equality. State refinement is the canonical multi-event
+model (see EP-20 / MasterPlan 7): the AST stays a strict letter FST,
+and the library ships ergonomic support — `Keiki.Core.applyEvents` for
+chunk replay, `Keiki.Decider.toMultiDecider` (with `DriverConfig`) for
+transparent driver chains through user-declared internal vertices, and
+`Keiki.Builder.chainTo` for syntactic compression of multi-event
+authoring — so callers can drive multi-event chains end-to-end without
+observing the intermediate vertices. The workflow runtime document's
+runtime loop is unchanged. What changes is that data flow becomes a
+first-class part of the formalism, not a graft, and `apply` returns to
+being derivable.

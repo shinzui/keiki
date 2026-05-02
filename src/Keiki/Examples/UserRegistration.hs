@@ -52,7 +52,10 @@ module Keiki.Examples.UserRegistration
     -- * The transducer
   , userReg
   , userRegAST
+  , userRegChained
   , emptyRegs
+    -- * Multi-event driver configuration (EP-20 M4)
+  , userRegDriverConfig
     -- * Wire constructors (exported for testing)
   , wireRegistrationStarted
   , wireConfirmationEmailSent
@@ -81,6 +84,7 @@ import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
 import Keiki.Builder ((.=))
+import Keiki.Decider (DriverConfig (..))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -351,6 +355,83 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
   -- Deleted is terminal; defaults to [] without an explicit `from`.
 
 
+-- * Chained-builder form (EP-20 M5) ---------------------------------------
+
+-- | The same transducer authored with 'Keiki.Builder.chainTo' for
+-- the multi-event entrance. The @PotentialCustomer ->
+-- RequiresConfirmation@ transition is now declared as a single
+-- 'onCmd' block whose body emits two events with a 'chainTo'
+-- between them; the intermediate vertex 'Registering' and the
+-- internal advancement 'Continue' are *named* in the chain but
+-- not declared with a separate @from Registering@ block.
+--
+-- Compiles to the same letter-FST 'Edge' values as 'userReg'; the
+-- equivalence test in
+-- 'Keiki.Examples.UserRegistrationChainedSpec' asserts byte-
+-- identical behavior on the canonical event log.
+userRegChained :: SymTransducer (HsPred UserRegRegs UserCmd)
+                                UserRegRegs
+                                Vertex
+                                UserCmd
+                                UserEvent
+userRegChained = B.buildTransducer PotentialCustomer emptyRegs
+                   (\case Deleted -> True; _ -> False) do
+
+  B.from PotentialCustomer do
+    B.onCmd inCtorStart $ \d -> B.do
+      B.slot @"email"        .= d.email
+      B.slot @"confirmCode"  .= d.confirmCode
+      B.slot @"registeredAt" .= d.at
+      B.emit wireRegistrationStarted RegistrationStartedTermFields
+        { email       = d.email
+        , confirmCode = d.confirmCode
+        , at          = d.at
+        }
+      B.chainTo Registering inCtorContinue
+      B.emit wireConfirmationEmailSent
+        ConfirmationEmailSentTermFields { email = #email }
+      B.goto RequiresConfirmation
+
+  -- No explicit 'from Registering' block — the chained edge from
+  -- 'Registering' to 'RequiresConfirmation' was registered by the
+  -- 'chainTo' above.
+
+  B.from RequiresConfirmation do
+    B.onCmd inCtorConfirm $ \d -> B.do
+      B.requireEq d.confirmCode #confirmCode
+      B.slot @"confirmedAt" .= d.at
+      B.emit wireAccountConfirmed AccountConfirmedTermFields
+        { email       = #email
+        , confirmCode = d.confirmCode
+        , at          = d.at
+        }
+      B.goto Confirmed
+
+    B.onCmd inCtorResend $ \d -> B.do
+      B.slot @"confirmCode"  .= d.code
+      B.slot @"registeredAt" .= d.at
+      B.emit wireConfirmationResent ConfirmationResentTermFields
+        { email       = #email
+        , confirmCode = d.code
+        , at          = d.at
+        }
+      B.goto RequiresConfirmation
+
+    B.onCmd inCtorGdpr $ \d -> B.do
+      B.slot @"deletedAt" .= d.at
+      B.noEmit
+      B.goto Deleted
+
+  B.from Confirmed do
+    B.onCmd inCtorGdpr $ \d -> B.do
+      B.slot @"deletedAt" .= d.at
+      B.emit wireAccountDeleted AccountDeletedTermFields
+        { email = #email
+        , at    = d.at
+        }
+      B.goto Deleted
+
+
 -- * AST form (legacy, retained for the M5 equivalence test) ----------------
 
 -- | The same transducer hand-authored against the post-MP-6
@@ -469,3 +550,29 @@ userRegASTEdges = \case
     ]
 
   Deleted -> []
+
+
+-- * Multi-event driver configuration (EP-20 M4) ----------------------------
+
+-- | Driver configuration for the multi-event façade. Marks
+-- 'Registering' as an internal vertex advanced by 'Continue'; all
+-- other vertices are public. Pair with 'Keiki.Decider.toMultiDecider'
+-- to drive the @StartRegistration@ chain end-to-end:
+--
+-- @
+-- let mdec = 'Keiki.Decider.toMultiDecider' 'userReg' 'userRegDriverConfig'
+-- in 'Keiki.Decider.decide' mdec (StartRegistration sd)
+--      (PotentialCustomer, emptyRegs)
+-- -- ⇒ [RegistrationStarted ..., ConfirmationEmailSent ...]
+-- @
+--
+-- The underlying letter-FST behavior is unchanged: a plain
+-- 'Keiki.Decider.toDecider' over the same transducer still returns
+-- a single event from @StartRegistration@ and lands at the
+-- intermediate 'Registering' vertex.
+userRegDriverConfig :: DriverConfig Vertex UserCmd
+userRegDriverConfig = DriverConfig
+  { isInternal = \v -> case v of
+      Registering -> Just Continue
+      _           -> Nothing
+  }

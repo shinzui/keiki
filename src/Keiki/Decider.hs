@@ -40,6 +40,9 @@
 module Keiki.Decider
   ( Decider (..)
   , toDecider
+    -- * Multi-event façade (EP-20)
+  , DriverConfig (..)
+  , toMultiDecider
   ) where
 
 import Keiki.Core
@@ -48,6 +51,7 @@ import Keiki.Core
   , SymTransducer (..)
   , applyEvent
   , omega
+  , step
   )
 
 
@@ -120,3 +124,88 @@ toDecider t = Decider
   , initialState = (initial t, initialRegs t)
   , isTerminal   = \(s, _regs) -> isFinal t s
   }
+
+
+-- * Multi-event façade ----------------------------------------------------
+
+-- | Identifies internal control vertices and the command that
+-- advances them. Used by 'toMultiDecider' to drive multi-event
+-- letter chains end-to-end transparently.
+--
+-- @'isInternal' v@ returns @'Just' c@ when @v@ is an internal
+-- vertex and @c@ is the command to use to advance it; 'Nothing'
+-- when @v@ is a public vertex that 'decide' should treat as the
+-- terminal state of one driver step.
+--
+-- The configuration sits outside the 'SymTransducer' on purpose:
+-- it is meta about the user's state space (which vertices are
+-- public, which are internal, what command advances them), not
+-- part of the formalism. Multiple driver configurations can exist
+-- for the same transducer.
+newtype DriverConfig s ci = DriverConfig
+  { isInternal :: s -> Maybe ci
+  }
+
+
+-- | Project a 'SymTransducer' to a 'Decider' that drives multi-event
+-- letter chains end-to-end. Compared to 'toDecider', the produced
+-- 'decide' may return event lists of length two or more by chaining
+-- automatically through the user-declared internal vertices named in
+-- the supplied 'DriverConfig'.
+--
+-- The 'evolve' field is a single-letter step identical to
+-- 'toDecider'@'@s — event-by-event replay genuinely passes through
+-- the user's intermediate vertices, which are real states the user
+-- declared. Hiding them via auto-driving 'evolve' would make the
+-- value-level state of the system invisible mid-replay. For
+-- chunk-replay across a logical command's events use
+-- 'Keiki.Core.applyEvents'.
+--
+-- == Driver loop
+--
+-- @
+-- decide t cfg cmd (s, regs)
+--   = run cmd from (s, regs);
+--     if landed in an internal vertex,
+--       look up the advancement command in cfg and recurse;
+--     otherwise return the accumulated event list.
+-- @
+--
+-- The loop terminates on a public vertex or when 'step' returns
+-- 'Nothing' (no edge fires). Events on ε-edges (output 'Nothing')
+-- are skipped — the chain advances state silently.
+toMultiDecider
+  :: BoolAlg phi (RegFile rs, ci)
+  => SymTransducer phi rs s ci co
+  -> DriverConfig s ci
+  -> Decider ci co (s, RegFile rs)
+toMultiDecider t cfg = Decider
+  { decide       = \cmd (s, regs) -> driveDecide t cfg cmd (s, regs)
+  , evolve       = \(s, regs) ev -> case applyEvent t s regs ev of
+      Just (s', regs') -> (s', regs')
+      Nothing          -> (s, regs)
+  , initialState = (initial t, initialRegs t)
+  , isTerminal   = \(s, _regs) -> isFinal t s
+  }
+
+
+-- | The driver loop. Folds 'step' across the chain induced by
+-- 'isInternal'; accumulates emitted events in declaration order.
+driveDecide
+  :: BoolAlg phi (RegFile rs, ci)
+  => SymTransducer phi rs s ci co
+  -> DriverConfig s ci
+  -> ci
+  -> (s, RegFile rs)
+  -> [co]
+driveDecide t cfg ci0 (s0, regs0) = go ci0 (s0, regs0) []
+  where
+    go ci (s, regs) acc = case step t (s, regs) ci of
+      Nothing -> reverse acc
+      Just (s', regs', mco) ->
+        let acc' = case mco of
+              Just co -> co : acc
+              Nothing -> acc
+        in case isInternal cfg s' of
+             Just ciNext -> go ciNext (s', regs') acc'
+             Nothing     -> reverse acc'
