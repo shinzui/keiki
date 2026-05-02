@@ -23,6 +23,32 @@ inCtorTinyFoo = InCtor
   }
 
 
+-- The synthetic transducer's input-side singleton: matches 'True' only,
+-- with an empty payload. 'icName' aligns with the wire-side 'wcName'
+-- so 'solveOutput' on the OPack walks an empty 'OutFields' against an
+-- empty slot list and recovers 'True'.
+inCtorTrue :: InCtor Bool '[]
+inCtorTrue = InCtor
+  { icName  = "True"
+  , icMatch = \case
+      True  -> Just RNil
+      False -> Nothing
+  , icBuild = \RNil -> True
+  }
+
+
+-- The synthetic transducer's wire-side singleton: a one-constructor
+-- 'WireCtor' over 'String' carrying no fields, recognising the literal
+-- "true". Paired with 'inCtorTrue' under 'OPack' to give the synthetic
+-- edge a structural output term (no opaque 'mkOut').
+wcStringTrue :: WireCtor String ()
+wcStringTrue = WireCtor
+  { wcName  = "True"
+  , wcMatch = \s -> if s == "true" then Just () else Nothing
+  , wcBuild = \() -> "true"
+  }
+
+
 -- A minimal 2-vertex transducer over 'Bool' input, 'String' output, no
 -- registers. Edges:
 --
@@ -35,7 +61,7 @@ synthetic = SymTransducer
   { edgesOut = \case
       False -> [ Edge { guard  = matchCmd id
                       , update = UKeep
-                      , output = Just (mkOut (\_ _ -> "true"))
+                      , output = Just (pack inCtorTrue wcStringTrue OFNil)
                       , target = True
                       }
                 ]
@@ -117,12 +143,6 @@ spec = do
         Just (s, _) -> s `shouldBe` False
         Nothing     -> expectationFailure "expected Just (initial, _)"
 
-  describe "solveOutput on OFn (opaque)" $ do
-    it "solveOutput on OFn returns Nothing" $ do
-      let opaqueOut :: OutTerm '[] Int TinyOut
-          opaqueOut = OFn (\_ ci -> Foo ci ci)
-      solveOutput opaqueOut RNil (Foo 7 7) `shouldBe` Nothing
-
   describe "solveOutput structural path (TInpCtorField)" $ do
     let -- An output sum mirroring TinyCmd's payload (ci-determined wire).
         wireTinyFoo :: WireCtor TinyCmdOut (Int, (Int, ()))
@@ -176,21 +196,12 @@ spec = do
                 OFNil :: OutFields '[] TinyCmd (Int, ())
       in outFieldsHaveInpCtorField fs `shouldBe` True
 
-  describe "checkHiddenInputs" $ do
-    it "synthetic transducer's OFn output is flagged" $ do
-      let warnings = checkHiddenInputs synthetic
-      length warnings `shouldBe` 1
-      hiwReason (head warnings) `shouldContain` "OFn output is opaque"
   where
     -- 'show' over `Maybe (s, RegFile rs, Maybe co)` is awkward because
     -- RegFile has no Show. Use a thin coercion to a printable summary.
     show3 :: Show s => Show co => Maybe (s, x, Maybe co) -> String
     show3 Nothing                = "Nothing"
     show3 (Just (s, _, mco))     = "Just (" ++ show s ++ ", _, " ++ show mco ++ ")"
-
-
--- | Tiny output sum for the solveOutput micro-test.
-data TinyOut = Foo Int Int deriving (Eq, Show)
 
 
 -- | Output sum mirroring 'TinyCmd' for the M3 structural-path tests.

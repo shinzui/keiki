@@ -1001,9 +1001,6 @@ defines the contract)**
 **v1 surfaces still pending retirement — owned by MasterPlan 6**
 (`docs/masterplans/6-retire-remaining-v1-escape-hatches-in-pure-core-ofn-pmatchc-unsafecombine-static-check.md`)
 
-- `OFn` (every output authored through `mkOut` becomes a structural
-  `OPack`, or — per MP-6's design milestone — a successor opaque
-  hatch with a smaller scope).
 - `PMatchC` (replace with `PCtor` or pattern AST). EP-2 of MasterPlan
   2 documents how the SBV-backed `BoolAlg` instance falls back on
   `PMatchC`. MP-2 EP-2 added `PInCtor`/`matchInCtor` as a structural

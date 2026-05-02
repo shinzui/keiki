@@ -24,8 +24,6 @@
 -- which begins with a single design milestone EP-15 in
 -- @docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md@):
 --
---   * 'OFn' carries an opaque @RegFile rs -> ci -> co@; replaced with a
---     structural form per MP-6.
 --   * 'PMatchC' carries an opaque @ci -> Bool@; replaced with a richer
 --     pattern AST per MP-6. EP-2 of MasterPlan 2 documents how the
 --     SBV-backed 'BoolAlg' instance falls back on 'PMatchC'.
@@ -64,7 +62,6 @@ module Keiki.Core
     -- * Helpers (the user-facing DSL surface)
   , matchCmd
   , matchInCtor
-  , mkOut
   , proj
   , inpCtor
   , lit
@@ -337,10 +334,6 @@ data OutTerm (rs :: [Slot]) (ci :: Type) (co :: Type) where
         -> WireCtor co fields
         -> OutFields rs ci fields
         -> OutTerm rs ci co
-  -- | v1 escape hatch: opaque function. 'solveOutput' returns 'Nothing'
-  -- and 'checkHiddenInputs' flags the edge.
-  OFn   :: (RegFile rs -> ci -> co)
-        -> OutTerm rs ci co
 
 
 -- * Predicate carrier ------------------------------------------------------
@@ -439,13 +432,6 @@ matchInCtor :: InCtor ci ifs -> HsPred rs ci
 matchInCtor = PInCtor
 
 
--- | v1 escape-hatch output. MasterPlan 6 retires this in favour of
--- structural 'OPack'; the helper is kept for outputs whose shape
--- doesn't fit the structural form.
-mkOut :: (RegFile rs -> ci -> co) -> OutTerm rs ci co
-mkOut = OFn
-
-
 -- | Read a register slot into a 'Term'.
 proj :: Index rs r -> Term rs ci r
 proj = TReg
@@ -501,7 +487,6 @@ evalTerm (TApp2 f a b)         regs ci = f (evalTerm a regs ci) (evalTerm b regs
 evalOut :: OutTerm rs ci co -> RegFile rs -> ci -> co
 evalOut (OPack _ic ctor fields) regs ci =
   wcBuild ctor (evalOutFields fields regs ci)
-evalOut (OFn f)                 regs ci = f regs ci
 
 
 evalOutFields :: OutFields rs ci fs -> RegFile rs -> ci -> fs
@@ -631,15 +616,13 @@ reconstitute t = go (initial t, initialRegs t)
 -- 'OutFields' structurally against the input constructor named by the
 -- 'OPack'. Gather '(Index, value)' pairs from every 'TInpCtorField'
 -- read whose 'InCtor' matches by 'icName'; assemble a 'RegFile'
--- covering every slot of the 'InCtor'; call 'icBuild'. 'OFn' stays
--- opaque ('Nothing').
+-- covering every slot of the 'InCtor'; call 'icBuild'.
 solveOutput :: OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
 solveOutput (OPack ic@InCtor{} ctor fields) _regs co = do
   fs_obs  <- wcMatch ctor co
   entries <- gatherInpEntries fields fs_obs ic
   rf      <- assemble entries
   pure (icBuild ic rf)
-solveOutput (OFn _) _regs _co = Nothing
 
 
 -- | Walk an 'OutFields' HList in lockstep with an observed-fields
@@ -683,8 +666,6 @@ data HiddenInputWarning = HiddenInputWarning
 --   * If @output@ is @Nothing@ (an ε-edge), and @update@ reads the
 --     input symbol, that contribution is silent on the wire and
 --     unrecoverable.
---   * If @output@ is 'OFn', the whole output is opaque ('solveOutput'
---     returns 'Nothing').
 --   * If @output@ is 'OPack' whose 'OutFields' walk does not visit
 --     every slot of the OPack's named 'InCtor', the structural
 --     inverse cannot reconstruct the input; the warning names the
@@ -713,8 +694,6 @@ checkHiddenInputs t =
         | updateReadsInput (update e) ->
             [ "edge #" <> show n <> ": ε-edge with input read in update" ]
         | otherwise -> []
-      Just (OFn _) ->
-        [ "edge #" <> show n <> ": OFn output is opaque (no inverse)" ]
       Just (OPack ic _ fields)
         | Just (MissingInCtorFields icN missing) <- detectMissingInCtorFields ic fields
             -> [ "edge #" <> show n

@@ -67,27 +67,34 @@ must be documented here, even if it requires splitting a partially
 completed task into two ("done" vs. "remaining"). This section must
 always reflect the actual current state of the work.
 
-- [ ] M0: Verify prerequisites — `cabal build && cabal test all` is
+- [x] M0: Verify prerequisites — `cabal build && cabal test all` is
   green; record GHC version if it differs from EP-15's M0 baseline
-  (GHC 9.12.3, 107 examples passing).
-- [ ] M1: Remove `OFn` constructor and `mkOut` helper from
+  (GHC 9.12.3, 110 examples passing — up from EP-15's recorded 107
+  due to EP-13 follow-up's `deriveView` on EmailDelivery).
+- [x] M1: Remove `OFn` constructor and `mkOut` helper from
   `src/Keiki/Core.hs`; update the export list and the evaluator /
   analysis clauses (`evalOut`, `solveOutput`, `checkHiddenInputs`).
-- [ ] M2: Remove the `OFn _ -> error` clauses in
+- [x] M2: Remove the `OFn _ -> error` clauses in
   `src/Keiki/Composition.hs` (`substTerm`, `substPred`, `substOut`).
   After M1's GADT-narrowing the cases are unreachable; this milestone
   deletes them and confirms the file still type-checks.
-- [ ] M3: Rewrite `test/Keiki/CoreSpec.hs` — replace the
+- [x] M3: Rewrite `test/Keiki/CoreSpec.hs` — replaced the
   `mkOut (\_ _ -> "true")` synthetic transducer with a structural
-  `OPack` fixture, and delete the OFn-specific describe blocks
-  ("solveOutput on OFn (opaque)" and the "synthetic transducer's OFn
-  output is flagged" assertion in the `checkHiddenInputs` block).
-  Confirm the rewritten test count and the file passes.
-- [ ] M4: Tick the OFn bullet in the module-header retirement block
-  of `src/Keiki/Core.hs:22-33` (mark `OFn` as retired, leave the
-  block in place because PMatchC and unsafeCombine remain).
-- [ ] M5: Verdict — `cabal build && cabal test all` green; commit;
-  update MP-6 registry; write Outcomes & Retrospective entry.
+  `OPack` fixture using new `inCtorTrue` (singleton InCtor over
+  `True :: Bool`, empty payload) and `wcStringTrue` (singleton
+  WireCtor over `String` recognising "true", empty fields). Deleted
+  the "solveOutput on OFn (opaque)" describe block and the
+  "synthetic transducer's OFn output is flagged" assertion plus the
+  surrounding `describe "checkHiddenInputs"`. Removed the now-unused
+  `data TinyOut = Foo Int Int`. Test count: 108 (down from M0's 110
+  by exactly the two OFn-specific cases removed).
+- [x] M4: Removed the OFn bullet from the module-header retirement
+  block of `src/Keiki/Core.hs:22-33` (PMatchC and unsafeCombine
+  bullets retained). Same removal applied to the closing list in
+  `docs/research/dsl-shape-for-symbolic-register.md:1001-1015`.
+- [x] M5: Verdict — `cabal build && cabal test all` green (108/108);
+  `grep "OFn\|mkOut" src/Keiki/Core.hs src/Keiki/Composition.hs`
+  empty; commit and MP-6 registry update next.
 
 
 ## Surprises & Discoveries
@@ -95,7 +102,21 @@ always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights
 discovered during implementation. Provide concise evidence.
 
-(None yet.)
+- M0 baseline differs from EP-15's recorded 107 examples: the suite
+  now reports 110, three additional `Keiki.Examples.EmailDelivery
+  (view)` cases added by `4489ec4 feat(examples): EP-13 follow-up —
+  deriveView on EmailDelivery`. Final post-M3 count: 108 (110 minus
+  the two OFn-specific cases removed in M3, no others affected).
+
+- The structural `OPack` replacement for the synthetic transducer
+  needed both an InCtor *and* a WireCtor with `icName == wcName ==
+  "True"` so `solveOutput` accepts the empty walk. The empty-payload
+  case (`InCtor Bool '[]`, `WireCtor String ()`, `OFNil`) is the
+  cleanest mechanical inverse: `assemble [] = Just RNil`, then
+  `icBuild inCtorTrue RNil = True`. This is a worked example of the
+  empty-payload recovery path documented in `solveOutput`'s
+  Haddock — useful as a fixture-pattern reference for future tests
+  needing a degenerate OPack.
 
 
 ## Decision Log
@@ -127,7 +148,42 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or
 at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome.** EP-16 landed as designed — pure mechanical deletion. The
+`OFn` constructor and `mkOut` helper are gone from `Keiki.Core`; the
+four `OFn _ -> error` clauses in `Keiki.Composition`'s substitution
+helpers are gone (GHC narrows the GADT exhaustively without them).
+The synthetic test transducer in `test/Keiki/CoreSpec.hs` now uses a
+structural `OPack` and exercises `solveOutput`'s empty-payload
+recovery path. The retirement-block comments in `Keiki.Core` and
+`docs/research/dsl-shape-for-symbolic-register.md` no longer mention
+`OFn`; they keep the PMatchC and unsafeCombine bullets pending
+EP-17 / EP-18.
+
+**Acceptance gates met.**
+
+- `cabal build && cabal test all` green (108/108, GHC 9.12.3).
+- `grep "OFn\|mkOut" src/Keiki/Core.hs src/Keiki/Composition.hs`
+  returns empty.
+- Importing `mkOut` from `Keiki.Core` is a compile error (export
+  removed).
+- Constructing an `OFn` value is a compile error (constructor
+  removed).
+
+**Test count delta.** 110 → 108 (M0 → M5). Exactly two cases removed
+as planned: the "solveOutput on OFn (opaque)" describe block and the
+"synthetic transducer's OFn output is flagged" assertion. No other
+test cases were affected.
+
+**Lessons for sibling EPs.**
+
+- EP-17 (PMatchC retirement) is structurally identical to this plan:
+  remove a constructor, narrow the analyses, rewrite the synthetic
+  test, tick the retirement bullet. It will likely take a similar
+  amount of work.
+- EP-18 (unsafeCombine static check) is the substantive one and
+  benefits from this plan's clean retirement-block state — when EP-18
+  performs its IP-5 sweep, only the `unsafeCombine` bullet will
+  remain to remove, then the whole block goes.
 
 
 ## Context and Orientation

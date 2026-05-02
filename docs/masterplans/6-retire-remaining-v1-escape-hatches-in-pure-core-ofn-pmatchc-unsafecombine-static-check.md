@@ -222,7 +222,7 @@ implementation work is split.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Design milestone — decompose v1 escape hatch retirements (OFn, PMatchC, unsafeCombine static check) | docs/plans/14-design-milestone-decompose-v1-escape-hatch-retirements-ofn-pmatchc-unsafecombine-static-check.md | None | EP-7 (external), MP-4 children | Complete |
-| 2 | Retire OFn and mkOut from Keiki.Core | docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md | None | EP-15 | Not Started |
+| 2 | Retire OFn and mkOut from Keiki.Core | docs/plans/16-retire-ofn-and-mkout-from-keiki-core.md | None | EP-15 | Complete |
 | 3 | Retire PMatchC and matchCmd from Keiki.Core | docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md | None | EP-15 | Not Started |
 | 4 | Static Disjoint check on Update; retire unsafeCombine | docs/plans/18-static-disjoint-check-on-update-retire-unsafecombine.md | None | EP-15, EP-7 (external), MP-4 children | Not Started |
 
@@ -401,14 +401,14 @@ EP-15 — Design milestone (Complete):
 - [x] EP-15 M3: Apply MasterPlan revision; create EP-16, EP-17, EP-18
 - [x] EP-15 M4: Verdict and handoff
 
-EP-16 — Retire OFn and mkOut (Not Started):
+EP-16 — Retire OFn and mkOut (Complete):
 
-- [ ] EP-16 M0: Verify prerequisites
-- [ ] EP-16 M1: Remove OFn / mkOut from Keiki.Core
-- [ ] EP-16 M2: Remove OFn-handling clauses in Keiki.Composition
-- [ ] EP-16 M3: Rewrite test/Keiki/CoreSpec.hs synthetic-OFn fixtures
-- [ ] EP-16 M4: Tick OFn bullet in retirement-block comments
-- [ ] EP-16 M5: Verdict
+- [x] EP-16 M0: Verify prerequisites
+- [x] EP-16 M1: Remove OFn / mkOut from Keiki.Core
+- [x] EP-16 M2: Remove OFn-handling clauses in Keiki.Composition
+- [x] EP-16 M3: Rewrite test/Keiki/CoreSpec.hs synthetic-OFn fixtures
+- [x] EP-16 M4: Tick OFn bullet in retirement-block comments
+- [x] EP-16 M5: Verdict
 
 EP-17 — Retire PMatchC and matchCmd (Not Started):
 
@@ -457,6 +457,15 @@ evidence.
       src/Keiki/Examples/UserRegistrationV0.hs:89:-- | Per-constructor guards. Migrated from v1 'matchCmd' to v2
 
   Single match, and it's a historical comment.
+
+- **M0 baseline drift** (EP-16 M0, 2026-05-02). EP-15 recorded a
+  baseline of 107 examples; EP-16 found 110. The three additional
+  cases come from `4489ec4 feat(examples): EP-13 follow-up —
+  deriveView on EmailDelivery`, landed between EP-15 and EP-16. EP-17
+  and EP-18 should re-baseline at M0 against actual head-of-master
+  rather than against EP-15's recorded number. This is the expected
+  shape under sequential EP landings; no action needed beyond
+  recording the new baseline at each plan's M0.
 
 
 ## Decision Log

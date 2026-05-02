@@ -218,10 +218,6 @@ substTerm (TInpCtorField ic2 ix2) o1 =
               \ unsound; the composite edge guard's PInCtor\
               \ substitution should make the edge unsatisfiable\
               \ before evaluation reaches this term.")
-    OFn _ -> error
-      "Keiki.Composition.compose: t1 edge has OFn output (opaque); \
-      \only OPack outputs are supported in v1 of the substitution. \
-      \Restructure t1 to use the structural OPack form."
 substTerm (TApp1 f t) o1 = TApp1 f (substTerm @rs1 @rs2 t o1)
 substTerm (TApp2 f a b) o1 = TApp2 f (substTerm @rs1 @rs2 a o1)
                                        (substTerm @rs1 @rs2 b o1)
@@ -258,9 +254,6 @@ substPred (PInCtor ic2)  o1 =
     OPack _ wc1 _
       | icName ic2 == wcName wc1 -> PTop
       | otherwise                -> PBot
-    OFn _ -> error
-      "Keiki.Composition.compose: t1 edge has OFn output (opaque); \
-      \only OPack outputs are supported in v1 of the substitution."
 substPred (PMatchC _)   _o1 = error
   "Keiki.Composition.compose: t2's guard uses PMatchC over mid \
   \(opaque). Restructure t2's guard with PInCtor / PEq / \
@@ -311,11 +304,6 @@ substOut (OPack _ic2_co wc2_co of2) o1 =
       OPack (unsafeCoerceInCtor ic1)
             wc2_co
             (substOutFields @rs1 @rs2 of2 o1)
-    OFn _ -> error
-      "Keiki.Composition.compose: t1 edge has OFn output (opaque)."
-substOut (OFn _) _o1 = error
-  "Keiki.Composition.compose: t2 edge has OFn output (opaque); \
-  \only OPack outputs are supported in v1."
 
 
 -- | Coerce an 'InCtor''s @ci@ type. Unsound in general; the
