@@ -56,6 +56,13 @@ Everything else is depth on specific topics (multi-event commands,
 symbolic-vs-indexed alternatives, workflow runtime, profunctor
 structure).
 
+If you'd rather skip the design notes and start writing an
+aggregate, jump to **`docs/guide/user-guide.md`** — the action-
+oriented walkthrough of `Keiki.Builder`, the runtime façades, and
+the symbolic analyses. It carries an extensive glossary covering
+every keiki, automata-theory, and event-sourcing term used in the
+codebase.
+
 ## A note on style
 
 These docs build vocabulary, not formalism. We use small concrete
