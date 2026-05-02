@@ -1017,8 +1017,9 @@ one structural-output edge in the User Registration aggregate.
 ## Authoring DSL on top of the AST
 
 The shapes settled in this note describe the *AST* of a
-`SymTransducer`. A separate authoring DSL — `Keiki.Builder`, designed
-in `docs/research/edge-builder-dsl-shape.md` (EP-15 M1) — sits on top
+`SymTransducer`. A separate authoring DSL — `Keiki.Builder`,
+designed in `docs/research/edge-builder-dsl-shape.md` (EP-15 M1)
+and shipped in `src/Keiki/Builder.hs` (EP-15 M3) — sits on top
 of that AST and is the recommended way for users to write
 transducers. The builder is purely additive: it consumes the AST
 constructors declared here and produces values of the same
@@ -1034,3 +1035,23 @@ enforcement, `goto` and termination, module placement) and
 contains a side-by-side comparison of `EmailDelivery` in the AST
 form and the builder form. See that note for the operator surface;
 this note remains the contract for the underlying AST.
+
+A six-line excerpt of the builder surface, drawn from
+`src/Keiki/Examples/EmailDelivery.hs` post-EP-15 M4 migration:
+
+    B.from EmailPending do
+      B.onCmd inCtorSendEmail $ \d -> B.do
+        B.slot @"emailRecipient" .= d.recipient
+        B.slot @"emailSubject"   .= d.subject
+        B.slot @"emailSentAt"    .= d.at
+        B.emit inCtorSendEmail wireEmailSent
+          (OFCons d.recipient (OFCons d.subject (OFCons d.at OFNil)))
+        B.goto EmailSentVertex
+
+The same edge written against the bare AST is 19 lines of nested
+`Edge { … }` record literal, infix `combine` chain, slot-name-tagged
+`USet` annotations, and `pack`/`OFCons` boilerplate (see the AST-form
+sibling `emailDeliveryAST` in the same module for the side-by-side).
+See the `Keiki.Builder` haddock for the full operator surface and
+the misuse-diagnostic catalog (duplicate `(.=)`, missing/duplicate
+`goto`, unrecoverable input fields).

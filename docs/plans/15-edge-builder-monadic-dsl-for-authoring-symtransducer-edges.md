@@ -107,7 +107,7 @@ entries, add new items as discovered.
 - [x] M4: Migrate `Keiki.Examples.EmailDelivery`'s `emailDeliveryEdges` to the builder. Keep the AST-form value behind a new internal name (`emailDeliveryAST`) for the equivalence test. Add `test/Keiki/Examples/EmailDeliveryBuilderSpec.hs` asserting `delta`/`omega` agree on the single canonical command. Confirm the migrated file's LOC dropped by the targeted amount. Completed 2026-05-02. **LOC went up** from 185 → 220 because the AST form is preserved alongside the builder form per the plan's Concrete Steps; see Surprises & Discoveries entry "M4 LOC inversion".
 - [x] M5: Migrate `Keiki.Examples.UserRegistration`'s `userRegEdges` to the builder. Same structure: AST form preserved as `userRegAST`, builder form named `userReg`, equivalence test added. Confirm `Keiki.Examples.UserRegistrationSpec` still passes (it uses `userReg` by name). Completed 2026-05-02. UserRegistrationSpec, UserRegistrationSymbolicSpec, UserRegistrationViewSpec all green against the builder form. Equivalence spec adds 8 examples (3 cross-form + 5 per-step). LOC went up 385 → 464 (same AST-preservation pattern as M4).
 - [x] M6: Add unit tests in `test/Keiki/BuilderSpec.hs` covering: single `(.=)`, sequential `(.=)` with distinct slots, duplicate `(.=)` to the same slot fails, `emit` round-trips through `solveOutput`, `noEmit` produces an ε-edge, `goto` sets `target`, missing `goto` fails, `requireEq` extends the guard, `onEpsilon` (no `onCmd`) builds a guard-only edge. Completed 2026-05-02. 10 cases pass; case 3 (duplicate-`(.=)`) is not asserted via runtime hspec because GHC's TypeError fires at compile time, not runtime — the spec/spike modules' compilation success is the (positive) proof.
-- [ ] M7: Documentation — update `docs/research/dsl-shape-for-symbolic-register.md` with a new §"Authoring DSL on top of the AST" linking to the builder module's haddock. If `docs/foundations/06-where-to-go-next.md` references the AST surface as the authoring path, update it to point at the builder first.
+- [x] M7: Documentation — update `docs/research/dsl-shape-for-symbolic-register.md` with a new §"Authoring DSL on top of the AST" linking to the builder module's haddock. If `docs/foundations/06-where-to-go-next.md` references the AST surface as the authoring path, update it to point at the builder first. Completed 2026-05-02. The §"Authoring DSL on top of the AST" was seeded in M1 as a pointer; M7 expanded it with the six-line excerpt the plan asked for. Foundations 06 didn't directly steer at the AST authoring path, but added a new §"Authoring a transducer" that names `Keiki.Builder` as the recommended entry point. Haddock at 100% (31/31) on `Keiki.Builder`.
 
 
 ## Surprises & Discoveries
@@ -303,10 +303,136 @@ date.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. At each milestone-completion,
-add a paragraph capturing what was achieved, what surprised, and what was
-deferred. At plan completion, summarize against the Purpose / Big Picture
-section.)
+### Plan-completion summary (2026-05-02)
+
+Against the Purpose / Big Picture: a contributor can now author a
+`SymTransducer` as a do-block (`B.do`) that reads almost like an
+imperative state-machine description, with the type-level
+`Disjoint` check on `combine` propagated through the indexed-monad
+`(.=)` so a duplicated slot write fails at compile time at the
+offending line. The `Keiki.Core` AST is unchanged; the new
+`Keiki.Builder` module sits on top and produces values of the
+existing AST types. Both example aggregates
+(`Keiki.Examples.EmailDelivery`, `Keiki.Examples.UserRegistration`)
+ship a builder-form transducer alongside the original AST form, and
+two cross-form equivalence specs assert the two produce
+byte-identical behaviour on the canonical sequences. Test count
+rose from 107 (post-MP-6 baseline) to 138 (+31 new examples across
+the spike, two equivalence specs, and the builder unit spec).
+
+Per-milestone capture:
+
+- **M0 (baseline).** GHC 9.12.3, cabal 3.16.1.0, z3 4.16.0; 107
+  hspec examples passing; 185 / 385 LOC for the two examples.
+
+- **M1 (design note).** `docs/research/edge-builder-dsl-shape.md`
+  resolves the seven open questions. Surprise: the note overshot
+  the plan's ≤300-line target (~470 actual). M2's spike validated
+  the design without forcing a tightening, so the note stays.
+
+- **M2 (spike).** Two design adjustments forced by the spike,
+  both amended into the design note in lockstep:
+    1. `#name` does not type-check cleanly with my `(.=)`'s
+       quantified `name` because the IsLabel instance head's
+       two-positions-share-`s` pattern blocks GHC's commitment.
+       Fix: `slot @"name"` (TypeApplication) replaces `#name`.
+    2. The builder needs three monad layers (`VertexBuilder`,
+       `EdgeListBuilder`, `EdgeBuilder`); `QualifiedDo` only
+       redirects to one bind operator, so only the per-edge body
+       uses `B.do` while the outer two use plain `do`. The
+       three-layer design is documented in the note's Q4.
+
+- **M3 (production module).** `src/Keiki/Builder.hs` ships the
+  spike's surface verbatim with full haddock (100% coverage).
+  Three-layer design, indexed-monad bind for `EdgeBuilder`, plain
+  `Monad` for the outer two layers. Spike rewritten on top.
+
+- **M4 (EmailDelivery migration).** Builder form authored;
+  AST form preserved as `emailDeliveryAST` for the equivalence
+  test. Six hspec examples assert agreement. Surprise: file LOC
+  went *up* from 185 to 220 because both forms coexist; the
+  plan's "<130 LOC" gate is unreachable while the AST form is
+  preserved (and even after removal would land at ~190 — the
+  plan's target was optimistic). The discrepancy is documented;
+  no code change.
+
+- **M5 (UserRegistration migration).** Same shape as M4 against
+  the larger aggregate (5 vertices, 6 edges). The non-trivial
+  `RequiresConfirmation/Confirm` guard is expressed via
+  `requireEq d.confirmCode (proj #confirmCode)`. Eight hspec
+  examples assert agreement (3 cross-form, 5 per-step vertex
+  agreement; per-step snapshot comparison is unsafe because
+  `emptyRegFile` pre-binds unset slots to deferred error thunks).
+  LOC: 385 → 464.
+
+- **M6 (unit tests).** `Keiki.BuilderSpec` adds 10 hspec cases
+  exercising the public surface in isolation. Case 3 (duplicate
+  `(.=)`) is documented but not asserted via runtime hspec — the
+  GHC TypeError fires at compile time, not runtime; the
+  compilation success of every module that uses `(.=)` with
+  distinct slots is the positive proof.
+
+- **M7 (documentation).** §"Authoring DSL on top of the AST"
+  expanded with the six-line excerpt per the plan; foundations
+  doc 06 gained a §"Authoring a transducer" naming
+  `Keiki.Builder` as the recommended entry point.
+
+### Deferrals (intentional, recorded for follow-up plans)
+
+- **Removal of the AST-form bindings** (`emailDeliveryAST`,
+  `userRegASTEdges`, etc.). They are kept as side-by-side
+  references for the equivalence specs. A follow-up plan can drop
+  them once the migration is judged stable; expected LOC drop
+  per file is ~30%.
+
+- **Operator-style `OutFields` HList sugar** (e.g. exposing
+  `OFCons` as `(*:)`/`oNil`). Recorded as Q3 follow-up in the
+  design note; not blocking.
+
+- **Field-keyed `emit` record sugar** (a TH extension that emits a
+  parallel "Term-valued record" type per event ctor). Recorded as
+  the second Q3 follow-up; non-trivial scope.
+
+- **`ToTerm`-overload on `(.=)`'s RHS** (so `slot @"x" .= 42`
+  works without `lit`). Recorded as Q2 follow-up; not blocking.
+
+- **`#name .= …`** (the `slot @"name"` workaround can be removed
+  if a future GHC release fixes IsLabel's two-positions-share-`s`
+  unification, or via a class-driven label resolution layer).
+  Recorded as Q2 follow-up.
+
+- **Compile-time topology safety** ("MP-3 G": a
+  `SymTransducerStrict` parameterised over a type-level topology).
+  The builder is forward-compatible — re-typing it over
+  `SymTransducerStrict` would not change the user surface.
+
+### Acceptance ledger (matched against the plan's Validation gate)
+
+1. `cabal build` is clean under GHC 9.12.x. ✅
+2. `cabal test` is green with ≥117 examples (107 baseline + ≥10
+   new). ✅ (138 examples, 0 failures.)
+3. `wc -l src/Keiki/Examples/EmailDelivery.hs` reports < 130. ❌
+   (Reports 220; AST form preserved per Concrete Steps. See M4
+   Surprises entry — gate is documentation-only inconsistent.)
+4. `wc -l src/Keiki/Examples/UserRegistration.hs` reports < 280.
+   ❌ (Reports 464; same reason as #3.)
+5. EmailDeliveryBuilderSpec / UserRegistrationBuilderSpec
+   equivalence specs pass. ✅
+6. `Keiki.BuilderSpec` covers ≥10 cases. ✅ (10 cases, case 3
+   is documented as compile-time-only and not counted in the
+   runtime assertions; the spec contributes 10 hspec examples.)
+7. `Keiki.Builder` haddock is a self-contained tutorial. ✅
+   (100% coverage, worked example at the top, error-message
+   catalog, "when to drop down to the AST" guidance.)
+8. `docs/research/edge-builder-dsl-shape.md` exists with the
+   seven open questions answered;
+   `docs/research/dsl-shape-for-symbolic-register.md` has the
+   §"Authoring DSL on top of the AST" pointer. ✅
+
+The two ❌ marks are LOC budget mismatches recorded in Surprises &
+Discoveries; both reflect the AST-form-preservation policy the
+plan's Concrete Steps mandate, not a behaviour gap. The plan's
+behavioural acceptance is fully met.
 
 
 ## Context and Orientation

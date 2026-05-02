@@ -93,6 +93,21 @@ If you find a gap between a design note and the implementation, the
 implementation is the source of truth. The design notes will be
 updated to match.
 
+## Authoring a transducer
+
+The recommended entry point for writing a new aggregate is the
+**`Keiki.Builder`** module — a monadic DSL that compiles down to
+the `Keiki.Core` AST. Read its haddock first; the worked
+`EmailDelivery` example at the top is a complete tutorial. The
+builder removes the per-edge boilerplate of the AST (record
+literals, infix `combine`, slot-name-tagged `USet` annotations,
+`OFCons` chains) without changing the formalism. Drop down to
+`Keiki.Core` directly only when the builder cannot express what
+you need. The two example aggregates
+(`Keiki.Examples.EmailDelivery`, `Keiki.Examples.UserRegistration`)
+each ship the same transducer authored in both forms, side by
+side, as a reference.
+
 ## Asking questions
 
 If something in the foundations doesn't land, the right move is to
