@@ -8,7 +8,9 @@ import qualified Jitsurei.LoanApplicationChainedSpec
 import qualified Jitsurei.LoanApplicationMultiSpec
 import qualified Jitsurei.LoanApplicationSpec
 import qualified Jitsurei.LoanApplicationSymbolicSpec
+import qualified Jitsurei.CoreBankingSyncSpec
 import qualified Jitsurei.LoanApplicationViewSpec
+import qualified Jitsurei.LoanSpec
 import qualified Jitsurei.OrderCartBuilderSpec
 import qualified Jitsurei.OrderCartSpec
 import qualified Jitsurei.UserRegistrationBuilderSpec
@@ -29,6 +31,8 @@ main = hspec $ do
   describe "Jitsurei.LoanApplication (multi EP-34)" Jitsurei.LoanApplicationMultiSpec.spec
   describe "Jitsurei.LoanApplication (view)"        Jitsurei.LoanApplicationViewSpec.spec
   describe "Jitsurei.LoanApplication (symbolic)"    Jitsurei.LoanApplicationSymbolicSpec.spec
+  describe "Jitsurei.Loan"                          Jitsurei.LoanSpec.spec
+  describe "Jitsurei.CoreBankingSync"               Jitsurei.CoreBankingSyncSpec.spec
   describe "Jitsurei.OrderCart"                     Jitsurei.OrderCartSpec.spec
   describe "Jitsurei.OrderCart (builder)"           Jitsurei.OrderCartBuilderSpec.spec
   describe "Jitsurei.UserRegistration"              Jitsurei.UserRegistrationSpec.spec

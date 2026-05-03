@@ -186,12 +186,16 @@ must always reflect the actual current state of the work.
         command produces a 2-event chain
         `[EmploymentChecked, ApplicationApproved]` from a single
         `RecordEmploymentCheck` on threshold-poised regs).
-- [ ] M4 — `Jitsurei.Loan` aggregate (target of cross-context
+- [x] M4 — `Jitsurei.Loan` aggregate (target of cross-context
       creation) and `Jitsurei.CoreBankingSync` Process (legacy
-      idempotency).
-  - [ ] `Jitsurei.Loan` module + spec.
-  - [ ] `Jitsurei.CoreBankingSync` module + spec
-        (replay / idempotency / pending-action pairing).
+      idempotency). (2026-05-03)
+  - [x] `Jitsurei.Loan` module + spec.
+  - [x] `Jitsurei.CoreBankingSync` module + spec (happy path /
+        idempotency / mismatched-callback). The output's
+        `LegacyAssignmentCommanded` is wrapped in a single-field
+        record `LegacyAssignmentCommandedData { assignment ::
+        LoanCmd' }` because `deriveWireCtors` requires payloads
+        to be record-syntax constructors.
 - [ ] M5 — Sequential composition `LoanApplication ⨾
       CoreBankingSync ⨾ Loan`.
   - [ ] `Jitsurei.LoanWorkflow` composing all three with

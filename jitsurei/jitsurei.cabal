@@ -27,7 +27,9 @@ common shared-extensions
 
 library
     import:             warnings, shared-extensions
-    exposed-modules:    Jitsurei.EmailDelivery
+    exposed-modules:    Jitsurei.CoreBankingSync
+                        Jitsurei.EmailDelivery
+                        Jitsurei.Loan
                         Jitsurei.LoanApplication
                         Jitsurei.OrderCart
                         Jitsurei.UserRegistration
@@ -44,7 +46,8 @@ test-suite jitsurei-test
     type:               exitcode-stdio-1.0
     hs-source-dirs:     test
     main-is:            Spec.hs
-    other-modules:      Jitsurei.EmailDeliveryBuilderSpec
+    other-modules:      Jitsurei.CoreBankingSyncSpec
+                        Jitsurei.EmailDeliveryBuilderSpec
                         Jitsurei.EmailDeliveryViewSpec
                         Jitsurei.LoanApplicationBuilderSpec
                         Jitsurei.LoanApplicationChainedSpec
@@ -52,6 +55,7 @@ test-suite jitsurei-test
                         Jitsurei.LoanApplicationSpec
                         Jitsurei.LoanApplicationSymbolicSpec
                         Jitsurei.LoanApplicationViewSpec
+                        Jitsurei.LoanSpec
                         Jitsurei.OrderCartBuilderSpec
                         Jitsurei.OrderCartSpec
                         Jitsurei.UserRegistrationBuilderSpec
