@@ -169,7 +169,7 @@ EP A's output is observable, increasing rework risk.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | Complete |
-| 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | In Progress |
+| 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 "EP-4 (external)" is MP-4's child plan
@@ -285,15 +285,50 @@ Track milestone-level progress across all child plans.
 - [x] EP-30: Implement `toMermaid` for the single-transducer case; cover initial / final / ε edges (M2)
 - [x] EP-30: Render diagrams for the four Examples modules; check in to docs/guide/ (M3)
 - [x] EP-30: Add regression test pinning Mermaid output for UserRegistration (M4)
-- [ ] EP-31: Pick composite rendering approach (subgraphs vs. cross-product); document trade-off (M1)
-- [ ] EP-31: Implement composite rendering on `Composite s1 s2` (M2)
-- [ ] EP-31: Render diagram for `AlertSource ⨾ EmailDelivery` composite; check in (M3)
-- [ ] EP-31: Add regression test for composite Mermaid output (M4)
+- [x] EP-31: Pick composite rendering approach (subgraphs vs. cross-product); document trade-off (M1)
+- [x] EP-31: Implement composite rendering on `Composite s1 s2` (M2)
+- [x] EP-31: Render diagram for `AlertSource ⨾ EmailDelivery` composite; check in (M3)
+- [x] EP-31: Add regression test for composite Mermaid output (M4)
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-03 — EP-31's M1 verification step (visual confirmation of
+  GitHub rendering Mermaid 8.7+ nested-state syntax for cross-cutting
+  transitions) is not performable by an LLM-agent implementer. The
+  plan was authored with a human verifier in mind. EP-31 fell back to
+  the explicitly-spec'd Shape A (flat cross-product), which is
+  rendering-engine-agnostic. The chosen test fixture
+  (`AlertSource ⨾ EmailDelivery`) has zero same-outer composite
+  edges, which would have left both Shape B outer subgraphs empty —
+  a degenerate case for Shape B. So the agentic-fallback path
+  happened to align with the fixture's structure. Future agentic
+  implementations of similar plans should expect verification steps
+  that require visual judgement to be unperformable and either
+  pre-spec a deterministic fallback (as this plan did) or surface
+  them to a human.
+
+- 2026-05-03 — EP-31's M4 fixture-strategy decision deviated from the
+  plan's prescription: the plan recommended duplicating the
+  `alertSource` fixture in a helper module
+  (`Keiki.Render.MermaidCompositeFixture`); EP-31 instead exported
+  the existing fixture from `Keiki.CompositionSpec`. The fixture
+  size (~80 lines of TH-laden code) is ~4× larger than the plan's
+  estimate (~20 lines), and the duplication-drift hazard the plan
+  itself flagged in its Idempotence section was the dominant
+  concern. The "pollutes the spec module's API" cost the plan named
+  for the export-based approach is illusory for a test module.
+  Future composite-renderer EPs can re-use the same export-based
+  pattern; no new fixture-helper-module convention to maintain.
+
+- 2026-05-03 — Implementation-time refactor opportunity: EP-30's
+  `toMermaid` and EP-31's `toMermaidComposite` are structurally
+  identical except for the vertex-label function. EP-31's M2
+  factored the rendering core into a private
+  `renderTopology :: (s -> Text) -> SymTransducer ... -> Text`
+  helper that both call. Worth keeping in mind for future renderer
+  variants (DOT, alternative-shape, etc.): they almost certainly
+  share the same skeleton.
 
 
 ## Decision Log
@@ -339,4 +374,69 @@ Track milestone-level progress across all child plans.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Shipped (2026-05-03):**
+
+- `Keiki.Render.Mermaid` (in `src/Keiki/Render/Mermaid.hs`) is the
+  pure Mermaid `stateDiagram-v2` renderer for keiki. Public surface:
+  - `toMermaid` — single-transducer renderer
+    (`(Enum s, Bounded s, Show s) => SymTransducer (HsPred rs ci) rs s ci co -> Text`).
+  - `toMermaidComposite` — composite-transducer renderer
+    (`( Enum s1, Bounded s1, Show s1, Enum s2, Bounded s2, Show s2 )
+       => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co -> Text`),
+    flat cross-product shape with `<show s1>_<show s2>` vertex labels.
+  - Helpers: `vertexLabel`, `compositeLabel`, `edgeInputName`,
+    `edgeOutputName`, `edgeLabel`.
+- Five canonical diagrams under `docs/guide/diagrams/`: one per
+  shipped Examples module from EP-30 (`UserRegistration`,
+  `OrderCart`, `EmailDelivery`, `UserRegistrationV0`) plus the
+  composite (`composite-alert-email.md`).
+- Two regression tests in `test/Keiki/Render/MermaidSpec.hs` pinning
+  the canonical Mermaid blocks for `userReg` and the
+  `AlertSource ⨾ EmailDelivery` composite. `cabal test` reports 198
+  examples, 0 failures.
+
+**Behaviour now possible:** a keiki user with a `SymTransducer` value
+(or a `compose`-produced composite) can call the appropriate
+renderer, paste the resulting `Text` into a Markdown file or Notion
+page, and see the topology rendered inline in any Mermaid-aware
+viewer (GitHub, VS Code preview, Notion). PR reviewers see topology
+diffs alongside source diffs; domain experts read the diagram
+without opening Haskell. Both gaps named in the futures note §5 and
+the crem comparison are closed for the topology-only view.
+
+**What remains (deferred follow-ups):**
+
+- DOT / Graphviz rendering — listed as a future format; deferred
+  pending demand. Would be a separate `Keiki.Render.Dot` module
+  using the same `renderTopology` skeleton parametrised over a
+  syntax-emit function.
+- Diff visualisation across two `SymTransducer` values
+  (`diffTransducers` from the futures note).
+- Per-edge guard / update inspection (the "richer interactive
+  edge inspector" the v1 explicitly excluded).
+- Composite-renderer variants for `alternative` and `feedback1`
+  shapes (both produce `Composite s1 s2` but the sequential-
+  composition mental model doesn't apply).
+- Shape B (nested subgraphs) for larger composites
+  (`UserRegistration ⨾ EmailDelivery`, etc.). EP-31 deferred this
+  pending visual GitHub-rendering verification and a fixture with
+  same-outer edges to make the nested layout meaningful.
+
+**Lessons:**
+
+- The MasterPlan's two-EP split (single + composite) was the right
+  call: EP-30 settled the module surface and edge-label format
+  before EP-31 had to reason about composite-shape choices; EP-31
+  reused all of EP-30's helpers (eventually via `renderTopology`)
+  rather than relitigating them. A single-EP version would have
+  forced both decisions in parallel.
+- Verification steps that require visual judgement (M1's
+  GitHub-render check) should be either pre-spec'd with a
+  deterministic fallback (as EP-31 did with Shape A) or flagged for
+  a human reviewer. LLM-agent implementers cannot complete those
+  steps as-written.
+- The "structurally identical to <existing function>" framing the
+  plan used for `toMermaidComposite` is a reliable
+  parameterise-the-difference signal during implementation; the
+  resulting `renderTopology` helper landed cleanly with zero
+  duplication.

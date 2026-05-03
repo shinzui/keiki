@@ -22,7 +22,15 @@
 -- The pipeline shape — every transition produces a wire event —
 -- means the composite's 'reconstitute' round-trip is well-defined
 -- (the design note discusses the ε-edge restriction).
-module Keiki.CompositionSpec (spec) where
+module Keiki.CompositionSpec
+  ( spec
+    -- Exported for re-use in 'Keiki.Render.MermaidSpec' (EP-31 M4).
+    -- See the Decision Log of
+    -- @docs/plans/31-mermaid-rendering-for-composite-symtransducers.md@
+    -- for why we re-export rather than duplicate the fixture.
+  , alertSource
+  , AlertVertex (..)
+  ) where
 
 import Data.Text (Text)
 import Data.Time (UTCTime)

@@ -1,24 +1,40 @@
--- | Regression test for "Keiki.Render.Mermaid". Pins the canonical
--- Mermaid 'stateDiagram-v2' block produced by 'toMermaid' over the
--- 'Keiki.Examples.UserRegistration.userReg' aggregate so that any
+-- | Regression tests for "Keiki.Render.Mermaid".
+--
+-- Pins the canonical Mermaid 'stateDiagram-v2' blocks produced by
+-- 'toMermaid' over 'Keiki.Examples.UserRegistration.userReg' (EP-30)
+-- and 'toMermaidComposite' over the @AlertSource ⨾ EmailDelivery@
+-- composite from "Keiki.CompositionSpec" (EP-31) so that any
 -- accidental formatting drift surfaces in CI.
 --
--- See @docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md@
--- for the design and the canonical-block source of truth.
+-- See:
+--
+--   * @docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md@
+--     — single-transducer renderer.
+--   * @docs/plans/31-mermaid-rendering-for-composite-symtransducers.md@
+--     — composite renderer.
 module Keiki.Render.MermaidSpec (spec) where
 
 import Data.Text (Text)
 import qualified Data.Text as T
 import Test.Hspec
 
+import Keiki.Composition (compose)
+import Keiki.CompositionSpec (alertSource)
+import Keiki.Examples.EmailDelivery (emailDelivery)
 import Keiki.Examples.UserRegistration (userReg)
-import Keiki.Render.Mermaid (toMermaid)
+import Keiki.Render.Mermaid (toMermaid, toMermaidComposite)
 
 
 spec :: Spec
-spec = describe "toMermaid (single SymTransducer)" $
-  it "renders userReg to the canonical stateDiagram-v2 block" $
-    toMermaid userReg `shouldBe` userRegCanonical
+spec = do
+  describe "toMermaid (single SymTransducer)" $
+    it "renders userReg to the canonical stateDiagram-v2 block" $
+      toMermaid userReg `shouldBe` userRegCanonical
+
+  describe "toMermaidComposite (composite SymTransducer)" $
+    it "renders the AlertSource ⨾ EmailDelivery pipeline" $
+      toMermaidComposite (compose alertSource emailDelivery)
+        `shouldBe` alertEmailCompositeCanonical
 
 
 -- | The canonical Mermaid block for @userReg@, mirrored verbatim from
@@ -39,3 +55,21 @@ userRegCanonical = unlinesNoTrail
   ]
   where
     unlinesNoTrail = T.intercalate (T.pack "\n")
+
+
+-- | The canonical Mermaid block for the @AlertSource ⨾ EmailDelivery@
+-- composite, mirrored verbatim from the diagram in
+-- @docs/guide/diagrams/composite-alert-email.md@. Three lines: the
+-- initial-state marker pointing at @Composite AlertQuiescent
+-- EmailPending@, the single cross-product edge that advances both
+-- component vertices in one step, and the final-state marker for the
+-- terminal composite vertex. The other two reachable composite
+-- vertices have no outgoing edges and are not final, so the renderer
+-- omits them (same convention as 'toMermaid').
+alertEmailCompositeCanonical :: Text
+alertEmailCompositeCanonical = T.intercalate (T.pack "\n")
+  [ "stateDiagram-v2"
+  , "    [*] --> AlertQuiescent_EmailPending"
+  , "    AlertQuiescent_EmailPending --> AlertEmitted_EmailSentVertex : TriggerAlert / EmailSent"
+  , "    AlertEmitted_EmailSentVertex --> [*]"
+  ]

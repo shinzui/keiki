@@ -116,12 +116,31 @@ already shipped and observable.
           AlertQuiescent_EmailPending --> AlertEmitted_EmailSentVertex : TriggerAlert / EmailSent
           AlertEmitted_EmailSentVertex --> [\*]
       .)*
-- [ ] M3 — Render the composite diagram for `AlertSource ⨾ EmailDelivery`
+- [x] M3 — Render the composite diagram for `AlertSource ⨾ EmailDelivery`
       and check in to `docs/guide/diagrams/composite-alert-email.md`.
-- [ ] M4 — Add a regression test in
+      *(2026-05-03: file written with the canonical three-line
+      stateDiagram-v2 block from M2's ghci validation, plus
+      regeneration recipe via `cabal repl keiki-test`. Followed the
+      existing diagram-file convention from `docs/guide/diagrams/
+      email-delivery.md`.)*
+- [x] M4 — Add a regression test in
       `test/Keiki/Render/MermaidSpec.hs` (the spec file from EP-30, now
       extended) pinning the canonical composite output for the
       `AlertSource ⨾ EmailDelivery` pipeline; `cabal test` passes.
+      *(2026-05-03: extended `MermaidSpec.hs` with a second describe
+      block (`toMermaidComposite (composite SymTransducer)`); pins the
+      canonical three-line block as `alertEmailCompositeCanonical`.
+      Picked Option 1 (export `alertSource` + `AlertVertex (..)` from
+      `Keiki.CompositionSpec`) over Option 2 (duplicate the fixture in
+      a new helper module) — see Decision Log entry of 2026-05-03 for
+      rationale. `cabal test` reports 198 examples, 0 failures (up
+      from EP-30's 197). Anti-validation: temporarily mutated the
+      expected initial-state line to `SHOULD_FAIL_HERE` and confirmed
+      the failure surfaces as a clear `expected …` diff in the new
+      describe block; reverted before commit. Renamed the test/Spec.hs
+      wrapper from `"Keiki.Render.Mermaid (EP-30)"` to
+      `"Keiki.Render.Mermaid (EP-30, EP-31)"` to reflect the spec
+      module now covers both EPs.)*
 
 
 ## Surprises & Discoveries
@@ -196,6 +215,32 @@ already shipped and observable.
   subgraphs (Mermaid 8.7+ feature) before committing implementation to it.
   Date: 2026-05-03
 
+- Decision: M4 picks **Option 1** (export the existing `alertSource`
+  fixture from `Keiki.CompositionSpec` and import it in
+  `Keiki.Render.MermaidSpec`) over the plan's **Option 2** (duplicate
+  the fixture into a dedicated `Keiki.Render.MermaidCompositeFixture`
+  helper module).
+  Rationale: the fixture is ~80 lines (vertex type, register file
+  shape, TH splices for input / wire constructors, edge function,
+  transducer value), not the ~20 the plan estimated. Duplicating that
+  much TH-laden code creates a real drift hazard (the plan's own
+  Idempotence section already names this hazard and prescribes a
+  manual re-sync recipe). The plan's stated cost of Option 1
+  ("pollutes the spec module's API") does not survive scrutiny: test
+  modules have no public API — the only consumer of
+  `Keiki.CompositionSpec` is `test/Spec.hs`, which uses only `spec`.
+  Adding `alertSource` and `AlertVertex (..)` to the export list
+  changes nothing except internal-to-test-suite reachability. Trade-
+  off accepted: a coupling between `MermaidSpec` and `CompositionSpec`
+  that did not exist before — any change to `alertSource` in
+  `CompositionSpec` will surface in `MermaidSpec`'s pinned block,
+  forcing a coordinated update. Treat this coupling as a feature, not
+  a bug: it ensures the diagram in
+  `docs/guide/diagrams/composite-alert-email.md` cannot drift from
+  the test fixture silently. The export-list comment in
+  `CompositionSpec.hs` points back here for future readers.
+  Date: 2026-05-03
+
 - Decision: M1 picks **Shape A (flat cross-product)** — composite
   vertex labels are `<show s1>_<show s2>`; the renderer body is a
   near-mirror of EP-30's `toMermaid` with a custom label function.
@@ -232,7 +277,66 @@ already shipped and observable.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Shipped (2026-05-03):**
+
+- `Keiki.Render.Mermaid.toMermaidComposite ::
+  ( Enum s1, Bounded s1, Show s1, Enum s2, Bounded s2, Show s2 )
+  => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co -> Text`
+  renders a composite transducer to a Mermaid `stateDiagram-v2` block
+  using the **flat cross-product** shape (vertex labels are
+  `<show s1>_<show s2>`).
+- `Keiki.Render.Mermaid.compositeLabel ::
+  (Show s1, Show s2) => Composite s1 s2 -> Text` is exported alongside
+  the existing `vertexLabel` for callers that want to build their own
+  rendering pipeline on top of the same primitives.
+- Internal refactor: `renderTopology :: (Enum s, Bounded s) =>
+  (s -> Text) -> SymTransducer (HsPred rs ci) rs s ci co -> Text`
+  is the shared rendering core; `toMermaid = renderTopology
+  vertexLabel`, `toMermaidComposite = renderTopology compositeLabel`.
+  Zero duplication, single source of truth for the
+  initial / final / edge / `edgeLabel` emission rules.
+- `docs/guide/diagrams/composite-alert-email.md` ships the canonical
+  three-line block for `AlertSource ⨾ EmailDelivery`.
+- `test/Keiki/Render/MermaidSpec.hs` adds a second describe block
+  pinning the composite output. `cabal test` reports 198 examples
+  (was 197), 0 failures.
+- `Keiki.CompositionSpec` exports `alertSource` and `AlertVertex (..)`
+  for re-use in `MermaidSpec` (single source of truth for the
+  fixture).
+
+**What remains (out of scope for EP-31, candidate follow-ups):**
+
+- Composite diagrams for `userReg ⨾ emailDelivery` and other
+  larger composites. The flat shape would produce 10+ vertices
+  arranged in no particular layout; this is the case the deferred
+  Shape B (nested subgraphs) was designed for. A future EP can
+  introduce Shape B once those composites are in scope and someone
+  is available to perform the GitHub-renderer verification step.
+- Specialised renderers for `alternative` and `feedback1` composites
+  (both also produce `Composite s1 s2`, but the visual semantics of
+  parallel arms / feedback loops differ from sequential composition).
+- DOT / Graphviz rendering, deferred at the MasterPlan level.
+
+**Lessons:**
+
+- The "pick a shape with the renderer already shipped" deferral
+  worked in the plan author's intended direction but pivoted under
+  agentic implementation: the verification step the plan envisaged
+  (visual confirmation of GitHub rendering nested-state syntax)
+  isn't performable by an LLM agent. The fallback (Shape A) was
+  fully spec'd in advance, so the choice landed cleanly.
+- The plan's "duplicate the fixture in a helper module" prescription
+  for M4 underestimated the fixture size by ~4× and would have
+  introduced a documented drift hazard. The smaller deviation
+  (export from the existing spec module) was a clean win;
+  formalising it in the Decision Log keeps the rationale legible
+  for future readers who might wonder why `Keiki.CompositionSpec`
+  exports more than `spec`.
+- The `renderTopology` helper extraction was opportunistic — the
+  plan's "structurally identical to `toMermaid`" framing made the
+  one-line factorisation obvious. Worth recording: when the plan
+  describes a new function as "structurally identical with a
+  different X," that's almost always a parameterise-X-out signal.
 
 
 ## Context and Orientation
