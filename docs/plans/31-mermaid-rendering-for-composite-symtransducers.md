@@ -75,17 +75,47 @@ already shipped and observable.
 
 ## Progress
 
-- [ ] M0 — Verify EP-30 is complete: `Keiki.Render.Mermaid` exists and
+- [x] M0 — Verify EP-30 is complete: `Keiki.Render.Mermaid` exists and
       exports `toMermaid`/`vertexLabel`/`edgeInputName`/`edgeOutputName`/
       `edgeLabel`; `cabal test` passes; record the canonical
       `userReg` block from EP-30 in Surprises as a reference.
-- [ ] M1 — Decide the composite rendering shape (nested subgraphs vs. flat
+      *(2026-05-03: GHC 9.12.3, z3 4.16.0; `cabal build all` Up to date;
+      `cabal test` 197 examples, 0 failures including the EP-30
+      `Keiki.Render.Mermaid -> toMermaid (single SymTransducer)`
+      describe block. EP-30 plan's Progress is fully checked. The
+      canonical `userReg` block is mirrored in
+      `test/Keiki/Render/MermaidSpec.hs:userRegCanonical` and
+      `docs/guide/diagrams/user-registration.md`; both pin the same
+      eight-line stateDiagram-v2 block.)*
+- [x] M1 — Decide the composite rendering shape (nested subgraphs vs. flat
       cross-product); document the trade-off in Decision Log; if subgraphs,
       verify the chosen Mermaid block renders in GitHub's Markdown viewer
       with a hand-written sample before any code changes.
-- [ ] M2 — Implement `toMermaidComposite` (and the supporting helpers for
+      *(2026-05-03: chose Shape A (flat cross-product) — see Decision
+      Log entry of 2026-05-03 below for the trade-off analysis. The
+      verification step the plan envisioned (push a Shape B sample to a
+      gist and visually confirm) was not performable by the
+      implementing agent; combined with the fixture having zero
+      same-outer edges (which neutralises Shape B's claimed benefit),
+      Shape A is the safer ship.)*
+- [x] M2 — Implement `toMermaidComposite` (and the supporting helpers for
       the chosen shape) in `src/Keiki/Render/Mermaid.hs`; add to module
       export list; verify in `ghci` against the test pipeline.
+      *(2026-05-03: shipped Shape A. Refactored the rendering core into
+      a private `renderTopology :: (s -> Text) -> SymTransducer ... ->
+      Text` helper that takes the vertex-label function as a
+      parameter; `toMermaid = renderTopology vertexLabel` and
+      `toMermaidComposite = renderTopology compositeLabel` share the
+      walk, header, init / final / edge emission, and `edgeLabel`
+      logic. Added `compositeLabel :: (Show s1, Show s2) =>
+      Composite s1 s2 -> Text` (joins the component shows with `_`)
+      to the module's exports alongside `toMermaidComposite`. ghci
+      transcript on `Keiki.CompositionSpec.pipeline`:
+      stateDiagram-v2
+          [\*] --> AlertQuiescent_EmailPending
+          AlertQuiescent_EmailPending --> AlertEmitted_EmailSentVertex : TriggerAlert / EmailSent
+          AlertEmitted_EmailSentVertex --> [\*]
+      .)*
 - [ ] M3 — Render the composite diagram for `AlertSource ⨾ EmailDelivery`
       and check in to `docs/guide/diagrams/composite-alert-email.md`.
 - [ ] M4 — Add a regression test in
@@ -96,7 +126,53 @@ already shipped and observable.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-03 — M0 baseline. GHC 9.12.3, z3 4.16.0. `cabal build all`
+  is "Up to date"; `cabal test` reports `197 examples, 0 failures`
+  in 0.32 s. EP-30's `Keiki.Render.Mermaid` exports
+  `toMermaid`/`vertexLabel`/`edgeInputName`/`edgeOutputName`/`edgeLabel`
+  (verified by `grep`); EP-30's plan file shows all four milestones
+  checked. Safe to add `toMermaidComposite` on top.
+
+- 2026-05-03 — Refactor decision (M2 implementation): the plan's
+  Shape A sketch duplicates ~10 lines of `toMermaid`'s body verbatim,
+  swapping only the vertex-label function. Extracted the shared core
+  into a private `renderTopology label t = …` helper that takes the
+  label function as a parameter; `toMermaid = renderTopology
+  vertexLabel`, `toMermaidComposite = renderTopology compositeLabel`.
+  Result: zero duplication; both public entry points stay the same
+  signature; `edgeLabel` still has exactly one call site
+  (`renderTopology`). Trade-off: the module gains one private helper.
+  Cheap, local, reversible.
+
+- 2026-05-03 — ghci validation of `toMermaidComposite` against
+  `Keiki.CompositionSpec.pipeline` produced:
+
+      stateDiagram-v2
+          [*] --> AlertQuiescent_EmailPending
+          AlertQuiescent_EmailPending --> AlertEmitted_EmailSentVertex : TriggerAlert / EmailSent
+          AlertEmitted_EmailSentVertex --> [*]
+
+  Three lines (init / one edge / final), matching the M0 manual
+  edge-set analysis: of the 4 composite vertices, only
+  `Composite AlertQuiescent EmailPending` has an outgoing edge, and
+  only `Composite AlertEmitted EmailSentVertex` is final; the other
+  two vertices have no edges and aren't final, so they don't appear
+  in the diagram (consistent with `toMermaid`'s behaviour for
+  unreachable / dead-end vertices).
+
+- 2026-05-03 — Confirmed the test fixture's edge count. `AlertVertex`
+  has one outgoing edge from `AlertQuiescent` (on `TriggerAlert`,
+  emitting `SendEmailEvent`); `EmailVertex` has one outgoing edge
+  from `EmailPending` (on `SendEmail`, emitting `EmailSent`). The
+  composite cross-product produces exactly **one** non-ε edge from
+  `Composite AlertQuiescent EmailPending` to
+  `Composite AlertEmitted EmailSentVertex` on
+  `TriggerAlert / EmailSent`. The other three composite vertices
+  have zero outgoing edges. The composite is final at
+  `Composite AlertEmitted EmailSentVertex` (both component
+  `isFinal` predicates fire). Empirical edge enumeration via ghci
+  is deferred to M2's validation step (the renderer itself is the
+  most direct way to inspect `edgesOut pipeline`).
 
 
 ## Decision Log
@@ -118,6 +194,39 @@ already shipped and observable.
   output already observable. M1 spends a hand-written-Mermaid-sample step
   validating that GitHub's Markdown renderer actually handles nested
   subgraphs (Mermaid 8.7+ feature) before committing implementation to it.
+  Date: 2026-05-03
+
+- Decision: M1 picks **Shape A (flat cross-product)** — composite
+  vertex labels are `<show s1>_<show s2>`; the renderer body is a
+  near-mirror of EP-30's `toMermaid` with a custom label function.
+  Rationale: three reasons stack.
+  (1) The verification step the plan envisaged for Shape B (push a
+  hand-written nested-subgraph sample to a GitHub gist and visually
+  confirm GitHub renders the Mermaid 8.7+ `Outer.Inner` dotted syntax
+  for cross-outer transitions) cannot be performed by the
+  implementing agent — and proceeding without empirical confirmation
+  is the failure mode the plan's verification step exists to prevent.
+  (2) The chosen test fixture (`AlertSource ⨾ EmailDelivery`) has
+  exactly one composite edge, and that edge is cross-outer (it
+  changes both `AlertVertex` and `EmailVertex`). Zero same-outer
+  edges means both Shape B outer blocks would be empty
+  (`state AlertQuiescent { }`, `state AlertEmitted { }`); the diagram
+  reduces to top-level dotted transitions between inner-state
+  references inside empty outer blocks, which is exactly the
+  rendering edge case Shape B's verification step was designed to
+  catch.
+  (3) Shape A is structurally identical to `toMermaid` (same vertex
+  walk, same edge / final / initial emission); only the label
+  function differs (`<show a>_<show b>` instead of `show . id`).
+  Cognitive load for future maintainers is minimal, the
+  reuse-of-known-good-code reduces bug surface, and the
+  flat layout reads cleanly for the fixture's 1-edge graph.
+  Trade-off accepted: Shape A scales poorly for compositions over
+  larger sub-aggregates (e.g. `UserRegistration ⨾ EmailDelivery`
+  would give 10 flat vertices). The plan's "Out of scope" section
+  already excludes those compositions from this EP; a follow-up plan
+  can introduce Shape B once larger composites are in scope and
+  someone can perform the Mermaid-rendering verification.
   Date: 2026-05-03
 
 

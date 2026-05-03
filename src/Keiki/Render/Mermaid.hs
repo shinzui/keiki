@@ -26,7 +26,9 @@
 --     for the initiative motivation.
 module Keiki.Render.Mermaid
   ( toMermaid
+  , toMermaidComposite
   , vertexLabel
+  , compositeLabel
   , edgeInputName
   , edgeOutputName
   , edgeLabel
@@ -36,6 +38,7 @@ import Control.Applicative ((<|>))
 import Data.Text (Text)
 import qualified Data.Text as T
 
+import Keiki.Composition (Composite (..))
 import Keiki.Core
   ( Edge (..)
   , HsPred (..)
@@ -59,21 +62,57 @@ toMermaid
   :: (Enum s, Bounded s, Show s)
   => SymTransducer (HsPred rs ci) rs s ci co
   -> Text
-toMermaid t =
+toMermaid = renderTopology vertexLabel
+
+
+-- | Render a composite 'SymTransducer' (a 'Keiki.Composition.compose'
+-- result, vertex type @'Composite' s1 s2@) to a Mermaid
+-- @stateDiagram-v2@ block.
+--
+-- Uses the **flat cross-product** shape: each composite vertex
+-- @'Composite' a b@ becomes a single Mermaid identifier
+-- @<show a>_<show b>@. The structure is otherwise identical to
+-- 'toMermaid' — same initial / final / edge emission rules, same
+-- 'edgeLabel' format. See EP-31's Decision Log
+-- (@docs/plans/31-mermaid-rendering-for-composite-symtransducers.md@)
+-- for why the flat shape was chosen over Mermaid's nested-subgraph
+-- syntax (Shape B in the plan).
+toMermaidComposite
+  :: ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     )
+  => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co
+  -> Text
+toMermaidComposite = renderTopology compositeLabel
+
+
+-- | The shared rendering core: walk @[minBound .. maxBound]@, emit
+-- the @stateDiagram-v2@ header, the initial-state line, one line per
+-- outgoing edge, and one final-state line per vertex where
+-- 'isFinal' fires. The vertex-label function is the only piece that
+-- varies between 'toMermaid' (single transducer) and
+-- 'toMermaidComposite' (composite); factoring it out keeps the
+-- rendering logic in one place.
+renderTopology
+  :: (Enum s, Bounded s)
+  => (s -> Text)
+  -> SymTransducer (HsPred rs ci) rs s ci co
+  -> Text
+renderTopology label t =
   let vertices  = [minBound .. maxBound]
       header    = T.pack "stateDiagram-v2"
       ind       = T.pack "    "
       arrow     = T.pack " --> "
       colon     = T.pack " : "
-      initLine  = ind <> T.pack "[*]" <> arrow <> vertexLabel (initial t)
+      initLine  = ind <> T.pack "[*]" <> arrow <> label (initial t)
       edgeLines =
-        [ ind <> vertexLabel s <> arrow
-              <> vertexLabel (target e) <> colon <> edgeLabel e
+        [ ind <> label s <> arrow
+              <> label (target e) <> colon <> edgeLabel e
         | s <- vertices
         , e <- edgesOut t s
         ]
       finalLines =
-        [ ind <> vertexLabel s <> arrow <> T.pack "[*]"
+        [ ind <> label s <> arrow <> T.pack "[*]"
         | s <- vertices
         , isFinal t s
         ]
@@ -87,6 +126,17 @@ toMermaid t =
 -- @[A-Za-z_][A-Za-z0-9_]*@.
 vertexLabel :: Show s => s -> Text
 vertexLabel = T.pack . show
+
+
+-- | The Mermaid identifier for a composite vertex.
+-- @'show' a \<\> "_" \<\> 'show' b@ — joined with an underscore so the
+-- result still matches Mermaid's identifier regex
+-- @[A-Za-z_][A-Za-z0-9_]*@. (The default 'Show' for 'Composite' emits
+-- @"Composite a b"@ with spaces, which is not a legal Mermaid
+-- identifier.)
+compositeLabel :: (Show s1, Show s2) => Composite s1 s2 -> Text
+compositeLabel (Composite a b) =
+  T.pack (show a) <> T.pack "_" <> T.pack (show b)
 
 
 -- | Extract the input-constructor name from an edge's guard, walking
