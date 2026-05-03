@@ -3,6 +3,10 @@ module Main (main) where
 import Test.Hspec
 import qualified Jitsurei.EmailDeliveryBuilderSpec
 import qualified Jitsurei.EmailDeliveryViewSpec
+import qualified Jitsurei.LoanApplicationBuilderSpec
+import qualified Jitsurei.LoanApplicationSpec
+import qualified Jitsurei.LoanApplicationSymbolicSpec
+import qualified Jitsurei.LoanApplicationViewSpec
 import qualified Jitsurei.OrderCartBuilderSpec
 import qualified Jitsurei.OrderCartSpec
 import qualified Jitsurei.UserRegistrationBuilderSpec
@@ -17,6 +21,10 @@ main :: IO ()
 main = hspec $ do
   describe "Jitsurei.EmailDelivery (builder)"       Jitsurei.EmailDeliveryBuilderSpec.spec
   describe "Jitsurei.EmailDelivery (view)"          Jitsurei.EmailDeliveryViewSpec.spec
+  describe "Jitsurei.LoanApplication"               Jitsurei.LoanApplicationSpec.spec
+  describe "Jitsurei.LoanApplication (builder)"     Jitsurei.LoanApplicationBuilderSpec.spec
+  describe "Jitsurei.LoanApplication (view)"        Jitsurei.LoanApplicationViewSpec.spec
+  describe "Jitsurei.LoanApplication (symbolic)"    Jitsurei.LoanApplicationSymbolicSpec.spec
   describe "Jitsurei.OrderCart"                     Jitsurei.OrderCartSpec.spec
   describe "Jitsurei.OrderCart (builder)"           Jitsurei.OrderCartBuilderSpec.spec
   describe "Jitsurei.UserRegistration"              Jitsurei.UserRegistrationSpec.spec

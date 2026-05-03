@@ -144,23 +144,33 @@ must always reflect the actual current state of the work.
         time they were authored.
   - [x] Update the haddock cross-reference in
         `src/Keiki/Generics/TH.hs:116`.
-- [ ] M2 — `Jitsurei.LoanApplication` aggregate (vertices,
+- [x] M2 — `Jitsurei.LoanApplication` aggregate (vertices,
       register file, commands/events, builder + AST forms,
-      ε-edges, multi-field guards, B-view).
-  - [ ] Module skeleton with `jitsurei.cabal` entry.
-  - [ ] Domain types (commands, events, payloads).
-  - [ ] Register file and `LoanAppVertex` enum.
-  - [ ] TH splices (`deriveAggregateCtors`, `deriveWireCtors`,
+      ε-edges, multi-field guards, B-view). (2026-05-03)
+  - [x] Module skeleton with `jitsurei.cabal` entry.
+  - [x] Domain types (commands, events, payloads).
+  - [x] Register file and `LoanAppVertex` enum (vertex
+        @Drafting@ renamed @Intake@ to satisfy
+        `deriveView`'s prefix-uniqueness rule — see
+        Decision Log).
+  - [x] TH splices (`deriveAggregateCtors`, `deriveWireCtors`,
         `deriveView`).
-  - [ ] Builder-form `loanApplication` transducer.
-  - [ ] AST-form `loanApplicationAST` transducer (for
+  - [x] Builder-form `loanApplication` transducer (the
+        @CollectingDocuments → UnderReview@ "ε-edge" is
+        @onCmd inCtorContinue + noEmit@ rather than
+        @onEpsilon@; see Decision Log).
+  - [x] AST-form `loanApplicationAST` transducer (for
         builder/AST equivalence).
-  - [ ] `Jitsurei.LoanApplicationSpec` (round-trip).
-  - [ ] `Jitsurei.LoanApplicationBuilderSpec`
-        (builder/AST equivalence).
-  - [ ] `Jitsurei.LoanApplicationViewSpec` (B-view projection).
-  - [ ] `Jitsurei.LoanApplicationSymbolicSpec`
-        (`isSingleValuedSym`).
+  - [x] `Jitsurei.LoanApplicationSpec` (round-trip + 'delta'
+        coverage of the silent advance and approval/decline
+        edges).
+  - [x] `Jitsurei.LoanApplicationBuilderSpec`
+        (builder/AST equivalence over every prefix).
+  - [x] `Jitsurei.LoanApplicationViewSpec` (B-view projection).
+  - [x] `Jitsurei.LoanApplicationSymbolicSpec`
+        (`isSingleValuedSym`) — currently pending; documented
+        SBV limitation around `TApp1` / `TApp2` (see
+        Surprises & Discoveries 2026-05-03).
 - [ ] M3 — MultiDecider chain for `Jitsurei.LoanApplication`.
   - [ ] `loanApplicationDriverConfig` and
         `loanApplicationChained` with `B.chainTo`.
@@ -212,6 +222,27 @@ discovered during implementation. Provide concise evidence.
   `jitsurei`, which contradicts M1 step 10's "layering"
   rationale. See the corresponding Decision Log entry for the
   resolution chosen.
+
+- 2026-05-03 — `isSingleValuedSym (withSymPred loanApplication)`
+  answers @False@ rather than @True@. Root cause: the multi-field
+  threshold guards (`approvalGuard`, `readyForReviewGuard`) use
+  `TApp1` / `TApp2` to lift Haskell-level `(>=)` and `(<=)` over
+  registers (there is no `PCompare` constructor on 'HsPred'), and
+  'Keiki.Symbolic' translates each occurrence of `TApp1` / `TApp2`
+  to a fresh anonymous SBV variable — it cannot symbolically
+  evaluate arbitrary Haskell functions. The approval and decline
+  edges out of `UnderReview` share `PAnd isContinue approvalGuard`
+  vs `PAnd isContinue (PNot approvalGuard)`. Each translation of
+  `approvalGuard` yields a *new* SBV variable, so SBV cannot
+  identify the two as the same expression and the conjunction
+  `approvalGuard ∧ ¬approvalGuard` is reported as satisfiable.
+  This is a documented limitation of the v2 SBV backend (see
+  `Keiki.Symbolic`'s module haddock around `TApp1` / `TApp2`).
+  Resolution adopted: mark the M2 symbolic spec as
+  `pendingWith` a precise reason. Un-pending requires either a
+  memoising translator that recognises identical `TApp1`
+  sub-terms or a richer `HsPred` with a comparison constructor;
+  both are out of EP-34's scope.
 
 - 2026-05-03 — adding `jitsurei` to `keiki:test`'s `build-depends`
   produces a *cabal* dependency cycle: `cabal build all` reports
@@ -343,6 +374,61 @@ Record every decision made while working on the plan.
   `UserRegistration` directly. Moving it into `jitsurei`
   preserves the import chain without requiring a `keiki`-side
   benchmark to depend on `jitsurei`.
+  Date: 2026-05-03
+
+- Decision: Rename the @Drafting@ vertex to @Intake@.
+  Rationale: 'deriveView' rejects vertex spec lists in which two
+  constructor names produce the same field-name prefix
+  (@map toLower . filter isUpper@), and both @Drafting@ and
+  @Declined@ produce @"d"@. The compile error is
+  @"deriveView: vertices { \"Drafting\", \"Declined\" } produce
+  the same field-name prefix \"d\"; rename one"@. @Intake@ has
+  prefix @"i"@, is a domain-correct loan-ops term for the start-
+  of-flow vertex, and is single-syllable. The plan's Purpose
+  / Big Picture section's vertex list still reads correctly
+  because @Intake@ is the natural rename target. All
+  references to @Drafting@ in this plan and its tutorial
+  outline are read as referring to @Intake@.
+  Date: 2026-05-03
+
+- Decision: Implement the "ready for review" transition as
+  @onCmd inCtorContinue@ + @noEmit@ rather than as @onEpsilon@.
+  Rationale: a true 'onEpsilon' edge in 'CollectingDocuments'
+  has no input-ctor match, so its register-only guard
+  ('readyForReviewGuard') is satisfied by any input whenever
+  the regs meet the threshold. That overlaps with the five
+  evidence-collection edges (each gated by an 'inCtor' match)
+  whenever the threshold-met regs are reached during a non-
+  Continue command. 'delta' returns 'Nothing' on the
+  ambiguity, and 'isSingleValuedSym' reports the transducer as
+  not single-valued. Modelling the transition as @onCmd
+  inCtorContinue@ + @noEmit@ keeps the *intent* (no public
+  event, fires when thresholds are met, mirrors the production
+  AgentQualification @AgentQualified@ silent advance) while
+  the inCtor guard keeps it disjoint from the evidence-
+  collection edges. This is the same pattern
+  'Jitsurei.UserRegistration' uses for its GDPR-from-
+  'RequiresConfirmation' silent deletion edge — @onCmd
+  inCtorGdpr@ with @noEmit@. The tutorial calls the result an
+  "ε-edge in the keiki sense (output is 'Nothing')" rather
+  than "ε-edge in the FST sense (no input symbol)".
+  Date: 2026-05-03
+
+- Decision: Use @lit (read \"1970-01-01 00:00:00 UTC\" :: UTCTime)@
+  as the @appDecidedAt@ literal on the Continue-driven approval
+  / decline edges.
+  Rationale: 'Continue' is a nullary command (its 'inpContinue'
+  projection has type @Index '[] a@, which is uninhabited), so
+  the edge cannot read a timestamp from the command payload. The
+  pure transducer must therefore stamp the decision time from
+  somewhere — either a register slot (which would require an
+  extra command to seed) or a fixed sentinel literal. Choosing
+  the epoch-zero literal keeps the pure layer total without
+  inventing a slot whose only purpose is to feed Continue. The
+  runtime adapter overrides the decided-at sentinel before
+  emitting the public event downstream; the pure layer simply
+  records that a decision was made. The tutorial calls this out
+  in the Continue / MultiDecider section.
   Date: 2026-05-03
 
 - Decision: Inline `EmailDelivery` and `UserRegistration` as

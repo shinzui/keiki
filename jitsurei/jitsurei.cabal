@@ -28,6 +28,7 @@ common shared-extensions
 library
     import:             warnings, shared-extensions
     exposed-modules:    Jitsurei.EmailDelivery
+                        Jitsurei.LoanApplication
                         Jitsurei.OrderCart
                         Jitsurei.UserRegistration
                         Jitsurei.UserRegistrationV0
@@ -45,6 +46,10 @@ test-suite jitsurei-test
     main-is:            Spec.hs
     other-modules:      Jitsurei.EmailDeliveryBuilderSpec
                         Jitsurei.EmailDeliveryViewSpec
+                        Jitsurei.LoanApplicationBuilderSpec
+                        Jitsurei.LoanApplicationSpec
+                        Jitsurei.LoanApplicationSymbolicSpec
+                        Jitsurei.LoanApplicationViewSpec
                         Jitsurei.OrderCartBuilderSpec
                         Jitsurei.OrderCartSpec
                         Jitsurei.UserRegistrationBuilderSpec
