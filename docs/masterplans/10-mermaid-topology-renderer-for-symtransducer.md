@@ -112,46 +112,97 @@ Out of scope:
 
 ## Decomposition Strategy
 
-Two child ExecPlans:
+Four child ExecPlans, in two phases.
 
-1. **EP A (single-transducer Mermaid renderer + first
-   diagrams).** Ships `Keiki.Render.Mermaid.toMermaid` for the
-   single-transducer case, the supporting helpers
-   (`vertexLabel`, `edgeLabel`), the `(Enum, Bounded, Show)`
-   constraint discipline, and four canonical diagrams (one per
-   shipped Examples module). Acceptance: Mermaid output renders
-   in a Markdown preview and matches a checked-in expected
-   value in `test/Keiki/Render/MermaidSpec.hs`.
-2. **EP B (composite-topology rendering for `Composite s1 s2`).**
-   Picks an approach (nested subgraphs vs. cross-product
-   enumeration) and ships rendering for the
-   `compose`-produced `Composite s1 s2` shape. Acceptance: a
-   composite diagram for the existing
-   `AlertSource ⨾ EmailDelivery` test fixture in
-   `test/Keiki/CompositionSpec.hs` renders to a Mermaid block
-   that round-trips through GitHub's renderer.
+**Phase 1 — Foundation (shipped 2026-05-03):**
 
-Two EPs is at the small end of MASTERPLAN.md's "two to seven"
-guidance and matches the genuine concern boundary: EP A
-delivers a usable single-transducer renderer with no shape
-choices left to revisit; EP B picks the composite shape, which
-has a real choice (subgraphs vs. cross-product) that benefits
-from being its own decision context.
+1. **EP-30 (single-transducer Mermaid renderer + first diagrams).**
+   Ships `Keiki.Render.Mermaid.toMermaid` for the single-transducer
+   case, the supporting helpers (`vertexLabel`, `edgeLabel`), the
+   `(Enum, Bounded, Show)` constraint discipline, and four
+   canonical diagrams (one per shipped Examples module).
+   Acceptance: Mermaid output renders in a Markdown preview and
+   matches a checked-in expected value in
+   `test/Keiki/Render/MermaidSpec.hs`.
 
-**Why a MasterPlan and not a single ExecPlan:** EP B's
-composite-shape choice is consequential (subgraphs require
-Mermaid 8.7+; cross-product blows up vertex count for non-trivial
-composites) and benefits from being settled with EP A's
-single-transducer code already in hand — implementers can see
-the subgraph syntax actually rendering before committing to it.
-A single ExecPlan would force EP B's choice to be made before
-EP A's output is observable, increasing rework risk.
+2. **EP-31 (sequential-composition composite renderer).** Picks
+   an approach (nested subgraphs vs. cross-product enumeration)
+   and ships rendering for the `compose`-produced `Composite s1
+   s2` shape. Acceptance: a composite diagram for the existing
+   `AlertSource ⨾ EmailDelivery` test fixture renders to a
+   Mermaid block that round-trips through GitHub's renderer.
+
+**Phase 2 — Coverage extensions (added 2026-05-03 after Phase 1
+shipped):**
+
+3. **EP-32 (Shape B nested-subgraph rendering for larger
+   sequential composites).** EP-31 deliberately picked the **flat
+   cross-product** form (Shape A) and deferred Shape B (nested
+   subgraphs) to a follow-up — both because LLM-agent
+   implementers couldn't perform the GitHub-renderer
+   visual-verification step EP-31's plan envisaged, and because
+   the chosen test fixture (`AlertSource ⨾ EmailDelivery`) was
+   too small to demonstrate Shape B's structural benefit. EP-32
+   ships `toMermaidCompositeNested` using a Shape B variant that
+   sidesteps the verification concern (flat identifiers claimed
+   into `state … { … }` outer blocks, no dependency on
+   Mermaid's `Outer.Inner` dotted cross-block syntax).
+   Acceptance: a nested-form diagram for the existing fixture
+   plus a regression test pinning the canonical block.
+
+4. **EP-33 (shape-aware renderers for `alternative` and
+   `feedback1` composites).** Both combinators produce
+   `Composite`-vertexed transducers, but the
+   sequential-composition mental model EP-31 codifies doesn't
+   match their semantics: `alternative` is parallel arms with
+   independent state; `feedback1` is a 3-deep cascade. EP-33
+   ships `toMermaidAlternative` (parallel-arms layout, two
+   `state … { … }` blocks side by side) and `toMermaidFeedback1`
+   (flat 3-deep cross-product with `<show s1>_<show s2>_<show s1>`
+   labels). Acceptance: per-combinator regression tests against
+   the existing `siblings` / `loop` fixtures from MP-8's EP-25 /
+   EP-26 specs; per-combinator diagrams under
+   `docs/guide/diagrams/`.
+
+Four EPs is comfortably within MASTERPLAN.md's "two to seven"
+range and matches the genuine concern boundaries:
+
+- EP-30 settles module surface and edge-label format. No shape
+  choices.
+- EP-31 picks the flat-cross-product shape for sequential
+  composition, deferring Shape B and shape-aware variants.
+- EP-32 picks the Shape B variant that doesn't depend on
+  agent-unverifiable Mermaid syntax.
+- EP-33 picks shape-aware layouts for the non-sequential
+  combinators.
+
+**Why phase-split rather than four EPs up front:** Phase 2's
+choices depend on Phase 1's lessons. EP-31 discovered the
+LLM-agent-verification constraint and developed the Shape A
+fallback pattern; EP-32's design copies that pattern (flat
+identifiers, no dotted-syntax dependency). EP-31 also discovered
+the `renderTopology` factorisation; EP-33's `toMermaidFeedback1`
+reuses it directly. Authoring all four EPs up front would have
+locked in design choices before the relevant lessons surfaced.
+
+**Why a MasterPlan and not multiple separate plans:** EP-30's
+module surface, the edge-label format, the constraint discipline
+on `s`, the `renderTopology` core, and the diagram-file
+convention are all integration points that Phase 2 plans extend
+rather than relitigate. A MasterPlan keeps the integration points
+visible across phases.
 
 **Alternatives considered:**
 
-- *Single ExecPlan covering both single and composite
-  rendering.* Rejected for the reason above: the composite
-  choice benefits from EP A's output existing first.
+- *Single ExecPlan covering both single and composite rendering
+  (the original Phase 1 alternative).* Rejected for the reason
+  above: the composite choice benefits from EP-30's output
+  existing first.
+- *Author EP-32 and EP-33 up front in Phase 1.* Rejected:
+  EP-31's Shape A fallback pattern and the `renderTopology`
+  factorisation were discoveries that would not have informed
+  pre-Phase-1 designs. Phase 2 plans land cleaner with those
+  lessons baked in.
 - *Bundle DOT and Mermaid into one MasterPlan.* Rejected:
   Mermaid alone covers GitHub / Notion / Markdown; DOT adds
   Graphviz as a runtime dependency for users. Different
@@ -170,12 +221,27 @@ EP A's output is observable, increasing rework risk.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | Complete |
 | 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Complete |
+| 3 | Shape B nested-subgraph Mermaid rendering for larger composites | docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md | EP-30, EP-31 | None | In Progress |
+| 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
-"EP-4 (external)" is MP-4's child plan
-`docs/plans/4-composition-combinators-on-symtransducer.md`,
-which delivered the existing `compose` and the `Composite s1
-s2` newtype EP-31 here renders.
+
+External-dep glossary:
+
+- **EP-4** is MP-4's child plan
+  `docs/plans/4-composition-combinators-on-symtransducer.md`,
+  which delivered the existing `compose` and the `Composite s1
+  s2` newtype EP-31 / EP-32 render.
+- **EP-25** is MP-8's child plan
+  `docs/plans/25-alternative-composition-combinator-on-symtransducer.md`,
+  which delivered the `alternative` combinator EP-33 renders.
+- **EP-26** is MP-8's child plan
+  `docs/plans/26-single-step-feedback-combinator-on-symtransducer.md`,
+  which delivered the `feedback1` combinator EP-33 renders.
+
+All three external deps are already shipped as of MP-10's
+authoring date; they appear here for traceability rather than as
+gating constraints.
 
 
 ## Dependency Graph
@@ -190,9 +256,10 @@ s2` newtype EP-31 here renders.
                         ▼
                  ┌──────────────┐
                  │   EP-31      │
+                 │  Sequential  │
                  │  Composite   │
-                 │  Mermaid     │
-                 └──────────────┘
+                 │  (Shape A)   │
+                 └──────┬───────┘
                         ▲
                         │ (soft)
                         │
@@ -201,84 +268,184 @@ s2` newtype EP-31 here renders.
               │ existing compose  │
               │ + Composite       │
               └───────────────────┘
+
+                 ┌──────────────┐
+                 │   EP-31      │
+                 └──┬─────────┬─┘
+              hard  │         │ hard
+                    ▼         ▼
+            ┌────────────┐ ┌────────────────┐
+            │   EP-32    │ │     EP-33      │
+            │  Shape B   │◄┤  alternative + │
+            │  (nested   │ │  feedback1     │
+            │   compose) │ │  shape-aware   │
+            └────────────┘ └────────┬───────┘
+                                    │ hard
+                              ┌─────┴──────────┐
+                              │ EP-25 / EP-26  │
+                              │   (external)   │
+                              │ alternative +  │
+                              │ feedback1 ops  │
+                              └────────────────┘
 ```
 
-EP-31 hard-depends on EP-30 because the single-transducer
-renderer's helpers (vertex labelling, edge labelling, state
-markers) are reused by the composite version. EP-31's soft
-dependency on EP-4 is structural — EP-4 already shipped the
-`Composite s1 s2` newtype and the `compose` operator that
-produces the composites EP-31 renders, so EP-31 can land
-whenever after EP-30 (no need to wait on MP-8's new
-combinators; their composites are added to EP-31's coverage
-when MP-8's children land, via a follow-up revision rather
-than a hard dep).
+**Hard dependencies:**
+
+- EP-31 → EP-30: the single-transducer renderer's helpers
+  (vertex labelling, edge labelling, state markers) and the
+  `(Enum, Bounded, Show)` constraint discipline are reused by
+  the composite renderer.
+- EP-32 → EP-30, EP-31: reuses `compositeLabel` (from EP-31),
+  `edgeLabel` (from EP-30), and the diagram-file convention.
+- EP-33 → EP-30, EP-31, EP-25, EP-26: reuses `vertexLabel`,
+  `edgeLabel`, `renderTopology` from EP-30/EP-31, and renders
+  the `alternative` and `feedback1` combinators that EP-25 /
+  EP-26 ship.
+
+**Soft dependencies:**
+
+- EP-31 → EP-4 (external): structural — EP-4 already shipped the
+  `Composite s1 s2` newtype and the `compose` operator that
+  produces the composites EP-31 renders.
+- EP-33 → EP-32: a sibling Phase 2 plan; EP-33 has no code-level
+  dependency on EP-32 but the test count baseline / `Spec.hs`
+  describe-block title coordination is simpler if either lands
+  before the other rather than concurrently. Either order is
+  acceptable.
+
+EP-32 and EP-33 can land in any order relative to each other.
+EP-32's M0 baseline test count is 198 if it ships before EP-33,
+199 if EP-33 shipped first; EP-33's M0 baseline is the
+symmetric equivalent. Each plan's M0 milestone instructs the
+implementer to record the actual baseline rather than assume.
 
 
 ## Integration Points
 
 ### IP-1: `Keiki.Render.Mermaid` module
 
-**Plans involved:** EP-30 (creates), EP-31 (extends).
+**Plans involved:** EP-30 (creates), EP-31 (extends with
+`toMermaidComposite` + `compositeLabel` + private
+`renderTopology` helper), EP-32 (extends with
+`toMermaidCompositeNested`), EP-33 (extends with
+`toMermaidAlternative`, `toMermaidAlternativeWith`,
+`toMermaidFeedback1`).
 
-**Owner:** EP-30. The module's surface — exported names,
-constraint discipline on the `s` parameter — is decided in
-EP-30 and named here once the EP lands. EP-31 extends the
-same module with composite-aware variants.
+**Owner:** EP-30 owns the original surface (exported names,
+`(Enum, Bounded, Show)` constraint discipline on `s`,
+`renderTopology` skeleton after EP-31's M2 refactor). Phase 2
+plans (EP-32, EP-33) **add** functions but **do not** rename or
+remove existing exports.
+
+**Coordination rule:** every renderer entry point lives in
+`Keiki.Render.Mermaid`; no sibling rendering modules are
+introduced. Helpers private to a single renderer (e.g.
+`feedback1Label` in EP-33) stay un-exported. If two plans need
+the same helper, promote it to a top-level export in the plan
+that lands second.
 
 ### IP-2: Edge label format
 
-**Plans involved:** EP-30 (defines).
+**Plans involved:** EP-30 (defines); EP-31, EP-32, EP-33 (use
+unchanged).
 
 **Owner:** EP-30. The v1 format is `<input ctor> / <output
-ctor>` (or `/ ε` for ε-edges). The input constructor name
-comes from the `InCtor`'s `icName :: Text` field carried inside
-`HsPred`'s `PInCtor` atom (see `Keiki.Core`); the output
-constructor name comes from the `OPack`'s `WireCtor`'s `wcName ::
-Text` field. EP-30 names the exact extraction code path.
+ctor>` (or `<input ctor> / ε` for ε-edges, `?` for missing input
+names). The input constructor name comes from the `InCtor`'s
+`icName :: Text` field carried inside `HsPred`'s `PInCtor` atom
+(see `Keiki.Core`); the output constructor name comes from the
+`OPack`'s `WireCtor`'s `wcName :: Text` field.
 
-**Coordination rule:** EP-31's composite rendering uses the
-same edge-label format; only the *vertex* labelling differs
-(composite vertices nest into subgraphs).
+**Coordination rule:** every composite renderer uses
+`edgeLabel` unchanged; only the *vertex* labelling varies by
+shape.
 
-### IP-3: Example diagrams under `docs/guide/`
+For `alternative`-shaped composites (EP-33), the label format
+naturally surfaces the underlying constructor names because
+`leftInCtor` / `rightInCtor` / `leftWireCtor` / `rightWireCtor`
+preserve `icName` / `wcName` (see `Keiki.Composition`). So edge
+labels read like `SendEmail / EmailSent` even though the
+runtime input is `Left sampleSendEmail`.
 
-**Plans involved:** EP-30 (single-transducer diagrams);
-optionally EP-31 (composite diagram for `AlertSource ⨾
-EmailDelivery`).
+### IP-3: Example diagrams under `docs/guide/diagrams/`
 
-**Owner:** EP-30 picks the location: either a new
-`docs/guide/diagrams/` folder with one `.md` per aggregate, or
-inline blocks in the existing topic guides
-(`docs/guide/user-guide.md`, `composition.md`, etc.). The
-guide's existing structure is the deciding factor; EP-30
-records the choice in its Outcomes section.
+**Plans involved:** EP-30 (chooses the directory location, ships
+four single-transducer diagrams); EP-31 (adds one composite);
+EP-32 (adds nested-form sibling diagram(s)); EP-33 (adds
+per-combinator diagrams for `alternative` and `feedback1`).
+
+**Owner:** EP-30 picked the location: a new `docs/guide/diagrams/`
+folder with one `.md` per aggregate, each containing a short
+prose header, a regeneration recipe, and a fenced ```mermaid
+block. EP-31 / EP-32 / EP-33 follow the same convention.
 
 **Coordination rule:** all rendered diagrams are checked in as
 literal Mermaid source in Markdown — not as pre-rendered SVG /
 PNG — so GitHub renders them inline and the source stays
-diff-friendly.
+diff-friendly. Diagram files for fixtures defined in test
+modules (`Keiki.CompositionSpec.pipeline`,
+`Keiki.CompositionAlternativeSpec.siblings`,
+`Keiki.CompositionFeedback1Spec.loop`) include a
+`cabal repl keiki-test` regeneration recipe; library-fixture
+diagrams use `cabal repl` directly. EP-31 established this
+distinction; EP-32 / EP-33 follow it.
 
 ### IP-4: Regression test in `test/Keiki/Render/MermaidSpec.hs`
 
-**Plans involved:** EP-30 (creates), EP-31 (extends).
+**Plans involved:** EP-30 (creates the spec module with one
+describe block); EP-31 (adds a second describe block); EP-32
+(adds a third); EP-33 (adds two more — one per shape-specific
+renderer).
 
-**Owner:** EP-30. The test pins canonical Mermaid output for
-at least one example aggregate (`UserRegistration` is the
-default candidate — most coverage in existing tests). EP-31
-adds an analogous expected-output assertion for the composite
-shape.
+**Owner:** EP-30. Each subsequent plan adds a top-level describe
+block to the same spec file rather than introducing a new spec
+module. This keeps the formatting drift surface concentrated:
+any rendering change touches the same test file as the
+producer change.
 
 **Coordination rule:** the expected-output strings are stored
-inline in the test (not in external fixture files), so a
-formatting change requires touching the same file as the
-producer change — surfacing intentional vs. accidental shifts
-in code review.
+inline at module scope (not in external fixture files), each
+named after the fixture it pins (`userRegCanonical`,
+`alertEmailCompositeCanonical`,
+`alertEmailCompositeNestedCanonical`,
+`emailPingerAltCanonical`, `toggleFeedback1Canonical`).
+Anti-validation (a transient mutation that surfaces a clear
+diff before commit) is mandatory in each plan's M-final
+milestone.
+
+The describe-block wrapper title in `test/Spec.hs` reads
+`Keiki.Render.Mermaid (EP-30, …)` and grows as plans land. The
+implementer of the most recently landing plan updates the
+title; if two Phase 2 plans land in close succession, only the
+second needs to update the title.
+
+### IP-5: Test fixture re-export from spec modules
+
+**Plans involved:** EP-31 (established the pattern — exports
+`alertSource`, `AlertVertex (..)` from
+`Keiki.CompositionSpec`); EP-33 (extends to
+`Keiki.CompositionAlternativeSpec` and
+`Keiki.CompositionFeedback1Spec`).
+
+**Owner:** EP-31. Per its M4 Decision Log entry of 2026-05-03,
+fixtures defined in test modules are re-exported (rather than
+duplicated into a helper module) when the renderer's regression
+test needs them. EP-33 follows the same pattern for the
+`alternative` and `feedback1` fixtures.
+
+**Coordination rule:** the export-list comment in each spec
+module points back to the renderer's plan file so future
+readers understand why the spec module's API exceeds `spec`.
+EP-32 does NOT extend this pattern — its Idempotence section
+explains why a Render-namespaced helper module is the right
+choice if EP-32's implementer adds a synthetic richer fixture.
 
 
 ## Progress
 
 Track milestone-level progress across all child plans.
+
+Phase 1 (shipped 2026-05-03):
 
 - [x] EP-30: Verify prerequisites — Keiki.Core / Keiki.Examples build, all tests pass; record GHC version (M0)
 - [x] EP-30: Choose constraint discipline on `s`; pick text representation library (`text` already a dep) (M1+M2 — M1 rolled into M2)
@@ -289,6 +456,21 @@ Track milestone-level progress across all child plans.
 - [x] EP-31: Implement composite rendering on `Composite s1 s2` (M2)
 - [x] EP-31: Render diagram for `AlertSource ⨾ EmailDelivery` composite; check in (M3)
 - [x] EP-31: Add regression test for composite Mermaid output (M4)
+
+Phase 2 (added 2026-05-03; not started):
+
+- [ ] EP-32: Verify prerequisites and record baseline test count (M0)
+- [ ] EP-32: Verify the chosen Mermaid syntax (flat identifiers in outer state blocks) renders correctly in a Mermaid-aware previewer; pause for human verifier if implementer is an LLM agent (M1)
+- [ ] EP-32: Implement `toMermaidCompositeNested` (M2)
+- [ ] EP-32: Render Shape B sibling diagram for the existing fixture (M3)
+- [ ] EP-32: Add regression test pinning canonical Shape B output (M4)
+- [ ] EP-33: Verify prerequisites (EP-30, EP-31, EP-25, EP-26) and record baseline (M0)
+- [ ] EP-33: Design `toMermaidAlternative`'s parallel-arms layout; verify Mermaid syntax (M1)
+- [ ] EP-33: Design `toMermaidFeedback1`'s flat 3-deep cross-product layout (M2)
+- [ ] EP-33: Implement `toMermaidAlternative` + `toMermaidAlternativeWith` (M3)
+- [ ] EP-33: Implement `toMermaidFeedback1` (M4)
+- [ ] EP-33: Render diagrams for `alternative` and `feedback1` fixtures (M5)
+- [ ] EP-33: Add regression tests for both shape-aware renderers (M6)
 
 
 ## Surprises & Discoveries
@@ -371,10 +553,59 @@ Track milestone-level progress across all child plans.
   pure-core completion.
   Date: 2026-05-02
 
+- Decision: Add Phase 2 — EP-32 (Shape B nested-subgraph
+  rendering for sequential composites) and EP-33 (shape-aware
+  renderers for `alternative` and `feedback1` composites) — as
+  two new child plans rather than reopening EP-31's plan or
+  closing them out as never-to-ship deferrals.
+  Rationale: Both items were explicitly named in EP-31's
+  Outcomes & Retrospective as deferred follow-ups. The
+  decomposition argument (separate plan = separate decision
+  context for each shape choice) that motivated the original
+  EP-30/EP-31 split applies symmetrically to the Phase 2 plans:
+  EP-32 picks a Shape B variant that sidesteps the
+  agent-unverifiable Mermaid syntax EP-31 ran into; EP-33
+  picks per-combinator layouts. Folding either into a sibling
+  EP would force decisions that benefit from being made
+  independently. Each plan is small (4–6 milestones, ~one
+  ghci-validation pass per renderer, no new build deps) and
+  self-contained.
+  Date: 2026-05-03
+
+- Decision: EP-32 commits to the **flat-identifier-in-outer-block**
+  variant of nested rendering, NOT Mermaid's `Outer.Inner`
+  dotted cross-block reference syntax.
+  Rationale: EP-31's plan documented the dotted-syntax variant
+  as one of two candidate Shape B forms but couldn't verify it
+  rendered correctly in GitHub. The flat-identifier variant
+  (e.g. `state AlertQuiescent { AlertQuiescent_EmailPending; … }`
+  with cross-cutting transitions written using the flat
+  identifiers at the top level) sidesteps the question
+  entirely — it's well-supported standard Mermaid syntax with no
+  version-specific concerns. Picking it now closes the door on
+  EP-31's open question without re-doing visual verification.
+  Date: 2026-05-03
+
+- Decision: EP-33 ships separate `toMermaidAlternative` and
+  `toMermaidFeedback1` functions rather than a single
+  shape-detecting `toMermaidCompositeAuto` wrapper.
+  Rationale: The composite vertex type does not distinguish
+  `compose`, `alternative`, and `feedback1` — all three produce
+  `Composite`-vertexed transducers, and the differentiation
+  lives in the combinator that built them, not in the resulting
+  value. Letting users pick the renderer matching their call
+  site avoids the "tag composites at construction time" can of
+  worms and keeps the renderer code direct.
+  Date: 2026-05-03
+
 
 ## Outcomes & Retrospective
 
-**Shipped (2026-05-03):**
+**Phase 1 shipped (2026-05-03).** The entries below summarise
+EP-30 / EP-31 only; Phase 2 (EP-32 + EP-33) outcomes will be
+appended when those plans complete.
+
+**Phase 1 — Shipped:**
 
 - `Keiki.Render.Mermaid` (in `src/Keiki/Render/Mermaid.hs`) is the
   pure Mermaid `stateDiagram-v2` renderer for keiki. Public surface:
@@ -404,7 +635,24 @@ diffs alongside source diffs; domain experts read the diagram
 without opening Haskell. Both gaps named in the futures note §5 and
 the crem comparison are closed for the topology-only view.
 
-**What remains (deferred follow-ups):**
+**What remains:**
+
+Two of the deferred follow-ups originally listed here were
+promoted into Phase 2 child plans on 2026-05-03 — see the Decision
+Log entry of that date. These are tracked by their own EPs:
+
+- Shape B nested-subgraph rendering for larger composites is now
+  EP-32 (`docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md`).
+  Closes the open question EP-31 deferred about Mermaid syntax
+  verification by committing to the flat-identifier-in-outer-block
+  variant.
+- Composite-renderer variants for `alternative` and `feedback1`
+  are now EP-33
+  (`docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md`).
+  Ships `toMermaidAlternative` (parallel-arms layout) and
+  `toMermaidFeedback1` (flat 3-deep cross-product).
+
+Still deferred (not promoted to a Phase 2 plan):
 
 - DOT / Graphviz rendering — listed as a future format; deferred
   pending demand. Would be a separate `Keiki.Render.Dot` module
@@ -414,13 +662,9 @@ the crem comparison are closed for the topology-only view.
   (`diffTransducers` from the futures note).
 - Per-edge guard / update inspection (the "richer interactive
   edge inspector" the v1 explicitly excluded).
-- Composite-renderer variants for `alternative` and `feedback1`
-  shapes (both produce `Composite s1 s2` but the sequential-
-  composition mental model doesn't apply).
-- Shape B (nested subgraphs) for larger composites
-  (`UserRegistration ⨾ EmailDelivery`, etc.). EP-31 deferred this
-  pending visual GitHub-rendering verification and a fixture with
-  same-outer edges to make the nested layout meaningful.
+- Specialised renderers for arbitrary nested `Composite` shapes
+  authored by stacking `compose` beyond the two combinators EP-33
+  covers. EP-33's Decision Log records the rationale.
 
 **Lessons:**
 
@@ -440,3 +684,27 @@ the crem comparison are closed for the topology-only view.
   parameterise-the-difference signal during implementation; the
   resulting `renderTopology` helper landed cleanly with zero
   duplication.
+
+
+## Revision Notes
+
+- 2026-05-03 — Added Phase 2 child plans EP-32 (Shape B
+  nested-subgraph rendering for sequential composites) and EP-33
+  (shape-aware renderers for `alternative` and `feedback1`
+  composites). Both were deferred follow-ups in EP-31's Outcomes &
+  Retrospective; promoted to first-class child plans rather than
+  remaining open-ended deferrals. Updated sections: Decomposition
+  Strategy (introduced Phase 1 / Phase 2 split, replaced the
+  "two child ExecPlans" framing with four-EP-in-two-phases),
+  Exec-Plan Registry (added EP-32 and EP-33 rows; documented
+  EP-25 / EP-26 external deps), Dependency Graph (extended ASCII
+  graph to show both new EPs and their hard / soft dep edges),
+  Integration Points (extended IP-1 / IP-3 / IP-4 to cover Phase
+  2 plans; added IP-5 documenting the test-fixture re-export
+  pattern EP-31 established and EP-33 follows), Progress (added
+  Phase 2 milestones), Decision Log (added three entries dated
+  2026-05-03 for the Phase 2 addition, EP-32's syntax choice, and
+  EP-33's two-function API decision), Outcomes & Retrospective
+  (re-titled the "Shipped" entry as Phase 1; rewrote the "What
+  remains" section to point at the new Phase 2 plans for two of
+  the deferred items).
