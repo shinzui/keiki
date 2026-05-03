@@ -81,24 +81,28 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M0: Verify prereqs — Keiki.Composition builds; full test suite passes; record the GHC version and the keiki.cabal `tested-with`
-- [ ] M0: Confirm whether the `profunctors` package is in scope or needs to be added to `keiki.cabal`'s `library` build-depends
-- [ ] M1: Pick the wrapper shape — full-existential vs. predicate-parameterised; document trade-off in Decision Log
-- [ ] M1: Decide how `lmapCi` interacts with `solveOutput` (lossy, dimap-only, or bijection-required); document in Decision Log
-- [ ] M1: Create `src/Keiki/Profunctor.hs` with the wrapper newtype, smart constructor `someSymTransducer`, and a stub `Show`/`NoThunks` story
-- [ ] M2: Implement `lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi` on the concrete `SymTransducer` type
-- [ ] M2: Wire `Keiki.Profunctor` into `keiki.cabal`'s library `exposed-modules`
-- [ ] M3: Add `Profunctor` and `Functor (SomeSymTransducer ci)` instances on the wrapper
-- [ ] M3: Write `test/Keiki/ProfunctorSpec.hs` and register it in `test/Spec.hs`
-- [ ] M3: Run `cabal test keiki-test` end-to-end; capture the passing transcript in this plan
-- [ ] M3: Update `docs/research/keiki-generics-design.md`'s "Future improvements" list to point at this EP/MP-9
-- [ ] M3: Update MP-9 Progress section, mark this EP Complete in the registry, fill in this EP's Outcomes & Retrospective
+- [x] M0 (2026-05-03): Verify prereqs — `cabal build all` clean; `cabal test keiki-test` reports 185 examples, 0 failures; GHC 9.12.3; `keiki.cabal` declares `tested-with: GHC == 9.12.*`
+- [x] M0 (2026-05-03): `profunctors` is **not** in `keiki.cabal`'s library build-depends; M3 must add it
+- [x] M1 (2026-05-03): Picked Shape A (HsPred-baked-in, no extra existential constraints in EP-27). Documented in MP-9 Decision Log.
+- [x] M1 (2026-05-03): Picked Option (c) — ship `lmapCi` with documented `solveOutput` loss. Documented in MP-9 Decision Log.
+- [x] M1 (2026-05-03): Created `src/Keiki/Profunctor.hs` with `SomeSymTransducer`, `someSymTransducer`, and stubbed combinators. Added `Keiki.Profunctor` to library exposed-modules and `profunctors >= 5.6 && < 6` to build-depends. `cabal build keiki` succeeds.
+- [x] M2 (2026-05-03): Implemented `lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi` on the concrete type via internal AST rewriters (`contraInCtor`, `contraTerm`, `contraPred`, `contraUpdate`, `contraOutTerm`, `contraOutFields`, `mapWireCtor`, `mapOutTermCo`). `cabal build keiki` clean.
+- [x] M2 (2026-05-03): `Keiki.Profunctor` is in library `exposed-modules` (added in M1).
+- [x] M3 (2026-05-03): Added `Profunctor SomeSymTransducer` and `Functor (SomeSymTransducer ci)` instances; both delegate to the standalone combinators.
+- [x] M3 (2026-05-03): Wrote `test/Keiki/ProfunctorSpec.hs` (11 assertions), registered in `keiki.cabal` and `test/Spec.hs`.
+- [x] M3 (2026-05-03): `cabal test keiki-test` reports `196 examples, 0 failures` (baseline 185 + 11 new).
+- [x] M3 (2026-05-03): Updated `docs/research/keiki-generics-design.md` "Future improvements" with a note pointing at MP-9.
+- [ ] M3: Update MP-9 Progress section, mark this EP Complete in the registry, fill in this EP's Outcomes & Retrospective (in progress)
 
 
 ## Surprises & Discoveries
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
+
+- 2026-05-03 / M0: Baseline — GHC 9.12.3, `cabal build all` clean,
+  `cabal test keiki-test` reports `185 examples, 0 failures`. `profunctors`
+  is not in `keiki.cabal`'s library build-depends; M3 adds it.
 
 - 2026-05-02 / authoring: `SymTransducer`'s input alphabet `ci` is **not**
   strictly contravariant. The variance argument in
@@ -152,7 +156,75 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### What was achieved (2026-05-03)
+
+`src/Keiki/Profunctor.hs` ships:
+
+- `data SomeSymTransducer ci co` — full-existential GADT wrapper
+  (Shape A in M1's Decision 1) hiding `rs` and `s`, predicate
+  carrier baked in as `HsPred rs ci`.
+- `someSymTransducer` smart constructor.
+- `lmapCi`, `lmapMaybeCi`, `rmapCo`, `dimapTransducer` standalone
+  combinators on the concrete `SymTransducer` type.
+- `Profunctor SomeSymTransducer` and `Functor (SomeSymTransducer
+  ci)` instances delegating to the standalone combinators.
+
+`test/Keiki/ProfunctorSpec.hs` ships eleven assertions validating
+forward processing, the documented `solveOutput` loss, single-
+valuedness survival, the `lmapMaybeCi` filter behaviour, the
+`dimap` decomposition, and the wrapper-level instances.
+
+Build and tests: `cabal build all` clean; `cabal test keiki-test`
+196 examples, 0 failures (baseline 185, +11 from this plan).
+
+### Surprises versus original purpose
+
+1.  The variance hazard (icBuild covariance) surfaced during plan
+    authoring rather than implementation. Documenting it in the
+    Surprises & Discoveries section before writing code let M1
+    settle the design contract (Option (c): documented loss) before
+    any code was written. The implementation then was mechanical.
+
+2.  The phantom-slot identity-transducer technique (used by EP-28)
+    was discovered while authoring EP-28's plan, not this plan. A
+    cross-EP discovery; documented in MP-9's Surprises & Discoveries.
+
+3.  GHC required explicit `forall` annotations on local `go`
+    helpers inside the rewriters to keep the outer `ci` in scope —
+    `ScopedTypeVariables` enabled and per-helper type signatures
+    written with `forall ci ci' rs ...` quantifiers. Minor; recorded
+    as a build-fix during M2.
+
+4.  The `solveOutput`-on-lmapped test had to be written to *force*
+    the inner `Just` value, since `solveOutput` returns `Just
+    (icBuild ic rf)` where the inner `icBuild` call is a thunk. A
+    surface-level `evaluate` only forces the `Just` constructor.
+    The test now binds out the inner value and forces it explicitly.
+
+### Gaps / non-goals
+
+- The `Profunctor`-rewritten transducers' edges' `output` field's
+  `WireCtor`'s `wcMatch` is set to `\_ -> Nothing` (per the
+  variance contract). This is the documented loss; it does not
+  affect forward processing but it does mean the runtime
+  `applyEvent` (which uses `solveOutput`) cannot replay events
+  through a rewritten transducer. Users who need replay should
+  build their transducers without going through the
+  `Profunctor` combinators.
+
+- No backward-compat shims. The pre-existing `Keiki.Composition`
+  surface is unchanged. The test suite delta is purely additive.
+
+### Lessons
+
+The Decision Log in the planning phase paid off: by the time M2's
+implementation started, the variance contract was already settled,
+so the rewriter implementation was a mechanical AST walk with no
+design re-litigation. The cross-EP discovery (phantom-slot
+identity transducer) is the kind of finding that is easier to
+surface during plan authoring than during code review; recording
+it in MP-9's Surprises means EP-28 inherits the resolution rather
+than rediscovering it.
 
 
 ## Context and Orientation

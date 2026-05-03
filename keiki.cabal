@@ -43,6 +43,7 @@ library
                         Keiki.Generics.TH
                         Keiki.Internal.Slots
                         Keiki.NoThunks
+                        Keiki.Profunctor
                         Keiki.Symbolic
                         Keiki.Examples.EmailDelivery
                         Keiki.Examples.OrderCart
@@ -51,6 +52,7 @@ library
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
                         nothunks >= 0.3 && < 0.4,
+                        profunctors >= 5.6 && < 6,
                         sbv >= 11.7 && < 15,
                         template-haskell ^>= 2.23,
                         text ^>= 2.1,
@@ -73,6 +75,7 @@ test-suite keiki-test
                         Keiki.DeciderSpec
                         Keiki.Generics.THSpec
                         Keiki.NoThunksSpec
+                        Keiki.ProfunctorSpec
                         Keiki.SymbolicSpec
                         Keiki.Examples.EmailDeliveryBuilderSpec
                         Keiki.Examples.EmailDeliveryViewSpec
@@ -90,6 +93,7 @@ test-suite keiki-test
                         deepseq ^>= 1.5,
                         hspec ^>= 2.11,
                         nothunks >= 0.3 && < 0.4,
+                        profunctors >= 5.6 && < 6,
                         sbv >= 11.7 && < 15,
                         text ^>= 2.1,
                         time ^>= 1.12

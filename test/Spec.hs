@@ -13,6 +13,7 @@ import qualified Keiki.DeciderMultiSpec
 import qualified Keiki.DeciderSpec
 import qualified Keiki.Generics.THSpec
 import qualified Keiki.NoThunksSpec
+import qualified Keiki.ProfunctorSpec
 import qualified Keiki.SymbolicSpec
 import qualified Keiki.Examples.EmailDeliveryBuilderSpec
 import qualified Keiki.Examples.EmailDeliveryViewSpec
@@ -40,6 +41,7 @@ main = hspec $ do
   describe "Keiki.Decider.toMultiDecider (EP-20 M3)"      Keiki.DeciderMultiSpec.spec
   describe "Keiki.Generics.TH"                            Keiki.Generics.THSpec.spec
   describe "Keiki.NoThunks"                               Keiki.NoThunksSpec.spec
+  describe "Keiki.Profunctor (EP-27)"                     Keiki.ProfunctorSpec.spec
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
   describe "Keiki.Examples.EmailDelivery (builder)"       Keiki.Examples.EmailDeliveryBuilderSpec.spec
   describe "Keiki.Examples.EmailDelivery (view)"          Keiki.Examples.EmailDeliveryViewSpec.spec

@@ -185,7 +185,7 @@ C to live in limbo within a partially-complete plan.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Existential wrapper for SymTransducer + Profunctor instance + variance combinators | docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md | None | EP-11 (external) | Not Started |
+| 1 | Existential wrapper for SymTransducer + Profunctor instance + variance combinators | docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md | None | EP-11 (external) | Complete |
 | 2 | Category instance on the SymTransducer wrapper | docs/plans/28-category-instance-on-the-symtransducer-wrapper.md | EP-1 | EP-11 (external) | Not Started |
 | 3 | Strong / Choice / Arrow instances on the SymTransducer wrapper | docs/plans/29-strong-choice-and-arrow-instances-on-the-symtransducer-wrapper.md | EP-1, EP-2 | MP-8 children (alternative shipped; parallel/Kleisli declined — see EP-29 Decision Log) | Not Started |
 
@@ -344,11 +344,11 @@ that the in-house cost is preferred over losing the instance.
 Track milestone-level progress across all child plans. Each
 entry names the child plan and the milestone.
 
-- [ ] EP-27: Verify prerequisites — Keiki.Composition builds, all tests pass; record GHC version (M0)
-- [ ] EP-27: Pick the wrapper shape (full-existential vs. predicate-parameterised); document trade-off (M1)
-- [ ] EP-27: Pick the variance contract for `lmapCi` (lossy / dimap-only / documented-loss) (M1)
-- [ ] EP-27: Create `Keiki.Profunctor`; ship `lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi` on concrete SymTransducer (M2)
-- [ ] EP-27: Add `Profunctor` and `Functor` instances on the wrapper; tests assert variance contract (M3)
+- [x] EP-27: Verify prerequisites — Keiki.Composition builds, all tests pass; recorded GHC 9.12.3, baseline 185 examples 0 failures (M0, 2026-05-03)
+- [x] EP-27: Picked Shape A (full-existential, HsPred-baked-in); documented in Decision Log (M1, 2026-05-03)
+- [x] EP-27: Picked Option (c) — ship `lmapCi` with documented `solveOutput` loss; documented in Decision Log (M1, 2026-05-03)
+- [x] EP-27: Created `Keiki.Profunctor`; shipped `lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi` on concrete SymTransducer (M2, 2026-05-03)
+- [x] EP-27: Added `Profunctor` and `Functor` instances on the wrapper; 11 new tests assert variance contract; total 196/0 (M3, 2026-05-03)
 - [ ] EP-28: Settle disjointness resolution (runtime-checked unsafeCoerce vs alternatives) (M1)
 - [ ] EP-28: Define identity transducer via the phantom-slot technique (M1)
 - [ ] EP-28: Amend EP-27's wrapper to also pack `KnownSlotNames rs` (M1)

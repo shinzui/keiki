@@ -478,6 +478,16 @@ The current `Keiki.Generics` is a pragmatic stop. Several extensions
 are tractable and would push the DX further; each is sized roughly
 in terms of effort, listed in approximate order of leverage.
 
+The crem-parity gap on `Profunctor` / `Category` / `Strong` / `Choice`
+/ `Arrow` instances is being addressed under MasterPlan 9
+(`docs/masterplans/9-profunctor-and-category-instances-on-symtransducer.md`).
+EP-27 of MP-9 (`docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md`)
+shipped the wrapper newtype and the `Profunctor` / `Functor`
+instances; EP-28 / EP-29 ship `Category` / `Strong` / `Choice` /
+`Arrow`. The variance contract (rewriters lose `solveOutput`'s
+round-trip on lmapped/rmapped edges) is documented in
+`Keiki.Profunctor`'s haddock.
+
 ### A. Template Haskell `$(deriveAggregateCtors ''UserCmd)`
 
 The `Via` builders still require the user to write three top-level
