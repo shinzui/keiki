@@ -12,13 +12,13 @@
 -- shopping aggregate (Empty -> OpenWithItems -> Reserved -> Paid ->
 -- Shipped -> Delivered, plus Cancelled / Refunded branches).
 --
--- Pairs with 'Keiki.Examples.UserRegistration' as the second
+-- Pairs with 'Jitsurei.UserRegistration' as the second
 -- multi-command authoring showcase. Both builder-form ('orderCart')
 -- and AST-form ('orderCartAST') values are exposed so
--- 'Keiki.Examples.OrderCartBuilderSpec' can assert byte-identical
+-- 'Jitsurei.OrderCartBuilderSpec' can assert byte-identical
 -- replay agreement and the bench module can pit the two forms
 -- head-to-head with @tasty-bench@'s @bcompare@.
-module Keiki.Examples.OrderCart
+module Jitsurei.OrderCart
   ( -- * Domain types
     Sku
   , DiscountBp
@@ -479,7 +479,7 @@ orderCart = B.buildTransducer Empty emptyOrderRegs
 
 -- | The same transducer hand-authored against the post-MP-6
 -- "Keiki.Core" AST. Retained as a side-by-side reference for the
--- 'Keiki.Examples.OrderCartBuilderSpec' equivalence test and for the
+-- 'Jitsurei.OrderCartBuilderSpec' equivalence test and for the
 -- builder/AST head-to-head group of @keiki-bench@.
 orderCartAST :: SymTransducer (HsPred OrderCartRegs OrderCmd)
                               OrderCartRegs

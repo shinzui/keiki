@@ -46,10 +46,6 @@ library
                         Keiki.Profunctor
                         Keiki.Render.Mermaid
                         Keiki.Symbolic
-                        Keiki.Examples.EmailDelivery
-                        Keiki.Examples.OrderCart
-                        Keiki.Examples.UserRegistration
-                        Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
                         nothunks >= 0.3 && < 0.4,
@@ -74,22 +70,13 @@ test-suite keiki-test
                         Keiki.CoreSpec
                         Keiki.DeciderMultiSpec
                         Keiki.DeciderSpec
+                        Keiki.Fixtures.EmailDelivery
+                        Keiki.Fixtures.UserRegistration
                         Keiki.Generics.THSpec
                         Keiki.NoThunksSpec
                         Keiki.ProfunctorSpec
                         Keiki.Render.MermaidSpec
                         Keiki.SymbolicSpec
-                        Keiki.Examples.EmailDeliveryBuilderSpec
-                        Keiki.Examples.EmailDeliveryViewSpec
-                        Keiki.Examples.OrderCartBuilderSpec
-                        Keiki.Examples.OrderCartSpec
-                        Keiki.Examples.UserRegistrationBuilderSpec
-                        Keiki.Examples.UserRegistrationChainedSpec
-                        Keiki.Examples.UserRegistrationMultiSpec
-                        Keiki.Examples.UserRegistrationSpec
-                        Keiki.Examples.UserRegistrationSymbolicSpec
-                        Keiki.Examples.UserRegistrationV0Spec
-                        Keiki.Examples.UserRegistrationViewSpec
     build-depends:      base ^>= 4.21,
                         keiki,
                         deepseq ^>= 1.5,
@@ -97,17 +84,5 @@ test-suite keiki-test
                         nothunks >= 0.3 && < 0.4,
                         profunctors >= 5.6 && < 6,
                         sbv >= 11.7 && < 15,
-                        text ^>= 2.1,
-                        time ^>= 1.12
-
-benchmark keiki-bench
-    import:             warnings, shared-extensions
-    type:               exitcode-stdio-1.0
-    hs-source-dirs:     bench
-    main-is:            Bench.hs
-    ghc-options:        -with-rtsopts=-A32m -fproc-alignment=64
-    build-depends:      base ^>= 4.21,
-                        keiki,
-                        tasty-bench >= 0.4 && < 0.6,
                         text ^>= 2.1,
                         time ^>= 1.12

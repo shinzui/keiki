@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | Acceptance tests for 'Keiki.Composition.alternative' under EP-25
--- of MasterPlan 8. The fixture composes 'Keiki.Examples.EmailDelivery'
+-- of MasterPlan 8. The fixture composes 'Keiki.Fixtures.EmailDelivery'
 -- with a small inline 'Pinger' aggregate via 'alternative':
 --
 --    Either EmailCmd PingCmd  →  Either EmailEvent PingEvent
@@ -40,7 +40,7 @@ import Test.Hspec
 
 import Keiki.Composition (Composite (..), alternative)
 import Keiki.Core
-import Keiki.Examples.EmailDelivery
+import Keiki.Fixtures.EmailDelivery
 import Keiki.Generics (Append, emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)

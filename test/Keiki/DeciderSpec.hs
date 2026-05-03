@@ -4,10 +4,10 @@ import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core
 import Keiki.Decider
-import Keiki.Examples.UserRegistration
+import Keiki.Fixtures.UserRegistration
 
 
--- | Same time fixture as 'Keiki.Examples.UserRegistrationSpec' so the
+-- | Same time fixture as 'Keiki.Fixtures.UserRegistrationSpec' so the
 -- decider round-trip lands on the snapshot 'reconstitute' produces.
 t :: Integer -> UTCTime
 t s = UTCTime (fromGregorian 2026 5 1) (secondsToDiffTime s)
@@ -27,7 +27,7 @@ snapshot regs =
 
 
 -- | The forward command sequence whose 'omega' trace matches
--- 'Keiki.Examples.UserRegistrationSpec.canonicalLog'. The reconstitute
+-- 'Keiki.Fixtures.UserRegistrationSpec.canonicalLog'. The reconstitute
 -- spec fixes the events; this fixture records the inputs that produce
 -- them on the User Registration edge graph.
 canonicalCmds :: [UserCmd]
@@ -41,7 +41,7 @@ canonicalCmds =
 
 
 -- | Hand-computed snapshot at the end of replay. Same values as
--- 'Keiki.Examples.UserRegistrationSpec.expectedSnapshot' so the two
+-- 'Keiki.Fixtures.UserRegistrationSpec.expectedSnapshot' so the two
 -- specs validate the same end-state from opposite directions.
 expectedSnapshot :: Snapshot
 expectedSnapshot =

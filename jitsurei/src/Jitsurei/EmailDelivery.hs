@@ -6,7 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | A small Email Delivery aggregate, the second worked example in
--- the keiki repository. Pairs with 'Keiki.Examples.UserRegistration'
+-- the keiki repository. Pairs with 'Jitsurei.UserRegistration'
 -- as the canonical multi-aggregate fixture for
 -- 'Keiki.Composition.compose' and the M4 acceptance tests of EP-11
 -- (under MasterPlan 4).
@@ -17,7 +17,7 @@
 -- vertex transition, one command constructor, one event
 -- constructor — so the composite tests focus on @compose@'s
 -- mechanics rather than per-aggregate complexity.
-module Keiki.Examples.EmailDelivery
+module Jitsurei.EmailDelivery
   ( -- * Domain types
     Email
   , Subject
@@ -176,7 +176,7 @@ emailDelivery = B.buildTransducer EmailPending emptyEmailRegs
 
 -- | The same transducer hand-authored against the post-MP-6
 -- "Keiki.Core" AST. Retained as a side-by-side reference for the
--- 'Keiki.Examples.EmailDeliveryBuilderSpec' equivalence test;
+-- 'Jitsurei.EmailDeliveryBuilderSpec' equivalence test;
 -- removable in a follow-up plan once the migration is judged
 -- stable.
 emailDeliveryAST

@@ -16,17 +16,6 @@ import qualified Keiki.NoThunksSpec
 import qualified Keiki.ProfunctorSpec
 import qualified Keiki.Render.MermaidSpec
 import qualified Keiki.SymbolicSpec
-import qualified Keiki.Examples.EmailDeliveryBuilderSpec
-import qualified Keiki.Examples.EmailDeliveryViewSpec
-import qualified Keiki.Examples.OrderCartBuilderSpec
-import qualified Keiki.Examples.OrderCartSpec
-import qualified Keiki.Examples.UserRegistrationBuilderSpec
-import qualified Keiki.Examples.UserRegistrationChainedSpec
-import qualified Keiki.Examples.UserRegistrationMultiSpec
-import qualified Keiki.Examples.UserRegistrationSpec
-import qualified Keiki.Examples.UserRegistrationSymbolicSpec
-import qualified Keiki.Examples.UserRegistrationV0Spec
-import qualified Keiki.Examples.UserRegistrationViewSpec
 
 main :: IO ()
 main = hspec $ do
@@ -45,14 +34,3 @@ main = hspec $ do
   describe "Keiki.Profunctor (EP-27)"                     Keiki.ProfunctorSpec.spec
   describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
-  describe "Keiki.Examples.EmailDelivery (builder)"       Keiki.Examples.EmailDeliveryBuilderSpec.spec
-  describe "Keiki.Examples.EmailDelivery (view)"          Keiki.Examples.EmailDeliveryViewSpec.spec
-  describe "Keiki.Examples.OrderCart"                     Keiki.Examples.OrderCartSpec.spec
-  describe "Keiki.Examples.OrderCart (builder)"           Keiki.Examples.OrderCartBuilderSpec.spec
-  describe "Keiki.Examples.UserRegistration"              Keiki.Examples.UserRegistrationSpec.spec
-  describe "Keiki.Examples.UserRegistration (builder)"    Keiki.Examples.UserRegistrationBuilderSpec.spec
-  describe "Keiki.Examples.UserRegistration (chained EP-20)" Keiki.Examples.UserRegistrationChainedSpec.spec
-  describe "Keiki.Examples.UserRegistration (multi EP-20)" Keiki.Examples.UserRegistrationMultiSpec.spec
-  describe "Keiki.Examples.UserRegistration (symbolic)"   Keiki.Examples.UserRegistrationSymbolicSpec.spec
-  describe "Keiki.Examples.UserRegistration (view)"       Keiki.Examples.UserRegistrationViewSpec.spec
-  describe "Keiki.Examples.UserRegistrationV0"            Keiki.Examples.UserRegistrationV0Spec.spec

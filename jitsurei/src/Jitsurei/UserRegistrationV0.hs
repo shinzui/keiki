@@ -23,10 +23,10 @@
 --      surfaces as @InCtor "ConfirmAccount" leaves field
 --      \{"confirmCode"\} unrecovered@.
 --
--- Most of the surface mirrors 'Keiki.Examples.UserRegistration' (V5,
+-- Most of the surface mirrors 'Jitsurei.UserRegistration' (V5,
 -- the fixed schema). Only the 'AccountConfirmed' wire and the right-
 -- code Confirm edge differ.
-module Keiki.Examples.UserRegistrationV0
+module Jitsurei.UserRegistrationV0
   ( -- * V0 event with the missing field
     AccountConfirmedDataV0 (..)
   , UserEventV0 (..)
@@ -40,7 +40,7 @@ import Data.Time (UTCTime, fromGregorian, secondsToDiffTime, UTCTime (..))
 import GHC.Generics (Generic)
 import Keiki.Core
 import Keiki.Generics (FieldsOf, emptyRegFile, mkWireCtorVia)
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
   ( Email
   , ConfirmationCode
   , UserCmd (..)

@@ -5,12 +5,12 @@
 -- non-trivial predicate over the User Registration register file.
 -- EP-9 adds 'symSatExt' round-trip tests: sat → concrete witness →
 -- 'evalPred' agrees.
-module Keiki.Examples.UserRegistrationSymbolicSpec (spec) where
+module Jitsurei.UserRegistrationSymbolicSpec (spec) where
 
 import Data.Maybe (isJust, isNothing)
 import Test.Hspec
 
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
 import Keiki.Symbolic
 
 

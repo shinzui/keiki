@@ -2,12 +2,12 @@
 -- Asserts that the builder-form 'userReg' and the AST-form
 -- 'userRegAST' produce identical reconstitute / per-step state on
 -- the synthesis-§4 canonical event log.
-module Keiki.Examples.UserRegistrationBuilderSpec (spec) where
+module Jitsurei.UserRegistrationBuilderSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
 
 
 -- | Five-tuple snapshot of the register file (no Eq instance on
@@ -29,7 +29,7 @@ t :: Integer -> UTCTime
 t s = UTCTime (fromGregorian 2026 5 1) (secondsToDiffTime s)
 
 
--- | The canonical event log from 'Keiki.Examples.UserRegistrationSpec'.
+-- | The canonical event log from 'Jitsurei.UserRegistrationSpec'.
 -- Reproduced inline so the two specs stay decoupled (the existing
 -- spec's test expectations exercise the *builder* form by name; this
 -- spec's expectations are about *agreement* between the two forms).
@@ -108,7 +108,7 @@ stepAgreement s regs ev = do
 
 -- | Replay a single event against the AST form, used to set up the
 -- pre-state for a per-step test. Mirrors how
--- 'Keiki.Examples.UserRegistrationSpec' walks the log.
+-- 'Jitsurei.UserRegistrationSpec' walks the log.
 replayOne :: SymTransducer (HsPred UserRegRegs UserCmd) UserRegRegs Vertex
                            UserCmd UserEvent
           -> Vertex -> RegFile UserRegRegs -> UserEvent

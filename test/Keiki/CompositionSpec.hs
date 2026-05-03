@@ -13,10 +13,10 @@
 -- two-vertex transducer that consumes a 'TriggerAlert' command and
 -- emits an 'EmailCmd' as its event. Its output type is exactly
 -- 'EmailCmd' so that the composite's @mid@ alphabet aligns with
--- 'Keiki.Examples.EmailDelivery''s input alphabet without an
+-- 'Keiki.Fixtures.EmailDelivery''s input alphabet without an
 -- explicit lifting.
 --
--- Aggregate 2 is the canonical 'Keiki.Examples.EmailDelivery'
+-- Aggregate 2 is the canonical 'Keiki.Fixtures.EmailDelivery'
 -- transducer.
 --
 -- The pipeline shape — every transition produces a wire event —
@@ -41,7 +41,7 @@ import Test.Hspec
 
 import Keiki.Composition (Composite (..), compose)
 import Keiki.Core
-import Keiki.Examples.EmailDelivery
+import Keiki.Fixtures.EmailDelivery
 import Keiki.Generics (Append, emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)

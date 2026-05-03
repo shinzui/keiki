@@ -731,7 +731,7 @@ Two modules at minimum, named here as a forward-looking aid for plan
 
 Optionally, for the smoke test:
 
-    Keiki.Examples.UserRegistration
+    Jitsurei.UserRegistration
 
 Plan 4's deliverable. Imports only `Keiki.Core`. Defines
 `UserCmd`, `UserEvent`, `UserRegRegs`, `userReg`. Used by the test

@@ -140,7 +140,7 @@ description:
 
 Drop down to `Keiki.Core` directly only when the builder cannot
 express what you need. The two example aggregates
-(`Keiki.Examples.EmailDelivery`, `Keiki.Examples.UserRegistration`)
+(`Jitsurei.EmailDelivery`, `Jitsurei.UserRegistration`)
 each ship the same transducer authored in both forms, side by
 side, as a reference.
 

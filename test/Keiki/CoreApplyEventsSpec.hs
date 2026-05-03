@@ -3,7 +3,7 @@ module Keiki.CoreApplyEventsSpec (spec) where
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core (applyEvents, initial, initialRegs, (!))
-import Keiki.Examples.UserRegistration
+import Keiki.Fixtures.UserRegistration
 
 
 -- | A trivial UTC-time fixture matching 'UserRegistrationSpec's
@@ -14,7 +14,7 @@ t s = UTCTime (fromGregorian 2026 5 1) (secondsToDiffTime s)
 
 
 -- | The synthesis §4 canonical event log, identical to the one
--- exercised by 'Keiki.Examples.UserRegistrationSpec'. Reproduced
+-- exercised by 'Keiki.Fixtures.UserRegistrationSpec'. Reproduced
 -- here so the spec is self-contained.
 canonicalLog :: [UserEvent]
 canonicalLog =

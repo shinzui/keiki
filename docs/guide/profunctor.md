@@ -356,7 +356,7 @@ checkHiddenInputs (lmapCi unwrap aggregate) `shouldBe` []
 ```
 
 The test suite at `test/Keiki/ProfunctorSpec.hs` exercises every
-combinator on `Keiki.Examples.EmailDelivery` and asserts each of
+combinator on `Jitsurei.EmailDelivery` and asserts each of
 these contracts explicitly — copy from there as a template when
 adding a new combinator-using test of your own.
 

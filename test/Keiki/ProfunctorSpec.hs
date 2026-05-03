@@ -3,7 +3,7 @@
 
 -- | Acceptance tests for 'Keiki.Profunctor' (EP-27 of MasterPlan 9).
 --
--- The fixture is the existing 'Keiki.Examples.EmailDelivery'
+-- The fixture is the existing 'Keiki.Fixtures.EmailDelivery'
 -- aggregate. Each combinator is applied and forward processing /
 -- inversion / single-valuedness / hidden-input behaviour is asserted
 -- against the documented contract.
@@ -17,7 +17,7 @@ import GHC.Generics (Generic)
 import Test.Hspec
 
 import Keiki.Core
-import Keiki.Examples.EmailDelivery
+import Keiki.Fixtures.EmailDelivery
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 

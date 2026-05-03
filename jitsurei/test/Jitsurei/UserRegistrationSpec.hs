@@ -1,9 +1,9 @@
-module Keiki.Examples.UserRegistrationSpec (spec) where
+module Jitsurei.UserRegistrationSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
 
 
 -- | Extract every register slot of 'UserRegRegs' as a tuple, since

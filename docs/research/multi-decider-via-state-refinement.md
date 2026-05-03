@@ -244,8 +244,8 @@ Every existing API and every existing analysis. Specifically:
   additive.
 - `Keiki.Builder` keeps every existing verb. `chainTo` is new and
   optional; existing aggregates that do not use it are unaffected.
-- Both example aggregates (`Keiki.Examples.EmailDelivery` and
-  `Keiki.Examples.UserRegistration`) keep their builder-form and
+- Both example aggregates (`Jitsurei.EmailDelivery` and
+  `Jitsurei.UserRegistration`) keep their builder-form and
   AST-form transducers as shipped by Plan 15. M4 adds
   `userRegDriverConfig` to the latter; M5 adds an alternate
   builder-form `userRegChained` for cross-form testing of

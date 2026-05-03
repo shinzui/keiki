@@ -6,8 +6,8 @@ This guide is for that case.
 
 For the canonical authoring path (which you should reach for first),
 see the user-guide §3 and `Keiki.Builder`'s haddock. The two example
-aggregates (`Keiki.Examples.UserRegistration`,
-`Keiki.Examples.EmailDelivery`) ship the same transducer in both
+aggregates (`Jitsurei.UserRegistration`,
+`Jitsurei.EmailDelivery`) ship the same transducer in both
 forms — `userReg` / `userRegAST` and `emailDelivery` /
 `emailDeliveryAST` — so you can read the AST form against a
 familiar builder version line by line.
@@ -85,8 +85,8 @@ register writes.
 
 ## 3. The four fields, hand-authored
 
-Reference: `Keiki.Examples.UserRegistration.userRegASTEdges` and
-`Keiki.Examples.EmailDelivery.emailDeliveryASTEdges`.
+Reference: `Jitsurei.UserRegistration.userRegASTEdges` and
+`Jitsurei.EmailDelivery.emailDeliveryASTEdges`.
 
 ### 3.1 `guard`
 

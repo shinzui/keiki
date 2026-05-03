@@ -3,16 +3,16 @@
 -- and asserts the final @(vertex, snapshot)@ matches a hand-computed
 -- expected value. The aggregate's other terminal branches
 -- ('Cancelled', 'Refunded') are exercised in
--- 'Keiki.Examples.OrderCartBuilderSpec' alongside the equivalence
+-- 'Jitsurei.OrderCartBuilderSpec' alongside the equivalence
 -- check, so this spec stays focused on the happy path.
-module Keiki.Examples.OrderCartSpec (spec) where
+module Jitsurei.OrderCartSpec (spec) where
 
 import Data.Text (Text)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Data.Word (Word16, Word32, Word64)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.OrderCart
+import Jitsurei.OrderCart
 
 
 type Snapshot =

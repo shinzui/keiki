@@ -2,12 +2,12 @@
 -- that the builder-form 'emailDelivery' and the AST-form
 -- 'emailDeliveryAST' produce identical 'delta' / 'omega' / replay
 -- behaviour on the canonical command sequence.
-module Keiki.Examples.EmailDeliveryBuilderSpec (spec) where
+module Jitsurei.EmailDeliveryBuilderSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.EmailDelivery
+import Jitsurei.EmailDelivery
 
 
 -- | Hand-computed snapshot equality on the three EmailRegs slots.

@@ -1,16 +1,16 @@
 -- | EP-20 M5: cross-form equivalence test for the chainTo-based
 -- builder form of UserRegistration. Mirrors
--- 'Keiki.Examples.UserRegistrationBuilderSpec' but compares
+-- 'Jitsurei.UserRegistrationBuilderSpec' but compares
 -- @userReg@ (the canonical builder form with two explicit @from@
 -- blocks) against @userRegChained@ (the same transducer authored
 -- with 'Keiki.Builder.chainTo' between two @emit@ calls in a
 -- single @onCmd@ body).
-module Keiki.Examples.UserRegistrationChainedSpec (spec) where
+module Jitsurei.UserRegistrationChainedSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
 
 
 -- | Five-tuple snapshot of the register file (no Eq instance on

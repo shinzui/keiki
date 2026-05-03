@@ -505,7 +505,7 @@ builder:
 
     {-# LANGUAGE QualifiedDo #-}
 
-    module Keiki.Examples.EmailDelivery (...) where
+    module Jitsurei.EmailDelivery (...) where
 
     import qualified Keiki.Builder as B
     import Keiki.Builder ((.=))                -- so (.=) resolves at use sites

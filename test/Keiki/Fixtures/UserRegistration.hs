@@ -20,7 +20,7 @@
 --
 --   * 'AccountConfirmedData' carries the @confirmCode@ field (synthesis
 --     §4 fix-1). This is the "fixed" schema. The "unfixed" schema —
---     'Keiki.Examples.UserRegistrationV0' — is a separate module that
+--     'Jitsurei.UserRegistrationV0' — is a separate module that
 --     drops the field for the M7 hidden-input demonstration.
 --   * 'ResendConfirmationData' carries a @code@ field (the new
 --     confirmation code). Per the EP-3 effects-boundary note, fresh
@@ -29,7 +29,7 @@
 --   * Each output is built with 'OPack' plus a v1 hand-written
 --     inverse. The DSL note's 'OPack' was extended in M4 to carry that
 --     inverse; see EP-4's Decision Log.
-module Keiki.Examples.UserRegistration
+module Keiki.Fixtures.UserRegistration
   ( -- * Domain types
     Email
   , ConfirmationCode
@@ -367,7 +367,7 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
 --
 -- Compiles to the same letter-FST 'Edge' values as 'userReg'; the
 -- equivalence test in
--- 'Keiki.Examples.UserRegistrationChainedSpec' asserts byte-
+-- 'Jitsurei.UserRegistrationChainedSpec' asserts byte-
 -- identical behavior on the canonical event log.
 userRegChained :: SymTransducer (HsPred UserRegRegs UserCmd)
                                 UserRegRegs
@@ -436,7 +436,7 @@ userRegChained = B.buildTransducer PotentialCustomer emptyRegs
 
 -- | The same transducer hand-authored against the post-MP-6
 -- "Keiki.Core" AST. Retained as a side-by-side reference for the
--- 'Keiki.Examples.UserRegistrationBuilderSpec' equivalence test;
+-- 'Jitsurei.UserRegistrationBuilderSpec' equivalence test;
 -- removable in a follow-up plan once the migration is judged
 -- stable.
 userRegAST :: SymTransducer (HsPred UserRegRegs UserCmd)

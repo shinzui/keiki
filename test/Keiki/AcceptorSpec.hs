@@ -5,12 +5,12 @@ import Test.Hspec
 
 import Keiki.Acceptor
 import Keiki.Core (initialRegs, isFinal, reconstitute)
-import Keiki.Examples.EmailDelivery
+import Keiki.Fixtures.EmailDelivery
   ( EmailEvent (..)
   , EmailSentData (..)
   , emailDelivery
   )
-import Keiki.Examples.UserRegistration
+import Keiki.Fixtures.UserRegistration
   ( AccountConfirmedData (..)
   , ConfirmAccountData (..)
   , FulfillGDPRRequestData (..)

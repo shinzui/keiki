@@ -26,8 +26,8 @@ import Keiki.Core
   , reconstitute
   , step
   )
-import qualified Keiki.Examples.OrderCart        as OC
-import qualified Keiki.Examples.UserRegistration as UR
+import qualified Jitsurei.OrderCart        as OC
+import qualified Jitsurei.UserRegistration as UR
 
 
 -- * Time fixture ------------------------------------------------------------

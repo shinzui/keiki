@@ -5,7 +5,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications   #-}
 -- 'Vertex' is a user-defined nullary enum in
--- "Keiki.Examples.UserRegistration"; we add an orphan
+-- "Keiki.Fixtures.UserRegistration"; we add an orphan
 -- @NoThunks Vertex@ here purely for the canonical-log assertion.
 -- This mirrors the pattern a real embedder would use in their own
 -- module: derive via 'OnlyCheckWhnf' for small enum-like vertices.
@@ -21,7 +21,7 @@ import Test.Hspec
 
 import Keiki.Core (RegFile (..), reconstitute)
 import Keiki.NoThunks ()
-import Keiki.Examples.UserRegistration
+import Keiki.Fixtures.UserRegistration
   ( AccountConfirmedData (..)
   , AccountDeletedData (..)
   , ConfirmationEmailSentData (..)
@@ -37,7 +37,7 @@ deriving via OnlyCheckWhnf Vertex instance NoThunks Vertex
 
 
 -- | A trivial UTC-time fixture, mirroring the one in
--- 'Keiki.Examples.UserRegistrationSpec', except deep-forced.
+-- 'Keiki.Fixtures.UserRegistrationSpec', except deep-forced.
 --
 -- 'Data.Time.Clock.UTCTime'\'s fields are *lazy* — bang-binding the
 -- whole value reaches WHNF (the outer constructor) but leaves

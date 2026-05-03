@@ -113,7 +113,7 @@ deriveWireCtors evtName specs = do
 --
 -- See @docs/research/genview-th-splice-design.md@ for the full
 -- design — splice signature, spec format, validation rules, and
--- worked expansion against 'Keiki.Examples.UserRegistration'.
+-- worked expansion against 'Jitsurei.UserRegistration'.
 --
 -- == Worked invocation
 --

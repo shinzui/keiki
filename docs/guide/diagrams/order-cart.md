@@ -1,11 +1,11 @@
 # Order / Cart topology
 
 Rendered by `Keiki.Render.Mermaid.toMermaid` over
-`Keiki.Examples.OrderCart.orderCart`. To refresh:
+`Jitsurei.OrderCart.orderCart`. To refresh:
 
     cabal repl keiki
     ghci> import Keiki.Render.Mermaid (toMermaid)
-    ghci> import Keiki.Examples.OrderCart (orderCart)
+    ghci> import Jitsurei.OrderCart (orderCart)
     ghci> import qualified Data.Text.IO as TIO
     ghci> TIO.putStrLn (toMermaid orderCart)
 

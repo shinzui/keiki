@@ -1,3 +1,4 @@
 packages: .
+          jitsurei
 
 with-compiler: ghc-9.12.3

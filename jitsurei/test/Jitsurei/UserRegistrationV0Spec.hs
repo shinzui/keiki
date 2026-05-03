@@ -1,10 +1,10 @@
-module Keiki.Examples.UserRegistrationV0Spec (spec) where
+module Jitsurei.UserRegistrationV0Spec (spec) where
 
 import Data.List (isInfixOf)
 import Data.Maybe (isNothing)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.UserRegistrationV0
+import Jitsurei.UserRegistrationV0
 
 
 spec :: Spec

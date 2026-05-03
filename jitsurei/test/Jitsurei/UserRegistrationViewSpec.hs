@@ -1,14 +1,14 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Keiki.Examples.UserRegistrationViewSpec (spec) where
+module Jitsurei.UserRegistrationViewSpec (spec) where
 
 import Data.Proxy (Proxy (..))
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 
 import Keiki.Core (RegFile (..))
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
 
 
 -- | UTC-time fixture: every test moment is on the same day, offset

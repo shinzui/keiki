@@ -2,14 +2,14 @@
 -- Asserts that the builder-form 'orderCart' and the AST-form
 -- 'orderCartAST' produce identical reconstitute / per-step state on a
 -- multi-event canonical log walking the happy path.
-module Keiki.Examples.OrderCartBuilderSpec (spec) where
+module Jitsurei.OrderCartBuilderSpec (spec) where
 
 import Data.Text (Text)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Data.Word (Word16, Word32, Word64)
 import Test.Hspec
 import Keiki.Core
-import Keiki.Examples.OrderCart
+import Jitsurei.OrderCart
 
 
 -- | Snapshot of the slots written on the happy path. 'cancelledAt'

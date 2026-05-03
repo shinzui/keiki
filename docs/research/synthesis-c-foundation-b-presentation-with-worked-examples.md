@@ -938,7 +938,7 @@ upgrades.
   `Keiki.Generics.TH.deriveView` (EP-13 / MP-5); a per-aggregate
   invocation generates the singletons GADT, the View GADT, and the
   projection function from a `[(vertexCtor, [slot])]` spec. Worked
-  example on `Keiki.Examples.UserRegistration`.
+  example on `Jitsurei.UserRegistration`.
 
 ---
 

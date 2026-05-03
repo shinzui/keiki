@@ -1,7 +1,7 @@
 -- | Regression tests for "Keiki.Render.Mermaid".
 --
 -- Pins the canonical Mermaid 'stateDiagram-v2' blocks produced by
--- 'toMermaid' over 'Keiki.Examples.UserRegistration.userReg' (EP-30),
+-- 'toMermaid' over 'Keiki.Fixtures.UserRegistration.userReg' (EP-30),
 -- 'toMermaidComposite' over the @AlertSource ⨾ EmailDelivery@
 -- composite from "Keiki.CompositionSpec" (EP-31),
 -- 'toMermaidCompositeNested' over the same composite (EP-32),
@@ -32,8 +32,8 @@ import Keiki.Composition (compose)
 import Keiki.CompositionAlternativeSpec (pinger)
 import Keiki.CompositionFeedback1Spec (toggleAgg, togglePolicy)
 import Keiki.CompositionSpec (alertSource)
-import Keiki.Examples.EmailDelivery (emailDelivery)
-import Keiki.Examples.UserRegistration (userReg)
+import Keiki.Fixtures.EmailDelivery (emailDelivery)
+import Keiki.Fixtures.UserRegistration (userReg)
 import Keiki.Render.Mermaid
   ( toMermaid
   , toMermaidAlternative

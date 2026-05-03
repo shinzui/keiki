@@ -305,7 +305,7 @@ mirrors `RegFile`'s shape so call sites read `inpStart #email` (an
 projection). See `docs/research/tinpproj-design.md` for the design
 note. With `TInpField` gone, `solveOutput` is purely structural — no
 per-edge user-supplied inverse code is needed. The
-`Keiki.Examples.UserRegistration` worked example below is in its v1
+`Jitsurei.UserRegistration` worked example below is in its v1
 form throughout this section; the post-EP-1 source is the
 authoritative reference.
 

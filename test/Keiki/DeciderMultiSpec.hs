@@ -9,11 +9,11 @@ import Keiki.Decider
   , toDecider
   , toMultiDecider
   )
-import Keiki.Examples.UserRegistration
+import Keiki.Fixtures.UserRegistration
 
 
 -- | A local 'DriverConfig' for 'userReg'. The canonical exported
--- value 'Keiki.Examples.UserRegistration.userRegDriverConfig' lands
+-- value 'Keiki.Fixtures.UserRegistration.userRegDriverConfig' lands
 -- in M4; this spec uses a local one so the test exercises the
 -- driver API surface in isolation from the example module's edits.
 userRegCfg :: DriverConfig Vertex UserCmd

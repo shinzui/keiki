@@ -12,7 +12,8 @@
       in
       {
         packages = {
-          default = haskellPackages.keiki;
+          default  = haskellPackages.keiki;
+          jitsurei = haskellPackages.jitsurei;
         };
 
         checks = {

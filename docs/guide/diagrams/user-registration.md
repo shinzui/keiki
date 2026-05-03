@@ -1,11 +1,11 @@
 # User Registration topology
 
 Rendered by `Keiki.Render.Mermaid.toMermaid` over
-`Keiki.Examples.UserRegistration.userReg`. To refresh:
+`Jitsurei.UserRegistration.userReg`. To refresh:
 
     cabal repl keiki
     ghci> import Keiki.Render.Mermaid (toMermaid)
-    ghci> import Keiki.Examples.UserRegistration (userReg)
+    ghci> import Jitsurei.UserRegistration (userReg)
     ghci> import qualified Data.Text.IO as TIO
     ghci> TIO.putStrLn (toMermaid userReg)
 

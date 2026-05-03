@@ -1,10 +1,10 @@
-module Keiki.Examples.UserRegistrationMultiSpec (spec) where
+module Jitsurei.UserRegistrationMultiSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 import Keiki.Core (applyEvents, (!))
 import Keiki.Decider (Decider (..), toDecider, toMultiDecider)
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
 
 
 -- | Trivial UTC fixture matching the other UserRegistration specs.

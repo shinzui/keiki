@@ -580,7 +580,7 @@ would require a different `mkWireCtor`-shape variant; out of scope
 because no existing example uses one).
 
 **Implemented (see EP-8).** `Keiki.Generics.TH` ships both splices;
-`Keiki.Examples.UserRegistration` uses them in place of the four
+`Jitsurei.UserRegistration` uses them in place of the four
 slot-list aliases, five `inCtor*`, four `inp*`, five `is*`, one
 singleton `inCtorContinue`, and five `wire*` declarations. See
 `docs/plans/8-th-deriveaggregatectors-and-fieldsof-slot-list-type-family.md`
@@ -744,7 +744,7 @@ HsPred rs ci -> Maybe (RegFile rs, ci)` plus the
 `ExtractRegFile`/`SomeInCtor`/`KnownInCtors` typeclasses.
 The `Sym` typeclass gained a `symDefault :: a` method; the five
 curated instances (`Bool`, `Int`, `Integer`, `Text`, `UTCTime`)
-return `False`/`0`/`""`/epoch. `Keiki.Examples.UserRegistration`
+return `False`/`0`/`""`/epoch. `Jitsurei.UserRegistration`
 ships a `KnownInCtors UserCmd` instance bagging its five
 `InCtor` values. Round-trip tests in
 `UserRegistrationSymbolicSpec` cover the
@@ -843,7 +843,7 @@ escape hatches (`OFn`, `PMatchC` over `mid`) used to raise a
 runtime error naming the offending edge — moot post-MP-6, since
 EP-16 retired `OFn` and EP-17 retired `PMatchC`. The worked
 example at `test/Keiki/CompositionSpec.hs` composes a tiny
-`AlertSource` fixture with `Keiki.Examples.EmailDelivery`; six
+`AlertSource` fixture with `Jitsurei.EmailDelivery`; six
 tests verify `step`, `omega`, `reconstitute`,
 `checkHiddenInputs`, and `isSingleValuedSym` on the composite.
 See `docs/plans/11-composition-combinators-on-symtransducer.md`,
@@ -951,7 +951,7 @@ one constructor per vertex carrying the live slots as record
 fields named `<prefix><Slot>` (where `<prefix>` is the
 lower-cased upper-case letters of the vertex name), and the
 projection function (`userView`). Worked example:
-`Keiki.Examples.UserRegistration` exports `UserView (..)`,
+`Jitsurei.UserRegistration` exports `UserView (..)`,
 `SUserVertex (..)`, and `userView`; six tests in
 `test/Keiki/Examples/UserRegistrationViewSpec.hs` exercise the
 projection on hand-constructed register files. See

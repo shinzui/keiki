@@ -1,0 +1,76 @@
+cabal-version:      3.0
+name:               jitsurei
+version:            0.1.0.0
+synopsis:           Worked examples (実例) for the keiki library.
+license:            BSD-3-Clause
+author:             Nadeem Bitar
+maintainer:         nadeem@gmail.com
+copyright:          2026 Nadeem Bitar
+category:           Control
+build-type:         Simple
+tested-with:        GHC == 9.12.*
+
+common warnings
+    ghc-options:        -Wall -Wcompat -Widentities
+                        -Wincomplete-record-updates -Wincomplete-uni-patterns
+                        -Wpartial-fields -Wredundant-constraints
+
+common shared-extensions
+    default-language:   GHC2024
+    default-extensions: OverloadedLabels
+                        OverloadedStrings
+                        UndecidableInstances
+                        FunctionalDependencies
+                        DuplicateRecordFields
+                        OverloadedRecordDot
+                        AllowAmbiguousTypes
+
+library
+    import:             warnings, shared-extensions
+    exposed-modules:    Jitsurei.EmailDelivery
+                        Jitsurei.OrderCart
+                        Jitsurei.UserRegistration
+                        Jitsurei.UserRegistrationV0
+    hs-source-dirs:     src
+    build-depends:      base ^>= 4.21,
+                        keiki,
+                        sbv >= 11.7 && < 15,
+                        text ^>= 2.1,
+                        time ^>= 1.12
+
+test-suite jitsurei-test
+    import:             warnings, shared-extensions
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Spec.hs
+    other-modules:      Jitsurei.EmailDeliveryBuilderSpec
+                        Jitsurei.EmailDeliveryViewSpec
+                        Jitsurei.OrderCartBuilderSpec
+                        Jitsurei.OrderCartSpec
+                        Jitsurei.UserRegistrationBuilderSpec
+                        Jitsurei.UserRegistrationChainedSpec
+                        Jitsurei.UserRegistrationMultiSpec
+                        Jitsurei.UserRegistrationSpec
+                        Jitsurei.UserRegistrationSymbolicSpec
+                        Jitsurei.UserRegistrationV0Spec
+                        Jitsurei.UserRegistrationViewSpec
+    build-depends:      base ^>= 4.21,
+                        hspec ^>= 2.11,
+                        jitsurei,
+                        keiki,
+                        sbv >= 11.7 && < 15,
+                        text ^>= 2.1,
+                        time ^>= 1.12
+
+benchmark keiki-bench
+    import:             warnings, shared-extensions
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     bench
+    main-is:            Bench.hs
+    ghc-options:        -with-rtsopts=-A32m -fproc-alignment=64
+    build-depends:      base ^>= 4.21,
+                        jitsurei,
+                        keiki,
+                        tasty-bench >= 0.4 && < 0.6,
+                        text ^>= 2.1,
+                        time ^>= 1.12

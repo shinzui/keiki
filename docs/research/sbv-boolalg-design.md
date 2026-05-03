@@ -648,7 +648,7 @@ corresponds to one section above.
 - Add `PInCtor :: InCtor ci ifs -> HsPred rs ci` to `Keiki.Core`.
 - Add `matchInCtor :: InCtor ci ifs -> HsPred rs ci` helper.
 - Update `evalPred` for `PInCtor`.
-- Migrate `Keiki.Examples.UserRegistration` `isStart`/`isConfirm`/...
+- Migrate `Jitsurei.UserRegistration` `isStart`/`isConfirm`/...
   helpers to use `matchInCtor`. Existing tests must continue to pass.
 - Document the cross-cut in the EP-2 Decision Log + MasterPlan
   Surprises & Discoveries.

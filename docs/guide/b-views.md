@@ -107,7 +107,7 @@ of them needs renaming.
 ## 3. Consuming a view
 
 ```haskell
-import Keiki.Examples.UserRegistration
+import Jitsurei.UserRegistration
   ( SUserVertex (..)
   , UserView (..)
   , userView

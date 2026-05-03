@@ -1,11 +1,11 @@
 # Email Delivery topology
 
 Rendered by `Keiki.Render.Mermaid.toMermaid` over
-`Keiki.Examples.EmailDelivery.emailDelivery`. To refresh:
+`Jitsurei.EmailDelivery.emailDelivery`. To refresh:
 
     cabal repl keiki
     ghci> import Keiki.Render.Mermaid (toMermaid)
-    ghci> import Keiki.Examples.EmailDelivery (emailDelivery)
+    ghci> import Jitsurei.EmailDelivery (emailDelivery)
     ghci> import qualified Data.Text.IO as TIO
     ghci> TIO.putStrLn (toMermaid emailDelivery)
 
