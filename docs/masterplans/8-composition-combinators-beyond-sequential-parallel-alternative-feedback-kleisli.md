@@ -177,7 +177,7 @@ value.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Composition combinators beyond sequential — design milestone | docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md | None | EP-11 (external) | Complete |
-| 2 | Alternative composition combinator on SymTransducer | docs/plans/25-alternative-composition-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Not Started |
+| 2 | Alternative composition combinator on SymTransducer | docs/plans/25-alternative-composition-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | In Progress |
 | 3 | Single-step feedback combinator on SymTransducer | docs/plans/26-single-step-feedback-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.

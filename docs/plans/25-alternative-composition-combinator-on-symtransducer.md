@@ -65,24 +65,38 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] **M0 — Confirm starting state.** Run `cabal build all` and
-  `cabal test all`; both green. Record GHC version. (Should be
-  9.12.3 per `keiki.cabal`'s `tested-with`.)
-- [ ] **M1 — Add `CompositeSum` data type and instances.** Mirror
-  the existing `Composite` shape at `src/Keiki/Composition.hs:64`:
-  `Eq`, `Show`, `Bounded`, `Enum`, `NoThunks`. Sum-shaped enumeration:
-  `[InL minBound .. InL maxBound] ++ [InR minBound .. InR maxBound]`.
-- [ ] **M2 — Add the input-side and output-side Either lifters.**
-  `liftLPredAlt`, `liftLUpdateAlt`, `liftLOutAlt` (and `R` siblings)
-  walk the t1/t2 ASTs and adjust `InCtor ci ifs` →
-  `InCtor (Either ci1 ci2) ifs`, `WireCtor co fs` →
-  `WireCtor (Either co1 co2) fs`, by reusing `leftInCtor`,
-  `leftWireCtor` (and `R` siblings) defined inline.
-- [ ] **M3 — Add the `alternative` combinator.** Compose the
-  lifters: each composite edge from `InL s1` is one t1 edge with
-  every reference adjusted into the `Either` arms; symmetric for
-  `InR s2`. Initial state is `InL (initial t1)`. `isFinal` dispatches
-  on the arm.
+- [x] **M0 — Confirm starting state.** *(2026-05-03)* `cabal build
+  all` is `Up to date`; `cabal test all` reports 169 examples, 0
+  failures. GHC 9.12.3 (matches `keiki.cabal`'s `tested-with: GHC
+  == 9.12.*`). Green baseline established.
+- [x] **M1 — Add `CompositeSum` data type and instances.** *(2026-05-03)*
+  Added `data CompositeSum s1 s2 = InL !s1 | InR !s2` to
+  `src/Keiki/Composition.hs` with `Eq`, `Show`, `Bounded`, `Enum`,
+  `NoThunks` instances mirroring `Composite`'s style. Sum-shaped
+  enumeration: `[InL minBound .. InL maxBound] ++ [InR minBound ..
+  InR maxBound]`. Exported from the module's "* The alternative
+  composite vertex" section. `cabal build` clean; `cabal test`
+  still 169/0.
+- [x] **M2 — Add the input-side and output-side Either lifters.** *(2026-05-03)*
+  Added `leftInCtor` / `rightInCtor`, `leftWireCtor` / `rightWireCtor`,
+  `liftLTermAlt` / `liftRTermAlt`, `liftLPredAlt` / `liftRPredAlt`,
+  `liftLUpdateAlt` / `liftRUpdateAlt`, `liftLOutFieldsAlt` /
+  `liftROutFieldsAlt`, `liftLOutAlt` / `liftROutAlt` to
+  `src/Keiki/Composition.hs`. Also added right-side weakening
+  helpers `weakenRTerm`, `weakenRPred`, `weakenRUpdate`,
+  `weakenROutFields`, `weakenROut` that mirror the existing
+  `weakenL*` family but lift over an rs1 prefix using the
+  `WeakenR` class. Output-side weakening helper `weakenLOut` (and
+  `weakenLOutFields`) added for symmetry. `cabal build` clean.
+- [x] **M3 — Add the `alternative` combinator.** *(2026-05-03)* Added
+  `alternative` at the end of `src/Keiki/Composition.hs` with the
+  full design-record signature
+  (`SymTransducer (HsPred rs1 ci1) ... -> SymTransducer (HsPred rs2 ci2) ... -> SymTransducer (HsPred (Append rs1 rs2) (Either ci1 ci2)) ...`).
+  The body composes `weakenL*` / `liftL*Alt` for the `InL` arm and
+  `weakenR*` / `liftR*Alt` for the `InR` arm. Initial state
+  `InL (initial t1)`; `isFinal` dispatches on the arm; register
+  file is `appendRegFile (initialRegs t1) (initialRegs t2)`. `cabal
+  build all` clean; `cabal test all` still 169/0.
 - [ ] **M4 — Acceptance test.** Add
   `test/Keiki/CompositionAlternativeSpec.hs` composing two fixture
   aggregates and verifying step / omega / reconstitute /

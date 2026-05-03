@@ -31,20 +31,43 @@
 module Keiki.Composition
   ( -- * The composite vertex
     Composite (..)
+    -- * The alternative composite vertex
+  , CompositeSum (..)
     -- * Sequential composition
   , compose
+    -- * Disjoint-input dispatch
+  , alternative
     -- * Index / term weakening (exposed for advanced uses)
   , WeakenR (..)
   , weakenL
   , weakenLTerm
   , weakenLPred
   , weakenLUpdate
+  , weakenRTerm
+  , weakenRPred
+  , weakenRUpdate
+  , weakenROutFields
     -- * Substitution (exposed for advanced uses)
   , substTerm
   , substPred
   , substUpdate
   , substOut
   , substOutFields
+    -- * Either lifters (alternative-side, exposed for advanced uses)
+  , leftInCtor
+  , rightInCtor
+  , leftWireCtor
+  , rightWireCtor
+  , liftLTermAlt
+  , liftRTermAlt
+  , liftLPredAlt
+  , liftRPredAlt
+  , liftLUpdateAlt
+  , liftRUpdateAlt
+  , liftLOutAlt
+  , liftROutAlt
+  , liftLOutFieldsAlt
+  , liftROutFieldsAlt
   ) where
 
 import Unsafe.Coerce (unsafeCoerce)
@@ -98,6 +121,52 @@ instance (NoThunks s1, NoThunks s2) => NoThunks (Composite s1 s2) where
     [ noThunks ("Composite.left"  : ctx) a
     , noThunks ("Composite.right" : ctx) b
     ]
+
+
+-- * The alternative composite vertex --------------------------------------
+
+-- | The disjoint-union composite of two vertex types. Used by
+-- 'alternative': at any moment the composite is in exactly one of
+-- the two arms. Strict bangs on each constructor mirror 'Composite'\'s
+-- strictness profile.
+data CompositeSum s1 s2 = InL !s1 | InR !s2
+  deriving (Eq, Show)
+
+
+instance (Bounded s1, Bounded s2) => Bounded (CompositeSum s1 s2) where
+  minBound = InL minBound
+  maxBound = InR maxBound
+
+
+-- | Range-style enumeration: @InL minBound .. InL maxBound@ first,
+-- then @InR minBound .. InR maxBound@. Mirrors the assumption made
+-- by 'Composite'\'s 'Enum' instance that both component @Enum@s have
+-- contiguous @[minBound .. maxBound]@ ranges (the common case for a
+-- derived 'Enum' on an enum-like data type). This shape is what
+-- 'isSingleValuedSym' iterates when running on an alternative
+-- composite.
+instance ( Bounded s1, Enum s1
+         , Bounded s2, Enum s2
+         ) => Enum (CompositeSum s1 s2) where
+  toEnum n =
+    let n1 = fromEnum (maxBound :: s1) - fromEnum (minBound :: s1) + 1
+    in if n < n1
+       then InL (toEnum (n + fromEnum (minBound :: s1)))
+       else InR (toEnum (n - n1 + fromEnum (minBound :: s2)))
+  fromEnum (InL a) = fromEnum a - fromEnum (minBound :: s1)
+  fromEnum (InR b) =
+    let n1 = fromEnum (maxBound :: s1) - fromEnum (minBound :: s1) + 1
+    in n1 + (fromEnum b - fromEnum (minBound :: s2))
+
+
+-- The constructors are strict by construction (see the bang patterns
+-- above), so leaks can only enter through the children. The instance
+-- recurses into whichever arm is present.
+instance (NoThunks s1, NoThunks s2) => NoThunks (CompositeSum s1 s2) where
+  showTypeOf _ = "CompositeSum"
+  wNoThunks ctx = \case
+    InL a -> noThunks ("CompositeSum.InL" : ctx) a
+    InR b -> noThunks ("CompositeSum.InR" : ctx) b
 
 
 -- * WeakenR: lift an Index over rs2 to (Append rs1 rs2) -------------------
@@ -181,6 +250,99 @@ weakenLUpdate (UCombine a b) = UCombine (weakenLUpdate @rs1 @rs2 a)
 weakenLIndexN :: forall rs1 rs2 s r. IndexN s rs1 r -> IndexN s (Append rs1 rs2) r
 weakenLIndexN IZ     = IZ
 weakenLIndexN (IS i) = IS (weakenLIndexN @_ @rs2 i)
+
+
+-- * weakenR-walking helpers: lift terms / preds / updates over an rs1 prefix --
+
+-- | Walk a 'Term' on a tail-side register file and lift every register
+-- read across an rs1 prefix using 'weakenR'. The input alphabet @ci@
+-- is preserved.
+weakenRTerm
+  :: forall rs1 rs2 ci r.
+     WeakenR rs1
+  => Term rs2 ci r -> Term (Append rs1 rs2) ci r
+weakenRTerm (TLit r)              = TLit r
+weakenRTerm (TReg ix)             = TReg (weakenR @rs1 ix)
+weakenRTerm (TInpCtorField ic ix) = TInpCtorField ic ix
+weakenRTerm (TApp1 f t)           = TApp1 f (weakenRTerm @rs1 @rs2 t)
+weakenRTerm (TApp2 f a b)         = TApp2 f (weakenRTerm @rs1 @rs2 a)
+                                              (weakenRTerm @rs1 @rs2 b)
+
+
+-- | Walk an 'HsPred' on a tail-side register file and lift every term
+-- inside via 'weakenRTerm'.
+weakenRPred
+  :: forall rs1 rs2 ci.
+     WeakenR rs1
+  => HsPred rs2 ci -> HsPred (Append rs1 rs2) ci
+weakenRPred PTop          = PTop
+weakenRPred PBot          = PBot
+weakenRPred (PAnd p q)    = PAnd (weakenRPred @rs1 @rs2 p)
+                                  (weakenRPred @rs1 @rs2 q)
+weakenRPred (POr  p q)    = POr  (weakenRPred @rs1 @rs2 p)
+                                  (weakenRPred @rs1 @rs2 q)
+weakenRPred (PNot p)      = PNot (weakenRPred @rs1 @rs2 p)
+weakenRPred (PEq a b)     = PEq  (weakenRTerm @rs1 @rs2 a)
+                                  (weakenRTerm @rs1 @rs2 b)
+weakenRPred (PInCtor ic)  = PInCtor ic
+
+
+-- | Walk an 'Update' on a tail-side register file and lift every
+-- register write + RHS 'Term' across an rs1 prefix. The slot-name
+-- index @w@ is preserved.
+weakenRUpdate
+  :: forall rs1 rs2 w ci.
+     WeakenR rs1
+  => Update rs2 w ci -> Update (Append rs1 rs2) w ci
+weakenRUpdate UKeep          = UKeep
+weakenRUpdate (USet ix t)    = USet (weakenRIndexN @rs1 ix)
+                                     (weakenRTerm @rs1 @rs2 t)
+weakenRUpdate (UCombine a b) = UCombine (weakenRUpdate @rs1 @rs2 a)
+                                          (weakenRUpdate @rs1 @rs2 b)
+
+
+-- | Walk an 'OutFields' chain on a tail-side register file and lift
+-- every term across an rs1 prefix.
+weakenROutFields
+  :: forall rs1 rs2 ci fs.
+     WeakenR rs1
+  => OutFields rs2 ci fs -> OutFields (Append rs1 rs2) ci fs
+weakenROutFields OFNil           = OFNil
+weakenROutFields (OFCons t rest) = OFCons (weakenRTerm @rs1 @rs2 t)
+                                            (weakenROutFields @rs1 @rs2 rest)
+
+
+-- | Walk an 'OutTerm' on a tail-side register file and lift every
+-- register read across an rs1 prefix. The 'OPack' wrapping is
+-- structurally preserved; only the underlying 'OutFields' chain is
+-- walked.
+weakenROut
+  :: forall rs1 rs2 ci co.
+     WeakenR rs1
+  => OutTerm rs2 ci co -> OutTerm (Append rs1 rs2) ci co
+weakenROut (OPack ic wc fs) =
+  OPack ic wc (weakenROutFields @rs1 @rs2 fs)
+
+
+-- * weakenL-walking helpers (output-term variant) -------------------------
+
+-- | Walk an 'OutFields' chain on a head-side register file and lift
+-- every term across an rs2 suffix.
+weakenLOutFields
+  :: forall rs1 rs2 ci fs.
+     OutFields rs1 ci fs -> OutFields (Append rs1 rs2) ci fs
+weakenLOutFields OFNil           = OFNil
+weakenLOutFields (OFCons t rest) = OFCons (weakenLTerm @rs1 @rs2 t)
+                                            (weakenLOutFields @rs1 @rs2 rest)
+
+
+-- | Walk an 'OutTerm' on a head-side register file and lift every
+-- register read across an rs2 suffix.
+weakenLOut
+  :: forall rs1 rs2 ci co.
+     OutTerm rs1 ci co -> OutTerm (Append rs1 rs2) ci co
+weakenLOut (OPack ic wc fs) =
+  OPack ic wc (weakenLOutFields @rs1 @rs2 fs)
 
 
 -- * Substitution algorithm -------------------------------------------------
@@ -351,6 +513,194 @@ unsafeCoerceInCtor :: InCtor ci ifs -> InCtor ci' ifs
 unsafeCoerceInCtor = unsafeCoerce
 
 
+-- * Either lifters (alternative-side) -------------------------------------
+
+-- | Lift an 'InCtor' from the left arm of an 'Either' input alphabet.
+-- The resulting 'InCtor' matches only on @Left _@ inputs and
+-- preserves the underlying constructor's slot list and round-trip;
+-- 'icBuild' wraps the rebuilt @ci1@ in 'Left' so the lifted
+-- transducer's 'solveOutput' walks back to the original input form.
+leftInCtor :: InCtor ci1 ifs -> InCtor (Either ci1 ci2) ifs
+leftInCtor InCtor { icName = n, icMatch = m, icBuild = b } = InCtor
+  { icName  = n
+  , icMatch = \case
+      Left c1 -> m c1
+      Right _ -> Nothing
+  , icBuild = Left . b
+  }
+
+
+-- | Lift an 'InCtor' from the right arm of an 'Either' input
+-- alphabet. Symmetric to 'leftInCtor'.
+rightInCtor :: InCtor ci2 ifs -> InCtor (Either ci1 ci2) ifs
+rightInCtor InCtor { icName = n, icMatch = m, icBuild = b } = InCtor
+  { icName  = n
+  , icMatch = \case
+      Left _   -> Nothing
+      Right c2 -> m c2
+  , icBuild = Right . b
+  }
+
+
+-- | Lift a 'WireCtor' from the left arm of an 'Either' output
+-- alphabet. Matches only on @Left _@ outputs; rebuilds via
+-- @Left . wcBuild@.
+leftWireCtor :: WireCtor co1 fs -> WireCtor (Either co1 co2) fs
+leftWireCtor WireCtor { wcName = n, wcMatch = m, wcBuild = b } = WireCtor
+  { wcName  = n
+  , wcMatch = \case
+      Left c1 -> m c1
+      Right _ -> Nothing
+  , wcBuild = Left . b
+  }
+
+
+-- | Lift a 'WireCtor' from the right arm of an 'Either' output
+-- alphabet. Symmetric to 'leftWireCtor'.
+rightWireCtor :: WireCtor co2 fs -> WireCtor (Either co1 co2) fs
+rightWireCtor WireCtor { wcName = n, wcMatch = m, wcBuild = b } = WireCtor
+  { wcName  = n
+  , wcMatch = \case
+      Left _   -> Nothing
+      Right c2 -> m c2
+  , wcBuild = Right . b
+  }
+
+
+-- | Lift a 'Term' from the left side's input alphabet to
+-- @Either ci1 ci2@. Walks the AST and adjusts every 'TInpCtorField'
+-- to read through 'leftInCtor'. 'TLit' / 'TReg' don't depend on
+-- @ci@ and pass through unchanged.
+liftLTermAlt
+  :: forall rs ci1 ci2 r.
+     Term rs ci1 r -> Term rs (Either ci1 ci2) r
+liftLTermAlt (TLit r)              = TLit r
+liftLTermAlt (TReg ix)             = TReg ix
+liftLTermAlt (TInpCtorField ic ix) = TInpCtorField (leftInCtor ic) ix
+liftLTermAlt (TApp1 f t)           = TApp1 f (liftLTermAlt @rs @ci1 @ci2 t)
+liftLTermAlt (TApp2 f a b)         =
+  TApp2 f (liftLTermAlt @rs @ci1 @ci2 a) (liftLTermAlt @rs @ci1 @ci2 b)
+
+
+-- | Lift a 'Term' from the right side's input alphabet to
+-- @Either ci1 ci2@. Symmetric to 'liftLTermAlt'.
+liftRTermAlt
+  :: forall rs ci1 ci2 r.
+     Term rs ci2 r -> Term rs (Either ci1 ci2) r
+liftRTermAlt (TLit r)              = TLit r
+liftRTermAlt (TReg ix)             = TReg ix
+liftRTermAlt (TInpCtorField ic ix) = TInpCtorField (rightInCtor ic) ix
+liftRTermAlt (TApp1 f t)           = TApp1 f (liftRTermAlt @rs @ci1 @ci2 t)
+liftRTermAlt (TApp2 f a b)         =
+  TApp2 f (liftRTermAlt @rs @ci1 @ci2 a) (liftRTermAlt @rs @ci1 @ci2 b)
+
+
+-- | Lift an 'HsPred' from the left side's input alphabet to
+-- @Either ci1 ci2@. Walks the AST and recurses through every
+-- 'Term' via 'liftLTermAlt'.
+liftLPredAlt
+  :: forall rs ci1 ci2.
+     HsPred rs ci1 -> HsPred rs (Either ci1 ci2)
+liftLPredAlt PTop          = PTop
+liftLPredAlt PBot          = PBot
+liftLPredAlt (PAnd p q)    = PAnd (liftLPredAlt @rs @ci1 @ci2 p)
+                                  (liftLPredAlt @rs @ci1 @ci2 q)
+liftLPredAlt (POr  p q)    = POr  (liftLPredAlt @rs @ci1 @ci2 p)
+                                  (liftLPredAlt @rs @ci1 @ci2 q)
+liftLPredAlt (PNot p)      = PNot (liftLPredAlt @rs @ci1 @ci2 p)
+liftLPredAlt (PEq a b)     = PEq  (liftLTermAlt @rs @ci1 @ci2 a)
+                                  (liftLTermAlt @rs @ci1 @ci2 b)
+liftLPredAlt (PInCtor ic)  = PInCtor (leftInCtor ic)
+
+
+-- | Lift an 'HsPred' from the right side's input alphabet to
+-- @Either ci1 ci2@. Symmetric to 'liftLPredAlt'.
+liftRPredAlt
+  :: forall rs ci1 ci2.
+     HsPred rs ci2 -> HsPred rs (Either ci1 ci2)
+liftRPredAlt PTop          = PTop
+liftRPredAlt PBot          = PBot
+liftRPredAlt (PAnd p q)    = PAnd (liftRPredAlt @rs @ci1 @ci2 p)
+                                  (liftRPredAlt @rs @ci1 @ci2 q)
+liftRPredAlt (POr  p q)    = POr  (liftRPredAlt @rs @ci1 @ci2 p)
+                                  (liftRPredAlt @rs @ci1 @ci2 q)
+liftRPredAlt (PNot p)      = PNot (liftRPredAlt @rs @ci1 @ci2 p)
+liftRPredAlt (PEq a b)     = PEq  (liftRTermAlt @rs @ci1 @ci2 a)
+                                  (liftRTermAlt @rs @ci1 @ci2 b)
+liftRPredAlt (PInCtor ic)  = PInCtor (rightInCtor ic)
+
+
+-- | Lift an 'Update' from the left side's input alphabet to
+-- @Either ci1 ci2@. The slot-name index @w@ is preserved; only the
+-- right-hand-side 'Term's are walked.
+liftLUpdateAlt
+  :: forall rs w ci1 ci2.
+     Update rs w ci1 -> Update rs w (Either ci1 ci2)
+liftLUpdateAlt UKeep            = UKeep
+liftLUpdateAlt (USet ix t)      = USet ix (liftLTermAlt @rs @ci1 @ci2 t)
+liftLUpdateAlt (UCombine a b)   = UCombine (liftLUpdateAlt a) (liftLUpdateAlt b)
+
+
+-- | Lift an 'Update' from the right side's input alphabet to
+-- @Either ci1 ci2@. Symmetric to 'liftLUpdateAlt'.
+liftRUpdateAlt
+  :: forall rs w ci1 ci2.
+     Update rs w ci2 -> Update rs w (Either ci1 ci2)
+liftRUpdateAlt UKeep            = UKeep
+liftRUpdateAlt (USet ix t)      = USet ix (liftRTermAlt @rs @ci1 @ci2 t)
+liftRUpdateAlt (UCombine a b)   = UCombine (liftRUpdateAlt a) (liftRUpdateAlt b)
+
+
+-- | Lift an 'OutFields' chain from the left side's input alphabet to
+-- @Either ci1 ci2@. Recurses on each 'Term' via 'liftLTermAlt'.
+liftLOutFieldsAlt
+  :: forall rs ci1 ci2 fs.
+     OutFields rs ci1 fs -> OutFields rs (Either ci1 ci2) fs
+liftLOutFieldsAlt OFNil          = OFNil
+liftLOutFieldsAlt (OFCons t rest) =
+  OFCons (liftLTermAlt @rs @ci1 @ci2 t)
+         (liftLOutFieldsAlt @rs @ci1 @ci2 rest)
+
+
+-- | Lift an 'OutFields' chain from the right side's input alphabet
+-- to @Either ci1 ci2@. Symmetric to 'liftLOutFieldsAlt'.
+liftROutFieldsAlt
+  :: forall rs ci1 ci2 fs.
+     OutFields rs ci2 fs -> OutFields rs (Either ci1 ci2) fs
+liftROutFieldsAlt OFNil          = OFNil
+liftROutFieldsAlt (OFCons t rest) =
+  OFCons (liftRTermAlt @rs @ci1 @ci2 t)
+         (liftROutFieldsAlt @rs @ci1 @ci2 rest)
+
+
+-- | Lift an 'OutTerm' from the left side's alphabets to
+-- @Either ci1 ci2@ on the input and @Either co1 co2@ on the output.
+-- The 'OPack' is re-tagged: the 'InCtor' becomes 'leftInCtor', the
+-- 'WireCtor' becomes 'leftWireCtor', and every 'Term' inside the
+-- 'OutFields' is lifted via 'liftLTermAlt'.
+liftLOutAlt
+  :: forall rs ci1 ci2 co1 co2.
+     OutTerm rs ci1 co1
+  -> OutTerm rs (Either ci1 ci2) (Either co1 co2)
+liftLOutAlt (OPack ic wc fs) =
+  OPack (leftInCtor ic)
+        (leftWireCtor wc)
+        (liftLOutFieldsAlt @rs @ci1 @ci2 fs)
+
+
+-- | Lift an 'OutTerm' from the right side's alphabets to
+-- @Either ci1 ci2@ on the input and @Either co1 co2@ on the output.
+-- Symmetric to 'liftLOutAlt'.
+liftROutAlt
+  :: forall rs ci1 ci2 co1 co2.
+     OutTerm rs ci2 co2
+  -> OutTerm rs (Either ci1 ci2) (Either co1 co2)
+liftROutAlt (OPack ic wc fs) =
+  OPack (rightInCtor ic)
+        (rightWireCtor wc)
+        (liftROutFieldsAlt @rs @ci1 @ci2 fs)
+
+
 -- * compose ----------------------------------------------------------------
 
 -- | Sequential composition of two 'SymTransducer's. The composite
@@ -455,4 +805,106 @@ compose t1 t2 = SymTransducer
                      (substUpdate   @rs1 @rs2 u2 o1)
         , output = fmap (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2)
         , target = Composite (target e1) (target e2)
+        }
+
+
+-- * alternative -----------------------------------------------------------
+
+-- | Disjoint-input dispatch of two 'SymTransducer's. The composite
+-- consumes @Either ci1 ci2@ and emits @Either co1 co2@: a @Left ci1@
+-- advances @t1@ and emits @Left co1@; a @Right ci2@ advances @t2@
+-- and emits @Right co2@.
+--
+-- Semantics:
+--
+--   * The composite vertex is 'CompositeSum' s1 s2 = InL s1 | InR s2.
+--   * From @InL s1@: the outgoing edges are exactly t1's edges from
+--     @s1@ with input alphabet lifted to @Either ci1 ci2@ via
+--     'liftLPredAlt' / 'liftLUpdateAlt' / 'liftLOutAlt' and register
+--     references lifted across the rs2 suffix via 'weakenLPred' /
+--     'weakenLUpdate' / 'weakenLOut'.
+--   * From @InR s2@: symmetric — t2's edges with @weakenR* + liftR*Alt@.
+--   * Initial state is @InL (initial t1)@ by convention.
+--   * @isFinal@ dispatches on the arm.
+--
+-- The composite preserves the keiki guarantees:
+--
+--   * Mechanical inversion: the @InL@-side @OPack (leftInCtor ic1)
+--     (leftWireCtor wc1) of_lifted@ runs t1's @icMatch@ / @icBuild@
+--     unchanged after stripping the @Left@ wrapping; symmetric for
+--     @InR@.
+--   * Hidden-input check: each side's per-edge check inherits via
+--     the lifters (which preserve 'TInpCtorField' slot reads).
+--   * Symbolic single-valuedness: at @InL s1@, only t1's edges fire
+--     (t2's guards over @ci2@ are unsatisfiable when the input is
+--     @Left _@), so per-vertex single-valuedness reduces to t1's at
+--     @s1@; symmetric at @InR s2@. **No cross-transducer
+--     mutual-exclusion check is needed** — the @Either@ arms make
+--     it vacuous.
+--
+-- See 'docs/research/composition-combinators-design.md' under
+-- "Combinators beyond `compose`" → "`alternative` — admitted" for
+-- the full design record (signature, semantics, single-step
+-- example, preservation arguments, limitations).
+alternative
+  :: forall rs1 rs2 s1 s2 ci1 ci2 co1 co2.
+     ( WeakenR rs1
+     , Disjoint (Names rs1) (Names rs2)
+     )
+  => SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 co1
+  -> SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2
+  -> SymTransducer (HsPred (Append rs1 rs2) (Either ci1 ci2))
+                   (Append rs1 rs2)
+                   (CompositeSum s1 s2)
+                   (Either ci1 ci2)
+                   (Either co1 co2)
+alternative t1 t2 = SymTransducer
+  { edgesOut    = altEdges
+  , initial     = InL (initial t1)
+  , initialRegs = appendRegFile (initialRegs t1) (initialRegs t2)
+  , isFinal     = \case
+      InL s1 -> isFinal t1 s1
+      InR s2 -> isFinal t2 s2
+  }
+  where
+    altEdges
+      :: CompositeSum s1 s2
+      -> [Edge (HsPred (Append rs1 rs2) (Either ci1 ci2))
+               (Append rs1 rs2) (Either ci1 ci2) (Either co1 co2)
+               (CompositeSum s1 s2)]
+    altEdges (InL s1) = map liftEdgeL (edgesOut t1 s1)
+    altEdges (InR s2) = map liftEdgeR (edgesOut t2 s2)
+
+    liftEdgeL
+      :: Edge (HsPred rs1 ci1) rs1 ci1 co1 s1
+      -> Edge (HsPred (Append rs1 rs2) (Either ci1 ci2))
+              (Append rs1 rs2) (Either ci1 ci2) (Either co1 co2)
+              (CompositeSum s1 s2)
+    liftEdgeL e1 = case e1 of
+      Edge { update = u1 } -> Edge
+        { guard  = liftLPredAlt @(Append rs1 rs2) @ci1 @ci2
+                                 (weakenLPred @rs1 @rs2 (guard e1))
+        , update = liftLUpdateAlt @(Append rs1 rs2) @_ @ci1 @ci2
+                                   (weakenLUpdate @rs1 @rs2 u1)
+        , output = fmap (liftLOutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
+                          . weakenLOut @rs1 @rs2)
+                        (output e1)
+        , target = InL (target e1)
+        }
+
+    liftEdgeR
+      :: Edge (HsPred rs2 ci2) rs2 ci2 co2 s2
+      -> Edge (HsPred (Append rs1 rs2) (Either ci1 ci2))
+              (Append rs1 rs2) (Either ci1 ci2) (Either co1 co2)
+              (CompositeSum s1 s2)
+    liftEdgeR e2 = case e2 of
+      Edge { update = u2 } -> Edge
+        { guard  = liftRPredAlt @(Append rs1 rs2) @ci1 @ci2
+                                 (weakenRPred @rs1 @rs2 (guard e2))
+        , update = liftRUpdateAlt @(Append rs1 rs2) @_ @ci1 @ci2
+                                   (weakenRUpdate @rs1 @rs2 u2)
+        , output = fmap (liftROutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
+                          . weakenROut @rs1 @rs2)
+                        (output e2)
+        , target = InR (target e2)
         }
