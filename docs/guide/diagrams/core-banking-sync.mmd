@@ -1,0 +1,5 @@
+stateDiagram-v2
+    [*] --> SyncIdle
+    SyncIdle --> SyncRequested : LoanCreatedIn / SyncToLegacyRequested
+    SyncRequested --> SyncSettled : LegacyCallbackReceivedIn / LegacyAssignmentCommanded
+    SyncSettled --> [*]

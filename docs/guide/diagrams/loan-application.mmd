@@ -1,0 +1,16 @@
+stateDiagram-v2
+    [*] --> Intake
+    Intake --> CollectingDocuments : StartApplication / ApplicationStarted
+    Intake --> Withdrawn : WithdrawApplication / ApplicationWithdrawn
+    CollectingDocuments --> CollectingDocuments : SubmitIncomeDocument / IncomeDocumentReceived
+    CollectingDocuments --> CollectingDocuments : SubmitIdDocument / IdDocumentReceived
+    CollectingDocuments --> CollectingDocuments : RecordCreditScore / CreditScoreRecorded
+    CollectingDocuments --> CollectingDocuments : RecordEmploymentCheck / EmploymentChecked
+    CollectingDocuments --> Withdrawn : WithdrawApplication / ApplicationWithdrawn
+    CollectingDocuments --> UnderReview : Continue / ε
+    UnderReview --> Approved : Continue / ApplicationApproved
+    UnderReview --> Declined : Continue / ApplicationDeclined
+    UnderReview --> Withdrawn : WithdrawApplication / ApplicationWithdrawn
+    Approved --> [*]
+    Declined --> [*]
+    Withdrawn --> [*]
