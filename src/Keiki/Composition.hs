@@ -35,6 +35,8 @@ module Keiki.Composition
   , compose
     -- * Disjoint-input dispatch
   , alternative
+    -- * Single-step feedback
+  , feedback1
     -- * Index / term weakening (exposed for advanced uses)
   , WeakenR (..)
   , weakenL
@@ -868,3 +870,80 @@ alternative t1 t2 = SymTransducer
                         (output e2)
         , target = Composite s1 (target e2)
         }
+
+
+-- * feedback1 ------------------------------------------------------------
+
+-- | Single-step feedback combinator. Models one round of an
+-- aggregate ↔ stateless-policy reaction: the aggregate consumes an
+-- external command, the policy observes the aggregate's emitted
+-- event and emits a follow-up command, and the aggregate consumes
+-- that follow-up. The composite emits the aggregate's *second*
+-- event as its output.
+--
+-- Operationally, @feedback1 t f = compose t (compose f t)@:
+--
+--   * The inner @compose f t@ chains the policy's output (a
+--     command for t) into a second invocation of t.
+--   * The outer @compose t _@ feeds t's first event into that
+--     inner pipeline.
+--
+-- The composite vertex is @Composite s1 (Composite s2 s1)@ —
+-- "outer t state, then (policy state, inner t state)". Even though
+-- the inner @s1@ is the same Haskell type as the outer, it occupies
+-- a distinct dimension of the composite vertex tuple, so
+-- 'Keiki.Symbolic.isSingleValuedSym''s per-vertex enumeration walks
+-- all @|s1| * |s2| * |s1|@ combinations independently.
+--
+-- Multi-round patterns are expressed by nesting:
+--
+--     twoRounds = feedback1 (feedback1 t f) f
+--
+-- The pure-core boundary holds because there is no loop — the
+-- cascade runs exactly once per external command.
+--
+-- == Constraints and limitations
+--
+-- The constraint @'Disjoint' ('Names' rs1) ('Names' ('Append' rs2 rs1))@
+-- is the outer 'compose''s slot-disjointness check applied to
+-- @rs1@ versus @Append rs2 rs1@. Since @rs1@ appears on both sides,
+-- the constraint is only satisfiable when @rs1 = '[]@ — i.e. when
+-- t is **stateless** (its register file is empty). For non-empty
+-- @rs1@, the call site fails with a slot-collision @TypeError@.
+--
+-- This restriction follows from the design's
+-- "two-stacked-@compose@" reduction: t appears twice, and keiki's
+-- register-file model gives each appearance its own copy of @rs1@.
+-- A "shared-state" variant — where the second t reads/writes the
+-- first t's registers via a custom edge construction — is
+-- documented as a future extension and is not in scope for MP-8.
+-- The "stateless policy" recommendation (single vertex, empty
+-- @rs2@) is convention rather than enforced; if violated, the
+-- composite still typechecks but the single-step semantics may
+-- not be preserved.
+--
+-- == Future extensions
+--
+-- A bounded-step variant @feedbackN n t f@ that iterates the
+-- cascade @n@ times is documented in
+-- 'docs/research/composition-combinators-design.md' but is not
+-- shipped here.
+--
+-- See 'docs/research/composition-combinators-design.md' under
+-- "Combinators beyond `compose`" → "`feedback1` — admitted
+-- (single-step reduction)" for the full design record.
+feedback1
+  :: forall rs1 rs2 s1 s2 ci co.
+     ( WeakenR rs1
+     , WeakenR rs2
+     , Disjoint (Names rs2) (Names rs1)
+     , Disjoint (Names rs1) (Names (Append rs2 rs1))
+     )
+  => SymTransducer (HsPred rs1 ci) rs1 s1 ci co
+  -> SymTransducer (HsPred rs2 co) rs2 s2 co ci
+  -> SymTransducer (HsPred (Append rs1 (Append rs2 rs1)) ci)
+                   (Append rs1 (Append rs2 rs1))
+                   (Composite s1 (Composite s2 s1))
+                   ci
+                   co
+feedback1 t f = compose t (compose f t)

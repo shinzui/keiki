@@ -6,6 +6,7 @@ import qualified Keiki.BuilderSpec
 import qualified Keiki.BuilderSpike
 import qualified Keiki.CompositionSpec
 import qualified Keiki.CompositionAlternativeSpec
+import qualified Keiki.CompositionFeedback1Spec
 import qualified Keiki.CoreApplyEventsSpec
 import qualified Keiki.CoreSpec
 import qualified Keiki.DeciderMultiSpec
@@ -32,6 +33,7 @@ main = hspec $ do
   describe "Keiki.BuilderSpike (EP-15 M2)"                Keiki.BuilderSpike.spec
   describe "Keiki.Composition"                            Keiki.CompositionSpec.spec
   describe "Keiki.Composition (alternative, EP-25)"       Keiki.CompositionAlternativeSpec.spec
+  describe "Keiki.Composition (feedback1, EP-26)"         Keiki.CompositionFeedback1Spec.spec
   describe "Keiki.Core"                                   Keiki.CoreSpec.spec
   describe "Keiki.Core.applyEvents (EP-20 M2)"            Keiki.CoreApplyEventsSpec.spec
   describe "Keiki.Decider"                                Keiki.DeciderSpec.spec

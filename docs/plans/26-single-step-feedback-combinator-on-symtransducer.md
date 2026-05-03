@@ -71,24 +71,23 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] **M0 — Confirm starting state.** Run `cabal build all` and
-  `cabal test all`; both green. Record GHC version. (Should be
-  9.12.3 per `keiki.cabal`'s `tested-with`.)
-- [ ] **M1 — Decide on the re-keying mechanism for the second
-  copy of t.** Either (a) a vertex newtype `T2 s1 = T2 !s1` that
-  the implementation wraps t's vertex on its second appearance, or
-  (b) symbolic indexing where the composite vertex is structurally
-  `Composite s1 (Composite s2 s1)` and the inner `s1` is treated
-  as distinct by `isSingleValuedSym`'s per-vertex enumeration. The
-  decision is logged in this plan's Decision Log.
-- [ ] **M2 — Add the re-keying machinery.** If (a) is chosen, add
-  `data T2 s1 = T2 !s1` with the same instance set as `Composite`
-  / `CompositeSum`. If (b), no new type is needed; the existing
-  `Composite` plus the existing `compose` machinery suffice.
+- [x] **M0 — Confirm starting state.** *(2026-05-03)* `cabal build
+  all` + `cabal test all` green: 178 examples, 0 failures. GHC
+  9.12.3.
+- [x] **M1 — Decide on the re-keying mechanism for the second
+  copy of t.** *(2026-05-03)* Picked option (b): implicit by
+  structure. The composite vertex `Composite s1 (Composite s2 s1)`
+  enumerates the inner `s1` as a distinct dimension via
+  `Composite`'s existing column-major `Enum` instance, so
+  `isSingleValuedSym`'s per-vertex enumeration walks the full
+  `|s1| * |s2| * |s1|` product without any new types. See Decision
+  Log entry dated 2026-05-03.
+- [x] **M2 — Add the re-keying machinery.** *(2026-05-03)* No-op
+  per M1: the implicit-by-structure form needs no new type.
 - [ ] **M3 — Add the `feedback1` combinator.** Implement as
-  `feedback1 t f = compose t (compose f tCopy)` where `tCopy` is t
-  with vertex re-keyed. Confirm the type signature matches the
-  design record.
+  `feedback1 t f = compose t (compose f t)`. Confirm the type
+  signature matches the design record (with the constraint
+  deviations logged below).
 - [ ] **M4 — Acceptance test.** Add
   `test/Keiki/CompositionFeedback1Spec.hs` composing a fixture
   aggregate with a stateless one-vertex policy (defined inline)
@@ -131,6 +130,64 @@ Record every decision made while working on the plan.
   Rationale: Per EP-24's M2 verdict — single-step is the smallest
   reduction that preserves the keiki guarantees, and bounded-step
   can be added later without disturbing the single-step API.
+  Date: 2026-05-03
+
+- Decision: **M1 picks option (b) — implicit by structure.** No
+  `T2 s1` newtype is added; the composite vertex is
+  `Composite s1 (Composite s2 s1)` and relies on `Composite`'s
+  existing column-major `Enum` to enumerate the inner `s1` as a
+  distinct dimension. The full vertex product has cardinality
+  `|s1| * |s2| * |s1|`.
+  Rationale: Adding `T2` would force a duplicate `Bounded` /
+  `Enum` / `NoThunks` instance set with no observable benefit.
+  `isSingleValuedSym`'s per-vertex enumeration already walks the
+  full `Composite`-derived product via `[minBound .. maxBound]`,
+  treating each occurrence of `s1` independently. M2 is therefore
+  a no-op.
+  Date: 2026-05-03
+
+- Decision: **The implementation's constraint set deviates from
+  the EP-26 plan's stated signature.** The plan's "Required
+  signatures at the end of M3" section listed
+  `WeakenR (Append rs1 rs2)` and
+  `Disjoint (Names (Append rs1 rs2)) (Names rs1)` as the outer
+  pair of constraints. Tracing through `compose t (compose f t)`,
+  the actual constraints GHC requires are:
+
+  1. `WeakenR rs2` (inner `compose f t`'s rs_l).
+  2. `Disjoint (Names rs2) (Names rs1)` (inner `compose`).
+  3. `WeakenR rs1` (outer `compose t _`'s rs_l).
+  4. `Disjoint (Names rs1) (Names (Append rs2 rs1))` (outer
+     `compose`).
+
+  The shipped signature uses these four constraints. The plan's
+  stated set was a transcription error (it would have applied to
+  a different composition order); the correct set comes
+  mechanically from `compose`'s own constraints applied twice.
+  Rationale: The plan's "Idempotence and Recovery" section
+  explicitly anticipates the implementation EP refining the
+  constraints if `compose`'s constraint propagation produces a
+  different shape — that is what happened.
+  Date: 2026-05-03
+
+- Decision: **At the call site, `feedback1 t f` only typechecks
+  when t's register file `rs1` is empty (`'[]`).** The
+  `Disjoint (Names rs1) (Names (Append rs2 rs1))` constraint
+  reduces to `Disjoint (Names rs1) (Names rs1 ++ Names rs2)`,
+  which forces `Names rs1` to be disjoint from itself — only
+  possible when `rs1 = '[]`.
+  Rationale: This is the inevitable consequence of the design
+  record's `feedback1 t f = compose t (compose f t)` reduction.
+  The two `t` copies share their register-slot names, and
+  keiki's slot-disjointness invariant rules that out for any
+  non-empty rs1. The shipped combinator therefore covers the
+  stateless-aggregate case (sufficient for the test fixture and
+  for many policy-driven workflows where t's history is
+  reconstructable from external events). A "shared-state"
+  variant (where the second `t` reads/writes the first `t`'s
+  registers) requires custom edge construction outside
+  `compose`; it is documented as a future extension and is **not
+  in scope** for MP-8.
   Date: 2026-05-03
 
 
