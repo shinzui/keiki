@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Mermaid 'stateDiagram-v2' renderer for 'SymTransducer' values whose
 -- vertex type is enumerable.
@@ -27,6 +28,7 @@
 module Keiki.Render.Mermaid
   ( toMermaid
   , toMermaidComposite
+  , toMermaidCompositeNested
   , vertexLabel
   , compositeLabel
   , edgeInputName
@@ -84,6 +86,83 @@ toMermaidComposite
   => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co
   -> Text
 toMermaidComposite = renderTopology compositeLabel
+
+
+-- | Render a composite 'SymTransducer' (a 'Keiki.Composition.compose'
+-- result, vertex type @'Composite' s1 s2@) using the **nested-subgraph**
+-- shape (Shape B): each outer @s1@ vertex hosts a
+-- @state \<show s1\> { \<inner ids\> }@ block listing every
+-- @\<show s1\>_\<show s2\>@ identifier in the column. Cross-cutting
+-- transitions remain at the top level using the same flat identifiers
+-- 'compositeLabel' produces, so the renderer never relies on
+-- Mermaid's @Outer.Inner@ dotted cross-block reference syntax.
+--
+-- Use this for composites where the cross-product becomes hard to
+-- scan as a single line; use 'toMermaidComposite' for tiny composites
+-- (1–4 vertices) where outer-state grouping adds visual overhead with
+-- no payoff. Both shapes coexist; pick the one that reads best for
+-- the composite at hand.
+--
+-- Note on edge organisation: 'Keiki.Composition.compose' composites
+-- have **zero same-outer edges** — every composite edge advances the
+-- outer @s1@ component (the composite-edge construction in
+-- @Keiki.Composition.composedEdges@ either advances @s1@ on a t1
+-- ε-edge or on the synchronised t1+t2 step, never leaves @s1@
+-- fixed). The visual benefit of this layout for those composites is
+-- structural grouping of vertices, not edge organisation. Composites
+-- produced by @Keiki.Composition.alternative@ (which DOES yield
+-- same-outer edges) are rendered by a separate
+-- @toMermaidAlternative@ entry point — see
+-- @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@.
+--
+-- See EP-32's plan
+-- (@docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md@)
+-- for the full rationale and the Mermaid-syntax cheatsheet.
+toMermaidCompositeNested
+  :: forall rs s1 s2 ci co.
+     ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     )
+  => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co
+  -> Text
+toMermaidCompositeNested t =
+  let outers     = [minBound .. maxBound] :: [s1]
+      inners     = [minBound .. maxBound] :: [s2]
+      composites = [minBound .. maxBound] :: [Composite s1 s2]
+
+      ind   = T.pack "    "
+      ind2  = T.pack "        "
+      arrow = T.pack " --> "
+      colon = T.pack " : "
+
+      header   = T.pack "stateDiagram-v2"
+      initLine = ind <> T.pack "[*]" <> arrow
+                   <> compositeLabel (initial t)
+
+      outerBlock o = T.intercalate (T.pack "\n") $
+        [ ind <> T.pack "state " <> vertexLabel o <> T.pack " {" ]
+        ++
+        [ ind2 <> compositeLabel (Composite o i) | i <- inners ]
+        ++
+        [ ind <> T.pack "}" ]
+
+      outerBlocks = [ outerBlock o | o <- outers ]
+
+      edgeLines =
+        [ ind <> compositeLabel s <> arrow
+              <> compositeLabel (target e) <> colon
+              <> edgeLabel e
+        | s <- composites
+        , e <- edgesOut t s
+        ]
+
+      finalLines =
+        [ ind <> compositeLabel s <> arrow <> T.pack "[*]"
+        | s <- composites
+        , isFinal t s
+        ]
+  in T.intercalate (T.pack "\n")
+       (header : initLine : outerBlocks ++ edgeLines ++ finalLines)
 
 
 -- | The shared rendering core: walk @[minBound .. maxBound]@, emit
