@@ -221,7 +221,7 @@ visible across phases.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | Complete |
 | 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Complete |
-| 3 | Shape B nested-subgraph Mermaid rendering for larger composites | docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md | EP-30, EP-31 | None | In Progress |
+| 3 | Shape B nested-subgraph Mermaid rendering for larger composites | docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md | EP-30, EP-31 | None | Complete |
 | 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -459,11 +459,11 @@ Phase 1 (shipped 2026-05-03):
 
 Phase 2 (added 2026-05-03; not started):
 
-- [ ] EP-32: Verify prerequisites and record baseline test count (M0)
-- [ ] EP-32: Verify the chosen Mermaid syntax (flat identifiers in outer state blocks) renders correctly in a Mermaid-aware previewer; pause for human verifier if implementer is an LLM agent (M1)
-- [ ] EP-32: Implement `toMermaidCompositeNested` (M2)
-- [ ] EP-32: Render Shape B sibling diagram for the existing fixture (M3)
-- [ ] EP-32: Add regression test pinning canonical Shape B output (M4)
+- [x] EP-32: Verify prerequisites and record baseline test count (M0)
+- [x] EP-32: Verify the chosen Mermaid syntax (flat identifiers in outer state blocks) renders correctly in a Mermaid-aware previewer; pause for human verifier if implementer is an LLM agent (M1)
+- [x] EP-32: Implement `toMermaidCompositeNested` (M2)
+- [x] EP-32: Render Shape B sibling diagram for the existing fixture (M3)
+- [x] EP-32: Add regression test pinning canonical Shape B output (M4)
 - [ ] EP-33: Verify prerequisites (EP-30, EP-31, EP-25, EP-26) and record baseline (M0)
 - [ ] EP-33: Design `toMermaidAlternative`'s parallel-arms layout; verify Mermaid syntax (M1)
 - [ ] EP-33: Design `toMermaidFeedback1`'s flat 3-deep cross-product layout (M2)
@@ -511,6 +511,33 @@ Phase 2 (added 2026-05-03; not started):
   helper that both call. Worth keeping in mind for future renderer
   variants (DOT, alternative-shape, etc.): they almost certainly
   share the same skeleton.
+
+- 2026-05-03 — EP-32's `toMermaidCompositeNested` does NOT reuse
+  `renderTopology`. Reason: its body inserts `state … { … }`
+  blocks between the init line and the edge / final lists, fanning
+  the enumeration out across both s1 (outer-block walk) and s2
+  (inner-identifier walk) independently of the composite-edge
+  walk. `renderTopology`'s skeleton (init → edges → finals,
+  parametrised only by a label function) doesn't accommodate this.
+  Inlining the rendering body in EP-32 was simpler than
+  generalising `renderTopology` to a "blocks-emit" hook. EP-33's
+  `toMermaidFeedback1` plan tentatively reuses `renderTopology`
+  via a 3-tuple label function (because its layout IS just
+  init → edges → finals), but its `toMermaidAlternative` plan
+  takes the inline route again because parallel-arms layout
+  walks each arm independently. Pattern: reuse `renderTopology`
+  when the layout is the same shape; inline when it diverges.
+
+- 2026-05-03 — `[minBound .. maxBound]` enumerations across
+  multiple type parameters (e.g. EP-32's outer/inner/composite
+  fan-out) need `ScopedTypeVariables` plus explicit `:: [s1]`
+  list annotations. EP-30's and EP-31's renderers don't hit this
+  because their enumerations are tied to the transducer's `s`
+  through the label function `(s -> Text)`. EP-33's
+  `toMermaidAlternative` (independent walks over t1's s1 and
+  t2's s2) and `toMermaidFeedback1` (3-deep over s1, s2, s1)
+  will hit the same pattern. Recorded as a Surprise in EP-32's
+  plan so future implementers don't waste a build cycle on it.
 
 
 ## Decision Log

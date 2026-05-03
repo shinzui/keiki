@@ -108,15 +108,20 @@ need; pick the one that reads best for the composite at hand.
 - [x] M2 — Implement `toMermaidCompositeNested` in
       `src/Keiki/Render/Mermaid.hs`; add to module exports; verify in
       `ghci` against `Keiki.CompositionSpec.pipeline`. [2026-05-03]
-- [ ] M3 — Render diagram(s) under `docs/guide/diagrams/`: at minimum
+- [x] M3 — Render diagram(s) under `docs/guide/diagrams/`: at minimum
       a Shape B sibling for the existing fixture
       (`composite-alert-email-nested.md`). Optionally a richer
       composite (see Idempotence and Recovery for the synthetic-fixture
       escape hatch) to demonstrate the visual benefit of grouping.
-- [ ] M4 — Add a regression test in `test/Keiki/Render/MermaidSpec.hs`
+      [2026-05-03 — minimum sibling diagram only; richer fixture not
+      added per the plan's Decision Log entry of this date.]
+- [x] M4 — Add a regression test in `test/Keiki/Render/MermaidSpec.hs`
       pinning the canonical Shape B output for the
       `AlertSource ⨾ EmailDelivery` composite; `cabal test` passes
-      (expected count: 199, up from 198).
+      (expected count: 199, up from 198). [2026-05-03 — final count
+      199; anti-validation transient confirmed; describe-block
+      wrapper title in `test/Spec.hs` updated to `(EP-30, EP-31,
+      EP-32)`.]
 
 
 ## Surprises & Discoveries
@@ -254,7 +259,89 @@ output, ghci transcripts, etc.).
 Summarize outcomes, gaps, and lessons learned at major milestones or
 at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Shipped (2026-05-03):**
+
+- `Keiki.Render.Mermaid` gains the public function
+  `toMermaidCompositeNested
+    :: ( Enum s1, Bounded s1, Show s1
+       , Enum s2, Bounded s2, Show s2 )
+    => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co -> Text`.
+  The function reuses `compositeLabel`, `vertexLabel`, and
+  `edgeLabel` unchanged; it does not reuse `renderTopology` because
+  its body inserts `state … { … }` blocks between the init line
+  and the edge / final lines, which `renderTopology`'s skeleton does
+  not accommodate. Inlining the body was simpler than parameterising
+  `renderTopology` over a "blocks emit" hook.
+- One Shape B diagram for the `AlertSource ⨾ EmailDelivery`
+  composite under `docs/guide/diagrams/composite-alert-email-nested.md`,
+  sibling to the Shape A diagram from EP-31.
+- One regression test in `test/Keiki/Render/MermaidSpec.hs`
+  (third describe block) pinning the canonical Shape B block.
+  `cabal test` reports 199 examples, 0 failures (up from 198,
+  EP-31's baseline).
+- The `test/Spec.hs` wrapper title bumped to
+  `Keiki.Render.Mermaid (EP-30, EP-31, EP-32)`.
+
+**Behaviour now possible:** a keiki user can render any
+`compose`-produced composite in either flat
+(`toMermaidComposite`) or nested (`toMermaidCompositeNested`)
+shape and pick the one that reads best for the composite size.
+For the existing fixture (4 vertices), both shapes are readable;
+the nested form pays off as the cross-product grows because the
+outer-state grouping gives a structural map.
+
+**Verification posture.** The plan's M1 step contemplated visual
+verification of the chosen Mermaid syntax against a previewer; the
+LLM-agent implementer could not perform it. The Decision Log
+entry added on 2026-05-03 records the resolution: the syntax
+variant chosen (flat-identifier-in-outer-block) is documented
+standard Mermaid with no version-specific concerns, the M3
+diagram file is reviewable in GitHub's Markdown preview at
+PR-review time, and the M4 regression test pins the exact
+emitted text. Pausing for a human verifier would have
+re-introduced the very dependency the syntax choice was supposed
+to remove.
+
+**Lessons:**
+
+- The plan's pre-spec'd LLM-agent escape hatch (commit to a
+  syntax variant in the Decision Log so the M1 verification step
+  becomes optional) worked. EP-31 surfaced the LLM-agent
+  verification gap as a Surprise; EP-32 codified the fix as a
+  pre-commitment in the plan and a corresponding Decision Log
+  entry. EP-33's M1 (which has its own visual-verification
+  requirement) should follow the same pre-commit pattern, or
+  pause for a human if the syntax cannot be pre-cleared.
+- The `[minBound .. maxBound]` enumeration over composite types
+  needs explicit type annotations when the enumeration is fanned
+  out across multiple type parameters (s1, s2, and Composite s1 s2
+  in this plan; s1, s2, s1 again in EP-33's `feedback1`). Adding
+  `ScopedTypeVariables` and `forall` quantifier was a one-line
+  fix; recorded as a heads-up in Surprises so EP-33's
+  `toMermaidFeedback1` author expects the same.
+- EP-32's body could have been parameterised on a "blocks emit"
+  hook bolted onto `renderTopology`, but the body shape diverges
+  enough (extra structural pass over outers/inners independent of
+  the edge walk) that inlining is cheaper than parameterising.
+  Future renderer variants (DOT? per-arm alternatives?) should
+  evaluate the same trade-off case-by-case.
+
+**What remains:**
+
+- Mermaid's `Outer.Inner` dotted cross-block reference syntax is
+  still unverified for keiki's use case. Not needed for this
+  plan's chosen variant; if a future plan wants to use it, the
+  M1 visual verification will need a human reviewer.
+- Specialised renderers for `alternative` (parallel-arms) and
+  `feedback1` (3-deep cross-product) are tracked by EP-33
+  (`docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md`).
+  EP-32 sets two precedents EP-33 can lean on: the
+  pre-commit-on-syntax pattern for the M1 verification step,
+  and the `ScopedTypeVariables`-with-explicit-annotations idiom
+  for fanning out enumerations across multiple type parameters.
+- Specialised renderers for arbitrary nested `Composite` shapes
+  (deeper than 2 stages of `compose`) remain out of scope per
+  the MasterPlan-level deferral.
 
 
 ## Context and Orientation
