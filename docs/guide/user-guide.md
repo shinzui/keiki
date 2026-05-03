@@ -841,6 +841,13 @@ guide already established.
   function). Consumed from serialisers, UI, or read-side
   projections. Design rationale in
   `docs/research/genview-th-splice-design.md`.
+- **Worked multi-aggregate workflow.** `loan-application-tutorial.md`.
+  Walks an extended loan-underwriting example end-to-end:
+  multi-field threshold guards, ε-edges, per-vertex View
+  variance, `MultiDecider` chains, and a three-aggregate
+  composition mirroring a production Aggregate → Process →
+  Aggregate pattern. Read after the per-feature guides above to
+  see how they fit together in one domain.
 
 When you find a gap in this guide, the right fix is to file an
 issue against this file rather than re-deriving the answer from

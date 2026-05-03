@@ -229,12 +229,19 @@ must always reflect the actual current state of the work.
         `…/loan.mmd`, and `…/core-banking-sync.mmd`. The
         plan's `loan-workflow.mmd` is omitted for the same
         reason.
-- [ ] M7 — Tutorial walkthrough at
-      `docs/guide/loan-application-tutorial.md`.
-  - [ ] Section-by-section incremental narrative covering
-        M2..M6.
-  - [ ] Cross-reference from `docs/guide/user-guide.md` §11
-        ("Where to go from here").
+- [x] M7 — Tutorial walkthrough at
+      `docs/guide/loan-application-tutorial.md`. (2026-05-03)
+  - [x] Eleven-section incremental narrative covering M2..M6:
+        what we are building → modelling the application
+        aggregate → accumulating evidence → ε-edges → multi-
+        field threshold guards → per-vertex View variance →
+        multi-event commands via MultiDecider → the downstream
+        Loan aggregate → the CoreBankingSync Process → wiring
+        with `compose` (including the lockstep variance
+        caveat) → where to go from here.
+  - [x] Cross-reference from `docs/guide/user-guide.md` §11
+        ("Where to go from here") added as a new bullet
+        pointing at the tutorial.
 
 
 ## Surprises & Discoveries
@@ -532,7 +539,109 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Final state vs. Purpose
+
+The Purpose section listed three deliverables. All three exist:
+
+1. **Sibling `jitsurei` package.** `jitsurei/` has its own
+   cabal file, exposes the four migrated examples plus the four
+   new modules (`LoanApplication`, `Loan`, `CoreBankingSync`,
+   `LoanWorkflow`), houses every spec for them, and ships the
+   `tasty-bench` benchmark. `keiki.cabal` is correspondingly
+   slimmer. `cabal build all` and `cabal test all` are green;
+   the test summary prints two suites (`keiki-test` 144
+   examples / 0 failures, `jitsurei-test` 102 examples / 0
+   failures / 1 pending).
+2. **The loan-underwriting trio.** `Jitsurei.LoanApplication`,
+   `Jitsurei.Loan`, `Jitsurei.CoreBankingSync`, and
+   `Jitsurei.LoanWorkflow` exist and exercise every feature the
+   plan called out: multi-field threshold guards via
+   `TApp1` / `TApp2`, ε-edges (`onCmd inCtorContinue` +
+   `noEmit`), per-vertex View variance via `deriveView`,
+   `MultiDecider` chains via `chainTo` and `DriverConfig`, and
+   sequential `compose` of three aggregates.
+3. **Tutorial walkthrough.** `docs/guide/loan-application-tutorial.md`
+   walks the loan-application story end-to-end in eleven
+   sections, introducing each new keiki construct as the
+   domain demands it. `docs/guide/user-guide.md` §11 has a
+   pointer to it.
+
+### What changed during implementation
+
+Three notable design adjustments emerged from running the
+implementation against the formalism:
+
+- **Vertex rename `Drafting → Intake`.** `deriveView`'s
+  per-vertex prefix-uniqueness check rejects two constructors
+  whose `filter isUpper >>> map toLower` share a prefix.
+  `Drafting` and `Declined` collide on `"d"`. Renaming
+  `Drafting → Intake` was the smallest fix; loan-ops
+  terminology supports either name.
+- **ε-edge keyed on `Continue` rather than `onEpsilon`.** A
+  true `onEpsilon` edge in `CollectingDocuments` makes the
+  vertex's outgoing-edge guards non-disjoint (the ε-edge
+  fires on any input when the threshold guard happens to
+  hold), so `delta` returns `Nothing` on every command at the
+  threshold. Keying the silent transition on `Continue` (the
+  internal-advancer command) restores disjointness while
+  preserving the "no public event" pedagogy. The same
+  pattern appears in
+  `Jitsurei.UserRegistration`'s GDPR-from-`RequiresConfirmation`
+  edge.
+- **`compose`'s lockstep semantics vs. async cross-context
+  flows.** `Keiki.Composition.compose t1 t2` produces a
+  transducer whose every non-ε edge fires *both* legs
+  simultaneously, but cross-context creation flows are
+  inherently async (the legacy callback channel arrives on
+  its own timeline). The composite definition in
+  `Jitsurei.LoanWorkflow` is therefore type-correct but
+  largely unfireable as a single-step driver; the M5 spec
+  exercises each cross-context jump separately, mirroring
+  what the runtime adapter does. The variance caveat is
+  documented in the module haddock and in the tutorial.
+
+### One known-pending item
+
+`Jitsurei.LoanApplicationSymbolicSpec` is `pendingWith` a
+documented reason: `TApp1` / `TApp2` over arbitrary Haskell
+functions translate to fresh anonymous SBV variables, so
+identical sub-predicates (`approvalGuard ∧ PNot approvalGuard`)
+look distinct symbolically. Un-pending requires either a
+memoising translator that recognises identical `TApp1`
+sub-terms or extending `HsPred` with a comparison constructor;
+both are out of EP-34's scope. `Jitsurei.UserRegistration`'s
+symbolic spec remains green, so the gate is still meaningful
+where guards do not need `TApp1`.
+
+### Lessons for future plans
+
+1. **Survey the test surface, not just the source surface,
+   when splitting packages.** M1's "keiki-test self-contained"
+   acceptance assumed only the example specs touched the
+   examples. In fact nine more keiki-test specs use
+   `Keiki.Examples.*` as fixtures. The mitigation (inlining
+   `test/Keiki/Fixtures/EmailDelivery.hs` and
+   `test/Keiki/Fixtures/UserRegistration.hs`) duplicates ~800
+   lines but preserves the layering. A future package split
+   should grep for fixture imports across the entire test
+   tree before declaring scope.
+2. **Lockstep `compose` is not the right combinator for
+   async cross-context flows.** The plan envisaged
+   `LoanApplication ⨾ CoreBankingSync ⨾ Loan` as a meaningful
+   single-step composite. In practice, the natural runtime
+   choreography is "observe upstream event, then issue
+   downstream command in a separate transactional step,"
+   which `compose`'s lockstep semantics cannot express. The
+   composite is still useful as a type-level wiring diagram;
+   the spec's responsibility is to drive each stage
+   separately and verify the adapter functions agree at the
+   boundaries.
+3. **`HsPred` lacks comparison constructors.** Multi-field
+   threshold guards (`x >= 650`) compile via `TApp1` lifts,
+   but the SBV backend then loses track of identity across
+   call sites. Adding `PCompare` to `HsPred` would unlock
+   `isSingleValuedSym` for arbitrary numerical guards. A
+   tracked follow-up after EP-34.
 
 
 ## Context and Orientation
