@@ -49,6 +49,8 @@ module Keiki.Composition
 
 import Unsafe.Coerce (unsafeCoerce)
 
+import NoThunks.Class (NoThunks (..), allNoThunks)
+
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
 
@@ -85,6 +87,17 @@ instance ( Bounded s1, Enum s1
         ai = fromEnum a - fromEnum (minBound :: s1)
         bi = fromEnum b - fromEnum (minBound :: s2)
     in ai * n2 + bi
+
+
+-- The 'Composite' constructor is strict in both components by
+-- construction (see the bang patterns above), so leaks can only enter
+-- through the children. The instance recurses into both.
+instance (NoThunks s1, NoThunks s2) => NoThunks (Composite s1 s2) where
+  showTypeOf _ = "Composite"
+  wNoThunks ctx (Composite a b) = allNoThunks
+    [ noThunks ("Composite.left"  : ctx) a
+    , noThunks ("Composite.right" : ctx) b
+    ]
 
 
 -- * WeakenR: lift an Index over rs2 to (Append rs1 rs2) -------------------

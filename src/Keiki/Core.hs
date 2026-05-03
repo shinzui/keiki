@@ -116,6 +116,13 @@ type Slot = (Symbol, Type)
 -- * Register file -----------------------------------------------------------
 
 -- | A typed heterogeneous register tuple indexed by a list of 'Slot's.
+--
+-- The slot-value field is intentionally lazy: 'Keiki.Generics.emptyRegFile'
+-- seeds each slot with a deferred @error "uninit: \<slot\>"@ thunk so
+-- that reading an unwritten slot fails loudly with a targeted message
+-- instead of returning a silent bottom. Strictness for *written*
+-- slots is enforced on the write path ('setSlotN') instead — see
+-- EP-23's Surprises entry for the long-running-service rationale.
 data RegFile (rs :: [Slot]) where
   RNil  :: RegFile '[]
   RCons :: KnownSymbol s
@@ -581,9 +588,22 @@ runUpdate (UCombine a b) regs ci = runUpdate b (runUpdate a regs ci) ci
 
 
 -- | Pure register-file slot update at a slot-name-tagged 'IndexN'.
+--
+-- The bang-pattern on @v@ forces the new slot value to WHNF before
+-- threading it into the rebuilt 'RCons'. Without this, every
+-- 'runUpdate' / 'step' cycle in a long-running embedder accumulates
+-- a tower of thunks at the written slot, which is exactly the failure
+-- mode the @NoThunks (RegFile rs)@ instance ("Keiki.NoThunks") was
+-- introduced to detect (EP-23). Untouched slots retain whatever
+-- WHNF status they already had, which preserves
+-- 'Keiki.Generics.emptyRegFile'\'s targeted @uninit:@ sentinels for
+-- slots that have never been written.
 setSlotN :: IndexN s rs r -> r -> RegFile rs -> RegFile rs
-setSlotN IZ     v regs = case regs of RCons p _ rest -> RCons p v rest
-setSlotN (IS i) v regs = case regs of RCons p x rest -> RCons p x (setSlotN i v rest)
+setSlotN IZ     !v regs = case regs of RCons p _ rest -> RCons p v rest
+setSlotN (IS i) !v regs = case regs of
+  RCons p x rest ->
+    let !rest' = setSlotN i v rest
+    in RCons p x rest'
 
 
 -- | Single-step transition. Returns 'Just (s', regs')' iff exactly one

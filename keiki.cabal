@@ -42,6 +42,7 @@ library
                         Keiki.Generics
                         Keiki.Generics.TH
                         Keiki.Internal.Slots
+                        Keiki.NoThunks
                         Keiki.Symbolic
                         Keiki.Examples.EmailDelivery
                         Keiki.Examples.OrderCart
@@ -49,6 +50,7 @@ library
                         Keiki.Examples.UserRegistrationV0
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
+                        nothunks >= 0.3 && < 0.4,
                         sbv >= 11.7 && < 15,
                         template-haskell ^>= 2.23,
                         text ^>= 2.1,
@@ -68,6 +70,7 @@ test-suite keiki-test
                         Keiki.DeciderMultiSpec
                         Keiki.DeciderSpec
                         Keiki.Generics.THSpec
+                        Keiki.NoThunksSpec
                         Keiki.SymbolicSpec
                         Keiki.Examples.EmailDeliveryBuilderSpec
                         Keiki.Examples.EmailDeliveryViewSpec
@@ -82,7 +85,9 @@ test-suite keiki-test
                         Keiki.Examples.UserRegistrationViewSpec
     build-depends:      base ^>= 4.21,
                         keiki,
+                        deepseq ^>= 1.5,
                         hspec ^>= 2.11,
+                        nothunks >= 0.3 && < 0.4,
                         sbv >= 11.7 && < 15,
                         text ^>= 2.1,
                         time ^>= 1.12
