@@ -829,17 +829,36 @@ fields, and symbolic single-valuedness when both underlying
 transducers are individually single-valued. The substitution
 restricts t1 outputs to `OPack` and t2 mid-side guards to
 structural patterns (`PInCtor` / `PEq` / `TInpCtorField`); v1
-escape hatches (`OFn`, `PMatchC` over `mid`) raise a runtime
-error naming the offending edge. `feedback`, `alternative`,
-`parallel`, `Kleisli`, and the profunctor hierarchy are deferred
-to follow-up EPs as authoring needs surface. The worked example
-at `test/Keiki/CompositionSpec.hs` composes a tiny `AlertSource`
-fixture with `Keiki.Examples.EmailDelivery`; six tests verify
-`step`, `omega`, `reconstitute`, `checkHiddenInputs`, and
-`isSingleValuedSym` on the composite. See
-`docs/plans/11-composition-combinators-on-symtransducer.md`,
+escape hatches (`OFn`, `PMatchC` over `mid`) used to raise a
+runtime error naming the offending edge — moot post-MP-6, since
+EP-16 retired `OFn` and EP-17 retired `PMatchC`. The worked
+example at `test/Keiki/CompositionSpec.hs` composes a tiny
+`AlertSource` fixture with `Keiki.Examples.EmailDelivery`; six
+tests verify `step`, `omega`, `reconstitute`,
+`checkHiddenInputs`, and `isSingleValuedSym` on the composite.
+See `docs/plans/11-composition-combinators-on-symtransducer.md`,
 `docs/research/composition-combinators-design.md`, and
 `src/Keiki/Composition.hs`.
+
+**In progress (see EP-24 / MP-8).** `MasterPlan 8`
+(`docs/masterplans/8-composition-combinators-beyond-sequential-parallel-alternative-feedback-kleisli.md`)
+extends `Keiki.Composition` with two further combinators decided
+by EP-24's design milestone
+(`docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md`):
+`alternative` (sum-input dispatch on `Either ci1 ci2`, with a
+`CompositeSum s1 s2 = InL s1 | InR s2` vertex) and `feedback1`
+(single-step aggregate ↔ stateless-policy round, expressed as
+nested `compose` applications). `parallel` and `Kleisli` are
+re-deferred — the former because keiki's queue-driven runtime
+delivers one command at a time and the strict-tuple shape doesn't
+fit, the latter because the multi-event edge form (Approach 3 in
+`docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`)
+is out of MP-8's scope and MP-7's state refinement covers the
+in-aggregate case. The full per-combinator design records (full
+signatures, semantics, preservation arguments, acceptance
+criteria, and limitations) live in
+`docs/research/composition-combinators-design.md` under the
+"Combinators beyond `compose`" section.
 
 ### G. Compile-time transition safety (singletons-style)
 

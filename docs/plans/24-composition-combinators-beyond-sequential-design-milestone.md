@@ -143,14 +143,22 @@ This section must always reflect the actual current state of the work.
       — Kleisli deferral".
     - [x] Module shape: **extend `Keiki.Composition`**. See
       Decision Log "M2 verdict — module shape".
-- [ ] **M3 — Extend `docs/research/composition-combinators-design.md`.**
-    - [ ] Replace "Future improvements (deferred)" with one full
-      section per in-scope combinator: signature, semantics,
-      preservation arguments for the three keiki guarantees, worked
-      example sketch, and acceptance criteria.
-    - [ ] Cross-reference each new section into MP-8 and into
-      `docs/research/keiki-generics-design.md`'s item F (which
-      currently summarises the same gap).
+- [x] **M3 — Extend `docs/research/composition-combinators-design.md`.** *(2026-05-03)*
+    - [x] Replaced "Future improvements (deferred)" with the
+      "Combinators beyond `compose` — per-combinator design records"
+      section. One full subsection per admitted combinator
+      (`alternative`, `feedback1`) with signature, semantics,
+      single-step example, three preservation arguments,
+      limitations, acceptance criteria for the implementation EP.
+      One "Re-deferred" subsection per re-deferred combinator
+      (`parallel`, `Kleisli`) with deferral conditions and
+      redirects.
+    - [x] Extended the Decision summary table with an "EP-24 / MP-8"
+      block listing all M2 verdicts.
+    - [x] Updated `docs/research/keiki-generics-design.md`'s item F
+      with a new "In progress (see EP-24 / MP-8)" paragraph
+      summarising the fan-out and pointing to the per-combinator
+      design records.
 - [ ] **M4 — Fan out per-combinator EPs and update MP-8.**
     - [ ] For each admitted combinator, create a child ExecPlan via
       `bun agents/skills/exec-plan/init-plan.ts --title "..."
