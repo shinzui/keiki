@@ -171,14 +171,21 @@ must always reflect the actual current state of the work.
         (`isSingleValuedSym`) — currently pending; documented
         SBV limitation around `TApp1` / `TApp2` (see
         Surprises & Discoveries 2026-05-03).
-- [ ] M3 — MultiDecider chain for `Jitsurei.LoanApplication`.
-  - [ ] `loanApplicationDriverConfig` and
-        `loanApplicationChained` with `B.chainTo`.
-  - [ ] `KnownInCtors LoanCmd` instance.
-  - [ ] `Jitsurei.LoanApplicationChainedSpec` (chained-form /
-        letter-form equivalence).
-  - [ ] `Jitsurei.LoanApplicationMultiSpec` (multi-event
-        command produces multiple events).
+- [x] M3 — MultiDecider chain for `Jitsurei.LoanApplication`. (2026-05-03)
+  - [x] `loanApplicationDriverConfig` and
+        `loanApplicationChained` with `B.chainTo` (only the
+        silent advance is chained from `StartApplication`; the
+        Continue-driven approval/decline branches stay in an
+        explicit `from UnderReview` block because chainTo can
+        carry only one branch).
+  - [x] `KnownInCtors LoanCmd` instance (was already added in
+        M2 for the symbolic spec).
+  - [x] `Jitsurei.LoanApplicationChainedSpec` (chained-form /
+        letter-form equivalence on the canonical evidence log).
+  - [x] `Jitsurei.LoanApplicationMultiSpec` (multi-event
+        command produces a 2-event chain
+        `[EmploymentChecked, ApplicationApproved]` from a single
+        `RecordEmploymentCheck` on threshold-poised regs).
 - [ ] M4 — `Jitsurei.Loan` aggregate (target of cross-context
       creation) and `Jitsurei.CoreBankingSync` Process (legacy
       idempotency).

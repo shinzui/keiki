@@ -60,7 +60,10 @@ module Jitsurei.LoanApplication
     -- * The transducer
   , loanApplication
   , loanApplicationAST
+  , loanApplicationChained
   , emptyLoanAppRegs
+    -- * Multi-event driver configuration (EP-34 M3)
+  , loanApplicationDriverConfig
     -- * Wire constructors (exported for testing / composition)
   , wireApplicationStarted
   , wireIncomeDocumentReceived
@@ -102,6 +105,7 @@ import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
 import Keiki.Builder ((.=))
+import Keiki.Decider (DriverConfig (..))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -765,3 +769,175 @@ loanApplicationASTEdges = \case
   Approved  -> []
   Declined  -> []
   Withdrawn -> []
+
+
+-- * Chained-builder form (EP-34 M3) ---------------------------------------
+
+-- | The same transducer authored with 'Keiki.Builder.chainTo'. The
+-- silent @CollectingDocuments -> UnderReview@ advance is moved into
+-- the @inCtorStart@ body via 'chainTo'; the explicit
+-- @from CollectingDocuments do onCmd inCtorContinue@ block is
+-- therefore omitted (the chained edge replaces it). Compiles to the
+-- same letter-FST 'Edge' values as 'loanApplication'; the
+-- 'Jitsurei.LoanApplicationChainedSpec' equivalence test asserts
+-- identical 'reconstitute' behavior on the canonical evidence-
+-- collection log.
+--
+-- NB: only the silent advance is chained. The Continue-driven
+-- approval / decline edges out of 'UnderReview' are still authored
+-- as a separate @from UnderReview@ block — chaining further would
+-- pick a single branch, but both branches must remain available
+-- because the runtime decision depends on dynamic register state.
+loanApplicationChained :: SymTransducer (HsPred LoanAppRegs LoanCmd)
+                                        LoanAppRegs
+                                        LoanAppVertex
+                                        LoanCmd
+                                        LoanEvent
+loanApplicationChained = B.buildTransducer Intake emptyLoanAppRegs
+                           isFinalLoanApp do
+
+  B.from Intake do
+    B.onCmd inCtorStart $ \d -> B.do
+      B.slot @"appApplicantId"        .= d.applicantId
+      B.slot @"appRequestedAmount"    .= d.requestedAmount
+      B.slot @"appPurpose"             .= d.purpose
+      B.slot @"appIncomeDocCount"      .= lit 0
+      B.slot @"appIdDocCount"          .= lit 0
+      B.slot @"appCreditScore"         .= lit 0
+      B.slot @"appEmploymentVerified"  .= lit False
+      B.emit wireApplicationStarted ApplicationStartedTermFields
+        { applicantId     = d.applicantId
+        , requestedAmount = d.requestedAmount
+        , purpose         = d.purpose
+        , at              = d.at
+        }
+      -- Inline the silent advance from CollectingDocuments to
+      -- UnderReview as a chained Continue-keyed edge. The
+      -- readyForReviewGuard determines whether this chain actually
+      -- fires at multi-decider drive time; at StartApplication
+      -- time the guards never hold (counters are zero), so the
+      -- chain is dormant immediately after start.
+      B.chainTo CollectingDocuments inCtorContinue
+      B.requireGuard readyForReviewGuard
+      B.noEmit
+      B.goto UnderReview
+
+    B.onCmd inCtorWithdraw $ \d -> B.do
+      B.slot @"appApplicantId" .= lit ""
+      B.slot @"appWithdrawnAt" .= d.at
+      B.emit wireApplicationWithdrawn ApplicationWithdrawnTermFields
+        { applicantId = #appApplicantId
+        , reason      = d.reason
+        , at          = d.at
+        }
+      B.goto Withdrawn
+
+  -- No explicit @from CollectingDocuments do onCmd inCtorContinue@
+  -- block — the chained edge from 'CollectingDocuments' to
+  -- 'UnderReview' was registered by the @chainTo@ above. The five
+  -- evidence-collection edges + the per-vertex withdraw remain.
+  B.from CollectingDocuments do
+    B.onCmd inCtorSubmitIncome $ \d -> B.do
+      B.slot @"appIncomeDocCount" .= TApp1 (+ 1) #appIncomeDocCount
+      B.emit wireIncomeDocumentReceived IncomeDocumentReceivedTermFields
+        { docRef = d.docRef
+        , at     = d.at
+        }
+      B.goto CollectingDocuments
+
+    B.onCmd inCtorSubmitId $ \d -> B.do
+      B.slot @"appIdDocCount" .= TApp1 (+ 1) #appIdDocCount
+      B.emit wireIdDocumentReceived IdDocumentReceivedTermFields
+        { docRef = d.docRef
+        , at     = d.at
+        }
+      B.goto CollectingDocuments
+
+    B.onCmd inCtorRecordScore $ \d -> B.do
+      B.slot @"appCreditScore" .= d.score
+      B.emit wireCreditScoreRecorded CreditScoreRecordedTermFields
+        { score = d.score
+        , at    = d.at
+        }
+      B.goto CollectingDocuments
+
+    B.onCmd inCtorRecordEmployment $ \d -> B.do
+      B.slot @"appEmploymentVerified" .= d.verified
+      B.emit wireEmploymentChecked EmploymentCheckedTermFields
+        { verified = d.verified
+        , at       = d.at
+        }
+      B.goto CollectingDocuments
+
+    B.onCmd inCtorWithdraw $ \d -> B.do
+      B.slot @"appWithdrawnAt" .= d.at
+      B.emit wireApplicationWithdrawn ApplicationWithdrawnTermFields
+        { applicantId = #appApplicantId
+        , reason      = d.reason
+        , at          = d.at
+        }
+      B.goto Withdrawn
+
+  B.from UnderReview do
+    B.onCmd inCtorContinue $ \_d -> B.do
+      B.requireGuard approvalGuard
+      B.slot @"appDecidedAt" .= continueAtChained
+      B.emit wireApplicationApproved ApplicationApprovedTermFields
+        { applicantId     = #appApplicantId
+        , requestedAmount = #appRequestedAmount
+        , creditScore     = #appCreditScore
+        , at              = continueAtChained
+        }
+      B.goto Approved
+
+    B.onCmd inCtorContinue $ \_d -> B.do
+      B.requireGuard (PNot approvalGuard)
+      B.slot @"appDecidedAt"     .= continueAtChained
+      B.slot @"appDeclineReason" .= lit "Below threshold"
+      B.emit wireApplicationDeclined ApplicationDeclinedTermFields
+        { applicantId = #appApplicantId
+        , reason      = #appDeclineReason
+        , at          = continueAtChained
+        }
+      B.goto Declined
+
+    B.onCmd inCtorWithdraw $ \d -> B.do
+      B.slot @"appWithdrawnAt" .= d.at
+      B.emit wireApplicationWithdrawn ApplicationWithdrawnTermFields
+        { applicantId = #appApplicantId
+        , reason      = d.reason
+        , at          = d.at
+        }
+      B.goto Withdrawn
+
+  where
+    continueAtChained =
+      lit (read "1970-01-01 00:00:00 UTC" :: UTCTime)
+
+
+-- * Multi-event driver configuration (EP-34 M3) ---------------------------
+
+-- | Driver configuration for 'Keiki.Decider.toMultiDecider'. Both
+-- 'CollectingDocuments' and 'UnderReview' are marked internal: at
+-- those vertices the multi-decider issues 'Continue' to attempt the
+-- silent advance / approval-decline transition. The guard on each
+-- chained edge gates whether the advance actually fires; if the
+-- guard fails (e.g. thresholds not yet met), 'step' returns
+-- 'Nothing' and the driver loop terminates at the current vertex.
+--
+-- Pair with 'toMultiDecider' to drive a 'StartApplication' or a
+-- threshold-tipping evidence command end-to-end:
+--
+-- @
+-- let mdec = 'Keiki.Decider.toMultiDecider' 'loanApplication'
+--                                           'loanApplicationDriverConfig'
+-- in 'Keiki.Decider.decide' mdec (RecordEmploymentCheck …) regsAtThreshold
+-- -- ⇒ [EmploymentChecked …, ApplicationApproved …]
+-- @
+loanApplicationDriverConfig :: DriverConfig LoanAppVertex LoanCmd
+loanApplicationDriverConfig = DriverConfig
+  { isInternal = \v -> case v of
+      CollectingDocuments -> Just Continue
+      UnderReview         -> Just Continue
+      _                   -> Nothing
+  }

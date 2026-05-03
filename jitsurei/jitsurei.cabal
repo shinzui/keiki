@@ -47,6 +47,8 @@ test-suite jitsurei-test
     other-modules:      Jitsurei.EmailDeliveryBuilderSpec
                         Jitsurei.EmailDeliveryViewSpec
                         Jitsurei.LoanApplicationBuilderSpec
+                        Jitsurei.LoanApplicationChainedSpec
+                        Jitsurei.LoanApplicationMultiSpec
                         Jitsurei.LoanApplicationSpec
                         Jitsurei.LoanApplicationSymbolicSpec
                         Jitsurei.LoanApplicationViewSpec
