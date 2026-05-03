@@ -89,38 +89,60 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] **M0 — Re-confirm prerequisites.**
-    - [ ] Run `cabal build`; record GHC version and any warnings.
-    - [ ] Run `cabal test`; record pass/fail counts.
-    - [ ] Read `src/Keiki/Composition.hs` end-to-end and capture the
-      current export surface and the substitution machinery's reuse
-      points (`WeakenR`, `weakenL*`, `subst*`).
-    - [ ] Read `src/Keiki/Symbolic.hs`'s `isSingleValuedSym`,
-      `withSymPred`, `symIsBot`, and `symSat` definitions and capture
-      the two-transducer extension surface.
-- [ ] **M1 — Re-evaluate each of the four combinators against the current core.**
-    - [ ] `parallel` — re-confirm or revise: register file shape
-      (`Append rs1 rs2` vs. fresh disjoint), input shape
-      (`Either ci1 ci2` vs. `(ci1, ci2)`), edge cross-product rules,
-      whether the composite ever needs ε-stepping when only one side
-      is ready.
-    - [ ] `alternative` — re-confirm or revise: input shape
-      (`Either ci1 ci2`), vertex shape (`CompositeSum s1 s2 = InL s1 |
-      InR s2`), edge construction rules, and the cross-transducer
-      single-valuedness check.
-    - [ ] `feedback` — re-confirm or revise: aggregate ↔ policy
-      iteration semantics, the three reductions in MP-8's
-      Decomposition Strategy (bounded `feedback n t f`, single-step
-      `feedback1 t f`, decline), and which preserves the keiki
-      guarantees.
-    - [ ] `Kleisli` — re-confirm or revise: whether the multi-event
-      edge form in synthesis §5 ("MultiDecider") is required, and if
-      so, re-confirm the deferral.
-- [ ] **M2 — Settle the three named open questions.**
-    - [ ] Pick `feedback`'s iteration model.
-    - [ ] Pick `alternative`'s mutual-exclusion check API.
-    - [ ] Pick `Kleisli`'s status (defer or admit).
-    - [ ] Pick the module shape per IP-1 in MP-8.
+- [x] **M0 — Re-confirm prerequisites.** *(2026-05-03)*
+    - [x] `cabal build all` — `Up to date`. GHC 9.12.3 (per
+      `ghc --version`) matches `keiki.cabal`'s `tested-with: GHC ==
+      9.12.*`. Zero warnings on the up-to-date rebuild.
+    - [x] `cabal test all` — `169 examples, 0 failures` in 0.3381s.
+      Test suite `keiki-test` passes (1 of 1 test suites, 1 of 1
+      test cases). Test log at
+      `dist-newstyle/build/aarch64-osx/ghc-9.12.3/keiki-0.1.0.0/t/keiki-test/test/keiki-0.1.0.0-keiki-test.log`.
+    - [x] Read `src/Keiki/Composition.hs` (459 lines) end-to-end.
+      Export surface: `Composite (..)`, `compose`, `WeakenR (..)`,
+      `weakenL`, `weakenLTerm`, `weakenLPred`, `weakenLUpdate`,
+      `substTerm`, `substPred`, `substUpdate`, `substOut`,
+      `substOutFields`. Substitution machinery is structural over
+      `HsPred` only; the `subst*` family takes a t1-side
+      `OutTerm rs1 ci1 mid` and rewrites a t2-side AST into the
+      `Append rs1 rs2` register file with `ci1` as the input. The
+      `WeakenR rs1` class converts an `Index rs2 r` into an
+      `Index (Append rs1 rs2) r` by walking rs1 with `SIdx` /
+      `IS` prepends. The `Disjoint (Names rs1) (Names rs2)`
+      constraint is the documented disjoint-slot-names precondition
+      (used by `compose`'s body via raw `UCombine`).
+    - [x] Read `src/Keiki/Symbolic.hs`'s key surface.
+      `isSingleValuedSym` at line 384 is `BoolAlg phi`-polymorphic
+      over a single `SymTransducer phi rs s ci co`; it iterates
+      `[minBound .. maxBound :: s]` and checks pairwise
+      `isBot (g_i `conj` g_j)` for each vertex's outgoing edges.
+      `withSymPred` at line 407 is the `HsPred → SymPred` lift.
+      The single-transducer shape means a cross-transducer check
+      for `alternative` requires either threading both transducers
+      through one analysis (option α in M2) or adding a sibling
+      check (option β in M2).
+- [x] **M1 — Re-evaluate each of the four combinators against the current core.** *(2026-05-03)*
+    - [x] `parallel` — **RE-DEFER.** See Decision Log entry "M1
+      verdict — parallel".
+    - [x] `alternative` — **ADMIT.** See Decision Log entry "M1
+      verdict — alternative".
+    - [x] `feedback` — **ADMIT, single-step `feedback1` reduction
+      (option b).** See Decision Log entry "M1 verdict — feedback".
+    - [x] `Kleisli` — **RE-DEFER.** See Decision Log entry "M1
+      verdict — Kleisli".
+- [x] **M2 — Settle the three named open questions.** *(2026-05-03)*
+    - [x] `feedback`'s iteration model: **single-step `feedback1`**.
+      See Decision Log "M2 verdict — feedback iteration model".
+    - [x] `alternative`'s mutual-exclusion check API: **no new API
+      needed**. The `Either ci1 ci2` input makes the per-vertex
+      single-valuedness check vacuous across the two transducers;
+      the existing `isSingleValuedSym` (lifted via `withSymPred`) on
+      the alternative composite suffices. See Decision Log "M2
+      verdict — alternative mutual-exclusion check".
+    - [x] `Kleisli`'s status: **re-defer** with explicit pointer to
+      MP-7's state-refinement coverage. See Decision Log "M2 verdict
+      — Kleisli deferral".
+    - [x] Module shape: **extend `Keiki.Composition`**. See
+      Decision Log "M2 verdict — module shape".
 - [ ] **M3 — Extend `docs/research/composition-combinators-design.md`.**
     - [ ] Replace "Future improvements (deferred)" with one full
       section per in-scope combinator: signature, semantics,
@@ -180,6 +202,181 @@ Record every decision made while working on the plan.
   intention; children inherit the parent's tracking by default so a
   query against the intention surface returns the whole MP-8 tree.
   Date: 2026-05-02
+
+- Decision: **M1 verdict — `parallel` is re-deferred.**
+  Rationale: Crem's `Parallel :: StateMachineT m a b -> StateMachineT
+  m c d -> StateMachineT m (a, c) (b, d)` runs both sub-machines on
+  a strict tuple input, stepping in lockstep. keiki's runtime model
+  (per `docs/research/effects-boundary.md` §"What the runtime is
+  responsible for", subsection "Queue dequeue") delivers one
+  command at a time from a queue; there is no natural source of
+  paired `(ci1, ci2)` inputs in event sourcing. The use cases MP-8
+  cites in its Vision section ("product aggregates, e.g. distinct
+  bounded contexts within one service") are operationally *sum*
+  inputs (each external command lands in one bounded context per
+  tick), which is the `alternative` shape, not the `parallel`
+  shape. Two independent transducers with no shared input or
+  register file produce nothing the user couldn't get by running
+  them as two separate aggregates with separate queue subscriptions.
+  Re-deferring keeps MP-8 focused on combinators with concrete
+  authoring use cases. The deferral conditions (admit if a future
+  authoring need surfaces a paired-input pattern, e.g. a runtime
+  that genuinely batches commands across bounded contexts per tick)
+  are recorded in the revised
+  `docs/research/composition-combinators-design.md`.
+  Date: 2026-05-03
+
+- Decision: **M1 verdict — `alternative` is admitted.**
+  Rationale: Crem's `Alternative :: StateMachineT m a b ->
+  StateMachineT m c d -> StateMachineT m (Either a c) (Either b d)`
+  is a perfect fit for keiki's event-sourcing model: each external
+  command lands in exactly one of two sibling aggregates via the
+  `Either` arm. The composite vertex is the sum
+  `data CompositeSum s1 s2 = InL s1 | InR s2`. The composite
+  register file is `Append rs1 rs2` (each side reads its own
+  prefix/suffix). Edges from `InL s1` are t1's lifted edges (input
+  alphabet `Either ci1 ci2`, with the input pattern matching
+  `Left ci1`). Edges from `InR s2` are t2's lifted edges
+  symmetrically. The post-MP-6 retirements (no `OFn`, no `PMatchC`)
+  mean every t1 / t2 edge is structural by construction; no
+  substitution caveats. Preservation arguments:
+   * `solveOutput`: each composite output is `OPack` over an
+     `InCtor (Either ci1 ci2) ifs` — built by lifting the underlying
+     `InCtor ci_i ifs` through the `Either` arm. Inversion runs
+     side's `solveOutput` and wraps the result in `Left` / `Right`.
+   * `checkHiddenInputs`: each side's check inherits per-edge; the
+     composite's combined warning list is the union.
+   * `isSingleValuedSym`: at `InL s1`, only t1's edges fire (t2's
+     guards over `ci2` are unsatisfiable when the input is `Left
+     _`); single-valuedness reduces to t1's at s1. Symmetrically
+     at `InR s2`. **No cross-transducer check is needed.**
+  Date: 2026-05-03
+
+- Decision: **M1 verdict — `feedback` is admitted with the
+  single-step `feedback1` reduction (option b from MP-8's
+  Decomposition Strategy).**
+  Rationale: The aggregate ↔ policy loop in
+  `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
+  §5 is operationally "iterate until quiescence", which
+  `docs/research/effects-boundary.md` classifies as an effect (the
+  loop can diverge). The pure-core boundary forbids this, so MP-8
+  required a bounded reduction. Of the two bounded reductions:
+   * Bounded-step `feedback :: Int -> SymTransducer ... a (n b) ->
+     SymTransducer ... b (n a) -> SymTransducer ... a (n b)`
+     unrolls the loop `n` times. Symbolic analysis must enumerate
+     all `n` rounds at every check, multiplying the analysis cost
+     by `n` and forcing the user to pick `n` at the type or value
+     level. The choice of `n` leaks an implementation detail of
+     the runtime (how many policy reactions per external command)
+     into the symbolic surface. Termination is guaranteed by
+     construction but the symbolic edge graph grows linearly with
+     `n`.
+   * Single-step `feedback1 :: SymTransducer ... ci co ->
+     SymTransducer ... co ci -> SymTransducer ... ci co` runs
+     exactly one round: aggregate edge → policy reaction → one
+     more aggregate edge. The composite expands to a single
+     `compose t (compose policy_lifted t)` and the symbolic graph
+     is the natural cross-product. Multi-round patterns are
+     expressible by composing multiple `feedback1`s. Termination
+     is trivial because there is no loop.
+  The single-step reduction is strictly the smaller commitment:
+  it is a re-use of `compose` plus a lift of the policy. Authors
+  who need bounded-N rounds nest `feedback1` n times. If a
+  bounded-step variant proves necessary later, it can be added
+  without disturbing single-step's API.
+  
+  The "stateless policy" requirement in MP-8's Vision means the
+  policy `f` has trivial state (a one-vertex transducer with
+  `rs = '[]`); the lift is mechanical. Preservation arguments for
+  all three keiki guarantees inherit from `compose`'s preservation
+  arguments (the composite is two `compose` applications stacked).
+  Date: 2026-05-03
+
+- Decision: **M1 verdict — `Kleisli` is re-deferred with explicit
+  pointer to MP-7's state-refinement coverage.**
+  Rationale: Crem's `Kleisli :: StateMachineT m a (n b) ->
+  StateMachineT m b (n c) -> StateMachineT m a (n c)` lifts
+  sequential composition over a `Foldable` of inner events. keiki's
+  edge form (`Edge.output :: Maybe (OutTerm rs ci co)`, defined at
+  `src/Keiki/Core.hs:458`) emits at most one event per step. The
+  three approaches to multi-event commands documented in
+  `docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`
+  resolve to:
+   * Approach 1 (state refinement) — what MP-7 / EP-20 shipped.
+     Multi-event commands stay inside one transducer via
+     intermediate vertices; the edge form is unchanged.
+   * Approach 2 (GSM expansion) — rejected by MP-7 (the
+     synthesis chose Approach 1).
+   * Approach 3 (`MultiDecider`) — would widen `Edge.output` to
+     `[OutTerm rs ci co]` and is explicitly out of MP-8's scope
+     per Out-of-Scope item 4.
+  Cross-transducer `Kleisli` requires Approach 3's edge widening,
+  which is a separate (v3-class) initiative. **Within MP-8's
+  scope, `Kleisli` collapses to `compose` for the single-event
+  case keiki actually supports**; admitting `Kleisli` would
+  duplicate `compose` without adding capability.
+  
+  The deferral conditions: re-evaluate `Kleisli` if and only if a
+  future MasterPlan promotes Approach 3 to ship status. Until
+  then, multi-event commands are written via state refinement
+  (per `Keiki.Builder.chainTo` and `Keiki.Decider.toMultiDecider`
+  with `DriverConfig`).
+  Date: 2026-05-03
+
+- Decision: **M2 verdict — `feedback`'s iteration model is
+  single-step (`feedback1`).** See "M1 verdict — feedback" above.
+  No additional rationale needed.
+  Date: 2026-05-03
+
+- Decision: **M2 verdict — `alternative`'s mutual-exclusion check
+  needs no new API.** The `Either ci1 ci2` input makes the
+  cross-transducer guard intersection vacuous: at composite vertex
+  `InL s1`, t2's guards (over `ci2`) are unsatisfiable when the
+  input is `Left _`; symmetrically at `InR s2`. The existing
+  `isSingleValuedSym` (`src/Keiki/Symbolic.hs:384`), invoked on the
+  alternative composite via `withSymPred`, decides single-valuedness
+  per-vertex without seeing both transducers at once. The composite
+  is single-valued whenever t1 and t2 are individually
+  single-valued, exactly as for `compose`. The implementation EP
+  records this fact and wires the check; no API change to
+  `Keiki.Symbolic`.
+  Rationale: This contradicts the existing
+  `docs/research/composition-combinators-design.md`'s "Future
+  improvements" wording, which speculated a "global mutual-exclusion
+  check" was needed. The speculation arose from a misreading: in
+  the `Either`-wrapped form (which MP-8 confirms is the right
+  shape), the disjointness of `Left` vs `Right` already separates
+  the two transducers' guard domains. The revised design note
+  records the corrected analysis.
+  Date: 2026-05-03
+
+- Decision: **M2 verdict — `Kleisli`'s deferral is confirmed.** See
+  "M1 verdict — Kleisli" above.
+  Date: 2026-05-03
+
+- Decision: **M2 verdict — module shape is "extend
+  `Keiki.Composition`".** Both new combinators (`alternative`,
+  `feedback1`) reuse `Keiki.Composition`'s `WeakenR` class, the
+  `weakenL*` family of lifters, and the `subst*` family of
+  substitution helpers. Splitting into siblings
+  (`Keiki.Composition.Alternative`, `Keiki.Composition.Feedback`)
+  would force every sibling to import the parent for these
+  shared helpers, with no offsetting clarity gain — the parent's
+  current 459-line size easily absorbs ~150 additional lines per
+  combinator. The parent's haddock organizes by "* Foo" sections;
+  the new combinators get their own sections within the same
+  module. If a future combinator (e.g. an admitted `parallel` or
+  `Kleisli`) brings substantially different machinery, splitting
+  can happen at that point.
+  Rationale: IP-1 in MP-8 names "extend `Keiki.Composition`" as
+  the default. The default holds because the new combinators'
+  substitution analyses are isomorphic to `compose`'s
+  (`alternative`'s `Left`/`Right` lifting is even simpler, and
+  `feedback1` is a literal re-use of `compose` twice). The
+  per-combinator EPs may add Composite-vertex newtypes
+  (`CompositeSum` for `alternative`) within `Keiki.Composition`
+  alongside `Composite`.
+  Date: 2026-05-03
 
 
 ## Outcomes & Retrospective
