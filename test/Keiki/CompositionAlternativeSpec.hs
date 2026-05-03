@@ -20,7 +20,16 @@
 -- and leaves the other's state unchanged. See EP-25's Surprises &
 -- Discoveries entry dated 2026-05-03 for the design discovery that
 -- led to this shape.
-module Keiki.CompositionAlternativeSpec (spec) where
+module Keiki.CompositionAlternativeSpec
+  ( spec
+    -- Re-exported for "Keiki.Render.MermaidSpec" (EP-33 M6). Following
+    -- the test-fixture-re-export pattern EP-31's M4 established (see
+    -- @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@'s
+    -- IP-5 reference).
+  , pinger
+  , PingVertex (..)
+  , siblings
+  ) where
 
 import Data.Text (Text)
 import Data.Time (UTCTime)

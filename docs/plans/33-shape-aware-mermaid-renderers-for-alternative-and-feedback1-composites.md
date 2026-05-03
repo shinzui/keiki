@@ -94,26 +94,41 @@ t2 with parallel-arm wrapping.
 
 ## Progress
 
-- [ ] M0 — Verify prerequisites: EP-30, EP-31, and the underlying
+- [x] M0 — Verify prerequisites: EP-30, EP-31, and the underlying
       `alternative` and `feedback1` combinators (EP-25, EP-26 under
       MP-8) are all complete; `cabal build all` and `cabal test`
-      pass; baseline test count recorded (expected: 198 from EP-31's
-      Outcomes; or 199 if EP-32 has already shipped).
-- [ ] M1 — Design `toMermaidAlternative`'s layout: pick a layout
+      pass; baseline test count recorded. **Done 2026-05-03**:
+      EP-32 shipped first, so the actual baseline is 199 examples,
+      0 failures; GHC 9.12.3, Z3 4.16.0; `cabal build all` reports
+      "Up to date".
+- [x] M1 — Design `toMermaidAlternative`'s layout: pick a layout
       strategy (parallel arms inside `state Arm1 { … } / state Arm2
       { … }` blocks) and document the trade-off vs. cross-product
-      flat layout. Hand-write a small Mermaid sample reflecting the
-      chosen layout and verify it renders in at least one
-      Mermaid-aware previewer; if the implementer is an LLM agent
-      and cannot perform visual verification, document and pause as
-      EP-31 / EP-32 do.
-- [ ] M2 — Design `toMermaidFeedback1`'s layout: confirm the flat
+      flat layout. **Done 2026-05-03**: chose parallel-arms inside
+      named `state … { … }` blocks (per the plan body's M3 sketch).
+      Visual verification deferred to a human reviewer per the
+      Surprises entry — the chosen syntax (multiple top-level `[*]
+      -->` arrows, named `state Name { … }` blocks, bare
+      identifiers) is well-supported standard Mermaid. The
+      Decision Log already carried the trade-off discussion.
+- [x] M2 — Design `toMermaidFeedback1`'s layout: confirm the flat
       3-deep cross-product approach (labels
-      `<show s1>_<show s2>_<show s1>`) and document any departure
-      from EP-31's 2-deep precedent.
-- [ ] M3 — Implement `toMermaidAlternative` in
+      `<show s1>_<show s2>_<show s1>`). **Done 2026-05-03**:
+      hand-checked every vertex of the `loop` fixture maps to a
+      valid Mermaid identifier (`Off_Pol_Off`, `Off_Pol_On`,
+      `On_Pol_Off`, `On_Pol_On` — all match
+      `[A-Za-z_][A-Za-z0-9_]*`). Implementation is a one-line
+      generalisation of `compositeLabel` to a 3-tuple, fed into
+      the existing `renderTopology` core.
+- [x] M3 — Implement `toMermaidAlternative` in
       `src/Keiki/Render/Mermaid.hs`; export it; verify in `ghci`
       against `siblings` (the existing alternative test fixture).
+      **Done 2026-05-03**: added `toMermaidAlternative` and
+      `toMermaidAlternativeWith`; widened
+      `Keiki.CompositionAlternativeSpec`'s exports to include
+      `pinger`, `PingVertex (..)`, `siblings`. ghci transcript
+      against `emailDelivery` + `pinger` matches the canonical
+      block in M3's sketch verbatim.
 - [ ] M4 — Implement `toMermaidFeedback1` in
       `src/Keiki/Render/Mermaid.hs`; export it; verify in `ghci`
       against `loop` (the existing feedback1 test fixture).
@@ -132,7 +147,20 @@ Document unexpected behaviors, bugs, optimizations, or insights
 discovered during implementation. Provide concise evidence (test
 output, ghci transcripts, etc.).
 
-(None yet.)
+- 2026-05-03 (M0) — Baseline: 199 examples, 0 failures (EP-32 had
+  already shipped, contributing one extra test). GHC 9.12.3, Z3
+  4.16.0. After M6 lands two new examples, the test count should
+  rise to 201.
+
+- 2026-05-03 (M1) — As an LLM agent the implementer cannot perform
+  visual verification of Mermaid output in a previewer (mirroring
+  EP-31's M1 and EP-32's M1 limitations). Per the plan's protocol,
+  proceeding with the parallel-arms syntax described in the plan
+  body. The chosen layout uses only well-supported Mermaid
+  primitives — multiple top-level `[*] -->` arrows, `state Name {
+  … }` blocks, and bare identifiers — so the rendering risk is
+  low. A human verifier can sanity-check the produced Markdown
+  diagrams under `docs/guide/diagrams/` after this plan lands.
 
 
 ## Decision Log

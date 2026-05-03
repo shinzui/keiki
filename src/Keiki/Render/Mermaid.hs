@@ -27,8 +27,11 @@
 --     for the initiative motivation.
 module Keiki.Render.Mermaid
   ( toMermaid
+  , toMermaidAlternative
+  , toMermaidAlternativeWith
   , toMermaidComposite
   , toMermaidCompositeNested
+  , toMermaidFeedback1
   , vertexLabel
   , compositeLabel
   , edgeInputName
@@ -40,15 +43,18 @@ import Control.Applicative ((<|>))
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Keiki.Composition (Composite (..))
+import Keiki.Composition (Composite (..), WeakenR, feedback1)
 import Keiki.Core
-  ( Edge (..)
+  ( Disjoint
+  , Edge (..)
   , HsPred (..)
   , InCtor (..)
+  , Names
   , OutTerm (..)
   , SymTransducer (..)
   , WireCtor (..)
   )
+import Keiki.Generics (Append)
 
 
 -- | Render a 'SymTransducer' to a Mermaid @stateDiagram-v2@ block.
@@ -163,6 +169,161 @@ toMermaidCompositeNested t =
         ]
   in T.intercalate (T.pack "\n")
        (header : initLine : outerBlocks ++ edgeLines ++ finalLines)
+
+
+-- | Render an 'Keiki.Composition.alternative'-shaped composite as
+-- two parallel side-by-side state machines.
+--
+-- Each component transducer becomes its own
+-- @state \<arm-name\> { \<topology\> }@ block listing that arm's edges;
+-- both arms share top-level @[*] --> \<initial\>@ initial-state
+-- markers and top-level @\<final\> --> [*]@ final-state markers, so
+-- the parallel-start / parallel-finish semantics is visible at a
+-- glance.
+--
+-- The runtime composite's vertex space is the cross-product
+-- @'Composite' s1 s2@ — but the diagram presents the two arms as
+-- independent machines because that mirrors the
+-- 'Keiki.Composition.alternative' combinator's actual behaviour:
+-- each Either-tagged input advances exactly one arm and leaves the
+-- other untouched. The cross-product is implicit; the reader infers
+-- "the system's actual state is the combination of both arms'
+-- current states."
+--
+-- Default arm names are @LeftArm@ and @RightArm@. Use
+-- 'toMermaidAlternativeWith' to override (e.g. for domain-specific
+-- naming such as @EmailArm@ / @PingerArm@).
+--
+-- Edge labels are the standard @\<input ctor\> / \<output ctor\>@ format
+-- ('edgeLabel'). Because 'Keiki.Composition' lifters preserve
+-- @icName@ and @wcName@ verbatim, the label reads naturally even
+-- though the runtime input is @'Left' …@ / @'Right' …@.
+--
+-- See @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@
+-- for the full design record.
+toMermaidAlternative
+  :: ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     )
+  => SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 co1
+  -> SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2
+  -> Text
+toMermaidAlternative =
+  toMermaidAlternativeWith (T.pack "LeftArm") (T.pack "RightArm")
+
+
+-- | The arm-name-overridable variant of 'toMermaidAlternative'. The
+-- two 'Text' arguments name the left and right @state … { … }@
+-- blocks; pick names that match the user's domain vocabulary.
+--
+-- The names must be valid Mermaid identifiers
+-- (regex @[A-Za-z_][A-Za-z0-9_]*@); the renderer does not validate
+-- them.
+toMermaidAlternativeWith
+  :: forall rs1 rs2 s1 s2 ci1 ci2 co1 co2.
+     ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     )
+  => Text
+  -- ^ Left arm's state-block name.
+  -> Text
+  -- ^ Right arm's state-block name.
+  -> SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 co1
+  -> SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2
+  -> Text
+toMermaidAlternativeWith leftName rightName t1 t2 =
+  let ind   = T.pack "    "
+      ind2  = T.pack "        "
+      arrow = T.pack " --> "
+      colon = T.pack " : "
+
+      header = T.pack "stateDiagram-v2"
+
+      initLines =
+        [ ind <> T.pack "[*]" <> arrow <> vertexLabel (initial t1)
+        , ind <> T.pack "[*]" <> arrow <> vertexLabel (initial t2)
+        ]
+
+      armBlock
+        :: forall rs s ci co.
+           (Enum s, Bounded s, Show s)
+        => Text
+        -> SymTransducer (HsPred rs ci) rs s ci co
+        -> Text
+      armBlock name t = T.intercalate (T.pack "\n") $
+        [ ind <> T.pack "state " <> name <> T.pack " {" ]
+        ++
+        [ ind2 <> vertexLabel s <> arrow
+               <> vertexLabel (target e) <> colon <> edgeLabel e
+        | s <- [minBound .. maxBound]
+        , e <- edgesOut t s
+        ]
+        ++
+        [ ind <> T.pack "}" ]
+
+      finalLines
+        :: forall rs s ci co.
+           (Enum s, Bounded s, Show s)
+        => SymTransducer (HsPred rs ci) rs s ci co
+        -> [Text]
+      finalLines t =
+        [ ind <> vertexLabel s <> arrow <> T.pack "[*]"
+        | s <- [minBound .. maxBound]
+        , isFinal t s
+        ]
+
+  in T.intercalate (T.pack "\n") $
+       [ header ]
+       ++ initLines
+       ++ [ armBlock leftName t1
+          , armBlock rightName t2
+          ]
+       ++ finalLines t1
+       ++ finalLines t2
+
+
+-- | Render a 'Keiki.Composition.feedback1'-shaped composite as a
+-- flat 3-deep cross-product diagram.
+--
+-- The composite's vertex type is
+-- @'Composite' s1 ('Composite' s2 s1)@ — outer-t state, then policy
+-- state, then inner-t state. Each composite vertex becomes a single
+-- Mermaid identifier @\<show s1\>_\<show s2\>_\<show s1\>@. The two
+-- copies of @t@ (outer and inner) share the same Haskell vertex
+-- type but occupy distinct dimensions of the composite tuple, so
+-- they are labelled independently.
+--
+-- For the cascade structure (@'feedback1' t f =
+-- 'compose' t ('compose' f t)@), see @feedback1@'s haddock and the
+-- design note at
+-- @docs/research/composition-combinators-design.md@. The renderer
+-- treats the resulting transducer as a flat enumerable cross-product;
+-- it does not inspect the cascade structure beyond decomposing the
+-- composite tuple for labelling.
+toMermaidFeedback1
+  :: ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     , WeakenR rs1, WeakenR rs2
+     , Disjoint (Names rs2) (Names rs1)
+     , Disjoint (Names rs1) (Names (Append rs2 rs1))
+     )
+  => SymTransducer (HsPred rs1 ci) rs1 s1 ci co
+  -> SymTransducer (HsPred rs2 co) rs2 s2 co ci
+  -> Text
+toMermaidFeedback1 t f = renderTopology feedback1Label (feedback1 t f)
+
+
+-- | The Mermaid identifier for a 'feedback1' composite vertex.
+-- @\<show outer\>_\<show policy\>_\<show inner\>@. Like
+-- 'compositeLabel', joined with underscores so the result still
+-- matches Mermaid's identifier regex @[A-Za-z_][A-Za-z0-9_]*@.
+feedback1Label
+  :: (Show s1, Show s2)
+  => Composite s1 (Composite s2 s1) -> Text
+feedback1Label (Composite a (Composite b c)) =
+  T.pack (show a) <> T.pack "_"
+    <> T.pack (show b) <> T.pack "_"
+    <> T.pack (show c)
 
 
 -- | The shared rendering core: walk @[minBound .. maxBound]@, emit

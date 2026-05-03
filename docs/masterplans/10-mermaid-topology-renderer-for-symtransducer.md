@@ -222,7 +222,7 @@ visible across phases.
 | 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | Complete |
 | 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Complete |
 | 3 | Shape B nested-subgraph Mermaid rendering for larger composites | docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md | EP-30, EP-31 | None | Complete |
-| 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | Not Started |
+| 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
