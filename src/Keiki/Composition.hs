@@ -31,8 +31,6 @@
 module Keiki.Composition
   ( -- * The composite vertex
     Composite (..)
-    -- * The alternative composite vertex
-  , CompositeSum (..)
     -- * Sequential composition
   , compose
     -- * Disjoint-input dispatch
@@ -121,52 +119,6 @@ instance (NoThunks s1, NoThunks s2) => NoThunks (Composite s1 s2) where
     [ noThunks ("Composite.left"  : ctx) a
     , noThunks ("Composite.right" : ctx) b
     ]
-
-
--- * The alternative composite vertex --------------------------------------
-
--- | The disjoint-union composite of two vertex types. Used by
--- 'alternative': at any moment the composite is in exactly one of
--- the two arms. Strict bangs on each constructor mirror 'Composite'\'s
--- strictness profile.
-data CompositeSum s1 s2 = InL !s1 | InR !s2
-  deriving (Eq, Show)
-
-
-instance (Bounded s1, Bounded s2) => Bounded (CompositeSum s1 s2) where
-  minBound = InL minBound
-  maxBound = InR maxBound
-
-
--- | Range-style enumeration: @InL minBound .. InL maxBound@ first,
--- then @InR minBound .. InR maxBound@. Mirrors the assumption made
--- by 'Composite'\'s 'Enum' instance that both component @Enum@s have
--- contiguous @[minBound .. maxBound]@ ranges (the common case for a
--- derived 'Enum' on an enum-like data type). This shape is what
--- 'isSingleValuedSym' iterates when running on an alternative
--- composite.
-instance ( Bounded s1, Enum s1
-         , Bounded s2, Enum s2
-         ) => Enum (CompositeSum s1 s2) where
-  toEnum n =
-    let n1 = fromEnum (maxBound :: s1) - fromEnum (minBound :: s1) + 1
-    in if n < n1
-       then InL (toEnum (n + fromEnum (minBound :: s1)))
-       else InR (toEnum (n - n1 + fromEnum (minBound :: s2)))
-  fromEnum (InL a) = fromEnum a - fromEnum (minBound :: s1)
-  fromEnum (InR b) =
-    let n1 = fromEnum (maxBound :: s1) - fromEnum (minBound :: s1) + 1
-    in n1 + (fromEnum b - fromEnum (minBound :: s2))
-
-
--- The constructors are strict by construction (see the bang patterns
--- above), so leaks can only enter through the children. The instance
--- recurses into whichever arm is present.
-instance (NoThunks s1, NoThunks s2) => NoThunks (CompositeSum s1 s2) where
-  showTypeOf _ = "CompositeSum"
-  wNoThunks ctx = \case
-    InL a -> noThunks ("CompositeSum.InL" : ctx) a
-    InR b -> noThunks ("CompositeSum.InR" : ctx) b
 
 
 -- * WeakenR: lift an Index over rs2 to (Append rs1 rs2) -------------------
@@ -812,33 +764,40 @@ compose t1 t2 = SymTransducer
 
 -- | Disjoint-input dispatch of two 'SymTransducer's. The composite
 -- consumes @Either ci1 ci2@ and emits @Either co1 co2@: a @Left ci1@
--- advances @t1@ and emits @Left co1@; a @Right ci2@ advances @t2@
--- and emits @Right co2@.
+-- advances @t1@ from its current sub-vertex (leaving t2's
+-- sub-vertex unchanged) and emits @Left co1@; a @Right ci2@
+-- advances @t2@ from its current sub-vertex (leaving t1's
+-- sub-vertex unchanged) and emits @Right co2@. The two
+-- sub-aggregates have **independent state** that evolves in
+-- parallel as commands arrive for the appropriate arm.
 --
 -- Semantics:
 --
---   * The composite vertex is 'CompositeSum' s1 s2 = InL s1 | InR s2.
---   * From @InL s1@: the outgoing edges are exactly t1's edges from
---     @s1@ with input alphabet lifted to @Either ci1 ci2@ via
---     'liftLPredAlt' / 'liftLUpdateAlt' / 'liftLOutAlt' and register
---     references lifted across the rs2 suffix via 'weakenLPred' /
---     'weakenLUpdate' / 'weakenLOut'.
---   * From @InR s2@: symmetric — t2's edges with @weakenR* + liftR*Alt@.
---   * Initial state is @InL (initial t1)@ by convention.
---   * @isFinal@ dispatches on the arm.
+--   * The composite vertex is 'Composite' s1 s2 (the same product
+--     vertex 'compose' uses). At each composite vertex
+--     @Composite s1 s2@, the outgoing edges are the union of:
+--       - t1's edges from @s1@, lifted into the @Either ci1 ci2@
+--         input alphabet (gated to fire only on @Left _@) with
+--         target @Composite (target e1) s2@;
+--       - t2's edges from @s2@, lifted symmetrically with target
+--         @Composite s1 (target e2)@.
+--   * Initial state is @Composite (initial t1) (initial t2)@.
+--   * @isFinal@ requires both sub-aggregates to be final.
 --
 -- The composite preserves the keiki guarantees:
 --
---   * Mechanical inversion: the @InL@-side @OPack (leftInCtor ic1)
---     (leftWireCtor wc1) of_lifted@ runs t1's @icMatch@ / @icBuild@
---     unchanged after stripping the @Left@ wrapping; symmetric for
---     @InR@.
+--   * Mechanical inversion: each composite output @OPack (leftInCtor
+--     ic) (leftWireCtor wc) of_lifted@ runs the underlying
+--     @icMatch@ / @icBuild@ unchanged after stripping the @Left@
+--     wrapping; symmetric for @Right@.
 --   * Hidden-input check: each side's per-edge check inherits via
 --     the lifters (which preserve 'TInpCtorField' slot reads).
---   * Symbolic single-valuedness: at @InL s1@, only t1's edges fire
---     (t2's guards over @ci2@ are unsatisfiable when the input is
---     @Left _@), so per-vertex single-valuedness reduces to t1's at
---     @s1@; symmetric at @InR s2@. **No cross-transducer
+--   * Symbolic single-valuedness: at any @Composite s1 s2@, the t1
+--     edges' guards (which require @Left _@ via 'leftInCtor') and
+--     t2 edges' guards (which require @Right _@ via 'rightInCtor')
+--     are pairwise mutually exclusive. Within each arm,
+--     single-valuedness reduces to the underlying sub-aggregate's
+--     check at the relevant sub-vertex. **No cross-transducer
 --     mutual-exclusion check is needed** — the @Either@ arms make
 --     it vacuous.
 --
@@ -855,32 +814,32 @@ alternative
   -> SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2
   -> SymTransducer (HsPred (Append rs1 rs2) (Either ci1 ci2))
                    (Append rs1 rs2)
-                   (CompositeSum s1 s2)
+                   (Composite s1 s2)
                    (Either ci1 ci2)
                    (Either co1 co2)
 alternative t1 t2 = SymTransducer
   { edgesOut    = altEdges
-  , initial     = InL (initial t1)
+  , initial     = Composite (initial t1) (initial t2)
   , initialRegs = appendRegFile (initialRegs t1) (initialRegs t2)
-  , isFinal     = \case
-      InL s1 -> isFinal t1 s1
-      InR s2 -> isFinal t2 s2
+  , isFinal     = \(Composite s1 s2) -> isFinal t1 s1 && isFinal t2 s2
   }
   where
     altEdges
-      :: CompositeSum s1 s2
+      :: Composite s1 s2
       -> [Edge (HsPred (Append rs1 rs2) (Either ci1 ci2))
                (Append rs1 rs2) (Either ci1 ci2) (Either co1 co2)
-               (CompositeSum s1 s2)]
-    altEdges (InL s1) = map liftEdgeL (edgesOut t1 s1)
-    altEdges (InR s2) = map liftEdgeR (edgesOut t2 s2)
+               (Composite s1 s2)]
+    altEdges (Composite s1 s2) =
+      map (liftEdgeL s2) (edgesOut t1 s1)
+        ++ map (liftEdgeR s1) (edgesOut t2 s2)
 
     liftEdgeL
-      :: Edge (HsPred rs1 ci1) rs1 ci1 co1 s1
+      :: s2
+      -> Edge (HsPred rs1 ci1) rs1 ci1 co1 s1
       -> Edge (HsPred (Append rs1 rs2) (Either ci1 ci2))
               (Append rs1 rs2) (Either ci1 ci2) (Either co1 co2)
-              (CompositeSum s1 s2)
-    liftEdgeL e1 = case e1 of
+              (Composite s1 s2)
+    liftEdgeL s2 e1 = case e1 of
       Edge { update = u1 } -> Edge
         { guard  = liftLPredAlt @(Append rs1 rs2) @ci1 @ci2
                                  (weakenLPred @rs1 @rs2 (guard e1))
@@ -889,15 +848,16 @@ alternative t1 t2 = SymTransducer
         , output = fmap (liftLOutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
                           . weakenLOut @rs1 @rs2)
                         (output e1)
-        , target = InL (target e1)
+        , target = Composite (target e1) s2
         }
 
     liftEdgeR
-      :: Edge (HsPred rs2 ci2) rs2 ci2 co2 s2
+      :: s1
+      -> Edge (HsPred rs2 ci2) rs2 ci2 co2 s2
       -> Edge (HsPred (Append rs1 rs2) (Either ci1 ci2))
               (Append rs1 rs2) (Either ci1 ci2) (Either co1 co2)
-              (CompositeSum s1 s2)
-    liftEdgeR e2 = case e2 of
+              (Composite s1 s2)
+    liftEdgeR s1 e2 = case e2 of
       Edge { update = u2 } -> Edge
         { guard  = liftRPredAlt @(Append rs1 rs2) @ci1 @ci2
                                  (weakenRPred @rs1 @rs2 (guard e2))
@@ -906,5 +866,5 @@ alternative t1 t2 = SymTransducer
         , output = fmap (liftROutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
                           . weakenROut @rs1 @rs2)
                         (output e2)
-        , target = InR (target e2)
+        , target = Composite s1 (target e2)
         }

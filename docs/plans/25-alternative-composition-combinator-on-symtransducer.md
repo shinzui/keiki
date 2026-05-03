@@ -70,13 +70,15 @@ This section must always reflect the actual current state of the work.
   failures. GHC 9.12.3 (matches `keiki.cabal`'s `tested-with: GHC
   == 9.12.*`). Green baseline established.
 - [x] **M1 — Add `CompositeSum` data type and instances.** *(2026-05-03)*
-  Added `data CompositeSum s1 s2 = InL !s1 | InR !s2` to
-  `src/Keiki/Composition.hs` with `Eq`, `Show`, `Bounded`, `Enum`,
-  `NoThunks` instances mirroring `Composite`'s style. Sum-shaped
-  enumeration: `[InL minBound .. InL maxBound] ++ [InR minBound ..
-  InR maxBound]`. Exported from the module's "* The alternative
-  composite vertex" section. `cabal build` clean; `cabal test`
-  still 169/0.
+  *Added then removed (see Surprises & Discoveries entry dated
+  2026-05-03).* Initially added `data CompositeSum s1 s2 = InL
+  !s1 | InR !s2` to `src/Keiki/Composition.hs` with the full
+  instance set. M4's acceptance tests revealed the sum-vertex
+  shape was degenerate for `alternative`'s intended semantics
+  (sibling aggregates with independent state); the type was
+  removed in the same M4 commit and `alternative` was re-targeted
+  to the existing product `Composite s1 s2`. The Either lifters
+  introduced in M2 remain useful and stay exported.
 - [x] **M2 — Add the input-side and output-side Either lifters.** *(2026-05-03)*
   Added `leftInCtor` / `rightInCtor`, `leftWireCtor` / `rightWireCtor`,
   `liftLTermAlt` / `liftRTermAlt`, `liftLPredAlt` / `liftRPredAlt`,
@@ -90,21 +92,31 @@ This section must always reflect the actual current state of the work.
   `weakenLOutFields`) added for symmetry. `cabal build` clean.
 - [x] **M3 — Add the `alternative` combinator.** *(2026-05-03)* Added
   `alternative` at the end of `src/Keiki/Composition.hs` with the
-  full design-record signature
+  signature
   (`SymTransducer (HsPred rs1 ci1) ... -> SymTransducer (HsPred rs2 ci2) ... -> SymTransducer (HsPred (Append rs1 rs2) (Either ci1 ci2)) ...`).
-  The body composes `weakenL*` / `liftL*Alt` for the `InL` arm and
-  `weakenR*` / `liftR*Alt` for the `InR` arm. Initial state
-  `InL (initial t1)`; `isFinal` dispatches on the arm; register
-  file is `appendRegFile (initialRegs t1) (initialRegs t2)`. `cabal
-  build all` clean; `cabal test all` still 169/0.
-- [ ] **M4 — Acceptance test.** Add
-  `test/Keiki/CompositionAlternativeSpec.hs` composing two fixture
-  aggregates and verifying step / omega / reconstitute /
-  checkHiddenInputs / isSingleValuedSym.
-- [ ] **M5 — Wire spec into test suite.** Add the new module to
-  `keiki.cabal`'s `keiki-test` `other-modules` and to
-  `test/Spec.hs`. Run `cabal test all` and confirm the new cases
-  pass.
+  Composite vertex is the product `Composite s1 s2` (revised from
+  the original sum-vertex per M4's discovery): each composite
+  vertex emits both t1's edges (lifted via `weakenL*` /
+  `liftL*Alt`) targeting `Composite (target e1) s2` and t2's edges
+  (lifted via `weakenR*` / `liftR*Alt`) targeting `Composite s1
+  (target e2)`. Initial state `Composite (initial t1) (initial
+  t2)`; `isFinal` requires both sub-aggregates final; register
+  file `appendRegFile (initialRegs t1) (initialRegs t2)`.
+- [x] **M4 — Acceptance test.** *(2026-05-03)* Added
+  `test/Keiki/CompositionAlternativeSpec.hs` with nine test cases:
+  Left/Right/interleaved step routing, mixed-arm reconstitute
+  (both orderings — Left+Right and Right+Left), omega for both
+  arms, `checkHiddenInputs` returning `[]`, and
+  `isSingleValuedSym (withSymPred siblings)` returning `True`. The
+  fixture composes `Keiki.Examples.EmailDelivery` with an inline
+  `Pinger` aggregate (single command `Ping`, single event `Pong`,
+  one slot `pingNonce` disjoint from EmailDelivery's slot names).
+- [x] **M5 — Wire spec into test suite.** *(2026-05-03)* Added
+  `Keiki.CompositionAlternativeSpec` to `keiki.cabal`'s
+  `keiki-test` `other-modules` and to `test/Spec.hs` with
+  describe label `"Keiki.Composition (alternative, EP-25)"`. Full
+  suite now 178 examples, 0 failures (was 169/0; +9 alternative
+  cases).
 - [ ] **M6 — Update design note and MP-8.** Append a "What we
   shipped" subsection under
   `docs/research/composition-combinators-design.md`'s `alternative`
@@ -117,7 +129,38 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **2026-05-03 — `alternative`'s vertex shape is product, not sum.**
+  EP-24's design record specified `CompositeSum s1 s2 = InL s1 | InR s2`
+  for `alternative`'s composite vertex. The M4 acceptance tests
+  surfaced that this is degenerate: with `initial = InL (initial
+  t1)` there is no edge from any `InL s1` to any `InR s2`, so the
+  composite can never reach the right arm. The intended semantics
+  per MP-8's Vision ("sibling aggregates that share a runtime
+  channel") is **per-arm independent state**: each input
+  (`Left ci1` or `Right ci2`) advances exactly one sub-aggregate
+  and leaves the other's state unchanged. The correct vertex
+  shape is the product `Composite s1 s2` (which `compose` already
+  uses). At each step:
+   * `Left ci1` → walk t1's edges from `s1`, leave `s2` unchanged
+     (target = `Composite (target e1) s2`).
+   * `Right ci2` → walk t2's edges from `s2`, leave `s1` unchanged
+     (target = `Composite s1 (target e2)`).
+  Three test failures (`Right input advances the Pinger arm`, the
+  initial-arm dispatch test, and the omega Right test) showed
+  `Nothing` from the sum-vertex implementation because the only
+  outgoing edges from `InL s1` were t1's lifted edges (which
+  reject `Right` inputs). Switching to product-vertex unifies the
+  edge construction: at each `Composite s1 s2`, both t1's edges
+  (gated on `Left`) and t2's edges (gated on `Right`) are
+  outgoing.
+
+  Cross-plan impact: the design record at
+  `docs/research/composition-combinators-design.md` has been
+  revised to specify `Composite` (product); EP-26's `feedback1`
+  is unaffected (it uses `Composite` already). `CompositeSum` is
+  removed from `Keiki.Composition` — there is no admitted MP-8
+  combinator that uses it. The Either lifters introduced in M2
+  remain useful and stay exported.
 
 
 ## Decision Log

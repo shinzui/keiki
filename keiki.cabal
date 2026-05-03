@@ -65,6 +65,7 @@ test-suite keiki-test
                         Keiki.BuilderSpec
                         Keiki.BuilderSpike
                         Keiki.CompositionSpec
+                        Keiki.CompositionAlternativeSpec
                         Keiki.CoreApplyEventsSpec
                         Keiki.CoreSpec
                         Keiki.DeciderMultiSpec
