@@ -178,7 +178,7 @@ value.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Composition combinators beyond sequential — design milestone | docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md | None | EP-11 (external) | Complete |
 | 2 | Alternative composition combinator on SymTransducer | docs/plans/25-alternative-composition-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Complete |
-| 3 | Single-step feedback combinator on SymTransducer | docs/plans/26-single-step-feedback-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | In Progress |
+| 3 | Single-step feedback combinator on SymTransducer | docs/plans/26-single-step-feedback-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -335,7 +335,7 @@ provides an at-a-glance view of the entire initiative.
 - [x] EP-24: Extend `composition-combinators-design.md`'s "Future improvements" section into per-combinator design records (M3). *Section "Combinators beyond `compose` — per-combinator design records" added; item F in keiki-generics-design.md updated.*
 - [x] EP-24: Decompose into per-combinator EPs; revise this MasterPlan's Exec-Plan Registry and Dependency Graph (M4). *EP-25 and EP-26 created and registered.*
 - [x] EP-25: Implement `alternative` combinator with Either lifters; ship acceptance test. *(2026-05-03)* Vertex shape revised mid-flight from sum (`CompositeSum`) to product (`Composite`) per EP-25's M4 design discovery. Suite: 178 examples, 0 failures.
-- [ ] EP-26: Implement single-step `feedback1` combinator (two stacked `compose`s); ship acceptance test.
+- [x] EP-26: Implement single-step `feedback1` combinator (two stacked `compose`s); ship acceptance test. *(2026-05-03)* Implementation is the literal `compose t (compose f t)`; vertex `Composite s1 (Composite s2 s1)` enumerates the inner `s1` as a distinct dimension via `Composite`'s existing `Enum` (M1 picked option (b)). Stateless-aggregate restriction surfaced (see Surprises & Discoveries). Suite: 185 examples, 0 failures (+7 new).
 
 
 ## Surprises & Discoveries
@@ -392,6 +392,38 @@ Provide concise evidence.
   corrected analysis are documented in the design record's
   "What we shipped" subsection. EP-26 (`feedback1`) is
   unaffected — it uses `Composite` already.
+
+- **2026-05-03 — `feedback1` only typechecks for stateless
+  aggregates.** EP-26's M3 implementation surfaced that the
+  literal `compose t (compose f t)` reduction propagates a
+  `Disjoint (Names rs1) (Names (Append rs2 rs1))` constraint to
+  the call site. Since `Append rs2 rs1` includes `rs1`'s slot
+  names, the constraint reduces to "rs1 disjoint from itself" —
+  only satisfiable for `rs1 = '[]`. EP-24's design record had
+  not anticipated this: it presumed the two-stacked-`compose`
+  reduction would work for any aggregate. Cross-plan impact:
+  the shipped `feedback1` covers the stateless-aggregate case
+  (sufficient for many policy-driven workflows where t's
+  history is reconstructable from external events); a
+  "shared-state" variant — where the second `t` reads/writes
+  the first `t`'s registers via custom edge construction
+  outside `compose` — is documented as a future extension and
+  is not in scope for MP-8. EP-26's Decision Log and the design
+  record's "What we shipped" subsection record both the
+  derivation and the trade-off.
+
+- **2026-05-03 — EP-26's plan-stated constraint set was a
+  transcription error.** The plan's "Required signatures at the
+  end of M3" listed `WeakenR (Append rs1 rs2)` and
+  `Disjoint (Names (Append rs1 rs2)) (Names rs1)`. Tracing
+  `compose`'s constraints through `compose t (compose f t)`
+  yields a different (correct) set: `WeakenR rs2`, `WeakenR rs1`,
+  `Disjoint (Names rs2) (Names rs1)`,
+  `Disjoint (Names rs1) (Names (Append rs2 rs1))`. The shipped
+  signature uses the derived set. Cross-plan impact: none — the
+  plan's "Idempotence and Recovery" section explicitly
+  anticipated the implementation EP refining the constraint
+  shape if `compose`'s propagation produced a different result.
 
 
 ## Decision Log
@@ -456,4 +488,78 @@ Provide concise evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original vision.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-03).** All three child ExecPlans are Complete
+(EP-24 design milestone, EP-25 `alternative`, EP-26 `feedback1`).
+`Keiki.Composition` now exports `compose`, `alternative`, and
+`feedback1`. Test suite: 185 examples, 0 failures (was 169 at
+MP-8 start; +16 across EP-25 and EP-26). The Vision & Scope's
+"in-scope subset chosen by the design milestone" came down to
+two of the four originally-listed combinators:
+
+- *Admitted and shipped:* `alternative` (sum-input dispatch over
+  `Either ci1 ci2`, product vertex `Composite s1 s2`),
+  `feedback1` (single-step aggregate ↔ stateless-policy reduction
+  via `compose t (compose f t)`).
+- *Re-deferred:* `parallel` (strict-tuple input doesn't fit
+  keiki's queue-driven runtime model — `alternative` covers the
+  bounded-context use case the Vision attributed to it),
+  `Kleisli` (requires Approach 3 multi-event edges, out of MP-8
+  scope; MP-7's state refinement covers the in-aggregate
+  multi-event case).
+
+The two retired "Future improvements" entries in
+`docs/research/composition-combinators-design.md` and
+`docs/research/keiki-generics-design.md` item F have been redirected
+to MP-8's per-combinator "What we shipped" subsections, with EP-25
+and EP-26's findings (`alternative`'s product-vertex correction
+and `feedback1`'s stateless-aggregate restriction) folded back into
+the design records.
+
+**Decomposition retrospective.** The two-stage shape (one design
+milestone followed by per-combinator EPs) worked as intended:
+
+- EP-24's design milestone correctly narrowed the scope from four
+  to two combinators with documented rationale, sparing MP-8
+  from over-shipping.
+- Decomposing per-combinator (rather than per-phase) let EP-25
+  and EP-26 each surface its own design discovery — `alternative`'s
+  sum-vs-product vertex, `feedback1`'s stateless-aggregate
+  restriction — without dragging the other combinator's work
+  off-course. Both discoveries were absorbed by their owning EP
+  and back-propagated to the shared design record without
+  cross-plan thrash.
+
+**Lessons.**
+
+1. *Compose-based reductions hide their complexity at the type
+   level.* EP-26's "two stacked composes" reduction worked
+   trivially at the term level but was constrained by
+   `Disjoint`-on-`Append` propagation in ways the prose-only
+   design pass didn't anticipate. Future per-combinator design
+   records for "compose applied N times" implementations should
+   sketch the propagated constraint set explicitly, not just the
+   composite signature.
+2. *The `Composite`-derived `Enum` is more powerful than EP-24
+   credited.* EP-24 worried `feedback1` would need a `T2` newtype
+   to disambiguate the two copies of t; in practice the existing
+   `Composite`'s column-major `Enum` already enumerates each
+   occurrence of `s1` as a distinct dimension, so M1 closed as
+   "option (b), no new types" without trouble.
+3. *Per-combinator EP scope was right.* Each combinator absorbed
+   its own surprise without cross-plan thrash. Bundling them
+   into one EP would have forced both surprises to be resolved
+   together; the per-combinator decomposition let each one's
+   discovery land cleanly.
+
+**Gaps for a future MasterPlan.**
+
+- A shared-state `feedback1` variant (custom edge construction
+  outside `compose`) for stateful aggregates.
+- A bounded-step `feedbackN n t f` for finite multi-round loops.
+- A worked example using `feedback1` in a realistic
+  policy-driven workflow (the current acceptance fixture is
+  intentionally minimal).
+- MP-9 (Profunctor / Category instances) can now consume MP-8's
+  output: `Choice` parameterised over `alternative`,
+  `Profunctor`/`Category` over `compose`. The `Strong` instance
+  remains blocked on `parallel`'s re-deferral.

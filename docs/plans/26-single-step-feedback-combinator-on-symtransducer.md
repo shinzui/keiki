@@ -84,24 +84,33 @@ This section must always reflect the actual current state of the work.
   Log entry dated 2026-05-03.
 - [x] **M2 — Add the re-keying machinery.** *(2026-05-03)* No-op
   per M1: the implicit-by-structure form needs no new type.
-- [ ] **M3 — Add the `feedback1` combinator.** Implement as
-  `feedback1 t f = compose t (compose f t)`. Confirm the type
-  signature matches the design record (with the constraint
-  deviations logged below).
-- [ ] **M4 — Acceptance test.** Add
-  `test/Keiki/CompositionFeedback1Spec.hs` composing a fixture
-  aggregate with a stateless one-vertex policy (defined inline)
-  and verifying step / cascade / reconstitute / checkHiddenInputs
-  / isSingleValuedSym.
-- [ ] **M5 — Wire spec into test suite.** Add the new module to
-  `keiki.cabal`'s `keiki-test` `other-modules` and to
-  `test/Spec.hs`. Run `cabal test all` and confirm the new cases
-  pass.
-- [ ] **M6 — Update design note and MP-8.** Append a "What we
-  shipped" subsection under
+- [x] **M3 — Add the `feedback1` combinator.** *(2026-05-03)*
+  Implemented in `src/Keiki/Composition.hs` as
+  `feedback1 t f = compose t (compose f t)`. Constraint set
+  derived from `compose`'s constraints applied twice (deviates
+  from the EP-26 plan's stated set; see Decision Log entry).
+  Module builds clean.
+- [x] **M4 — Acceptance test.** *(2026-05-03)* Wrote
+  `test/Keiki/CompositionFeedback1Spec.hs` with a toggle ↔ echo
+  policy fixture. Seven cases: single-step cascade (with vertex
+  observability proving the cascade ran), two-step round-trip,
+  `reconstitute` on one and two events, `checkHiddenInputs`,
+  `isSingleValuedSym`, and `omega`. All pass.
+- [x] **M5 — Wire spec into test suite.** *(2026-05-03)* Added
+  `Keiki.CompositionFeedback1Spec` to `keiki.cabal`'s `keiki-test`
+  `other-modules` and to `test/Spec.hs`. Full suite: 185 examples,
+  0 failures (was 178 pre-EP-26; +7 new).
+- [x] **M6 — Update design note and MP-8.** *(2026-05-03)*
+  Appended "What we shipped (EP-26, 2026-05-03)" subsection under
   `docs/research/composition-combinators-design.md`'s `feedback1`
-  section. Mark this EP "Complete" in MP-8's Exec-Plan Registry;
-  tick the corresponding entry in MP-8's Progress section.
+  section, documenting the alignments, deviations, and the
+  stateless-aggregate restriction. Updated
+  `docs/research/keiki-generics-design.md` item F's MP-8
+  paragraph with the EP-26 ship note. Marked this EP "Complete"
+  in MP-8's Exec-Plan Registry; ticked the Progress entry; added
+  two Surprises & Discoveries entries (stateless-aggregate
+  restriction, plan-stated constraint set was a transcription
+  error).
 
 
 ## Surprises & Discoveries
@@ -196,7 +205,77 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-03).** `feedback1` shipped to
+`Keiki.Composition` as the literal
+`feedback1 t f = compose t (compose f t)`, with an acceptance spec
+at `test/Keiki/CompositionFeedback1Spec.hs` (7 cases, all green).
+Total suite: 185 examples, 0 failures. The Purpose / Big Picture
+section's listed user-visible behaviours all hold:
+
+- An aggregate ↔ stateless-policy round can be expressed in one
+  library call, with the policy emitting a follow-up command that
+  the aggregate consumes within the same composite step.
+- `step loop initial externalCmd` advances the composite vertex
+  through `Composite Off (Composite Pol Off) → Composite On
+  (Composite Pol On)` and emits the cascaded event with the
+  original input field forwarded by structural substitution.
+- `reconstitute composite` lands at the expected post-cascade
+  state for the canonical event log.
+- `checkHiddenInputs (feedback1 t f)` returns `[]` when both
+  halves are hidden-input-clean; `isSingleValuedSym` returns
+  `True` when both halves are individually single-valued.
+
+**Surprises.** Two cross-plan findings flowed back to MP-8's
+Surprises & Discoveries:
+
+1. **Stateless-aggregate restriction.** EP-24's design milestone
+   presumed `compose t (compose f t)` would typecheck for any
+   aggregate. It does not — the
+   `Disjoint (Names rs1) (Names (Append rs2 rs1))` constraint
+   propagated from the outer `compose` only resolves when
+   `rs1 = '[]`. The shipped `feedback1` therefore covers
+   stateless aggregates only. A "shared-state" variant (custom
+   edge construction outside `compose`) is documented as a
+   future extension.
+
+2. **Constraint set deviation.** The plan's "Required signatures"
+   section listed
+   `WeakenR (Append rs1 rs2)` and
+   `Disjoint (Names (Append rs1 rs2)) (Names rs1)`, which were
+   transcription errors. The actual constraint set
+   (`WeakenR rs2`, `WeakenR rs1`,
+   `Disjoint (Names rs2) (Names rs1)`,
+   `Disjoint (Names rs1) (Names (Append rs2 rs1))`) was derived
+   mechanically from `compose`'s constraints applied twice. The
+   plan's "Idempotence and Recovery" section explicitly
+   anticipated this kind of refinement, so the deviation
+   required no scope change.
+
+**Lessons.** The plan's "two stacked composes" reduction works
+cleanly at the term level — no bespoke edge construction was
+needed, no helper substitution machinery was added, and the
+`Composite`-derived `Enum` happens to enumerate the inner
+re-keyed `s1` as a distinct dimension without any new types
+(M1's option (b) was the right call). The hidden complexity is
+entirely at the *type* level: the constraint propagation through
+`Append` and `Disjoint` made the stateless-aggregate restriction
+inevitable, and that restriction wasn't visible from the design
+milestone's prose pass. Future per-combinator design records
+should sketch the constraint propagation explicitly when an
+implementation is "compose applied N times".
+
+**Gaps for a future MasterPlan.**
+
+- Shared-state `feedback1` for stateful aggregates (custom edge
+  construction).
+- Bounded-step `feedbackN n t f` that iterates the cascade `n`
+  times.
+- A worked example that uses `feedback1` in a realistic
+  policy-driven workflow (e.g., the Email Delivery aggregate
+  cascaded through a retry policy). The current acceptance
+  fixture is intentionally minimal to make the cascade
+  observable; a richer worked example would round out the
+  documentation.
 
 
 ## Context and Orientation

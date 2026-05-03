@@ -1083,6 +1083,84 @@ The per-combinator EP that ships `feedback1` must:
    `feedback1` section with a "What we shipped" subsection.
 
 
+#### What we shipped (EP-26, 2026-05-03)
+
+`feedback1` shipped to `src/Keiki/Composition.hs` with the literal
+implementation `feedback1 t f = compose t (compose f t)`. The
+acceptance test lives at `test/Keiki/CompositionFeedback1Spec.hs`.
+
+The implementation aligned with the design record on three points
+and deviated on two.
+
+**Aligned.**
+
+1. *Vertex shape.* `Composite s1 (Composite s2 s1)`. EP-26's M1
+   picked option (b) — implicit by structure. No `T2 s1` newtype
+   was needed because `Composite`'s existing column-major `Enum`
+   instance enumerates the inner `s1` as a distinct dimension.
+   `isSingleValuedSym`'s per-vertex enumeration walks the full
+   `|s1| * |s2| * |s1|` product without conflation.
+2. *Implementation = two stacked `compose`s.* No bespoke edge
+   construction; the cascade is built by `compose`'s existing
+   substitution algorithm applied twice.
+3. *Pure-core preservation.* The composite preserves `solveOutput`,
+   `checkHiddenInputs`, and `isSingleValuedSym` because each
+   `compose` does, and stacking preserves the property.
+   Acceptance spec confirms all three on a toggle ↔ echo-policy
+   fixture.
+
+**Deviated.**
+
+1. *Constraint set.* The "Acceptance criteria" listed a signature
+   with `WeakenR (Append rs1 rs2)` and
+   `Disjoint (Names (Append rs1 rs2)) (Names rs1)` constraints.
+   The actual constraints required by `compose t (compose f t)`,
+   derived mechanically by tracing `compose`'s constraints applied
+   twice, are:
+
+   - `WeakenR rs2` (inner `compose f t`'s rs_l).
+   - `Disjoint (Names rs2) (Names rs1)` (inner `compose`).
+   - `WeakenR rs1` (outer `compose t _`'s rs_l).
+   - `Disjoint (Names rs1) (Names (Append rs2 rs1))` (outer
+     `compose`).
+
+   The shipped signature uses these four. The original set was a
+   transcription error.
+
+2. *Stateless-aggregate restriction.* The shipped `feedback1` only
+   typechecks at the call site when the aggregate `t`'s register
+   file `rs1 = '[]`. The constraint
+   `Disjoint (Names rs1) (Names (Append rs2 rs1))` forces
+   `Names rs1` to be disjoint from itself, which only succeeds for
+   the empty list. This is an inevitable consequence of the
+   "two-stacked-`compose`" reduction: keiki's slot-disjointness
+   invariant gives each appearance of `t` its own register file
+   copy, and disallows duplicate slot names in the composite.
+
+   For non-empty `rs1`, the call site fails with a slot-collision
+   `TypeError`. Authors needing a stateful aggregate inside a
+   feedback loop must currently express the loop differently
+   (e.g. by encoding the policy's reaction as an extra edge inside
+   the aggregate via MP-7's state refinement).
+
+   A "shared-state" variant — where the second `t` reads/writes
+   the first `t`'s registers via custom edge construction outside
+   `compose` — is documented as a future extension and is **not in
+   scope** for MP-8. EP-26's Decision Log entry dated 2026-05-03
+   records this trade-off.
+
+The acceptance fixture is a toggle aggregate (Off ↔ On) cascaded
+through a stateless echo policy. The cascade is observable from the
+composite vertex transition: from
+`Composite Off (Composite Pol Off)`, one external command advances
+the composite to `Composite On (Composite Pol On)` — both copies of
+t have stepped, proving the policy's emitted command was consumed
+by the second t. The output's `tValue` field is the original
+input's `tValue`, forwarded through the cascade by structural
+substitution; `checkHiddenInputs` therefore reports `[]`. Suite:
+185 examples, 0 failures (was 178 pre-EP-26, +7 new).
+
+
 ### `parallel` — re-deferred
 
 #### Why re-deferred

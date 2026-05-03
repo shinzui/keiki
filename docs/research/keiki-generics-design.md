@@ -875,6 +875,24 @@ design record under
 `docs/research/composition-combinators-design.md` records both
 the finding and the revised semantics.
 
+**Shipped (EP-26, 2026-05-03).** `feedback1` is in the
+`Keiki.Composition` module as the literal
+`feedback1 t f = compose t (compose f t)`; the acceptance test at
+`test/Keiki/CompositionFeedback1Spec.hs` exercises single-step
+cascade, two-step round-trip, `reconstitute`,
+`checkHiddenInputs`, `isSingleValuedSym`, and `omega` against a
+toggle aggregate cascaded through a stateless echo policy. The
+composite vertex is `Composite s1 (Composite s2 s1)` — implicit
+by structure, so no new types were added. Full test suite is 185
+examples, 0 failures. EP-26 surfaced one limitation: the call
+site only typechecks for stateless aggregates (`rs1 = '[]`)
+because the
+`Disjoint (Names rs1) (Names (Append rs2 rs1))` constraint forces
+`rs1` to be disjoint from itself. The design record under
+`docs/research/composition-combinators-design.md` records the
+constraint deviation and the future "shared-state" variant that
+would relax this restriction.
+
 ### G. Compile-time transition safety (singletons-style)
 
 The biggest crem advantage that DX can't reclaim without invasive
