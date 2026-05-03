@@ -168,7 +168,7 @@ EP A's output is observable, increasing rework risk.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | In Progress |
+| 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | Complete |
 | 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -280,11 +280,11 @@ in code review.
 
 Track milestone-level progress across all child plans.
 
-- [ ] EP-30: Verify prerequisites — Keiki.Core / Keiki.Examples build, all tests pass; record GHC version (M0)
-- [ ] EP-30: Choose constraint discipline on `s`; pick text representation library (`text` already a dep) (M1)
-- [ ] EP-30: Implement `toMermaid` for the single-transducer case; cover initial / final / ε edges (M2)
-- [ ] EP-30: Render diagrams for the four Examples modules; check in to docs/guide/ (M3)
-- [ ] EP-30: Add regression test pinning Mermaid output for UserRegistration (M4)
+- [x] EP-30: Verify prerequisites — Keiki.Core / Keiki.Examples build, all tests pass; record GHC version (M0)
+- [x] EP-30: Choose constraint discipline on `s`; pick text representation library (`text` already a dep) (M1+M2 — M1 rolled into M2)
+- [x] EP-30: Implement `toMermaid` for the single-transducer case; cover initial / final / ε edges (M2)
+- [x] EP-30: Render diagrams for the four Examples modules; check in to docs/guide/ (M3)
+- [x] EP-30: Add regression test pinning Mermaid output for UserRegistration (M4)
 - [ ] EP-31: Pick composite rendering approach (subgraphs vs. cross-product); document trade-off (M1)
 - [ ] EP-31: Implement composite rendering on `Composite s1 s2` (M2)
 - [ ] EP-31: Render diagram for `AlertSource ⨾ EmailDelivery` composite; check in (M3)

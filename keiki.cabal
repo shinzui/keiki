@@ -44,6 +44,7 @@ library
                         Keiki.Internal.Slots
                         Keiki.NoThunks
                         Keiki.Profunctor
+                        Keiki.Render.Mermaid
                         Keiki.Symbolic
                         Keiki.Examples.EmailDelivery
                         Keiki.Examples.OrderCart
@@ -76,6 +77,7 @@ test-suite keiki-test
                         Keiki.Generics.THSpec
                         Keiki.NoThunksSpec
                         Keiki.ProfunctorSpec
+                        Keiki.Render.MermaidSpec
                         Keiki.SymbolicSpec
                         Keiki.Examples.EmailDeliveryBuilderSpec
                         Keiki.Examples.EmailDeliveryViewSpec

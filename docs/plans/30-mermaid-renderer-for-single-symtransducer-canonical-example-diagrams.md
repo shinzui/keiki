@@ -72,21 +72,33 @@ to composite transducers.
 
 ## Progress
 
-- [ ] M0 — Verify prerequisites: `cabal build all` and `cabal test` pass on
+- [x] M0 — Verify prerequisites: `cabal build all` and `cabal test` pass on
       master; record GHC version and z3 availability in Surprises.
-- [ ] M1 — Add `src/Keiki/Render/Mermaid.hs` skeleton (module header, exports,
-      type signatures for `toMermaid`, `vertexLabel`, `edgeInputName`,
-      `edgeOutputName`, `edgeLabel`); add to `keiki.cabal` library
-      `exposed-modules`; `cabal build` succeeds.
-- [ ] M2 — Implement `toMermaid` for the single-transducer case covering
-      initial vertex, final vertices, ε-edges, and self-loops; verify in
-      `ghci` against `userReg`.
-- [ ] M3 — Render diagrams for `UserRegistration`, `OrderCart`,
+      *(2026-05-03: GHC 9.12.3, z3 4.16.0; `cabal build all` Up to date;
+      `cabal test` 196 examples, 0 failures.)*
+- [x] M1+M2 — Add `src/Keiki/Render/Mermaid.hs` (module + cabal entry +
+      real implementation: `toMermaid`, `vertexLabel`, `edgeInputName`,
+      `edgeOutputName`, `edgeLabel`); covers initial vertex, final
+      vertices, ε-edges, and self-loops; ghci on `userReg` produces the
+      canonical block from this plan's Purpose section. M1 was rolled
+      into M2 because the placeholder body in M1 triggered
+      `-Wredundant-constraints` warnings — the real bodies in M2 use
+      the constraints, so the skeleton-only commit was not useful as a
+      separate buildable step. *(2026-05-03.)*
+- [x] M3 — Render diagrams for `UserRegistration`, `OrderCart`,
       `EmailDelivery`, `UserRegistrationV0`; check in to
-      `docs/guide/diagrams/`.
-- [ ] M4 — Add `test/Keiki/Render/MermaidSpec.hs` pinning canonical Mermaid
+      `docs/guide/diagrams/`. *(2026-05-03: four files exist under
+      `docs/guide/diagrams/`, each containing the canonical Mermaid
+      block produced by `toMermaid` over the corresponding aggregate.)*
+- [x] M4 — Add `test/Keiki/Render/MermaidSpec.hs` pinning canonical Mermaid
       output for `userReg`; wire into `test/Spec.hs`; add to `keiki.cabal`
-      test-suite `other-modules`; `cabal test` passes.
+      test-suite `other-modules`; `cabal test` passes. *(2026-05-03:
+      `cabal test` reports 197 examples, 0 failures; describe block
+      `Keiki.Render.Mermaid (EP-30) -> toMermaid (single SymTransducer) ->
+      renders userReg to the canonical stateDiagram-v2 block` is green.
+      Anti-validation: temporarily editing the expected `ε` to `EPSILON`
+      produced a clear `expected … but got …` diff with both strings
+      printed; reverted before commit.)*
 
 
 ## Surprises & Discoveries
@@ -94,7 +106,29 @@ to composite transducers.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- 2026-05-03 — M0 baseline: GHC 9.12.3, z3 4.16.0. `cabal build all` is
+  "Up to date" (no rebuild needed). `cabal test` reports `196 examples,
+  0 failures` in `0.3239 seconds`. Suite passes; safe to add the renderer
+  module on top of this baseline.
+
+- 2026-05-03 — M1's placeholder `toMermaid _ = T.empty` triggers
+  `-Wredundant-constraints` on the `(Enum s, Bounded s, Show s)` triple
+  because the body never uses them. Two options: add a temporary
+  `{-# OPTIONS_GHC -Wno-redundant-constraints #-}` for the M1-only
+  skeleton, or roll M1 and M2 into one commit. Picked the latter — the
+  skeleton-only milestone offers nothing observable beyond "module
+  parses," and the real implementation in M2 uses the constraints
+  meaningfully, so the warning evaporates.
+
+- 2026-05-03 — Render of `Keiki.Examples.OrderCart.orderCart` produces
+  a 13-edge, 8-vertex diagram. Hand-inspection against the source file
+  (`src/Keiki/Examples/OrderCart.hs`) confirms every edge is accounted
+  for: `OpenWithItems` self-loops on `AddItem` / `RemoveItem` /
+  `ApplyDiscount` are present, the `Cancel` branches at `OpenWithItems`
+  / `Reserved` are both there, and the three terminal vertices
+  (`Delivered`, `Cancelled`, `Refunded`) all carry final markers. No
+  ε-edges in this aggregate. Useful as a wider stress-test of the
+  renderer beyond the smaller `userReg` fixture used by M4.
 
 
 ## Decision Log
@@ -160,7 +194,54 @@ implementation. Provide concise evidence.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**2026-05-03 — Plan complete (M0..M4).**
+
+What shipped:
+
+- `src/Keiki/Render/Mermaid.hs` — exports `toMermaid`, `vertexLabel`,
+  `edgeInputName`, `edgeOutputName`, `edgeLabel`. Rendering specialised
+  to `phi ~ HsPred rs ci`; `(Enum, Bounded, Show)` constraint discipline
+  on `s`. Edge label format `<input ctor> / <output ctor>` (or `/ ε`).
+- `keiki.cabal` — `Keiki.Render.Mermaid` added to library
+  `exposed-modules`; `Keiki.Render.MermaidSpec` added to test-suite
+  `other-modules`. No new `build-depends`.
+- `docs/guide/diagrams/{user-registration,user-registration-v0,email-delivery,order-cart}.md`
+  — four canonical example diagrams checked in as Mermaid source in
+  Markdown so GitHub renders them inline.
+- `test/Keiki/Render/MermaidSpec.hs` + `test/Spec.hs` — regression test
+  pinning the `userReg` block; `cabal test` reports 197 examples,
+  0 failures.
+
+Lessons / observations:
+
+- The `M1` skeleton-only milestone was rolled into `M2` because GHC's
+  `-Wredundant-constraints` warned on the placeholder body — the
+  intermediate "module parses but does nothing" commit offered no value
+  beyond the no-warnings guarantee `M2` already provides. Future plans
+  with a "skeleton then implementation" split should either accept the
+  warning under `OPTIONS_GHC` for the skeleton commit or skip the split
+  entirely.
+- The four shipped Examples aggregates (UserRegistration,
+  UserRegistrationV0, EmailDelivery, OrderCart) all used the
+  Builder-form `B.onCmd` for every edge, so 100 % of edges had a
+  recoverable input-constructor name; the `?` fallback in `edgeLabel`
+  was never triggered. Hand-written-AST aggregates (none in the repo
+  today) would be the primary use case for that fallback.
+- `OrderCart` proved a useful breadth test — 13 edges, 8 vertices,
+  three terminal states, several self-loops. The output renders cleanly
+  in GitHub's Markdown previewer with no manual layout adjustment.
+- The renderer relied only on `text` (already a dep). No new
+  `build-depends`.
+
+Open follow-ups for `EP-31`:
+
+- The composite case (`Composite s1 s2`) is not handled by `toMermaid`
+  — its constraint discipline rejects the composite vertex's `Show`
+  output (`"Composite a b"` contains spaces, not legal Mermaid
+  identifiers). `EP-31` will add a `toMermaidComposite` variant that
+  either flat-cross-products the labels (`<show s1>_<show s2>`) or
+  uses Mermaid's nested-state syntax. The choice is deferred to
+  `EP-31`'s M1 by the MasterPlan.
 
 
 ## Context and Orientation
