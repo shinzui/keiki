@@ -176,7 +176,9 @@ value.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Composition combinators beyond sequential — design milestone | docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md | None | EP-11 (external) | In Progress |
+| 1 | Composition combinators beyond sequential — design milestone | docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md | None | EP-11 (external) | Complete |
+| 2 | Alternative composition combinator on SymTransducer | docs/plans/25-alternative-composition-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Not Started |
+| 3 | Single-step feedback combinator on SymTransducer | docs/plans/26-single-step-feedback-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix
@@ -185,16 +187,12 @@ Hard Deps and Soft Deps reference other rows by their # prefix
 which delivered the existing `compose` and the design note this
 MasterPlan extends.
 
-This registry will grow when EP-24's design milestone fans out
-into per-combinator EPs. The fan-out step appends one row per
-combinator the design milestone admits (likely `parallel`,
-`alternative`, and one of `feedback`'s reductions; `Kleisli` is
-expected to be re-deferred).
-
-The first child EP path above (`docs/plans/24-...`) is the
-expected path; the actual number is assigned by
-`bun agents/skills/exec-plan/init-plan.ts` when EP-24 is
-created, and this row updated to match.
+EP-24's design milestone (Complete on 2026-05-03) admitted two
+combinators (`alternative` via EP-25 and a single-step `feedback1`
+via EP-26) and re-deferred two (`parallel` and `Kleisli`). The
+re-deferral rationale is recorded in EP-24's Decision Log and in
+`docs/research/composition-combinators-design.md`'s "Combinators
+beyond `compose`" section.
 
 
 ## Dependency Graph
@@ -210,20 +208,20 @@ created, and this row updated to match.
                     │   EP-24     │
                     │  Design     │
                     │  milestone  │
+                    │  (Complete) │
                     └──────┬──────┘
-                           │
-                           │ (after design milestone)
-                           ▼
-              ┌────────────┴─────────────┐
-              │  Per-combinator EPs      │
-              │  (added by MP revision)  │
-              │                          │
-              │  - parallel              │
-              │  - alternative           │
-              │  - feedback variant      │
-              │  - (Kleisli, if not      │
-              │     re-deferred)         │
-              └──────────────────────────┘
+                           │ (hard)
+                ┌──────────┴──────────┐
+                ▼                     ▼
+         ┌────────────┐        ┌────────────────┐
+         │   EP-25    │        │     EP-26      │
+         │ alternative│        │  feedback1     │
+         │            │        │ (single-step)  │
+         └────────────┘        └────────────────┘
+
+  Re-deferred (no EP):
+    - parallel (subsumed by alternative for keiki's runtime model)
+    - Kleisli  (requires multi-event edge form; out of MP-8 scope)
 ```
 
 **EP-24 has no hard dependencies.** Its design pass reads
@@ -239,11 +237,12 @@ updated note and the per-combinator EP fan-out.
   `weakenL` / substitution machinery from EP-11, but each
   combinator's substitution shape is its own.
 
-Within the per-combinator EPs (added after the fan-out), `parallel`
-and `alternative` are independent of each other; either can land
-first. `feedback` likely depends on whichever combinator is used
-to express the inner step (probably `parallel` for the
-aggregate ↔ policy pair), so it lands after.
+Within the per-combinator EPs, EP-25 (`alternative`) and EP-26
+(`feedback1`) are independent and can land in either order. Both
+edit `src/Keiki/Composition.hs`'s export list and add a sibling
+spec under `test/Keiki/`; merging them in series rather than in
+parallel avoids trivial conflicts. EP-26's plan documents the
+coordination explicitly ("Coordination with EP-25" section).
 
 
 ## Integration Points
@@ -330,11 +329,13 @@ Track milestone-level progress across all child plans. Each
 entry names the child plan and the milestone. This section
 provides an at-a-glance view of the entire initiative.
 
-- [ ] EP-24: Re-confirm prerequisites — Keiki.Composition builds, all tests pass; record GHC version (M0)
-- [ ] EP-24: Re-evaluate each of the four deferred combinators against the current core; pick the in-scope subset (M1)
-- [ ] EP-24: Settle the iteration model for `feedback`, the mutual-exclusion check for `alternative`, and the multi-event question for `Kleisli` (M2)
-- [ ] EP-24: Extend `composition-combinators-design.md`'s "Future improvements" section into per-combinator design records (M3)
-- [ ] EP-24: Decompose into per-combinator EPs; revise this MasterPlan's Exec-Plan Registry and Dependency Graph (M4)
+- [x] EP-24: Re-confirm prerequisites — Keiki.Composition builds, all tests pass; record GHC version (M0). *cabal build + cabal test green on GHC 9.12.3 (169/0 examples).*
+- [x] EP-24: Re-evaluate each of the four deferred combinators against the current core; pick the in-scope subset (M1). *Admitted: `alternative`, `feedback1`. Re-deferred: `parallel`, `Kleisli`.*
+- [x] EP-24: Settle the iteration model for `feedback`, the mutual-exclusion check for `alternative`, and the multi-event question for `Kleisli` (M2). *Iteration: single-step. Mutual-exclusion: no new API needed (`Either` arms make the check vacuous). Kleisli: re-deferred.*
+- [x] EP-24: Extend `composition-combinators-design.md`'s "Future improvements" section into per-combinator design records (M3). *Section "Combinators beyond `compose` — per-combinator design records" added; item F in keiki-generics-design.md updated.*
+- [x] EP-24: Decompose into per-combinator EPs; revise this MasterPlan's Exec-Plan Registry and Dependency Graph (M4). *EP-25 and EP-26 created and registered.*
+- [ ] EP-25: Implement `alternative` combinator with `CompositeSum` vertex and Either lifters; ship acceptance test.
+- [ ] EP-26: Implement single-step `feedback1` combinator (two stacked `compose`s); ship acceptance test.
 
 
 ## Surprises & Discoveries
@@ -343,7 +344,32 @@ Document cross-plan insights, dependency changes, scope
 adjustments, or unexpected interactions between child plans.
 Provide concise evidence.
 
-(None yet.)
+- **2026-05-03 — `parallel` re-deferred against MP-8's Vision.**
+  EP-24's M1 re-evaluation concluded that `parallel`'s
+  strict-tuple input shape (crem's `(a, c) → (b, d)`) does not fit
+  keiki's queue-driven runtime model (per
+  `docs/research/effects-boundary.md` §"What the runtime is
+  responsible for", subsection "Queue dequeue" — "pull the next
+  pending input for an instance"). The use case MP-8's Vision
+  section attributed to `parallel` ("product aggregates, e.g.
+  distinct bounded contexts within one service") is operationally
+  *sum* input — which is the `alternative` shape. Re-deferring
+  `parallel` rather than admitting it kept MP-8 from over-shipping.
+  Cross-plan impact: EP-25 (`alternative`) covers the bounded-
+  context use case; MP-9's `Strong` instance, which needs
+  `parallel`, becomes a future-MasterPlan concern.
+
+- **2026-05-03 — `alternative`'s mutual-exclusion check is vacuous
+  under `Either`-wrapping.** EP-11's deferred-improvements
+  speculation that `alternative` would require a "global
+  mutual-exclusion check" was over-conservative. EP-24's M2
+  re-derived: at composite vertex `InL s1`, t2's guards (over
+  `ci2`) are unsatisfiable when the input is `Left _`;
+  symmetrically at `InR s2`. Per-vertex single-valuedness reduces
+  to per-side single-valuedness without a cross-transducer step.
+  Cross-plan impact: EP-25's acceptance criterion is `cabal test`
+  on `isSingleValuedSym (withSymPred (alternative t1 t2))`
+  returning `True` — no new API needed in `Keiki.Symbolic`.
 
 
 ## Decision Log
@@ -376,6 +402,31 @@ Provide concise evidence.
   rules it out. The design milestone must commit to a bounded
   variant or decline `feedback` outright.
   Date: 2026-05-02
+
+- Decision: Admit `alternative` and a single-step `feedback1`;
+  re-defer `parallel` and `Kleisli`.
+  Rationale: EP-24's M1 / M2 verdicts (recorded in
+  `docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md`
+  Decision Log, dated 2026-05-03). `parallel`'s strict-tuple shape
+  doesn't fit keiki's queue-driven runtime model;
+  `alternative`'s sum-input shape covers the bounded-context use
+  case MP-8's Vision attributed to `parallel`. `Kleisli` would
+  require Approach 3 multi-event edges (out of MP-8 scope per
+  Out-of-Scope item 4); MP-7's state refinement covers the
+  in-aggregate multi-event case. `feedback1`'s single-step
+  reduction is pure trivially and composes for multi-round
+  patterns.
+  Date: 2026-05-03
+
+- Decision: `alternative` needs no new mutual-exclusion API;
+  existing `isSingleValuedSym` (via `withSymPred`) on the
+  alternative composite suffices.
+  Rationale: The `Either ci1 ci2` input alphabet makes the
+  cross-transducer check vacuous (see Surprises & Discoveries
+  entry dated 2026-05-03). EP-25's acceptance criterion is the
+  existing `isSingleValuedSym` on the composite returning `True`
+  when both halves are individually single-valued.
+  Date: 2026-05-03
 
 
 ## Outcomes & Retrospective

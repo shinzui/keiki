@@ -159,21 +159,30 @@ This section must always reflect the actual current state of the work.
       with a new "In progress (see EP-24 / MP-8)" paragraph
       summarising the fan-out and pointing to the per-combinator
       design records.
-- [ ] **M4 — Fan out per-combinator EPs and update MP-8.**
-    - [ ] For each admitted combinator, create a child ExecPlan via
-      `bun agents/skills/exec-plan/init-plan.ts --title "..."
-      --master-plan docs/masterplans/8-...md
-      --intention intention_01knjzws4qezz9w8b0743zfqv8`.
-    - [ ] Flesh out each child EP's prose end-to-end (Purpose,
-      Context, Plan of Work, Validation, Decision Log seed) per
-      `agents/skills/exec-plan/PLANS.md`.
-    - [ ] Append one row per child EP to MP-8's Exec-Plan Registry,
-      using the actual file paths assigned by the init script.
-    - [ ] Extend MP-8's Dependency Graph to show the per-combinator
-      fan-out concretely instead of the placeholder bullet list.
-    - [ ] Mark EP-24 itself "Complete" in MP-8's Exec-Plan Registry
-      and tick the matching M0..M4 entries in MP-8's Progress
-      section.
+- [x] **M4 — Fan out per-combinator EPs and update MP-8.** *(2026-05-03)*
+    - [x] Created EP-25
+      (`docs/plans/25-alternative-composition-combinator-on-symtransducer.md`)
+      via `bun agents/skills/exec-plan/init-plan.ts` with parent
+      MP-8 and the shared intention.
+    - [x] Created EP-26
+      (`docs/plans/26-single-step-feedback-combinator-on-symtransducer.md`)
+      via the same script.
+    - [x] Fleshed out each child EP's prose end-to-end (Purpose,
+      Progress, Decision Log, Context, Plan of Work, Concrete Steps,
+      Validation, Idempotence/Recovery, Interfaces) per
+      `agents/skills/exec-plan/PLANS.md`'s self-containment
+      requirement. Each plan stands alone for a contributor cold-
+      starting the implementation.
+    - [x] Appended EP-25 and EP-26 to MP-8's Exec-Plan Registry as
+      rows 2 and 3, with hard dep on EP-1 (this milestone, EP-24)
+      and soft dep on EP-11 (external, the existing `compose`).
+    - [x] Replaced MP-8's Dependency Graph placeholder with the
+      concrete two-EP fan-out and a "Re-deferred (no EP)" footer
+      naming `parallel` and `Kleisli`.
+    - [x] Marked EP-24 "Complete" in MP-8's Exec-Plan Registry and
+      ticked all five M0..M4 entries in MP-8's Progress section.
+      Added per-combinator implementation entries for EP-25 and
+      EP-26 to MP-8's Progress.
 
 
 ## Surprises & Discoveries
@@ -392,7 +401,98 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Outcomes (2026-05-03)
+
+The design milestone delivered exactly what the Purpose section
+promised:
+
+- **Five Purpose-section questions answered**, all in concrete
+  artefacts:
+   1. Of the four MP-8 combinators, two are admitted (`alternative`,
+      `feedback1`) and two are re-deferred (`parallel`, `Kleisli`).
+      Verdicts in this Decision Log; design records under
+      `docs/research/composition-combinators-design.md`.
+   2. `feedback`'s iteration model is single-step `feedback1`. No
+      fuel parameter; multi-round patterns nest `feedback1`s.
+   3. `alternative` needs no new mutual-exclusion API. The `Either
+      ci1 ci2` arms make the check vacuous; `isSingleValuedSym`
+      via `withSymPred` on the composite suffices.
+   4. `Kleisli`'s deferral is confirmed; redirected to MP-7's
+      state-refinement coverage for the in-aggregate multi-event
+      case.
+   5. Module shape: extend `Keiki.Composition`. Per-combinator
+      modules would require importing the shared substitution
+      machinery from the parent for no clarity gain.
+- **Design note revised.** The "Future improvements (deferred)"
+  bullet list is replaced by per-combinator design records
+  (signature, semantics, single-step example, three preservation
+  arguments, limitations, acceptance criteria). Two admitted
+  records (~250 lines) and two re-deferred records (~50 lines).
+- **MasterPlan extended.** MP-8's Exec-Plan Registry, Dependency
+  Graph, and Progress section reflect the two-EP fan-out
+  concretely.
+- **Two child EPs created.** Each child plan is fully
+  self-contained per `agents/skills/exec-plan/PLANS.md` — a
+  contributor with only the child plan and the working tree can
+  implement the combinator end-to-end.
+- **No source code changes.** The plan was design-only as
+  specified. `git diff src/` and `git diff test/` are empty
+  across all four EP-24 commits.
+
+### Lessons learned
+
+- **The `Either`-arm vacuity insight on `alternative`'s
+  cross-transducer check.** EP-11's design speculation that
+  `alternative` would require a "global mutual-exclusion check"
+  was over-conservative: the `Either ci1 ci2` arms structurally
+  separate the two transducers' guard domains, so per-vertex
+  single-valuedness reduces to per-side single-valuedness without
+  a cross-transducer step. This clarification let M2 close
+  cleanly without proposing a new SBV API; the implementation EP
+  (EP-25) inherits a much simpler acceptance criterion.
+
+- **Single-step over bounded-step for `feedback`.** The pull
+  toward bounded-step (option a) was the symmetry-with-crem
+  argument. Single-step (option b) won on three independent
+  counts: (1) trivial purity (no fuel needed), (2) composable
+  (multi-round = nested `feedback1`s), (3) symbolic analysis
+  inheriting from `compose`'s without modification. The composite
+  vertex space grows multiplicatively per nesting, but that's a
+  property of the use case, not the combinator.
+
+- **The post-MP-6 retirements were the structural enabler.**
+  EP-11's design listed several escape-hatch caveats (`OFn` on
+  t1's outputs, `PMatchC` on t2's mid-side guards). MP-6 retired
+  both, so the new combinators don't need to enumerate fallback
+  rules. The post-MP-1..MP-7 core is genuinely simpler than
+  EP-11's reference point.
+
+- **The `parallel` re-deferral is the most significant scope
+  reduction.** MP-8's Vision section listed `parallel` in scope
+  with an authoring use case ("product aggregates within one
+  service"). The re-evaluation surfaced that the operational
+  shape for that use case is `alternative` (sum input from a
+  queue), not `parallel` (strict tuple input). Confirming this
+  required reading the runtime model in
+  `docs/research/effects-boundary.md` and noting that no current
+  keiki user has requested paired-input batching. Re-deferring
+  rather than admitting kept MP-8 from over-shipping.
+
+### What remains
+
+EP-25 and EP-26 implement the two admitted combinators. Their
+plans are written; a contributor can pick up either.
+
+`parallel` and `Kleisli` re-deferral conditions are recorded.
+Either may be reopened by a future MasterPlan if the deferral
+conditions change (a runtime that batches commands across bounded
+contexts; an Approach 3 multi-event edge form).
+
+MP-9 (Profunctor / Category instances) has its soft dependency on
+MP-8 partially resolved: `Choice` follows from `alternative`
+(EP-25), `Category` follows from `compose` (EP-11, already
+shipped). `Strong` is unblocked only if `parallel` is later
+admitted.
 
 
 ## Context and Orientation
