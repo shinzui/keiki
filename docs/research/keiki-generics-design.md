@@ -845,8 +845,10 @@ See `docs/plans/11-composition-combinators-on-symtransducer.md`,
 extends `Keiki.Composition` with two further combinators decided
 by EP-24's design milestone
 (`docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md`):
-`alternative` (sum-input dispatch on `Either ci1 ci2`, with a
-`CompositeSum s1 s2 = InL s1 | InR s2` vertex) and `feedback1`
+`alternative` (sum-input dispatch on `Either ci1 ci2`, reusing
+the existing product vertex `Composite s1 s2` so each composite
+vertex emits both t1's `Left`-gated edges and t2's `Right`-gated
+edges with the appropriate frozen sub-vertex) and `feedback1`
 (single-step aggregate ↔ stateless-policy round, expressed as
 nested `compose` applications). `parallel` and `Kleisli` are
 re-deferred — the former because keiki's queue-driven runtime
@@ -859,6 +861,19 @@ signatures, semantics, preservation arguments, acceptance
 criteria, and limitations) live in
 `docs/research/composition-combinators-design.md` under the
 "Combinators beyond `compose`" section.
+
+**Shipped (EP-25, 2026-05-03).** `alternative` is in the
+`Keiki.Composition` module; the acceptance test at
+`test/Keiki/CompositionAlternativeSpec.hs` exercises Left/Right
+routing, interleaved updates that preserve the other arm's
+state, mixed-arm reconstitute (both orderings),
+`checkHiddenInputs`, and `isSingleValuedSym`. Full test suite is
+178 examples, 0 failures. EP-25 surfaced a design discovery —
+the sum vertex `CompositeSum` originally proposed by EP-24 is
+degenerate; the product `Composite` is the right shape. The
+design record under
+`docs/research/composition-combinators-design.md` records both
+the finding and the revised semantics.
 
 ### G. Compile-time transition safety (singletons-style)
 

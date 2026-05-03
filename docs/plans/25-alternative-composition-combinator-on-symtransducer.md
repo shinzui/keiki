@@ -117,11 +117,20 @@ This section must always reflect the actual current state of the work.
   describe label `"Keiki.Composition (alternative, EP-25)"`. Full
   suite now 178 examples, 0 failures (was 169/0; +9 alternative
   cases).
-- [ ] **M6 — Update design note and MP-8.** Append a "What we
-  shipped" subsection under
-  `docs/research/composition-combinators-design.md`'s `alternative`
-  section. Mark this EP "Complete" in MP-8's Exec-Plan Registry; tick
-  the corresponding entry in MP-8's Progress section.
+- [x] **M6 — Update design note and MP-8.** *(2026-05-03)* Updated
+  `docs/research/composition-combinators-design.md`'s
+  `alternative` section: prepended a 2026-05-03 update note
+  explaining the sum→product vertex correction; rewrote the
+  Signature, Semantics, Single-step example, Preservation
+  arguments, Limitations, and Acceptance criteria subsections to
+  match the shipped product-vertex design; appended a "What we
+  shipped" subsection summarising divergences from the original
+  record. Updated `docs/research/keiki-generics-design.md`'s item
+  F to add a "Shipped (EP-25, 2026-05-03)" paragraph. Updated MP-8:
+  EP-25 row marked Complete in the Exec-Plan Registry; the
+  corresponding Progress entry ticked; a Surprises & Discoveries
+  entry recording the sum→product discovery added with cross-plan
+  impact (EP-24's design record revised; EP-26 unaffected).
 
 
 ## Surprises & Discoveries
@@ -190,7 +199,83 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Outcomes (2026-05-03)
+
+EP-25 ships the `alternative` combinator with the user-visible
+behavior promised in the Purpose section:
+
+- Sibling bounded contexts in one service are now expressible as
+  a single composite transducer: `alternative t1 t2` with
+  `Either ci1 ci2 → Either co1 co2`.
+- Round-trip replay over a mixed `[Either co1 co2]` event log lands
+  at the correct composite final state in any ordering.
+- `checkHiddenInputs (alternative t1 t2)` reports `[]` on a clean
+  pair (verified on the EmailDelivery + Pinger fixture).
+- `isSingleValuedSym (withSymPred (alternative t1 t2))` reports
+  `True` whenever both halves are individually single-valued.
+
+Implementation surface (in `src/Keiki/Composition.hs`):
+
+- `alternative` combinator (~115 lines including haddock).
+- Either lifters: `leftInCtor` / `rightInCtor`, `leftWireCtor` /
+  `rightWireCtor`, `liftL{Term,Pred,Update,OutFields,Out}Alt` and
+  `R` siblings (~140 lines).
+- Right-side AST-walking weakening helpers: `weakenRTerm`,
+  `weakenRPred`, `weakenRUpdate`, `weakenROutFields`,
+  `weakenROut` (~40 lines). Reusable by future combinators.
+- Output-side L-arm helpers: `weakenLOutFields`, `weakenLOut`
+  (~10 lines). Symmetric to the existing R-side helpers.
+
+Acceptance test surface
+(`test/Keiki/CompositionAlternativeSpec.hs`, ~250 lines): nine
+test cases covering Left/Right/interleaved step routing,
+mixed-arm reconstitute (both orderings), omega for both arms,
+`checkHiddenInputs`, `isSingleValuedSym`. The fixture composes
+`Keiki.Examples.EmailDelivery` with an inline two-vertex
+`Pinger` aggregate.
+
+Test-suite delta: 169 → 178 examples (+9), still 0 failures.
+
+### Lessons learned
+
+- **EP-24's design record was wrong on the vertex shape.** The
+  M4 acceptance tests caught this immediately — the
+  `Right input advances the Pinger arm` test returned `Nothing`
+  because there was no edge from the initial `InL` vertex
+  consuming a `Right` input. The sum-vertex shape's degeneracy
+  was a sin-of-omission in the design pass: EP-24 specified
+  `initial = InL (initial t1)` with "An alternative initial-state
+  policy could take a `Left | Right` selector argument" as a
+  footnote, but never asked the deeper question of how the
+  composite would *transition* between arms. The product-vertex
+  shape was the right answer all along; it falls out naturally
+  once you ask "how do both sub-aggregates evolve over time?".
+- **EP-24's preservation argument for `isSingleValuedSym` was
+  wrong on the cross-arm case but right on the conclusion.**
+  EP-24 said the cross-vertex case (`InL s1` vs `InR s2`) "does
+  not arise" under sum-vertex semantics. Under the corrected
+  product-vertex semantics, the cross-case *does* arise (both
+  arms' edges are outgoing from each `Composite s1 s2`), but it
+  is still unsat because the `Left`-gated and `Right`-gated
+  guards are mutually exclusive on `Either ci1 ci2`. Same
+  conclusion ("no new API needed"); different reasoning.
+- **Right-side AST-walking helpers are reusable.** EP-25 needed
+  `weakenRTerm`, `weakenRPred`, `weakenRUpdate`,
+  `weakenROutFields`, `weakenROut` — none of which `compose`
+  required (because `compose`'s substitution algorithm folds
+  weakening into substitution). These helpers are likely
+  reusable by future combinators with non-substitution-shaped
+  weakening needs (e.g. a hypothetical `parallel` if it's ever
+  admitted, or any combinator that builds composite edges from
+  both sides without a `mid`-substitution stage).
+
+### What remains
+
+EP-26 (`feedback1`) is the next implementable combinator under
+MP-8. Its M3 implementation reuses `compose` twice and is
+expected to be uncomplicated; the only design question it will
+need to revisit is the re-keying mechanism for the second copy
+of t (M1 in EP-26's plan).
 
 
 ## Context and Orientation

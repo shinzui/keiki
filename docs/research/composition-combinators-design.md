@@ -701,6 +701,21 @@ combinators' design surface.
 
 ### `alternative` — admitted
 
+> **2026-05-03 update (EP-25 M4 implementation discovery).** The
+> original design specified a sum vertex `CompositeSum s1 s2 = InL
+> s1 | InR s2` with `initial = InL (initial t1)`. EP-25's
+> acceptance tests revealed this is degenerate: the composite has
+> no path from `InL` to `InR`, so it is stuck in t1's arm forever.
+> The intended semantics — sibling aggregates with **independent
+> state** evolving in parallel as Left/Right inputs arrive —
+> requires the *product* vertex `Composite s1 s2` (the same
+> vertex `compose` already uses). Each composite vertex emits the
+> union of t1's edges (gated on `Left`, target keeps t2's
+> sub-vertex) and t2's edges (gated on `Right`, target keeps t1's
+> sub-vertex). The signature, semantics, and preservation
+> arguments below are the **revised** form that EP-25 actually
+> shipped.
+
 #### Signature
 
     alternative
@@ -713,15 +728,16 @@ combinators' design surface.
       -> SymTransducer
            (HsPred (Append rs1 rs2) (Either ci1 ci2))
            (Append rs1 rs2)
-           (CompositeSum s1 s2)
+           (Composite s1 s2)
            (Either ci1 ci2)
            (Either co1 co2)
 
 The composite consumes `Either ci1 ci2`: a `Left ci1` routes to t1,
 a `Right ci2` routes to t2. The composite emits `Either co1 co2`
-correspondingly. The vertex type is the sum
-`CompositeSum s1 s2 = InL s1 | InR s2`, a new newtype to be exported
-from `Keiki.Composition` alongside the existing product `Composite`.
+correspondingly. The vertex type is the **product** `Composite s1
+s2` — the same newtype `compose` uses. Each composite vertex
+holds both sub-aggregates' states; each step advances exactly one
+arm.
 
 The `Disjoint (Names rs1) (Names rs2)` constraint matches `compose`'s
 existing requirement: the appended register file's slot-name domain
@@ -731,15 +747,29 @@ prefix. (t1's indices use `weakenL` as in `compose`.)
 
 #### Semantics
 
-The composite's edges from `InL s1` are t1's edges from `s1` lifted
-into the alternative's input/output alphabets:
+The composite's edges from `Composite s1 s2` are the union of:
 
-    Edge
-      { guard  = liftLPredAlt @ci2 (weakenLPred (guard e1))
-      , update = liftLUpdateAlt @ci2 (weakenLUpdate (update e1))
-      , output = fmap (liftLOutAlt @ci2 @co2) (output e1)
-      , target = InL (target e1)
-      }
+- **t1's edges from `s1`, lifted to fire on `Left` inputs.** Each
+  yields a composite edge whose target is `Composite (target e1)
+  s2` — t1's sub-vertex advances; t2's stays put.
+
+      Edge
+        { guard  = liftLPredAlt @ci2 (weakenLPred (guard e1))
+        , update = liftLUpdateAlt @ci2 (weakenLUpdate (update e1))
+        , output = fmap (liftLOutAlt @ci2 @co2 . weakenLOut) (output e1)
+        , target = Composite (target e1) s2
+        }
+
+- **t2's edges from `s2`, lifted to fire on `Right` inputs.**
+  Each yields a composite edge whose target is `Composite s1
+  (target e2)` — t2's sub-vertex advances; t1's stays put.
+
+      Edge
+        { guard  = liftRPredAlt @ci1 (weakenRPred (guard e2))
+        , update = liftRUpdateAlt @ci1 (weakenRUpdate (update e2))
+        , output = fmap (liftROutAlt @ci1 @co1 . weakenROut) (output e2)
+        , target = Composite s1 (target e2)
+        }
 
 The lifters `liftL*Alt` walk the relevant AST and adjust the input
 type from `ci1` to `Either ci1 ci2`: every `TInpCtorField (ic1 ::
@@ -747,141 +777,197 @@ InCtor ci1 ifs) ix` becomes `TInpCtorField (leftInCtor ic1 :: InCtor
 (Either ci1 ci2) ifs) ix`, where `leftInCtor` constructs an
 `InCtor` whose `icMatch :: Either ci1 ci2 -> Maybe (RegFile ifs)`
 matches only on the `Left` arm and runs the underlying `ic1.icMatch`.
-The output `OPack` similarly adjusts: every `OPack ic_co wc_co of` with
-`wc_co :: WireCtor co1 fields` becomes `OPack (leftInCtor ic_co)
-(leftWireCtor wc_co) of`, where `leftWireCtor` matches only on
-`Left co1` and constructs `Left . wc_co.wcBuild`.
+The output `OPack` similarly adjusts: every `OPack ic_co wc_co of`
+becomes `OPack (leftInCtor ic_co) (leftWireCtor wc_co) of`, where
+`leftWireCtor` matches only on `Left co1` and constructs `Left .
+wc_co.wcBuild`.
 
-Symmetric lifters `liftR*Alt` handle the `InR s2` side.
+Symmetric lifters `liftR*Alt` handle the t2 side.
 
 `isFinal` of the composite is:
 
-    \case
-      InL s1 -> isFinal t1 s1
-      InR s2 -> isFinal t2 s2
+    \(Composite s1 s2) -> isFinal t1 s1 && isFinal t2 s2
 
-This is asymmetric (only one side is "final" at a time, since the
-composite is in exactly one state). If both `t1` and `t2` are
-final-only-after-some-progress aggregates, the alternative composite
-is final iff it has progressed to a final state on whichever side it
-landed.
+Both sub-aggregates must reach a final state for the composite to
+be final.
 
-The initial vertex is `InL (initial t1)` by convention (the first
-input chooses the side). An alternative initial-state policy could
-take a `Left | Right` selector argument; the implementation EP picks
-one and documents.
+The initial vertex is `Composite (initial t1) (initial t2)` — both
+arms start in their respective initial states.
 
 #### Single-step example
 
-Two sibling aggregates:
-- `userReg :: SymTransducer (HsPred UserRegRegs UserCmd) UserRegRegs UserVertex UserCmd UserEvent`
-  (the canonical `Keiki.Examples.UserRegistration`).
-- `emailDelivery :: SymTransducer (HsPred EmailRegs EmailCmd) EmailRegs EmailVertex EmailCmd EmailEvent`
-  (the canonical `Keiki.Examples.EmailDelivery`).
+Two sibling aggregates (using EP-25's actual fixture):
+
+- `emailDelivery :: SymTransducer ... EmailCmd EmailEvent` (the
+  canonical `Keiki.Examples.EmailDelivery`).
+- `pinger :: SymTransducer ... PingCmd PingEvent` (an inline
+  Pinger fixture in `test/Keiki/CompositionAlternativeSpec.hs`).
 
 The composite:
 
     siblings :: SymTransducer
-                  (HsPred (Append UserRegRegs EmailRegs) (Either UserCmd EmailCmd))
-                  (Append UserRegRegs EmailRegs)
-                  (CompositeSum UserVertex EmailVertex)
-                  (Either UserCmd EmailCmd)
-                  (Either UserEvent EmailEvent)
-    siblings = alternative userReg emailDelivery
+                  (HsPred (Append EmailRegs PingRegs) (Either EmailCmd PingCmd))
+                  (Append EmailRegs PingRegs)
+                  (Composite EmailVertex PingVertex)
+                  (Either EmailCmd PingCmd)
+                  (Either EmailEvent PingEvent)
+    siblings = alternative emailDelivery pinger
 
-A single step:
+A single Left-arm step from initial:
 
-    step siblings (InL PotentialCustomer, initialAppendedRegs)
-         (Left (StartRegistration startData))
-      = Just ( (InL Registering, regsAfterStart)
-             , Just (Left (RegistrationStarted ...)) )
+    step siblings (Composite EmailPending PingIdle, initialRegs)
+         (Left (SendEmail d))
+      = Just ( (Composite EmailSentVertex PingIdle, regsAfterEmail)
+             , Just (Left (EmailSent ...)) )
 
-The `StartRegistration` lands in t1 because the `Left` arm matched.
-A subsequent `Right (SendEmail ...)` would land in t2 from whichever
-state t2 is in (initially `EmailPending`).
+The `SendEmail` advances the EmailDelivery arm to `EmailSentVertex`;
+the Pinger arm stays at `PingIdle`. A subsequent Right-arm step:
+
+    step siblings (Composite EmailSentVertex PingIdle, regsAfterEmail)
+         (Right (Ping d))
+      = Just ( (Composite EmailSentVertex PingDone, regsAfterPing)
+             , Just (Right (Pong ...)) )
+
+The `Ping` advances Pinger to `PingDone`; EmailDelivery stays at
+`EmailSentVertex`. Each arm's state is preserved across the other
+arm's transitions.
 
 #### Preservation arguments
 
 ##### Guarantee 1 — `solveOutput`
 
-The composite's `OPack (leftInCtor ic1) (leftWireCtor wc1) of_lifted`
-on the `InL` side: `solveOutput composite_OPack regs (Left co1)` runs
+A Left-arm composite output is `OPack (leftInCtor ic) (leftWireCtor
+wc) of_lifted`. `solveOutput composite_OPack regs (Left co1)` runs:
 
-    (leftWireCtor wc1).wcMatch (Left co1)
-      = wc1.wcMatch co1
+    (leftWireCtor wc).wcMatch (Left co1)
+      = wc.wcMatch co1
 
 then walks `of_lifted` (which is `of` from t1's edge with every
 `TInpCtorField` adjusted to read the `Left` arm) and rebuilds via
-`(leftInCtor ic1).icBuild (RegFile ifs1) = Left (ic1.icBuild ...)`.
+`(leftInCtor ic).icBuild (RegFile ifs1) = Left (ic.icBuild ...)`.
 The wrapping is structural; inversion is preserved end-to-end. The
-`InR` side is symmetric.
+Right-arm side is symmetric.
+
+A composite output of the wrong arm (e.g. inverting `Left _` against
+a Right-arm `OPack`) returns `Nothing` immediately at
+`(leftWireCtor wc).wcMatch (Left _)` — sound.
 
 ##### Guarantee 2 — `checkHiddenInputs`
 
 Each side's check inherits per edge: every t1 edge contributes a
-hidden-input warning if and only if the lifted-into-alternative edge
-does. The lifting is structural (it preserves
+hidden-input warning if and only if the lifted-into-alternative
+edge does. The lifting is structural (it preserves
 `TInpCtorField` slot reads), so the analysis sees the same field
-visit pattern. The composite's warning list is the union of t1's and
-t2's per-edge warnings.
+visit pattern. The composite's warning list is the union of t1's
+and t2's per-edge warnings.
 
 ##### Guarantee 3 — `isSingleValuedSym`
 
-At composite vertex `InL s1`, the outgoing edges are exactly t1's
-edges from `s1` (lifted into the `Either`-typed input). For two
-distinct lifted edges `e1a` and `e1b`, the conjunction of their
-guards is `(g1a-lifted) ∧ (g1b-lifted)` with both guards over
-`(Append rs1 rs2, Either ci1 ci2)`. The lifting preserves
-satisfiability: `(g1a ∧ g1b)` is unsat over `(rs1, ci1)` iff its
-lift is unsat over `(Append rs1 rs2, Either ci1 ci2)`. So the
-composite is single-valued at `InL s1` iff t1 is single-valued at
-s1.
+At composite vertex `Composite s1 s2`, the outgoing edges split
+into two groups:
 
-The cross-vertex case (`InL s1` vs `InR s2`) does not arise: every
-vertex has only one source-side, and the symbolic check iterates per
-vertex.
+- t1-lifted edges, all carrying `PInCtor (leftInCtor _)` somewhere
+  in their guard — guards that match only on `Left _` inputs.
+- t2-lifted edges, all carrying `PInCtor (rightInCtor _)`
+  somewhere in their guard — guards that match only on `Right _`
+  inputs.
 
-**No new cross-transducer mutual-exclusion check is needed.** The
-`Either ci1 ci2` input alphabet makes t1's and t2's guard domains
-disjoint by construction (`Left _` is unsatisfiable in t2's frame
-and vice versa).
+For pairwise conjunctions:
+
+- Two t1-lifted edges: conjunction reduces to t1's underlying
+  guards' conjunction; unsat iff t1 is single-valued at s1.
+- Two t2-lifted edges: symmetric — unsat iff t2 is single-valued
+  at s2.
+- One t1-lifted + one t2-lifted: conjunction includes
+  `PInCtor (leftInCtor _) ∧ PInCtor (rightInCtor _)`, which is
+  unsat (an input cannot be both `Left _` and `Right _`).
+
+So the composite is single-valued whenever t1 and t2 are
+individually single-valued. **No new cross-transducer
+mutual-exclusion check is needed** — the `Either` arms make the
+cross-side unsatisfiability automatic via the lifted `PInCtor`
+guards.
 
 #### Limitations
 
-- The composite's vertex space is `|s1| + |s2|` (sum, not product).
-  Symbolic analysis cost is proportional to the sum.
-- The implementation EP must export `CompositeSum`'s `Bounded`,
-  `Enum`, `Eq`, `Show`, and `NoThunks` instances analogously to
-  `Composite`'s (existing at `src/Keiki/Composition.hs:64-100`).
-- The alternative composite cannot start on the t2 side without an
-  explicit initial-side selector. The implementation EP chooses
-  between (a) a fixed-`InL` initial, (b) a parameterised
-  `alternativeWith :: Either s1 s2 -> ... -> SymTransducer ...`. The
-  default is (a) with documentation noting the asymmetry.
+- The composite's vertex space is `|s1| × |s2|` (product). Symbolic
+  analysis cost is proportional to the product.
+- The composite's edge count at each vertex is
+  `|edgesOut t1 s1| + |edgesOut t2 s2|`. Per-vertex single-valuedness
+  checks compare every pair, so SBV cost grows quadratically with
+  the per-vertex edge count.
+- The Left-arm and Right-arm aggregates are entirely independent —
+  they do not share state, do not observe each other's events, and
+  do not synchronize. Authors who need cross-aggregate coordination
+  use `compose` (for sequential coordination) or `feedback1` (for
+  aggregate ↔ policy round trips).
 
 #### Acceptance criteria for the implementation EP
 
 The per-combinator EP that ships `alternative` must:
 
-1. Add `alternative`, `CompositeSum`, and the `liftL*Alt` /
-   `liftR*Alt` family to `src/Keiki/Composition.hs` (no new module).
-2. Export `CompositeSum (..)` with `Bounded`, `Enum`, `Eq`, `Show`,
-   `NoThunks` instances mirroring `Composite`'s.
-3. Add an acceptance test under `test/Keiki/CompositionSpec.hs` (or
-   a sibling spec module) that:
-   - Composes `Keiki.Examples.UserRegistration` with a fixture
-     aggregate (similar to `AlertSource`) using `alternative`.
-   - Verifies `step` routes correctly on `Left` and `Right` inputs.
+1. Add `alternative` and the `liftL*Alt` / `liftR*Alt` family
+   (plus the right-side weakening helpers `weakenR*` and the
+   output-side weakening helpers `weakenL*Out`) to
+   `src/Keiki/Composition.hs` (no new module).
+2. Reuse the existing `Composite s1 s2` vertex (no new vertex
+   newtype needed).
+3. Add an acceptance test under
+   `test/Keiki/CompositionAlternativeSpec.hs` that:
+   - Composes a fixture aggregate (e.g.
+     `Keiki.Examples.EmailDelivery`) with a small inline sibling.
+   - Verifies `step` routes correctly on `Left` and `Right` inputs
+     and preserves the other arm's sub-vertex.
+   - Verifies the interleaved-step case where both arms advance
+     independently across the call sequence.
    - Verifies `omega` produces `Left` and `Right` outputs.
-   - Verifies `reconstitute` round-trips a canonical event log
-     mixing `Left` and `Right` events.
+   - Verifies `reconstitute` round-trips a mixed-arm event log in
+     both orderings (Left+Right and Right+Left).
    - Verifies `checkHiddenInputs` reports `[]` on the composite
      (assuming both sides are clean).
    - Verifies `isSingleValuedSym (withSymPred composite)` returns
      `True`.
-4. Update `docs/research/composition-combinators-design.md`'s
-   `alternative` section with a "What we shipped" subsection
+4. Update this section with a "What we shipped" subsection
    summarising any divergence from this record.
+
+#### What we shipped (EP-25, 2026-05-03)
+
+EP-25 implemented the **revised** design above (product vertex
+`Composite s1 s2`, not the originally-specified sum vertex
+`CompositeSum`). The implementation lives in
+`src/Keiki/Composition.hs:683-797` (the `alternative` body, the
+`liftEdgeL` / `liftEdgeR` helpers) plus the lifter family
+introduced earlier in the same file: `leftInCtor` /
+`rightInCtor`, `leftWireCtor` / `rightWireCtor`,
+`liftLTermAlt` / `liftRTermAlt`, `liftLPredAlt` / `liftRPredAlt`,
+`liftLUpdateAlt` / `liftRUpdateAlt`, `liftLOutFieldsAlt` /
+`liftROutFieldsAlt`, `liftLOutAlt` / `liftROutAlt`. The
+right-side AST-walking weakening helpers (`weakenRTerm`,
+`weakenRPred`, `weakenRUpdate`, `weakenROutFields`, `weakenROut`)
+and the output-side helpers (`weakenLOutFields`, `weakenLOut`)
+were added in the same EP and are reusable by future
+combinators.
+
+The acceptance test at `test/Keiki/CompositionAlternativeSpec.hs`
+covers nine cases — Left/Right/interleaved step routing,
+mixed-arm reconstitute (both orderings), omega for both arms,
+`checkHiddenInputs` returning `[]`, and `isSingleValuedSym
+(withSymPred siblings)` returning `True` — and all pass against
+EP-25's actual fixture (EmailDelivery + an inline Pinger).
+
+Divergences from the record above:
+
+- **Vertex shape.** The original record specified the sum
+  `CompositeSum s1 s2`. EP-25's M4 acceptance tests surfaced the
+  degeneracy and the implementation switched to the product
+  `Composite s1 s2`. Recorded in EP-25's Surprises &
+  Discoveries; the corrected analysis is what this section
+  documents.
+- **No `CompositeSum` type added.** The originally-proposed
+  newtype is not in the shipped module.
+- **`isFinal` requires both arms final.** The original record
+  said "asymmetric (only one side is final at a time)"; the
+  product vertex makes both-sides-final the natural definition.
 
 
 ### `feedback1` — admitted (single-step reduction)
@@ -1138,7 +1224,7 @@ sections above.
 | `Kleisli`'s status                                             | Re-deferred. Requires the multi-event edge form (Approach 3 in the multi-event note); MP-7's state-refinement covers the in-aggregate case. |
 | `parallel`'s status                                            | Re-deferred. The strict-tuple shape doesn't fit keiki's queue-driven runtime; `alternative` covers the bounded-context use case. |
 | Module shape for new combinators                               | Extend `Keiki.Composition`. New combinators reuse `WeakenR` / `weakenL*` / `subst*`. |
-| Composite vertex type for `alternative`                        | newtype `CompositeSum s1 s2 = InL s1 \| InR s2`.    |
+| Composite vertex type for `alternative`                        | Reuses `Composite s1 s2` (product). Originally specified `CompositeSum` (sum); EP-25 M4 surfaced the sum-vertex degeneracy and switched to product. |
 | Composite register file for `alternative` and `feedback1`     | `Append rs1 rs2` (for `alternative`); `Append rs1 (Append rs2 rs1)` (for `feedback1`, since t appears twice). |
 | MasterPlan fan-out                                             | Two child EPs: one for `alternative`, one for `feedback1`. |
 

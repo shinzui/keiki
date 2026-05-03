@@ -177,7 +177,7 @@ value.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Composition combinators beyond sequential — design milestone | docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md | None | EP-11 (external) | Complete |
-| 2 | Alternative composition combinator on SymTransducer | docs/plans/25-alternative-composition-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | In Progress |
+| 2 | Alternative composition combinator on SymTransducer | docs/plans/25-alternative-composition-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Complete |
 | 3 | Single-step feedback combinator on SymTransducer | docs/plans/26-single-step-feedback-combinator-on-symtransducer.md | EP-1 (this MP) | EP-11 (external) | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -334,7 +334,7 @@ provides an at-a-glance view of the entire initiative.
 - [x] EP-24: Settle the iteration model for `feedback`, the mutual-exclusion check for `alternative`, and the multi-event question for `Kleisli` (M2). *Iteration: single-step. Mutual-exclusion: no new API needed (`Either` arms make the check vacuous). Kleisli: re-deferred.*
 - [x] EP-24: Extend `composition-combinators-design.md`'s "Future improvements" section into per-combinator design records (M3). *Section "Combinators beyond `compose` — per-combinator design records" added; item F in keiki-generics-design.md updated.*
 - [x] EP-24: Decompose into per-combinator EPs; revise this MasterPlan's Exec-Plan Registry and Dependency Graph (M4). *EP-25 and EP-26 created and registered.*
-- [ ] EP-25: Implement `alternative` combinator with `CompositeSum` vertex and Either lifters; ship acceptance test.
+- [x] EP-25: Implement `alternative` combinator with Either lifters; ship acceptance test. *(2026-05-03)* Vertex shape revised mid-flight from sum (`CompositeSum`) to product (`Composite`) per EP-25's M4 design discovery. Suite: 178 examples, 0 failures.
 - [ ] EP-26: Implement single-step `feedback1` combinator (two stacked `compose`s); ship acceptance test.
 
 
@@ -370,6 +370,28 @@ Provide concise evidence.
   Cross-plan impact: EP-25's acceptance criterion is `cabal test`
   on `isSingleValuedSym (withSymPred (alternative t1 t2))`
   returning `True` — no new API needed in `Keiki.Symbolic`.
+
+- **2026-05-03 — `alternative`'s vertex shape is product, not sum.**
+  EP-25's M4 acceptance tests surfaced that EP-24's
+  originally-specified sum vertex `CompositeSum s1 s2 = InL s1 |
+  InR s2` is degenerate: with `initial = InL (initial t1)` and
+  no edges between InL and InR, the composite is stuck in t1's
+  arm. The intended semantics — sibling aggregates with
+  independent state evolving in parallel — requires the *product*
+  vertex `Composite s1 s2` (which `compose` already uses). At
+  each composite vertex, both t1's `Left`-gated edges and t2's
+  `Right`-gated edges are outgoing; t1's targets keep t2's
+  sub-vertex unchanged and vice versa. The single-valuedness
+  argument is unchanged: at any product vertex, t1-lifted and
+  t2-lifted edges are pairwise mutually exclusive because the
+  lifted `PInCtor (leftInCtor _)` and `PInCtor (rightInCtor _)`
+  guards are mutually exclusive on `Either ci1 ci2` inputs.
+  Cross-plan impact: EP-24's design record at
+  `docs/research/composition-combinators-design.md` has been
+  revised to specify the product vertex; the discrepancy and the
+  corrected analysis are documented in the design record's
+  "What we shipped" subsection. EP-26 (`feedback1`) is
+  unaffected — it uses `Composite` already.
 
 
 ## Decision Log
