@@ -222,7 +222,7 @@ visible across phases.
 | 1 | Mermaid renderer for single SymTransducer + canonical example diagrams | docs/plans/30-mermaid-renderer-for-single-symtransducer-canonical-example-diagrams.md | None | None | Complete |
 | 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Complete |
 | 3 | Shape B nested-subgraph Mermaid rendering for larger composites | docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md | EP-30, EP-31 | None | Complete |
-| 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | In Progress |
+| 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -464,13 +464,13 @@ Phase 2 (added 2026-05-03; not started):
 - [x] EP-32: Implement `toMermaidCompositeNested` (M2)
 - [x] EP-32: Render Shape B sibling diagram for the existing fixture (M3)
 - [x] EP-32: Add regression test pinning canonical Shape B output (M4)
-- [ ] EP-33: Verify prerequisites (EP-30, EP-31, EP-25, EP-26) and record baseline (M0)
-- [ ] EP-33: Design `toMermaidAlternative`'s parallel-arms layout; verify Mermaid syntax (M1)
-- [ ] EP-33: Design `toMermaidFeedback1`'s flat 3-deep cross-product layout (M2)
-- [ ] EP-33: Implement `toMermaidAlternative` + `toMermaidAlternativeWith` (M3)
-- [ ] EP-33: Implement `toMermaidFeedback1` (M4)
-- [ ] EP-33: Render diagrams for `alternative` and `feedback1` fixtures (M5)
-- [ ] EP-33: Add regression tests for both shape-aware renderers (M6)
+- [x] EP-33: Verify prerequisites (EP-30, EP-31, EP-25, EP-26) and record baseline (M0)
+- [x] EP-33: Design `toMermaidAlternative`'s parallel-arms layout; verify Mermaid syntax (M1)
+- [x] EP-33: Design `toMermaidFeedback1`'s flat 3-deep cross-product layout (M2)
+- [x] EP-33: Implement `toMermaidAlternative` + `toMermaidAlternativeWith` (M3)
+- [x] EP-33: Implement `toMermaidFeedback1` (M4)
+- [x] EP-33: Render diagrams for `alternative` and `feedback1` fixtures (M5)
+- [x] EP-33: Add regression tests for both shape-aware renderers (M6)
 
 
 ## Surprises & Discoveries
@@ -538,6 +538,36 @@ Phase 2 (added 2026-05-03; not started):
   t2's s2) and `toMermaidFeedback1` (3-deep over s1, s2, s1)
   will hit the same pattern. Recorded as a Surprise in EP-32's
   plan so future implementers don't waste a build cycle on it.
+
+- 2026-05-03 — EP-33's M4 surfaced an under-counted-output bug in
+  the plan's pre-implementation expected canonical block: the
+  plan asserted `toMermaidFeedback1` would emit only 5 lines for
+  the `loop` fixture (one initial, one edge-pair worth, two
+  finals); the actual output emits 9 (one initial, four edges
+  spanning all enumerated composite vertices, four finals). Two
+  contributing errors compounded:
+
+  1. The renderer never filters by reachability — `renderTopology`
+     walks `[minBound .. maxBound]` and emits an edge per `(v, e
+     <- edgesOut t v)` regardless of whether `v` is reachable
+     from the initial vertex. For `feedback1`, the cascade fires
+     at every enumerated composite vertex because the policy +
+     inner-toggle synchronisation works regardless of where the
+     outer toggle is.
+  2. Both `toggleAgg` and `togglePolicy` use `isFinal = const
+     True`, so every composite vertex is final under the
+     conjunction-of-finals rule.
+
+  EP-33 chose to use the actual output as canonical (per M3's
+  "output is source of truth" principle) and added a Decision
+  Log entry plus diagram-prose that calls out which vertices are
+  reachable. The general rendering policy across all four
+  renderers (EP-30, EP-31, EP-32, EP-33) is now: **the renderer
+  reports the full enumerated topology, not the orbit of the
+  initial vertex**. Future renderer EPs (DOT, etc.) should plan
+  for this — and pre-implementation expected outputs should be
+  computed from the actual `edgesOut` / `isFinal` values rather
+  than from informal reachability reasoning.
 
 
 ## Decision Log
@@ -628,9 +658,9 @@ Phase 2 (added 2026-05-03; not started):
 
 ## Outcomes & Retrospective
 
-**Phase 1 shipped (2026-05-03).** The entries below summarise
-EP-30 / EP-31 only; Phase 2 (EP-32 + EP-33) outcomes will be
-appended when those plans complete.
+**Phase 1 shipped (2026-05-03).** Phase 2 (EP-32 + EP-33) shipped
+later the same day; the Phase 2 outcomes block follows the Phase 1
+entry below.
 
 **Phase 1 — Shipped:**
 
@@ -662,24 +692,34 @@ diffs alongside source diffs; domain experts read the diagram
 without opening Haskell. Both gaps named in the futures note §5 and
 the crem comparison are closed for the topology-only view.
 
+**Phase 2 — Shipped (2026-05-03):**
+
+- EP-32 added `toMermaidCompositeNested` — the Shape B
+  nested-subgraph variant for sequential composites. Uses the
+  flat-identifier-in-outer-block syntax (no `Outer.Inner` dotted
+  syntax) so it sidesteps the agent-unverifiable Mermaid version
+  question EP-31 deferred. Sibling diagram lives at
+  `docs/guide/diagrams/composite-alert-email-nested.md`.
+- EP-33 added `toMermaidAlternative`,
+  `toMermaidAlternativeWith`, and `toMermaidFeedback1` — the
+  shape-aware renderers for `alternative` (parallel arms) and
+  `feedback1` (flat 3-deep cross-product). New diagrams at
+  `docs/guide/diagrams/composite-email-pinger-alternative.md`
+  and `docs/guide/diagrams/composite-toggle-feedback1.md`.
+
+`Keiki.Render.Mermaid`'s public surface after Phase 2 (in
+declaration order): `toMermaid`, `toMermaidAlternative`,
+`toMermaidAlternativeWith`, `toMermaidComposite`,
+`toMermaidCompositeNested`, `toMermaidFeedback1`, plus the
+helpers `vertexLabel`, `compositeLabel`, `edgeInputName`,
+`edgeOutputName`, `edgeLabel`. Internal helpers
+`feedback1Label` and `renderTopology` are not exported.
+`test/Keiki/Render/MermaidSpec.hs` carries five describe blocks
+(one per public renderer), the wrapper title in `test/Spec.hs`
+reads `Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)`, and
+`cabal test` reports 201 examples, 0 failures.
+
 **What remains:**
-
-Two of the deferred follow-ups originally listed here were
-promoted into Phase 2 child plans on 2026-05-03 — see the Decision
-Log entry of that date. These are tracked by their own EPs:
-
-- Shape B nested-subgraph rendering for larger composites is now
-  EP-32 (`docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md`).
-  Closes the open question EP-31 deferred about Mermaid syntax
-  verification by committing to the flat-identifier-in-outer-block
-  variant.
-- Composite-renderer variants for `alternative` and `feedback1`
-  are now EP-33
-  (`docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md`).
-  Ships `toMermaidAlternative` (parallel-arms layout) and
-  `toMermaidFeedback1` (flat 3-deep cross-product).
-
-Still deferred (not promoted to a Phase 2 plan):
 
 - DOT / Graphviz rendering — listed as a future format; deferred
   pending demand. Would be a separate `Keiki.Render.Dot` module
@@ -692,6 +732,11 @@ Still deferred (not promoted to a Phase 2 plan):
 - Specialised renderers for arbitrary nested `Composite` shapes
   authored by stacking `compose` beyond the two combinators EP-33
   covers. EP-33's Decision Log records the rationale.
+- Visual verification of the emitted Mermaid blocks in a
+  previewer. Both Phase 2 plans carried this as an
+  LLM-agent-implementer limitation; a human reviewer can
+  sanity-check the produced diagrams under
+  `docs/guide/diagrams/`.
 
 **Lessons:**
 
@@ -705,12 +750,34 @@ Still deferred (not promoted to a Phase 2 plan):
   GitHub-render check) should be either pre-spec'd with a
   deterministic fallback (as EP-31 did with Shape A) or flagged for
   a human reviewer. LLM-agent implementers cannot complete those
-  steps as-written.
+  steps as-written. Both Phase 2 plans absorbed the
+  deterministic-fallback pattern from EP-31 — Phase 2 didn't
+  re-discover this constraint, it inherited it.
 - The "structurally identical to <existing function>" framing the
   plan used for `toMermaidComposite` is a reliable
   parameterise-the-difference signal during implementation; the
   resulting `renderTopology` helper landed cleanly with zero
   duplication.
+- Phase 2's reuse-vs-inline judgement for `renderTopology`
+  matched the prediction in the 2026-05-03 Surprises entry:
+  reuse when the layout is the same shape (EP-33's
+  `toMermaidFeedback1` reused it for free); inline when it
+  diverges (EP-32's `toMermaidCompositeNested` and EP-33's
+  `toMermaidAlternative` both inlined). Generalising
+  `renderTopology` to a "blocks-emit" hook would have added
+  complexity for two callers with two different needs; pattern
+  was right.
+- Pre-implementation expected-output sketches should be
+  computed from the actual `edgesOut` / `isFinal` values rather
+  than from informal reachability reasoning. EP-33's M4
+  expected block under-counted by 4 lines because the plan
+  author informally pruned unreachable vertices and missed that
+  both `toggleAgg`'s and `togglePolicy`'s `isFinal = const True`
+  made every composite vertex final. The "output is source of
+  truth" escape hatch in M3 saved the work but is reactive; a
+  better convention would be to mark expected-output blocks
+  with provenance ("derived by hand from <fixture> via
+  <reasoning>" vs. "captured from running the renderer").
 
 
 ## Revision Notes
@@ -735,3 +802,15 @@ Still deferred (not promoted to a Phase 2 plan):
   (re-titled the "Shipped" entry as Phase 1; rewrote the "What
   remains" section to point at the new Phase 2 plans for two of
   the deferred items).
+
+- 2026-05-03 — EP-33 shipped (the last Phase 2 plan). Marked the
+  registry row Complete; checked off all seven Phase 2
+  milestones in Progress; added a Surprises entry recording the
+  cross-plan rendering policy clarification surfaced by EP-33's
+  M4 (renderers report the full enumerated topology, not the
+  initial-vertex orbit; this generalises across all four
+  renderers); rewrote the Outcomes & Retrospective "What
+  remains" / "Lessons" sections to summarise the full
+  initiative, including a new lesson about expected-output
+  provenance discovered during EP-33's M4. The MasterPlan is now
+  in its terminal post-shipment state.

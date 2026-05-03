@@ -129,16 +129,44 @@ t2 with parallel-arm wrapping.
       `pinger`, `PingVertex (..)`, `siblings`. ghci transcript
       against `emailDelivery` + `pinger` matches the canonical
       block in M3's sketch verbatim.
-- [ ] M4 — Implement `toMermaidFeedback1` in
+- [x] M4 — Implement `toMermaidFeedback1` in
       `src/Keiki/Render/Mermaid.hs`; export it; verify in `ghci`
       against `loop` (the existing feedback1 test fixture).
-- [ ] M5 — Render diagrams under `docs/guide/diagrams/` for both
+      **Done 2026-05-03**: added `toMermaidFeedback1` reusing
+      `renderTopology` with `feedback1Label`. Imports widened to
+      bring in `feedback1` / `WeakenR` / `Disjoint` / `Names` /
+      `Append`. Widened `Keiki.CompositionFeedback1Spec`'s exports
+      to include `toggleAgg`, `togglePolicy`, `ToggleVertex (..)`,
+      `PolicyVertex (..)`, `loop`. ghci transcript against
+      `toggleAgg` + `togglePolicy` recorded; the actual output
+      diverged from the plan's M4 expected block — see Surprises
+      (2026-05-03 M4) and the Decision Log entry of the same
+      date for the analysis. The actual 9-line output is the new
+      source of truth for M5 / M6.
+- [x] M5 — Render diagrams under `docs/guide/diagrams/` for both
       fixtures (`composite-email-pinger-alternative.md`,
-      `composite-toggle-feedback1.md`).
-- [ ] M6 — Add regression tests in `test/Keiki/Render/MermaidSpec.hs`
+      `composite-toggle-feedback1.md`). **Done 2026-05-03**: both
+      files created with refresh recipes and prose explaining the
+      two layout shapes. The feedback1 diagram's prose explicitly
+      calls out the unreachable-but-rendered pair surfaced in the
+      M4 Surprises entry.
+- [x] M6 — Add regression tests in `test/Keiki/Render/MermaidSpec.hs`
       pinning canonical output for both renderers; `cabal test`
       passes (expected count: 200 if EP-32 hasn't shipped, 201 if
-      it has).
+      it has). **Done 2026-05-03**: added two describe blocks
+      (`toMermaidAlternative (alternative composite)` and
+      `toMermaidFeedback1 (feedback1 composite)`) plus the two
+      canonical strings (`emailPingerAltCanonical`,
+      `toggleFeedback1Canonical`); widened the existing import of
+      `Keiki.Render.Mermaid` to include the two new entry points;
+      added imports for `pinger`, `toggleAgg`, `togglePolicy`;
+      bumped the `test/Spec.hs` wrapper title to
+      `(EP-30, EP-31, EP-32, EP-33)`. `cabal test` reports 201
+      examples, 0 failures. Anti-validation: temporarily mutated
+      `LeftArm` → `LeftArmTYPO` and `Off_Pol_Off` →
+      `Off_Pol_OffTYPO` in the canonical strings; both surfaced
+      clear `expected … but got …` diffs in their respective
+      describe blocks; both reverted before commit.
 
 
 ## Surprises & Discoveries
@@ -161,6 +189,50 @@ output, ghci transcripts, etc.).
   … }` blocks, and bare identifiers — so the rendering risk is
   low. A human verifier can sanity-check the produced Markdown
   diagrams under `docs/guide/diagrams/` after this plan lands.
+
+- 2026-05-03 (M4) — `toMermaidFeedback1` for the `loop` fixture
+  emits **all four composite vertices** as both edge sources and
+  final-state lines, not the two-vertex reachable subset the plan
+  body sketched. The plan's expected canonical block (lines
+  761-770 of the original M4 sketch) under-counted both kinds of
+  output, asserting "the other two composite vertices —
+  `Off_Pol_On` and `On_Pol_Off` — are unreachable and not final,
+  so the renderer omits them." Two separate errors in that
+  assertion:
+
+  1. **Edges:** `feedback1 = compose t (compose f t)` produces
+     synchronised composite-edge cascades at *every* enumerated
+     composite vertex, not only the reachable ones. The renderer
+     never filters by reachability — `renderTopology` walks
+     `[minBound .. maxBound]` and emits an edge per `(v, e <-
+     edgesOut t v)`. Both `Off_Pol_On --> On_Pol_Off` and
+     `On_Pol_Off --> Off_Pol_On` (the cross-cascade-from-unreachable
+     pair) appear in the output.
+  2. **Finals:** `toggleAgg`'s `isFinal = const True` means every
+     toggle vertex is final; `togglePolicy`'s `isFinal = const
+     True` likewise. The conjunction-of-finals rule
+     `compose`/`feedback1` use therefore makes every composite
+     vertex final, including the two "unreachable" ones.
+
+  Per M3's "the output emitted is the source of truth" rule, M5's
+  diagram and M6's canonical string use the **actual** 9-line
+  output:
+
+      stateDiagram-v2
+          [*] --> Off_Pol_Off
+          Off_Pol_Off --> On_Pol_On : TgFlip / TgFlipped
+          Off_Pol_On --> On_Pol_Off : TgFlip / TgFlipped
+          On_Pol_Off --> Off_Pol_On : TgFlip / TgFlipped
+          On_Pol_On --> Off_Pol_Off : TgFlip / TgFlipped
+          Off_Pol_Off --> [*]
+          Off_Pol_On --> [*]
+          On_Pol_Off --> [*]
+          On_Pol_On --> [*]
+
+  The diagram file's prose explains that two of the four vertices
+  are unreachable from the initial state but the renderer surfaces
+  them anyway — making the static cross-product topology visible,
+  which is the renderer's contract.
 
 
 ## Decision Log
@@ -218,6 +290,27 @@ output, ghci transcripts, etc.).
   3-tuple label function).
   Date: 2026-05-03
 
+- Decision: `toMermaidFeedback1`'s canonical output renders **all
+  four** composite vertices of the `loop` fixture (including the
+  two unreachable from the initial state), not the two-vertex
+  reachable subset the plan body's M4 expected-output sketch
+  assumed.
+  Rationale: `renderTopology` does not filter by reachability —
+  it walks `[minBound .. maxBound]` and emits a line per
+  outgoing edge plus a final-state line per `isFinal`-firing
+  vertex. The `feedback1` cascade fires at every enumerated
+  composite vertex (the policy + inner-toggle synchronisation
+  works regardless of how the outer toggle got there), and both
+  `toggleAgg` and `togglePolicy` have `isFinal = const True`. The
+  resulting 9-line block is the **actual** topology of the
+  composite as a static structure; the diagram file's prose calls
+  out which vertices are reachable from the initial state. This
+  matches `toMermaid` / `toMermaidComposite` / `toMermaidCompositeNested`'s
+  policy of rendering the full enumerated topology rather than a
+  reachability-pruned subset. See Surprises (2026-05-03 M4) for
+  the concrete output.
+  Date: 2026-05-03
+
 - Decision: This plan does NOT introduce specialised renderers for
   arbitrary nested `Composite (Composite a b) c` or `Composite a
   (Composite b (Composite c d))` shapes that future user code
@@ -237,10 +330,96 @@ output, ghci transcripts, etc.).
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or
-at completion.
+**Shipped (2026-05-03).**
 
-(To be filled during and after implementation.)
+`Keiki.Render.Mermaid` gained three new public entry points:
+
+- `toMermaidAlternative t1 t2` — parallel-arms layout for
+  `Keiki.Composition.alternative`-shaped composites. Default arm
+  names are `LeftArm` / `RightArm`.
+- `toMermaidAlternativeWith leftName rightName t1 t2` — same as
+  above with caller-supplied arm names (must be valid Mermaid
+  identifiers).
+- `toMermaidFeedback1 t f` — flat 3-deep cross-product layout for
+  `Keiki.Composition.feedback1`-shaped composites. Vertex labels
+  follow `<show s1>_<show s2>_<show s1>` (outer-t state, then
+  policy state, then inner-t state).
+
+Plus the un-exported `feedback1Label` helper. The new functions
+reuse `vertexLabel`, `edgeLabel`, and (for `toMermaidFeedback1`)
+`renderTopology`. `toMermaidAlternative` does not reuse
+`renderTopology` because its layout walks each arm independently
+rather than a single enumerated vertex space.
+
+Two new diagrams under `docs/guide/diagrams/`:
+
+- `composite-email-pinger-alternative.md` — the
+  `alternative emailDelivery pinger` parallel-arms diagram.
+- `composite-toggle-feedback1.md` — the
+  `feedback1 toggleAgg togglePolicy` cascade diagram.
+
+Two new regression tests in
+`test/Keiki/Render/MermaidSpec.hs`. `cabal test` reports 201
+examples, 0 failures.
+
+**Behaviour now possible.** A keiki user can call
+`toMermaidAlternative` with the two arm transducers they passed
+to `alternative` (or `toMermaidFeedback1` with the two halves they
+passed to `feedback1`) and embed the resulting Mermaid block in
+GitHub / Notion / VS Code Markdown previews. The diagram's shape
+matches the combinator's mental model — independent arms for
+`alternative`, a 3-deep flat cascade for `feedback1` — rather than
+a uniform flat cross-product that would obscure the structural
+distinctions between the three composite-producing combinators.
+
+**What remains.**
+
+- DOT / Graphviz output (still a MasterPlan-level deferral).
+- Diff visualisation across two transducers (`diffTransducers`).
+- Per-edge guard / update inspection.
+- Specialised renderers for arbitrary nested `Composite` shapes
+  authored by stacking `compose` beyond the two combinators this
+  plan covers (see Decision Log of 2026-05-03).
+- A Shape-B-style nested layout for `feedback1` cascades larger
+  than `2 * 1 * 2`. Out of scope here per the M2 Decision Log
+  entry; could be a follow-up if the larger-cascade use case
+  emerges.
+- Visual verification of the emitted Mermaid blocks in a previewer.
+  As an LLM agent the implementer cannot perform this step (per
+  the M1 Surprises entry); the produced diagrams use only
+  well-supported standard Mermaid syntax (multiple top-level
+  `[*] -->` arrows, named `state Name { … }` blocks, bare flat
+  identifiers) and a human reviewer can sanity-check the
+  rendered diagrams under `docs/guide/diagrams/` after this plan
+  lands.
+
+**Lessons.**
+
+- The plan body's M4 expected-output sketch under-counted the
+  `feedback1` composite's edges and finals. The two errors
+  (assuming reachability filtering, missing the
+  `isFinal = const True` finals on both halves) compounded into a
+  5-line vs. 9-line discrepancy that wouldn't have surfaced
+  without running the actual renderer. Future "expected canonical
+  block" sections in renderer plans should explicitly call out
+  whether reachability or `isFinal` shape might surprise the
+  expected-output author. The plan's M3 instruction "the output
+  emitted is the source of truth" remained the right escape
+  hatch — applied at M4, it kept the work moving rather than
+  arguing about which output was "correct."
+- The test-fixture re-export pattern from EP-31's M4 (renamed
+  IP-5 in the MasterPlan) generalised cleanly to a second
+  composite-renderer plan. The cost of widening
+  `CompositionAlternativeSpec`'s and `CompositionFeedback1Spec`'s
+  exports was three lines of comment + one line of export each;
+  the avoided duplication-drift hazard is worth far more.
+- `renderTopology` covers `toMermaidFeedback1` directly: just
+  feed it a 3-tuple label function. The "reuse `renderTopology`
+  when layout is the same shape; inline when it diverges"
+  pattern (recorded in MP-10's Surprises 2026-05-03) held up
+  exactly: `toMermaidAlternative` walks each arm independently
+  and was inlined; `toMermaidFeedback1` is just a relabelled
+  flat cross-product and reused the helper.
 
 
 ## Context and Orientation

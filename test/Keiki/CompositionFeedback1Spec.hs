@@ -38,7 +38,17 @@
 -- command was consumed by the second t. The output's 'tValue' is
 -- the original input's 'tValue', forwarded through the cascade by
 -- structural substitution.
-module Keiki.CompositionFeedback1Spec (spec) where
+module Keiki.CompositionFeedback1Spec
+  ( spec
+    -- Re-exported for "Keiki.Render.MermaidSpec" (EP-33 M6). See
+    -- @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@'s
+    -- IP-5 reference.
+  , toggleAgg
+  , togglePolicy
+  , ToggleVertex (..)
+  , PolicyVertex (..)
+  , loop
+  ) where
 
 import GHC.Generics (Generic)
 import Test.Hspec

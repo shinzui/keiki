@@ -43,7 +43,7 @@ main = hspec $ do
   describe "Keiki.Generics.TH"                            Keiki.Generics.THSpec.spec
   describe "Keiki.NoThunks"                               Keiki.NoThunksSpec.spec
   describe "Keiki.Profunctor (EP-27)"                     Keiki.ProfunctorSpec.spec
-  describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32)"   Keiki.Render.MermaidSpec.spec
+  describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
   describe "Keiki.Examples.EmailDelivery (builder)"       Keiki.Examples.EmailDeliveryBuilderSpec.spec
   describe "Keiki.Examples.EmailDelivery (view)"          Keiki.Examples.EmailDeliveryViewSpec.spec
