@@ -196,11 +196,22 @@ must always reflect the actual current state of the work.
         record `LegacyAssignmentCommandedData { assignment ::
         LoanCmd' }` because `deriveWireCtors` requires payloads
         to be record-syntax constructors.
-- [ ] M5 — Sequential composition `LoanApplication ⨾
-      CoreBankingSync ⨾ Loan`.
-  - [ ] `Jitsurei.LoanWorkflow` composing all three with
-        `Keiki.Composition.compose` + two `lmapMaybeCi` adapters.
-  - [ ] `Jitsurei.LoanWorkflowSpec` end-to-end test.
+- [x] M5 — Sequential composition `LoanApplication ⨾
+      CoreBankingSync ⨾ Loan`. (2026-05-03)
+  - [x] `Jitsurei.LoanWorkflow` composes all three with
+        `Keiki.Composition.compose` + two `lmapMaybeCi`
+        adapters. The composite is type-correct but largely
+        unfireable end-to-end because compose is lockstep and
+        the cross-context creation flow is async (see
+        Surprises & Discoveries 2026-05-03).
+  - [x] `Jitsurei.LoanWorkflowSpec` exercises each cross-
+        context jump (LoanApplication → CoreBankingSync,
+        CoreBankingSync → Loan) via the adapter functions and
+        direct driver calls, mirroring what the runtime
+        adapter would do. End-to-end:
+        `LoanCmd → ApplicationApproved → SyncToLegacyRequested
+        → (legacy callback) → LegacyAssignmentCommanded →
+        AssignLegacyLoanId → LegacyLoanIdAssigned`.
 - [ ] M6 — Mermaid render + golden tests.
   - [ ] `Jitsurei.Render.MermaidLoanSpec` for single +
         composite.
@@ -233,6 +244,32 @@ discovered during implementation. Provide concise evidence.
   `jitsurei`, which contradicts M1 step 10's "layering"
   rationale. See the corresponding Decision Log entry for the
   resolution chosen.
+
+- 2026-05-03 — `Keiki.Composition.compose` is lockstep, while
+  cross-context creation flows are async. `compose t1 t2`
+  produces a transducer whose every non-ε composite edge fires
+  *both* t1 *and* t2 simultaneously. For the LoanWorkflow this
+  means: a `StartApplication` LoanCmd makes t1 emit
+  `ApplicationStarted`; the lmapMaybeCi'd t2 (CoreBankingSync)
+  adapter returns 'Nothing' for `ApplicationStarted`, so t2 has
+  no firing edge from `SyncIdle` for that input. Composite
+  step ⇒ 'Nothing'. The composite is therefore empty for every
+  LoanCmd that advances t1. Even the one cross-context-relevant
+  edge (LoanApplication's `ApplicationApproved` mapping to
+  CoreBankingSync's `LoanCreatedIn`) is downstream — only if
+  the runtime issues `Continue` AT the moment t1 reaches
+  Approved AND t2 happens to be at SyncIdle does the composite
+  fire. And t3's adapter returns 'Nothing' for t2's
+  `SyncToLegacyRequested` audit emit, so the three-way compose
+  has no firing chain at all. Resolution: the M5 module
+  defines `loanWorkflow` as the three-way compose for type-
+  level demonstration; the spec exercises each cross-context
+  jump (LoanApplication → CoreBankingSync,
+  CoreBankingSync → Loan) via separate driver calls that
+  mimic the runtime adapter, since `compose`'s lockstep
+  semantics don't match the natural async-creation
+  architecture. This is the documented variance caveat in
+  `docs/guide/profunctor.md` made concrete.
 
 - 2026-05-03 — `isSingleValuedSym (withSymPred loanApplication)`
   answers @False@ rather than @True@. Root cause: the multi-field

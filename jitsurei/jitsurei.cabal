@@ -31,6 +31,7 @@ library
                         Jitsurei.EmailDelivery
                         Jitsurei.Loan
                         Jitsurei.LoanApplication
+                        Jitsurei.LoanWorkflow
                         Jitsurei.OrderCart
                         Jitsurei.UserRegistration
                         Jitsurei.UserRegistrationV0
@@ -56,6 +57,7 @@ test-suite jitsurei-test
                         Jitsurei.LoanApplicationSymbolicSpec
                         Jitsurei.LoanApplicationViewSpec
                         Jitsurei.LoanSpec
+                        Jitsurei.LoanWorkflowSpec
                         Jitsurei.OrderCartBuilderSpec
                         Jitsurei.OrderCartSpec
                         Jitsurei.UserRegistrationBuilderSpec
