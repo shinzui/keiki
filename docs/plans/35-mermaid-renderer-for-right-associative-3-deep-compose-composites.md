@@ -129,34 +129,35 @@ completed task into two ("done" vs. "remaining").
         `it` block pinning the nested 3-deep block for the
         same synthetic fixture used in M1.
   - [x] `cabal test keiki-test` green.
-- [ ] M3 — Pin loan-workflow goldens; update tutorial; update
-      EP-34's living document.
-  - [ ] Extend `jitsurei/test/Jitsurei/Render/MermaidLoanSpec.hs`
+- [x] M3 — Pin loan-workflow goldens; update tutorial; update
+      EP-34's living document. (2026-05-04)
+  - [x] Extend `jitsurei/test/Jitsurei/Render/MermaidLoanSpec.hs`
         with two `it` blocks pinning
         `toMermaidCompose3 loanWorkflow` and
         `toMermaidCompose3Nested loanWorkflow` against
         canonical `Text` literals defined in the same module
         (mirroring the existing pattern for the single-aggregate
         renders).
-  - [ ] Mirror the canonical blocks as
+  - [x] Mirror the canonical blocks as
         `docs/guide/diagrams/loan-workflow.mmd` and
         `docs/guide/diagrams/loan-workflow-nested.mmd`.
-  - [ ] Update the module-header comment of
+  - [x] Update the module-header comment of
         `MermaidLoanSpec.hs` to drop the "intentionally not
         pinned" caveat and reference EP-35.
-  - [ ] Update
+  - [x] Update
         `docs/plans/34-loan-application-worked-example-with-cross-context-process-and-tutorial.md`
         — M6 Progress sub-bullet flips from "intentionally not
         pinned" to "pinned in EP-35"; "Follow-ups" subsection
         in Outcomes & Retrospective marks the renderer item
         complete with a back-pointer to EP-35.
-  - [ ] Update
+  - [x] Update
         `docs/guide/loan-application-tutorial.md` §10 to embed
         the rendered nested composite via a fenced
         ```mermaid ``` block (or by referencing the `.mmd`
         file). The single-aggregate diagrams already in §10
         stay; the new composite caps the section.
-  - [ ] `cabal test all` green.
+  - [x] `cabal test all` green (146 + 104 examples; 1 pre-
+        existing pending in `jitsurei-test`).
 - [ ] M4 — Update MP-10 registry; brief outcomes pass.
   - [ ] Append an EP-35 row to MP-10's Exec-Plan Registry table
         (status Complete) at

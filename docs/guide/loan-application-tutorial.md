@@ -520,6 +520,152 @@ each stage directly through these adapter functions, mirroring what
 the runtime does. This is the spec to read if you want to understand
 the cross-context choreography concretely.
 
+### The shape of the composite
+
+Pinned by `Jitsurei.Render.MermaidLoanSpec` and rendered to disk at
+`docs/guide/diagrams/loan-workflow-nested.mmd`. The diagram groups
+the 6 × 3 × 3 = 54 cross-product vertices under the six outer
+`LoanAppVertex` aggregates, then lists every reachable composite
+edge at the top level. The flat-form sibling lives at
+`docs/guide/diagrams/loan-workflow.mmd` if you prefer one un-grouped
+list of transitions; both are produced by
+`Keiki.Render.Mermaid.toMermaidCompose3{,Nested}` from the same
+`loanWorkflow` value:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Intake_SyncIdle_LoanInitial
+    state Intake {
+        Intake_SyncIdle_LoanInitial
+        Intake_SyncIdle_LoanAwaiting
+        Intake_SyncIdle_LoanLinked
+        Intake_SyncRequested_LoanInitial
+        Intake_SyncRequested_LoanAwaiting
+        Intake_SyncRequested_LoanLinked
+        Intake_SyncSettled_LoanInitial
+        Intake_SyncSettled_LoanAwaiting
+        Intake_SyncSettled_LoanLinked
+    }
+    state CollectingDocuments {
+        CollectingDocuments_SyncIdle_LoanInitial
+        CollectingDocuments_SyncIdle_LoanAwaiting
+        CollectingDocuments_SyncIdle_LoanLinked
+        CollectingDocuments_SyncRequested_LoanInitial
+        CollectingDocuments_SyncRequested_LoanAwaiting
+        CollectingDocuments_SyncRequested_LoanLinked
+        CollectingDocuments_SyncSettled_LoanInitial
+        CollectingDocuments_SyncSettled_LoanAwaiting
+        CollectingDocuments_SyncSettled_LoanLinked
+    }
+    state UnderReview {
+        UnderReview_SyncIdle_LoanInitial
+        UnderReview_SyncIdle_LoanAwaiting
+        UnderReview_SyncIdle_LoanLinked
+        UnderReview_SyncRequested_LoanInitial
+        UnderReview_SyncRequested_LoanAwaiting
+        UnderReview_SyncRequested_LoanLinked
+        UnderReview_SyncSettled_LoanInitial
+        UnderReview_SyncSettled_LoanAwaiting
+        UnderReview_SyncSettled_LoanLinked
+    }
+    state Approved {
+        Approved_SyncIdle_LoanInitial
+        Approved_SyncIdle_LoanAwaiting
+        Approved_SyncIdle_LoanLinked
+        Approved_SyncRequested_LoanInitial
+        Approved_SyncRequested_LoanAwaiting
+        Approved_SyncRequested_LoanLinked
+        Approved_SyncSettled_LoanInitial
+        Approved_SyncSettled_LoanAwaiting
+        Approved_SyncSettled_LoanLinked
+    }
+    state Declined {
+        Declined_SyncIdle_LoanInitial
+        Declined_SyncIdle_LoanAwaiting
+        Declined_SyncIdle_LoanLinked
+        Declined_SyncRequested_LoanInitial
+        Declined_SyncRequested_LoanAwaiting
+        Declined_SyncRequested_LoanLinked
+        Declined_SyncSettled_LoanInitial
+        Declined_SyncSettled_LoanAwaiting
+        Declined_SyncSettled_LoanLinked
+    }
+    state Withdrawn {
+        Withdrawn_SyncIdle_LoanInitial
+        Withdrawn_SyncIdle_LoanAwaiting
+        Withdrawn_SyncIdle_LoanLinked
+        Withdrawn_SyncRequested_LoanInitial
+        Withdrawn_SyncRequested_LoanAwaiting
+        Withdrawn_SyncRequested_LoanLinked
+        Withdrawn_SyncSettled_LoanInitial
+        Withdrawn_SyncSettled_LoanAwaiting
+        Withdrawn_SyncSettled_LoanLinked
+    }
+    Intake_SyncIdle_LoanInitial --> CollectingDocuments_SyncRequested_LoanAwaiting : StartApplication / LoanCreated
+    Intake_SyncIdle_LoanInitial --> Withdrawn_SyncRequested_LoanAwaiting : WithdrawApplication / LoanCreated
+    Intake_SyncIdle_LoanAwaiting --> CollectingDocuments_SyncRequested_LoanLinked : StartApplication / LegacyLoanIdAssigned
+    Intake_SyncIdle_LoanAwaiting --> Withdrawn_SyncRequested_LoanLinked : WithdrawApplication / LegacyLoanIdAssigned
+    Intake_SyncRequested_LoanInitial --> CollectingDocuments_SyncSettled_LoanAwaiting : StartApplication / LoanCreated
+    Intake_SyncRequested_LoanInitial --> Withdrawn_SyncSettled_LoanAwaiting : WithdrawApplication / LoanCreated
+    Intake_SyncRequested_LoanAwaiting --> CollectingDocuments_SyncSettled_LoanLinked : StartApplication / LegacyLoanIdAssigned
+    Intake_SyncRequested_LoanAwaiting --> Withdrawn_SyncSettled_LoanLinked : WithdrawApplication / LegacyLoanIdAssigned
+    CollectingDocuments_SyncIdle_LoanInitial --> CollectingDocuments_SyncRequested_LoanAwaiting : SubmitIncomeDocument / LoanCreated
+    CollectingDocuments_SyncIdle_LoanInitial --> CollectingDocuments_SyncRequested_LoanAwaiting : SubmitIdDocument / LoanCreated
+    CollectingDocuments_SyncIdle_LoanInitial --> CollectingDocuments_SyncRequested_LoanAwaiting : RecordCreditScore / LoanCreated
+    CollectingDocuments_SyncIdle_LoanInitial --> CollectingDocuments_SyncRequested_LoanAwaiting : RecordEmploymentCheck / LoanCreated
+    CollectingDocuments_SyncIdle_LoanInitial --> Withdrawn_SyncRequested_LoanAwaiting : WithdrawApplication / LoanCreated
+    CollectingDocuments_SyncIdle_LoanInitial --> UnderReview_SyncIdle_LoanInitial : Continue / ε
+    CollectingDocuments_SyncIdle_LoanAwaiting --> CollectingDocuments_SyncRequested_LoanLinked : SubmitIncomeDocument / LegacyLoanIdAssigned
+    CollectingDocuments_SyncIdle_LoanAwaiting --> CollectingDocuments_SyncRequested_LoanLinked : SubmitIdDocument / LegacyLoanIdAssigned
+    CollectingDocuments_SyncIdle_LoanAwaiting --> CollectingDocuments_SyncRequested_LoanLinked : RecordCreditScore / LegacyLoanIdAssigned
+    CollectingDocuments_SyncIdle_LoanAwaiting --> CollectingDocuments_SyncRequested_LoanLinked : RecordEmploymentCheck / LegacyLoanIdAssigned
+    CollectingDocuments_SyncIdle_LoanAwaiting --> Withdrawn_SyncRequested_LoanLinked : WithdrawApplication / LegacyLoanIdAssigned
+    CollectingDocuments_SyncIdle_LoanAwaiting --> UnderReview_SyncIdle_LoanAwaiting : Continue / ε
+    CollectingDocuments_SyncIdle_LoanLinked --> UnderReview_SyncIdle_LoanLinked : Continue / ε
+    CollectingDocuments_SyncRequested_LoanInitial --> CollectingDocuments_SyncSettled_LoanAwaiting : SubmitIncomeDocument / LoanCreated
+    CollectingDocuments_SyncRequested_LoanInitial --> CollectingDocuments_SyncSettled_LoanAwaiting : SubmitIdDocument / LoanCreated
+    CollectingDocuments_SyncRequested_LoanInitial --> CollectingDocuments_SyncSettled_LoanAwaiting : RecordCreditScore / LoanCreated
+    CollectingDocuments_SyncRequested_LoanInitial --> CollectingDocuments_SyncSettled_LoanAwaiting : RecordEmploymentCheck / LoanCreated
+    CollectingDocuments_SyncRequested_LoanInitial --> Withdrawn_SyncSettled_LoanAwaiting : WithdrawApplication / LoanCreated
+    CollectingDocuments_SyncRequested_LoanInitial --> UnderReview_SyncRequested_LoanInitial : Continue / ε
+    CollectingDocuments_SyncRequested_LoanAwaiting --> CollectingDocuments_SyncSettled_LoanLinked : SubmitIncomeDocument / LegacyLoanIdAssigned
+    CollectingDocuments_SyncRequested_LoanAwaiting --> CollectingDocuments_SyncSettled_LoanLinked : SubmitIdDocument / LegacyLoanIdAssigned
+    CollectingDocuments_SyncRequested_LoanAwaiting --> CollectingDocuments_SyncSettled_LoanLinked : RecordCreditScore / LegacyLoanIdAssigned
+    CollectingDocuments_SyncRequested_LoanAwaiting --> CollectingDocuments_SyncSettled_LoanLinked : RecordEmploymentCheck / LegacyLoanIdAssigned
+    CollectingDocuments_SyncRequested_LoanAwaiting --> Withdrawn_SyncSettled_LoanLinked : WithdrawApplication / LegacyLoanIdAssigned
+    CollectingDocuments_SyncRequested_LoanAwaiting --> UnderReview_SyncRequested_LoanAwaiting : Continue / ε
+    CollectingDocuments_SyncRequested_LoanLinked --> UnderReview_SyncRequested_LoanLinked : Continue / ε
+    CollectingDocuments_SyncSettled_LoanInitial --> UnderReview_SyncSettled_LoanInitial : Continue / ε
+    CollectingDocuments_SyncSettled_LoanAwaiting --> UnderReview_SyncSettled_LoanAwaiting : Continue / ε
+    CollectingDocuments_SyncSettled_LoanLinked --> UnderReview_SyncSettled_LoanLinked : Continue / ε
+    UnderReview_SyncIdle_LoanInitial --> Approved_SyncRequested_LoanAwaiting : Continue / LoanCreated
+    UnderReview_SyncIdle_LoanInitial --> Declined_SyncRequested_LoanAwaiting : Continue / LoanCreated
+    UnderReview_SyncIdle_LoanInitial --> Withdrawn_SyncRequested_LoanAwaiting : WithdrawApplication / LoanCreated
+    UnderReview_SyncIdle_LoanAwaiting --> Approved_SyncRequested_LoanLinked : Continue / LegacyLoanIdAssigned
+    UnderReview_SyncIdle_LoanAwaiting --> Declined_SyncRequested_LoanLinked : Continue / LegacyLoanIdAssigned
+    UnderReview_SyncIdle_LoanAwaiting --> Withdrawn_SyncRequested_LoanLinked : WithdrawApplication / LegacyLoanIdAssigned
+    UnderReview_SyncRequested_LoanInitial --> Approved_SyncSettled_LoanAwaiting : Continue / LoanCreated
+    UnderReview_SyncRequested_LoanInitial --> Declined_SyncSettled_LoanAwaiting : Continue / LoanCreated
+    UnderReview_SyncRequested_LoanInitial --> Withdrawn_SyncSettled_LoanAwaiting : WithdrawApplication / LoanCreated
+    UnderReview_SyncRequested_LoanAwaiting --> Approved_SyncSettled_LoanLinked : Continue / LegacyLoanIdAssigned
+    UnderReview_SyncRequested_LoanAwaiting --> Declined_SyncSettled_LoanLinked : Continue / LegacyLoanIdAssigned
+    UnderReview_SyncRequested_LoanAwaiting --> Withdrawn_SyncSettled_LoanLinked : WithdrawApplication / LegacyLoanIdAssigned
+    Approved_SyncSettled_LoanLinked --> [*]
+    Declined_SyncSettled_LoanLinked --> [*]
+    Withdrawn_SyncSettled_LoanLinked --> [*]
+```
+
+The composite has only three terminal vertices —
+`Approved_SyncSettled_LoanLinked`, `Declined_SyncSettled_LoanLinked`,
+`Withdrawn_SyncSettled_LoanLinked` — i.e. the three terminal
+LoanApplication outcomes paired with a fully-settled CoreBankingSync
+and a fully-linked Loan. The vertices reachable from the initial
+state are a strict subset of the cross-product enumeration; the
+diagram lists every cross-product vertex under each outer block to
+make the full state space visible (the renderer walks
+`[minBound .. maxBound]`, not just the reachable set), and only
+emits transitions that actually exist.
+
 ---
 
 ## 11. Where to go from here

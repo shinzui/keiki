@@ -212,23 +212,25 @@ must always reflect the actual current state of the work.
         `LoanCmd → ApplicationApproved → SyncToLegacyRequested
         → (legacy callback) → LegacyAssignmentCommanded →
         AssignLegacyLoanId → LegacyLoanIdAssigned`.
-- [x] M6 — Mermaid render + golden tests. (2026-05-03)
+- [x] M6 — Mermaid render + golden tests. (2026-05-03;
+      composite goldens added 2026-05-04 by EP-35)
   - [x] `Jitsurei.Render.MermaidLoanSpec` pins single-aggregate
         renders for `loanApplication`, `loan`, and
         `coreBankingSync`. The three-deep `loanWorkflow`
-        composite is intentionally not pinned: the keiki
-        renderer's flat `toMermaidComposite` produces a
-        6 × 3 × 3 = 54-vertex diagram whose composite
-        identifiers contain literal whitespace from the inner
-        'Composite' Show instance, which most Mermaid backends
-        reject. The single-aggregate diagrams are sufficient
-        for M7's pedagogical aims; a richer composite renderer
-        is a follow-up.
+        composite was deferred at M6 because no shipped
+        renderer (EP-30..EP-33) targets the right-associative
+        3-deep `Composite LoanAppVertex (Composite SyncVertex
+        LoanVertex)` shape with three distinct types. EP-35
+        (`docs/plans/35-mermaid-renderer-for-right-associative-3-deep-compose-composites.md`)
+        subsequently shipped `toMermaidCompose3` (flat) and
+        `toMermaidCompose3Nested` (one-level nested) and pinned
+        the loanWorkflow composite via both renderers; the
+        Outcomes → Follow-ups item is now closed.
   - [x] Golden Mermaid files under
         `docs/guide/diagrams/loan-application.mmd`,
-        `…/loan.mmd`, and `…/core-banking-sync.mmd`. The
-        plan's `loan-workflow.mmd` is omitted for the same
-        reason.
+        `…/loan.mmd`, `…/core-banking-sync.mmd`, and (EP-35
+        addition) `…/loan-workflow.mmd` and
+        `…/loan-workflow-nested.mmd`.
 - [x] M7 — Tutorial walkthrough at
       `docs/guide/loan-application-tutorial.md`. (2026-05-03)
   - [x] Eleven-section incremental narrative covering M2..M6:
@@ -521,6 +523,34 @@ Record every decision made while working on the plan.
   were written; those are frozen history).
   Date: 2026-05-03
 
+- Decision: Defer pinning a `loanWorkflow` Mermaid golden until
+  a 3-deep compose renderer ships; do not attempt to coerce one
+  of the existing renderers.
+  Rationale: re-checked the EP-30..EP-33 renderer landscape
+  against `loanWorkflow`'s vertex type
+  `Composite LoanAppVertex (Composite SyncVertex LoanVertex)`.
+  None fits: `toMermaidComposite` and `toMermaidCompositeNested`
+  share a `compositeLabel` that calls `show` on each component
+  and so emits whitespace inside the inner `Composite`'s
+  identifier (e.g. `"Drafting_Composite SyncIdle LoanInitial"`),
+  which Mermaid backends reject; `toMermaidFeedback1`'s
+  destructuring shape (`Composite a (Composite b c)`) is right
+  but its type signature forces outer s1 = inner-inner s1, the
+  feedback-cascade invariant, which the loanWorkflow's three
+  distinct vertex types do not satisfy. The smallest closing
+  move is a sister to `feedback1Label` typed
+  `Composite s1 (Composite s2 s3) -> Text` plus a
+  `toMermaidCompose3` renderer; that is a renderer-package
+  feature and belongs in a separate ExecPlan, not under EP-34.
+  An interim partial visualisation — `toMermaid loanApplication`
+  + `toMermaidCompositeNested (coreBankingSync \`compose\` loan)`
+  — is technically achievable today but pinning it in M6 would
+  ship two diagrams that the tutorial would have to stitch
+  together verbally; the pedagogical cost outweighs the gain
+  for a plan whose primary deliverables (M2..M5 modules + M7
+  tutorial) already shipped.
+  Date: 2026-05-03
+
 - Decision: Keep the `docs/guide/diagrams/loan-*.mmd` golden
   Mermaid files at the repository-root `docs/guide/diagrams/`
   path rather than under `jitsurei/docs/`.
@@ -642,6 +672,47 @@ where guards do not need `TApp1`.
    call sites. Adding `PCompare` to `HsPred` would unlock
    `isSingleValuedSym` for arbitrary numerical guards. A
    tracked follow-up after EP-34.
+
+4. **Mermaid renderer suite is shaped for 1- and 2-deep
+   composites only.** EP-30..EP-33 cover single transducers,
+   2-deep flat / nested composites, the parallel `alternative`
+   layout, and the feedback-typed 3-deep
+   `Composite s1 (Composite s2 s1)`. None fits a right-
+   associative 3-deep `compose` over three *distinct* vertex
+   types, which is exactly the `loanWorkflow` shape and —
+   plausibly — the shape of any future "aggregate ⨾ process ⨾
+   downstream-aggregate" worked example modelled on the
+   microtan production pattern. Closing the gap is a small
+   addition (sister label to `feedback1Label`, sister renderer
+   to `toMermaidFeedback1`) but it is a renderer-package
+   feature and is tracked as a follow-up plan rather than
+   tacked onto EP-34.
+
+### Follow-ups
+
+Tracked work that EP-34 surfaced but explicitly defers:
+
+- ~~**3-deep compose renderer.** Add a
+  `toMermaidCompose3 :: SymTransducer … (Composite s1
+  (Composite s2 s3)) ci co -> Text` (with a sister
+  `compose3Label`) to `Keiki.Render.Mermaid` and pin a
+  `loan-workflow.mmd` golden in `Jitsurei.Render.MermaidLoanSpec`.
+  Source of truth: the 2026-05-03 Decision Log entry on the
+  renderer landscape. Likely a single-milestone EP that lands
+  alongside other renderer additions in MasterPlan-10's
+  follow-up phase.~~ — **Closed 2026-05-04 by EP-35**
+  (`docs/plans/35-mermaid-renderer-for-right-associative-3-deep-compose-composites.md`).
+  EP-35 shipped both `toMermaidCompose3` (flat) and
+  `toMermaidCompose3Nested` (one-level nested), pinned the
+  loanWorkflow composite via both renderers in
+  `Jitsurei.Render.MermaidLoanSpec`, and added
+  `loan-workflow.mmd` / `loan-workflow-nested.mmd` under
+  `docs/guide/diagrams/`.
+- **Symbolic single-valuedness for `loanApplication`.**
+  Un-pend `Jitsurei.LoanApplicationSymbolicSpec` once `HsPred`
+  gains comparison constructors or `Keiki.Symbolic` learns to
+  memoise `TApp1` / `TApp2` translations. See "Lessons for
+  future plans" point 3.
 
 
 ## Context and Orientation
@@ -2057,3 +2128,36 @@ exist at the end of each milestone:
   `Keiki.Examples.*` references; `keiki-test` self-
   contained). Idempotence section gained an M1 partial-
   migration recovery note.
+
+- 2026-05-03 (post-completion review): re-checked whether the
+  Mermaid renderer additions shipped before EP-34 (EP-30..EP-33)
+  enable visualising the full `loanWorkflow` flow. Conclusion:
+  no — the shipped renderers cover single transducers, 2-deep
+  flat / nested composites, parallel `alternative`, and the
+  feedback-typed 3-deep `Composite s1 (Composite s2 s1)`. The
+  loanWorkflow's vertex shape `Composite LoanAppVertex (Composite
+  SyncVertex LoanVertex)` is right-associative 3-deep with three
+  *distinct* types, which falls outside every existing renderer's
+  type signature, and the 2-deep renderers' `compositeLabel`
+  produces whitespace-laden identifiers when composed twice.
+  Updates: tightened M6's Progress note to name the gap precisely;
+  added a Decision Log entry recording the analysis and the
+  decision to defer rather than ship a partial-coverage golden;
+  added a "Follow-ups" subsection in Outcomes & Retrospective
+  tracking the missing renderer; added a fourth bullet to
+  "Lessons for future plans" generalising the observation. No
+  shipped code changed — this revision is documentation-only
+  and preserves M1..M7 acceptance.
+
+- 2026-05-04 (EP-35 closure): EP-35 shipped the deferred 3-deep
+  composite renderer. Updates: M6 Progress sub-bullet rewritten to
+  point at EP-35 and to list `loan-workflow.mmd` /
+  `loan-workflow-nested.mmd` alongside the original three
+  single-aggregate goldens; the "Follow-ups" subsection's
+  "3-deep compose renderer" bullet struck through with a closure
+  pointer to EP-35; tutorial §10 ("Wiring it together with
+  `compose`") now embeds the rendered nested composite. No
+  shipped code under `docs/plans/34-…md`'s milestones changed —
+  the renderer addition lives under EP-35, the goldens under
+  `jitsurei-test`'s existing spec module, and the tutorial edit
+  is a purely additive `docs/guide/` change.
