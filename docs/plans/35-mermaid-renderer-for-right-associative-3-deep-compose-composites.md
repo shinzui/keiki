@@ -158,16 +158,25 @@ completed task into two ("done" vs. "remaining").
         stay; the new composite caps the section.
   - [x] `cabal test all` green (146 + 104 examples; 1 pre-
         existing pending in `jitsurei-test`).
-- [ ] M4 — Update MP-10 registry; brief outcomes pass.
-  - [ ] Append an EP-35 row to MP-10's Exec-Plan Registry table
+- [x] M4 — Update MP-10 registry; brief outcomes pass.
+      (2026-05-04)
+  - [x] Append an EP-35 row to MP-10's Exec-Plan Registry table
         (status Complete) at
         `docs/masterplans/10-mermaid-topology-renderer-for-symtransducer.md`.
-  - [ ] Update MP-10's Decomposition Strategy to mention EP-35
-        as a Phase 3 entry (or extend Phase 2 — see Decision
-        Log).
-  - [ ] Fill in EP-35's Outcomes & Retrospective with the
-        result vs. purpose comparison and any
-        lessons.
+  - [x] Update MP-10's Decomposition Strategy to mention EP-35
+        as a Phase 3 entry (matches the Decision Log's earlier
+        framing of EP-35 as a third phase rather than an
+        extension of Phase 2).
+  - [x] Update MP-10's dependency-graph ASCII art with an EP-35
+        node depending on EP-30/EP-31/EP-32 hard and on EP-34 as
+        a motivational external dep.
+  - [x] Mark all four EP-35 milestones complete in MP-10's
+        Progress checklist; add a Phase 3 outcomes block; trim
+        "What remains" to drop the 3-deep coverage gap; add a
+        Revision Note dated 2026-05-04 superseding the prior
+        "terminal post-shipment state" claim.
+  - [x] Fill in EP-35's Outcomes & Retrospective with the
+        result vs. purpose comparison and any lessons.
 
 
 ## Surprises & Discoveries
@@ -253,7 +262,73 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones
 or at completion. Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Result vs. Purpose:** every observable outcome in the Purpose /
+Big Picture section is met.
+
+- `Keiki.Render.Mermaid` exports `toMermaidCompose3`,
+  `toMermaidCompose3Nested`, and the new label helper
+  `compose3Label` alongside the existing renderers; the export
+  list and the module's haddock document both new functions and
+  reference EP-35.
+- `Keiki.Render.MermaidSpec` carries two new `it` blocks pinning
+  the flat and nested renders against an inline 2 × 2 × 2
+  synthetic 3-toy fixture; `Jitsurei.Render.MermaidLoanSpec`
+  carries two new `it` blocks pinning the loanWorkflow flat
+  (54-line) and nested (119-line) blocks.
+- `docs/guide/diagrams/loan-workflow.mmd` and
+  `docs/guide/diagrams/loan-workflow-nested.mmd` exist and
+  match the Haskell-side canonical literals byte-for-byte.
+- `docs/guide/loan-application-tutorial.md` §10 ends with a
+  fenced `mermaid` block embedding the rendered nested
+  composite; the prose no longer reads as if no full diagram
+  exists.
+- EP-34's living document is updated: the M6 sub-bullet now
+  points at EP-35 and lists the two `.mmd` files; the
+  "Follow-ups → 3-deep compose renderer" entry is struck
+  through with a closure pointer; a 2026-05-04 Revision Note
+  summarises the cascade of changes.
+- MP-10's registry has a fifth row (EP-35, Complete); the
+  Decomposition Strategy mentions Phase 3; the dependency-graph
+  ASCII art shows the EP-35 node and its dependencies; a Phase 3
+  Outcomes block describes the shipped surface.
+- `cabal test all --test-show-details=direct` reports 146 + 104
+  examples (1 pending in `jitsurei-test`, pre-existing), 0
+  failures.
+
+**Lessons:**
+
+- The "structurally identical to <existing function>" framing
+  that EP-30/31's `renderTopology` factorisation encouraged
+  carried over cleanly — `toMermaidCompose3` is a one-liner
+  (`renderTopology compose3Label`); `toMermaidCompose3Nested`
+  is a near-verbatim copy of `toMermaidCompositeNested` with
+  one type substitution and one label-function swap. Thinking
+  of EP-35 as "EP-31 + EP-32 again, parameterised over a
+  3-deep label function" predicted the implementation cost
+  precisely.
+- The expected-output provenance lesson from EP-33's M4 was
+  internalised: rather than hand-derive the canonical blocks
+  (which would have been laborious for the 54 / 119 line
+  loanWorkflow renders), M3 wrote the renderer output directly
+  to the `.mmd` files via `cabal repl` and then transcribed
+  the lines into the Haskell `Text` literals. Both keiki-test
+  and jitsurei-test goldens passed on the first try.
+- The "render the full enumerated topology, not the
+  initial-vertex orbit" policy MP-10's 2026-05-03 Surprises
+  entry generalised across renderers held: `loanWorkflow`'s
+  6 × 3 × 3 = 54 cross-product enumeration is fully listed in
+  the nested block (six outer-state-block bodies of nine
+  identifiers each), even though only a subset is reachable
+  from the initial vertex. The tutorial's "shape of the
+  composite" subsection calls this out explicitly so readers
+  understand why the diagram is larger than the runtime
+  reachable set.
+- Combining flat + nested into one EP (versus EP-31/EP-32's
+  split) was the right call for EP-35: the nested form was a
+  routine 30-minute extension of the flat form, no design
+  discovery needed. EP-31/EP-32's split was justified by the
+  Shape A vs Shape B *discovery*; EP-35 inherited the choice
+  and shipped both variants together with no friction.
 
 
 ## Context and Orientation

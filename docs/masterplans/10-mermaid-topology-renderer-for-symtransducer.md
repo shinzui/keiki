@@ -112,7 +112,7 @@ Out of scope:
 
 ## Decomposition Strategy
 
-Four child ExecPlans, in two phases.
+Five child ExecPlans, in three phases.
 
 **Phase 1 — Foundation (shipped 2026-05-03):**
 
@@ -164,7 +164,30 @@ shipped):**
    EP-26 specs; per-combinator diagrams under
    `docs/guide/diagrams/`.
 
-Four EPs is comfortably within MASTERPLAN.md's "two to seven"
+**Phase 3 — Deeper composites (added 2026-05-04 after Phases 1+2
+shipped):**
+
+5. **EP-35 (right-associative 3-deep compose renderer).**
+   Phase 1 + Phase 2 covered single, 2-deep flat, 2-deep
+   nested, alternative parallel-arms, and the feedback-typed
+   3-deep `Composite s1 (Composite s2 s1)` shapes. EP-34's
+   `Jitsurei.LoanWorkflow.loanWorkflow` introduced the *right-
+   associative* 3-deep shape `Composite s1 (Composite s2 s3)`
+   with three *distinct* component types — none of EP-30..EP-33
+   fits because the 2-deep `compositeLabel` recurses through
+   plain `show` (yielding whitespace-laden inner identifiers)
+   and `feedback1Label`'s type ties outer `s1` to inner-inner
+   `s1`. EP-35 ships `toMermaidCompose3` (flat) and
+   `toMermaidCompose3Nested` (one-level nested) plus the
+   `compose3Label` helper. Acceptance: keiki-test goldens
+   against an inline 2 × 2 × 2 = 8-vertex synthetic fixture;
+   jitsurei-test goldens for `loanWorkflow`'s 6 × 3 × 3 = 54
+   composite vertices; rendered `.mmd` files at
+   `docs/guide/diagrams/loan-workflow.mmd` and
+   `…/loan-workflow-nested.mmd`; the loan-application tutorial
+   §10 embeds the rendered nested composite.
+
+Five EPs is comfortably within MASTERPLAN.md's "two to seven"
 range and matches the genuine concern boundaries:
 
 - EP-30 settles module surface and edge-label format. No shape
@@ -175,14 +198,26 @@ range and matches the genuine concern boundaries:
   agent-unverifiable Mermaid syntax.
 - EP-33 picks shape-aware layouts for the non-sequential
   combinators.
+- EP-35 covers right-associative 3-deep `compose` with three
+  distinct types — the shape EP-34's loan-workflow needed and
+  no Phase 1 / Phase 2 renderer reaches. Both flat and one-level
+  nested variants ship; the one-level depth limit is a Decision
+  Log entry on Mermaid backend portability.
 
-**Why phase-split rather than four EPs up front:** Phase 2's
+**Why phase-split rather than five EPs up front:** Phase 2's
 choices depend on Phase 1's lessons. EP-31 discovered the
 LLM-agent-verification constraint and developed the Shape A
 fallback pattern; EP-32's design copies that pattern (flat
 identifiers, no dotted-syntax dependency). EP-31 also discovered
 the `renderTopology` factorisation; EP-33's `toMermaidFeedback1`
-reuses it directly. Authoring all four EPs up front would have
+reuses it directly. Phase 3's EP-35 builds on the full Phase
+1+2 toolkit: it inherits EP-32's flat-identifier-in-state-block
+pattern, EP-30's `renderTopology` for the flat variant, and
+EP-33's `feedback1Label` destructuring pattern as a sibling for
+`compose3Label`. EP-35 was authored only after EP-34's
+`loanWorkflow` actually surfaced the gap; pre-emptively shipping
+a 3-deep renderer in Phase 1 / 2 would have produced an
+unmotivated API. Authoring all five EPs up front would have
 locked in design choices before the relevant lessons surfaced.
 
 **Why a MasterPlan and not multiple separate plans:** EP-30's
@@ -223,6 +258,7 @@ visible across phases.
 | 2 | Mermaid rendering for Composite SymTransducers | docs/plans/31-mermaid-rendering-for-composite-symtransducers.md | EP-30 | EP-4 (external) | Complete |
 | 3 | Shape B nested-subgraph Mermaid rendering for larger composites | docs/plans/32-shape-b-nested-subgraph-mermaid-rendering-for-larger-composites.md | EP-30, EP-31 | None | Complete |
 | 4 | Shape-aware Mermaid renderers for alternative and feedback1 composites | docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md | EP-30, EP-31, EP-25 (external), EP-26 (external) | EP-32 | Complete |
+| 5 | Mermaid renderer for right-associative 3-deep compose composites | docs/plans/35-mermaid-renderer-for-right-associative-3-deep-compose-composites.md | EP-30, EP-31, EP-32 | EP-33, EP-34 (external — motivating use case) | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -238,10 +274,14 @@ External-dep glossary:
 - **EP-26** is MP-8's child plan
   `docs/plans/26-single-step-feedback-combinator-on-symtransducer.md`,
   which delivered the `feedback1` combinator EP-33 renders.
+- **EP-34** is the loan-application worked-example plan at
+  `docs/plans/34-loan-application-worked-example-with-cross-context-process-and-tutorial.md`,
+  which surfaced the right-associative 3-deep compose
+  visualisation gap that motivates EP-35.
 
-All three external deps are already shipped as of MP-10's
-authoring date; they appear here for traceability rather than as
-gating constraints.
+All four external deps are already shipped as of MP-10's
+post-EP-35 state; they appear here for traceability rather than
+as gating constraints.
 
 
 ## Dependency Graph
@@ -279,14 +319,24 @@ gating constraints.
             │  Shape B   │◄┤  alternative + │
             │  (nested   │ │  feedback1     │
             │   compose) │ │  shape-aware   │
-            └────────────┘ └────────┬───────┘
-                                    │ hard
-                              ┌─────┴──────────┐
-                              │ EP-25 / EP-26  │
-                              │   (external)   │
-                              │ alternative +  │
-                              │ feedback1 ops  │
-                              └────────────────┘
+            └─────┬──────┘ └────────┬───────┘
+                  │                 │ hard
+                  │                 ▼
+                  │          ┌──────────────────┐
+                  │          │  EP-25 / EP-26   │
+                  │          │    (external)    │
+                  │          │  alternative +   │
+                  │          │  feedback1 ops   │
+                  │          └──────────────────┘
+                  │ hard
+                  ▼
+            ┌────────────┐
+            │   EP-35    │ ◄──── EP-34 (external,
+            │ 3-deep     │       motivating use case)
+            │ compose    │
+            │ (flat +    │
+            │  nested)   │
+            └────────────┘
 ```
 
 **Hard dependencies:**
@@ -301,6 +351,11 @@ gating constraints.
   `edgeLabel`, `renderTopology` from EP-30/EP-31, and renders
   the `alternative` and `feedback1` combinators that EP-25 /
   EP-26 ship.
+- EP-35 → EP-30, EP-31, EP-32: `toMermaidCompose3` delegates
+  to EP-30's `renderTopology`; `toMermaidCompose3Nested` mirrors
+  EP-32's `toMermaidCompositeNested` body (flat identifiers in
+  outer-state blocks); EP-31's `compositeLabel` pattern informs
+  `compose3Label`'s structure.
 
 **Soft dependencies:**
 
@@ -312,6 +367,14 @@ gating constraints.
   describe-block title coordination is simpler if either lands
   before the other rather than concurrently. Either order is
   acceptable.
+- EP-35 → EP-33: sibling renderer, no code dependency; EP-33's
+  `feedback1Label` destructuring pattern informs
+  `compose3Label`'s shape but the two functions live
+  independently in the module.
+- EP-35 → EP-34 (external): motivational rather than structural.
+  EP-34's `loanWorkflow` is the first repo value EP-35's
+  renderers target; without it EP-35 would not have been
+  authored.
 
 EP-32 and EP-33 can land in any order relative to each other.
 EP-32's M0 baseline test count is 198 if it ships before EP-33,
@@ -471,6 +534,13 @@ Phase 2 (added 2026-05-03; not started):
 - [x] EP-33: Implement `toMermaidFeedback1` (M4)
 - [x] EP-33: Render diagrams for `alternative` and `feedback1` fixtures (M5)
 - [x] EP-33: Add regression tests for both shape-aware renderers (M6)
+
+Phase 3 (added 2026-05-04 after Phases 1+2 shipped):
+
+- [x] EP-35: `toMermaidCompose3` (flat 3-deep) + `compose3Label` + keiki-test fixture and golden (M1)
+- [x] EP-35: `toMermaidCompose3Nested` (one-level nested) + keiki-test golden over the same fixture (M2)
+- [x] EP-35: Pin loan-workflow goldens; mirror as `.mmd` files; update tutorial; update EP-34 living document (M3)
+- [x] EP-35: Update MP-10 registry / strategy / dependency-graph; finalise EP-35 retrospective (M4)
 
 
 ## Surprises & Discoveries
@@ -655,6 +725,40 @@ Phase 2 (added 2026-05-03; not started):
   worms and keeps the renderer code direct.
   Date: 2026-05-03
 
+- Decision: Reopen MP-10 with EP-35 rather than treating
+  EP-30..EP-33 as the terminal coverage and shipping a separate
+  MasterPlan for the 3-deep extension.
+  Rationale: EP-35 fits the same vision (Mermaid topology
+  rendering for `SymTransducer`) and reuses every existing
+  integration point unchanged: the same module
+  (`Keiki.Render.Mermaid`), the same edge-label format, the
+  same `docs/guide/diagrams/` convention, the same
+  `MermaidSpec.hs` regression file (in keiki-test) and the
+  same single-aggregate-spec mirroring pattern (in
+  jitsurei-test). Spinning up a sibling MasterPlan would
+  duplicate the integration-point bookkeeping without yielding
+  a separable concern. The "MasterPlan in terminal state" line
+  added to Revision Notes on 2026-05-03 is no longer accurate;
+  EP-35's addition extends the MasterPlan to a third phase.
+  Date: 2026-05-04
+
+- Decision: Bundle EP-35's flat (`toMermaidCompose3`) and
+  one-level nested (`toMermaidCompose3Nested`) variants in a
+  single ExecPlan rather than splitting them like EP-31 / EP-32
+  did for the 2-deep case.
+  Rationale: EP-31/EP-32 split because Phase 1 had not yet
+  developed the "flat identifiers inside `state … { … }`
+  blocks, no `Outer.Inner` dotted syntax" pattern; that
+  pattern was an EP-32 *discovery*. By EP-35 the pattern is
+  settled and the nested-for-readability variant is a routine
+  extension of the flat one — no design discovery expected. A
+  combined plan keeps the two renderers' regression tests next
+  to one another, matches EP-33's bundling of
+  `toMermaidAlternative` + `toMermaidFeedback1` under one EP,
+  and avoids one round of plan-authoring overhead for what is
+  ultimately a small renderer feature.
+  Date: 2026-05-04
+
 
 ## Outcomes & Retrospective
 
@@ -719,6 +823,54 @@ helpers `vertexLabel`, `compositeLabel`, `edgeInputName`,
 reads `Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)`, and
 `cabal test` reports 201 examples, 0 failures.
 
+**Phase 3 — Shipped (2026-05-04):**
+
+- EP-35 added `toMermaidCompose3` (flat) and
+  `toMermaidCompose3Nested` (one-level nested) — the
+  right-associative 3-deep `compose` renderers needed for
+  EP-34's loan-workflow shape `Composite LoanAppVertex
+  (Composite SyncVertex LoanVertex)`. Both delegate to the
+  newly-added shared label helper `compose3Label`, which
+  destructures `Composite a (Composite b c)` and joins the
+  three component shows with underscores (sibling of EP-33's
+  internal `feedback1Label`). The flat variant delegates to
+  EP-30's `renderTopology` directly; the nested variant
+  mirrors EP-32's `toMermaidCompositeNested` body.
+- Two checked-in `.mmd` files at
+  `docs/guide/diagrams/loan-workflow.mmd` (54 lines: 1 header
+  + 1 init + 49 transitions + 3 finals) and
+  `docs/guide/diagrams/loan-workflow-nested.mmd` (119 lines:
+  the same edge / final lines wrapped in six outer
+  `state Intake/CollectingDocuments/UnderReview/Approved/
+  Declined/Withdrawn { … }` blocks listing all 6 × 9 = 54
+  cross-product identifiers).
+- Two regression tests in
+  `jitsurei/test/Jitsurei/Render/MermaidLoanSpec.hs` pinning
+  `toMermaidCompose3 loanWorkflow` and
+  `toMermaidCompose3Nested loanWorkflow` against the canonical
+  `Text` literals matching the `.mmd` contents.
+- Two regression tests in
+  `test/Keiki/Render/MermaidSpec.hs` pinning the synthetic
+  `toy1 ⨾ (toy2 ⨾ toy3)` 3-deep fixture (8 cross-product
+  vertices, 1 reachable transition, 1 final).
+- Tutorial integration: `docs/guide/loan-application-tutorial.md`'s
+  §10 ("Wiring it together with `compose`") now embeds the
+  rendered nested composite via a fenced `mermaid` block,
+  replacing the prior "no full diagram" caveat.
+
+`Keiki.Render.Mermaid`'s public surface after Phase 3 (in
+declaration order): `toMermaid`, `toMermaidAlternative`,
+`toMermaidAlternativeWith`, `toMermaidComposite`,
+`toMermaidCompositeNested`, `toMermaidCompose3`,
+`toMermaidCompose3Nested`, `toMermaidFeedback1`, plus the
+helpers `vertexLabel`, `compositeLabel`, `compose3Label`,
+`edgeInputName`, `edgeOutputName`, `edgeLabel`. Internal
+helpers `feedback1Label` and `renderTopology` remain
+un-exported. `test/Keiki/Render/MermaidSpec.hs` carries seven
+describe blocks; `jitsurei/test/Jitsurei/Render/MermaidLoanSpec.hs`
+carries five. `cabal test all` reports 146 examples in
+keiki-test and 104 + 1 pending in jitsurei-test, all green.
+
 **What remains:**
 
 - DOT / Graphviz rendering — listed as a future format; deferred
@@ -729,9 +881,12 @@ reads `Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)`, and
   (`diffTransducers` from the futures note).
 - Per-edge guard / update inspection (the "richer interactive
   edge inspector" the v1 explicitly excluded).
-- Specialised renderers for arbitrary nested `Composite` shapes
-  authored by stacking `compose` beyond the two combinators EP-33
-  covers. EP-33's Decision Log records the rationale.
+- Specialised renderers for `Composite` shapes deeper than the
+  3-deep right-associative form EP-35 covers (i.e., 4-deep and
+  beyond) and for the **left-associative** 3-deep form
+  `Composite (Composite s1 s2) s3`. No live code in the repo
+  produces either shape; future use cases would extend the
+  pattern with sibling label / renderer functions.
 - Visual verification of the emitted Mermaid blocks in a
   previewer. Both Phase 2 plans carried this as an
   LLM-agent-implementer limitation; a human reviewer can
@@ -814,3 +969,19 @@ reads `Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)`, and
   initiative, including a new lesson about expected-output
   provenance discovered during EP-33's M4. The MasterPlan is now
   in its terminal post-shipment state.
+
+- 2026-05-04 — Re-opened with EP-35 (right-associative 3-deep
+  compose renderer). EP-34's `loanWorkflow` surfaced the
+  `Composite s1 (Composite s2 s3)` shape with three distinct
+  types — not covered by any Phase 1+2 renderer. Added Phase
+  3 to the Decomposition Strategy; appended an EP-35 row to the
+  Exec-Plan Registry; extended the dependency-graph ASCII art
+  with an EP-35 node depending on EP-30/EP-31/EP-32 hard and on
+  EP-34 as a motivational external dep; checked off all four
+  EP-35 milestones in Progress; added two Decision Log entries
+  (one rationalising the MasterPlan reopening, one bundling the
+  flat + nested variants in a single EP); added a Phase 3 block
+  to Outcomes & Retrospective summarising the shipped surface;
+  trimmed "What remains" to drop the 3-deep coverage gap. The
+  prior "terminal post-shipment state" claim from the
+  2026-05-03 revision is superseded.
