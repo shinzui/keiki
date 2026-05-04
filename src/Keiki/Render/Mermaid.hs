@@ -31,9 +31,12 @@ module Keiki.Render.Mermaid
   , toMermaidAlternativeWith
   , toMermaidComposite
   , toMermaidCompositeNested
+  , toMermaidCompose3
+  , toMermaidCompose3Nested
   , toMermaidFeedback1
   , vertexLabel
   , compositeLabel
+  , compose3Label
   , edgeInputName
   , edgeOutputName
   , edgeLabel
@@ -92,6 +95,31 @@ toMermaidComposite
   => SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co
   -> Text
 toMermaidComposite = renderTopology compositeLabel
+
+
+-- | Render a right-associative 3-deep
+-- @t1 \`'Keiki.Composition.compose'\` (t2 \`'Keiki.Composition.compose'\` t3)@
+-- composite (vertex type @'Composite' s1 ('Composite' s2 s3)@) to a
+-- Mermaid @stateDiagram-v2@ block in the **flat cross-product** shape.
+--
+-- Each composite vertex becomes a single Mermaid identifier
+-- @\<show s1\>_\<show s2\>_\<show s3\>@ via 'compose3Label'. The
+-- structure is otherwise identical to 'toMermaid' /
+-- 'toMermaidComposite' — same initial / final / edge emission rules,
+-- same 'edgeLabel' format. See EP-35's plan
+-- (@docs/plans/35-mermaid-renderer-for-right-associative-3-deep-compose-composites.md@)
+-- for the rationale and for the comparison against the
+-- nested-subgraph variant 'toMermaidCompose3Nested'.
+toMermaidCompose3
+  :: forall rs s1 s2 s3 ci co.
+     ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     , Enum s3, Bounded s3, Show s3
+     )
+  => SymTransducer (HsPred rs ci) rs
+       (Composite s1 (Composite s2 s3)) ci co
+  -> Text
+toMermaidCompose3 = renderTopology compose3Label
 
 
 -- | Render a composite 'SymTransducer' (a 'Keiki.Composition.compose'
@@ -164,6 +192,80 @@ toMermaidCompositeNested t =
 
       finalLines =
         [ ind <> compositeLabel s <> arrow <> T.pack "[*]"
+        | s <- composites
+        , isFinal t s
+        ]
+  in T.intercalate (T.pack "\n")
+       (header : initLine : outerBlocks ++ edgeLines ++ finalLines)
+
+
+-- | Render a right-associative 3-deep
+-- @t1 \`'Keiki.Composition.compose'\` (t2 \`'Keiki.Composition.compose'\` t3)@
+-- composite (vertex type @'Composite' s1 ('Composite' s2 s3)@) using
+-- the **one-level nested-subgraph** shape: each outer @s1@ vertex
+-- hosts a @state \<show s1\> { \<inner ids\> }@ block listing every
+-- @\<show s1\>_\<show s2\>_\<show s3\>@ identifier under that outer.
+-- Cross-cutting transitions remain at the top level using the same
+-- flat identifiers 'compose3Label' produces, so the renderer never
+-- relies on Mermaid's @Outer.Inner@ dotted cross-block reference
+-- syntax (the EP-32 lesson, carried forward).
+--
+-- The nest is intentionally **one level deep**, not two: a two-level
+-- nest @state s1 { state s2 { … } }@ would mirror @compose@'s
+-- structural shape more faithfully but adds renderer-compat risk
+-- (some Mermaid backends parse nested @state@ blocks
+-- inconsistently). One-level groups composites by their outer
+-- aggregate, which is the readability win the larger 3-deep
+-- composites need; if a tighter grouping is later required for a
+-- specific use case, a follow-up renderer can add the two-level
+-- variant with explicit backend verification.
+--
+-- See EP-35's plan
+-- (@docs/plans/35-mermaid-renderer-for-right-associative-3-deep-compose-composites.md@)
+-- for the design record and for the flat counterpart
+-- 'toMermaidCompose3'.
+toMermaidCompose3Nested
+  :: forall rs s1 s2 s3 ci co.
+     ( Enum s1, Bounded s1, Show s1
+     , Enum s2, Bounded s2, Show s2
+     , Enum s3, Bounded s3, Show s3
+     )
+  => SymTransducer (HsPred rs ci) rs
+       (Composite s1 (Composite s2 s3)) ci co
+  -> Text
+toMermaidCompose3Nested t =
+  let outers     = [minBound .. maxBound] :: [s1]
+      inners     = [minBound .. maxBound] :: [Composite s2 s3]
+      composites = [minBound .. maxBound] :: [Composite s1 (Composite s2 s3)]
+
+      ind   = T.pack "    "
+      ind2  = T.pack "        "
+      arrow = T.pack " --> "
+      colon = T.pack " : "
+
+      header   = T.pack "stateDiagram-v2"
+      initLine = ind <> T.pack "[*]" <> arrow
+                   <> compose3Label (initial t)
+
+      outerBlock o = T.intercalate (T.pack "\n") $
+        [ ind <> T.pack "state " <> vertexLabel o <> T.pack " {" ]
+        ++
+        [ ind2 <> compose3Label (Composite o i) | i <- inners ]
+        ++
+        [ ind <> T.pack "}" ]
+
+      outerBlocks = [ outerBlock o | o <- outers ]
+
+      edgeLines =
+        [ ind <> compose3Label s <> arrow
+              <> compose3Label (target e) <> colon
+              <> edgeLabel e
+        | s <- composites
+        , e <- edgesOut t s
+        ]
+
+      finalLines =
+        [ ind <> compose3Label s <> arrow <> T.pack "[*]"
         | s <- composites
         , isFinal t s
         ]
@@ -321,6 +423,29 @@ feedback1Label
   :: (Show s1, Show s2)
   => Composite s1 (Composite s2 s1) -> Text
 feedback1Label (Composite a (Composite b c)) =
+  T.pack (show a) <> T.pack "_"
+    <> T.pack (show b) <> T.pack "_"
+    <> T.pack (show c)
+
+
+-- | The Mermaid identifier for a right-associative 3-deep
+-- @'Composite' s1 ('Composite' s2 s3)@ vertex.
+-- @\<show outer\>_\<show middle\>_\<show inner\>@ — joined with
+-- underscores so the result still matches Mermaid's identifier regex
+-- @[A-Za-z_][A-Za-z0-9_]*@. The default 'Show' for 'Composite' emits
+-- @"Composite a (Composite b c)"@ with whitespace and parentheses, which
+-- is not a legal Mermaid identifier; this label sidesteps that by
+-- destructuring the composite tuple itself and joining the three
+-- component shows directly.
+--
+-- Sibling of 'compositeLabel' (2-deep) and 'feedback1Label' (3-deep
+-- with @s1@ recurring at the inner-inner position). 'compose3Label'
+-- requires three independent 'Show' constraints because the three
+-- component vertex types are unrelated.
+compose3Label
+  :: (Show s1, Show s2, Show s3)
+  => Composite s1 (Composite s2 s3) -> Text
+compose3Label (Composite a (Composite b c)) =
   T.pack (show a) <> T.pack "_"
     <> T.pack (show b) <> T.pack "_"
     <> T.pack (show c)
