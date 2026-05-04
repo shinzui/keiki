@@ -19,24 +19,30 @@
 -- replays an event onto the state). The keiki formalism guarantees
 -- the two directions agree on every non-ε edge.
 --
--- == Two semantic gaps
+-- == Two façades, one residual gap
 --
--- The keiki transducer is /more expressive/ than the naive Decider
--- in two specific ways. Both manifest as visible differences in
--- behaviour through this façade and are documented at 'toDecider'.
+-- This module exports two projections. 'toDecider' is the strict
+-- letter projection — one input yields at most one event.
+-- 'toMultiDecider' drives chains of letter edges through
+-- user-declared internal vertices, so a single command can yield
+-- two or more events end-to-end. The chain shape is described by
+-- a 'DriverConfig'.
 --
--- 1. /ε-edges/ — edges whose @output@ is 'Nothing'. The transducer
---    transitions state without emitting an event. Through the
---    façade, 'decide' returns @[]@ for the input that would have
---    fired the ε-edge, and a subsequent 'evolve' on @[]@ is a
---    no-op, so the state does not transition. Use 'delta' directly
---    when ε-driven transitions matter.
+-- One semantic gap from the naive Decider remains under both
+-- façades:
 --
--- 2. /At most one event per command/. The naive 'decide' returns
---    @[e]@ to support multi-event commands; the keiki 'omega'
---    returns @Maybe co@. The façade lifts via @Just co → [co]@,
---    @Nothing → []@, so the result is always empty or a singleton.
---    A future @MultiDecider@ would relax this; out of scope here.
+-- /ε-edges/ — edges whose @output@ is 'Nothing'. The transducer
+-- transitions state without emitting an event. Through either
+-- façade, 'decide' omits the ε from its returned list, and a
+-- subsequent 'evolve' on that list does not replay the
+-- ε-transition. (Mid-chain ε-edges inside 'toMultiDecider'
+-- advance state silently while the driver runs, but they remain
+-- invisible to 'evolve' afterwards.) Use 'Keiki.Core.delta'
+-- directly when ε-driven transitions matter.
+--
+-- The /at most one event per command/ gap that 'toDecider'
+-- exhibits — @omega@ returns @Maybe co@, lifted to @[]@ or a
+-- singleton — is lifted by 'toMultiDecider'.
 module Keiki.Decider
   ( Decider (..)
   , toDecider
