@@ -1,5 +1,16 @@
 # Transducers for Workflow Modeling
 
+> **Status: historical (encoding only).** The workflow patterns
+> catalogue (sequential / XOR-split / merge / loop / parallel split /
+> sync) is conceptually fine and remains a useful reference. The
+> *encoding* throughout uses the toy `Transducer s c e` shape
+> (`delta :: s -> a -> Maybe s`, `omega :: s -> a -> Maybe e`,
+> `Enum`/`Bounded` on every alphabet). None of these signatures match
+> the shipped `SymTransducer` / `Keiki.Builder` surface. Read for
+> patterns; rewrite examples against the current API using
+> `docs/guide/user-guide.md` and the worked examples in
+> `jitsurei/src/Jitsurei/`.
+
 A workflow is a transducer. The inputs are actions (human decisions,
 system triggers, timer expirations), the outputs are effects
 (notifications, state changes, side effects), and the states track

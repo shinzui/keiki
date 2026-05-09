@@ -387,7 +387,7 @@ constructor list of `Term`).
 
 ## User Registration migration plan
 
-The V5 aggregate (`src/Keiki/Examples/UserRegistration.hs`) defines four
+The V5 aggregate (`jitsurei/src/Jitsurei/UserRegistration.hs`) defines four
 input-reading helpers in v1:
 
     inpStart, inpConfirm, inpResend, inpGdpr
@@ -439,7 +439,7 @@ emits a "guard violation" error (via `icMatch`'s `Nothing` branch) when
 the input constructor does not match. The error message is more
 specific because it names the `icName`.
 
-For the V0 aggregate (`src/Keiki/Examples/UserRegistrationV0.hs`):
+For the V0 aggregate (`jitsurei/src/Jitsurei/UserRegistrationV0.hs`):
 
 - The same `inCtorStart`/`inCtorConfirm`/... values apply; the V0 bug
   is in the *event* schema, not the *command* schema.
@@ -533,7 +533,7 @@ Edit `test/Keiki/CoreSpec.hs`:
 
 The two example modules are intentionally left broken until M5/M6.
 
-**M5 — migrate V5.** Edit `src/Keiki/Examples/UserRegistration.hs`:
+**M5 — migrate V5.** Edit `jitsurei/src/Jitsurei/UserRegistration.hs`:
 
 - Add four `inCtor*` definitions after the wire constructors.
 - Replace four `inpFoo` helpers' types and bodies per §"Migration plan"
@@ -544,14 +544,14 @@ The two example modules are intentionally left broken until M5/M6.
 Run `cabal test --test-options="--match
 Keiki.Examples.UserRegistrationSpec"`; expect 7 examples, 0 failures.
 
-**M6 — migrate V0.** Edit `src/Keiki/Examples/UserRegistrationV0.hs`:
+**M6 — migrate V0.** Edit `jitsurei/src/Jitsurei/UserRegistrationV0.hs`:
 
 - Mirror M5; remove the local `inpStart`/etc. wrappers (the V0 source
   currently re-defines them; after M5 they are imported from V5).
 - Drop the hand-written `\_regs _co -> Nothing` from the Confirm edge's
   `pack`.
 
-Edit `test/Keiki/Examples/UserRegistrationV0Spec.hs`:
+Edit `jitsurei/test/Jitsurei/UserRegistrationV0Spec.hs`:
 
 - Update the warning-text assertion to match the new message
   (`"InCtor \"ConfirmAccount\" leaves field \"confirmCode\""` or

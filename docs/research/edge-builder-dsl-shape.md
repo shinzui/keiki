@@ -56,7 +56,7 @@ intermediary).
 GHC fails the second `(.=)` with the existing `TypeError` from
 `Keiki.Internal.Slots.NotMemberCmp`:
 
-    src/Keiki/Examples/EmailDelivery.hs:NN:NN: error: [GHC-64725]
+    jitsurei/src/Jitsurei/EmailDelivery.hs:NN:NN: error: [GHC-64725]
         • Keiki.Internal.Slots.Disjoint: slot "emailRecipient" is
           written by both halves of `combine`. Each register slot
           may be written at most once per edge update.
@@ -422,7 +422,7 @@ existing import.
 
 The full `emailDeliveryEdges` re-expressed in the M3 surface,
 side-by-side with the post-MP-6 AST form. The AST form is what
-`src/Keiki/Examples/EmailDelivery.hs:163` ships today.
+`jitsurei/src/Jitsurei/EmailDelivery.hs:163` ships today.
 
     -- AST form (post-MP-6, current master, lines 163–183).
     emailDeliveryASTEdges = \case

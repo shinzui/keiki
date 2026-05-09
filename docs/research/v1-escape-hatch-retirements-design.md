@@ -58,9 +58,9 @@ Total non-test, non-Core call sites: **zero in any example aggregate**.
 - `test/Keiki/CoreSpec.hs`: a synthetic transducer using `mkOut (\_ _ -> "true")`
   on line 38, and three test cases at lines 120-123 and 180-183 that exercise
   `solveOutput` returning `Nothing` on `OFn` and `checkHiddenInputs` flagging it.
-- `src/Keiki/Examples/UserRegistration.hs`: **no occurrences**.
-- `src/Keiki/Examples/UserRegistrationV0.hs`: **no occurrences**.
-- `src/Keiki/Examples/EmailDelivery.hs`: **no occurrences**.
+- `jitsurei/src/Jitsurei/UserRegistration.hs`: **no occurrences**.
+- `jitsurei/src/Jitsurei/UserRegistrationV0.hs`: **no occurrences**.
+- `jitsurei/src/Jitsurei/EmailDelivery.hs`: **no occurrences**.
 
 `OFn` is dead in user code. The only consumers are (a) the synthetic test cases,
 which exist precisely to exercise `OFn` behaviour, and (b) Composition's
@@ -81,11 +81,11 @@ Total non-test, non-Core call sites: **zero in any example aggregate**.
   type (lines 264-269).
 - `test/Keiki/CoreSpec.hs`: a synthetic edge guard using `matchCmd id` at line 36
   and a dispatch test at lines 91-92.
-- `src/Keiki/Examples/UserRegistrationV0.hs:89`: a code comment that records the
+- `jitsurei/src/Jitsurei/UserRegistrationV0.hs:89`: a code comment that records the
   *historical* migration from `matchCmd` to `matchInCtor`. No actual usage of
   `matchCmd` or `PMatchC`.
-- `src/Keiki/Examples/UserRegistration.hs`: **no occurrences**.
-- `src/Keiki/Examples/EmailDelivery.hs`: **no occurrences**.
+- `jitsurei/src/Jitsurei/UserRegistration.hs`: **no occurrences**.
+- `jitsurei/src/Jitsurei/EmailDelivery.hs`: **no occurrences**.
 
 `PMatchC` is dead in user code. The only consumers are (a) the synthetic test
 cases, (b) Composition's defensive error paths, and (c) the SBV translation's
@@ -111,10 +111,10 @@ Total call sites: **8 source uses, 2 test uses, plus the load-bearing site at
   Disjointness here is structural: `weakenLUpdate` writes only into the `rs1`
   prefix of the appended register file; `substUpdate` writes only into the `rs2`
   suffix.
-- `src/Keiki/Examples/UserRegistration.hs`: 3 uses across 2 edges (registration
+- `jitsurei/src/Jitsurei/UserRegistration.hs`: 3 uses across 2 edges (registration
   start, resend) chaining 2-3 single-slot `USet`s.
-- `src/Keiki/Examples/UserRegistrationV0.hs`: 3 uses, mirroring the V5 aggregate.
-- `src/Keiki/Examples/EmailDelivery.hs`: 2 uses, chaining 3 single-slot `USet`s on
+- `jitsurei/src/Jitsurei/UserRegistrationV0.hs`: 3 uses, mirroring the V5 aggregate.
+- `jitsurei/src/Jitsurei/EmailDelivery.hs`: 2 uses, chaining 3 single-slot `USet`s on
   the email-pending edge.
 - `test/Keiki/CompositionSpec.hs`: 2 uses in test fixtures.
 

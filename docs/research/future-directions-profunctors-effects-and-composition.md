@@ -1,5 +1,25 @@
 # Future Directions: Design Notes
 
+> **Status: historical.** This was the pre-keiki "what we should build"
+> doc, written against the toy `Transducer s c e` / `Decider c e s`
+> shapes. Most of the listed directions have shipped under different
+> names; the mapping is recorded in
+> `architecture-comparison-keiki-vs-crem.md`:
+>
+> - §1 Profunctor structure → `Keiki.Profunctor` (`SomeSymTransducer`,
+>   `lmapCi`, `lmapMaybeCi`, `rmapCo`, `dimapTransducer`, `Profunctor`
+>   and `Functor` instances). `Category`, `Strong`, `Choice`, `Arrow`
+>   on the wrapper are still planned (MP-9 EP-28/EP-29).
+> - §2 Composition → `Keiki.Composition` (`compose`, `alternative`,
+>   `feedback1`). `parallel` / `Kleisli` re-deferred (MP-8 EP-24).
+> - §3 Weighted transducers → not pursued.
+> - §4 Hedgehog generators → not pursued (test suite uses hspec).
+> - §5 Visualization → `Keiki.Render.Mermaid` (no DOT renderer).
+> - §6 Coalgebraic encoding → not pursued.
+>
+> Read this note as the prospective sketch that produced the shipped
+> surface, not as a roadmap or API reference.
+
 Six capabilities that would make this library production-ready. Each section
 covers the mathematical foundation, the DDD interpretation, the Haskell
 encoding, and the practical value.

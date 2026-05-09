@@ -595,8 +595,8 @@ through one such fix.
 When writing a new aggregate, the high-traffic references:
 
 1. **An existing aggregate** as a template.
-   `src/Keiki/Examples/EmailDelivery.hs` is the smallest;
-   `src/Keiki/Examples/UserRegistration.hs` is the canonical
+   `jitsurei/src/Jitsurei/EmailDelivery.hs` is the smallest;
+   `jitsurei/src/Jitsurei/UserRegistration.hs` is the canonical
    five-vertex / four-command example.
 2. **`Keiki.Builder`'s haddock.** The module header has the
    worked example inline and lists every export with a one-line

@@ -2,6 +2,16 @@
 
 # EFSM-Based Workflow Engine — Technical Analysis
 
+> **Status: historical.** This analysis assumed an EFSM (control + opaque
+> context + δ/ω/ρ) as the underlying formalism. keiki rejected EFSM in
+> favour of the symbolic-register transducer; see
+> `data-direction-c-symbolic-and-register-automata.md` and
+> `synthesis-c-foundation-b-presentation-with-worked-examples.md` for
+> the chosen direction. The capability mapping, strengths/limitations,
+> and positioning analysis below remain useful as a workflow-engine
+> survey, but every code sketch (`δ : S × Σ × C → S × C`, etc.) is in
+> the rejected formalism.
+
 ## 1. Overview
 
 This project proposes a workflow engine built on top of an **Extended Finite State Machine (EFSM)**, combined with:

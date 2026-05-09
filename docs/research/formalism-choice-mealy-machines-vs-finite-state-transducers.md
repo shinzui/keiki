@@ -2,7 +2,8 @@
 
 These terms are often used interchangeably but they describe different
 levels of generality. The distinction matters for library design: crem
-models Mealy machines, fst-aggregate models finite-state transducers.
+models Mealy machines, keiki models finite-state transducers (extended
+with symbolic guards and a typed register file).
 
 ---
 
@@ -83,8 +84,13 @@ A further generalization where transitions can consume and produce
 δ ⊆ S × Σ* × Γ* × S
 ```
 
-This is what our `GSM` type models — a command can produce multiple
-events per transition.
+keiki does not model GSMs directly: a single edge produces at most one
+event. Multi-event commands are handled by *state refinement* — the
+author introduces internal vertices and chains letter edges through
+them, optionally driven end-to-end by `Keiki.Decider.toMultiDecider`
+with a `DriverConfig`. See `multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`
+for the rejection of the GSM-expansion approach in favor of state
+refinement.
 
 ---
 
@@ -123,35 +129,39 @@ constrained useful specialization.
 
 ## Where Our Types Sit
 
-### fst-aggregate's `Transducer`
+### keiki's `SymTransducer`
 
 ```haskell
-data Transducer s c e = Transducer
-  { delta   :: s -> c -> Maybe s      -- partial (Maybe)
-  , omega   :: s -> c -> Maybe e      -- ε-output (Maybe)
-  , initial :: s                      -- single initial state
-  , isFinal :: s -> Bool              -- final states exist
+data SymTransducer phi rs s ci co = SymTransducer
+  { edgesOut    :: s -> [Edge phi rs ci co s]  -- outgoing edges per vertex
+  , initial     :: s                           -- single initial state
+  , initialRegs :: RegFile rs                  -- typed initial register file
+  , isFinal     :: s -> Bool                   -- final states exist
   }
+
+data Edge phi rs ci co s = Edge
+  { guard  :: phi                              -- symbolic predicate
+  , update :: Update rs w ci                   -- register-file update
+  , output :: Maybe (OutTerm rs ci co)         -- ε-output (Nothing) or event
+  , target :: s
+  }
+
+delta :: SymTransducer phi rs s ci co -> s -> RegFile rs -> ci -> Maybe (s, RegFile rs)
+omega :: SymTransducer phi rs s ci co -> s -> RegFile rs -> ci -> Maybe co
 ```
 
-This is a **partial, deterministic, letter FST with ε-output and
-final states**. Not a Mealy machine because:
-- Partial (returns `Nothing` for invalid transitions)
-- Has ε-output (`omega` can return `Nothing` on a valid transition)
+This is a **partial, deterministic, letter FST with ε-output and final
+states**, extended with symbolic edge guards (over a `BoolAlg phi`) and
+a typed register file. Not a Mealy machine because:
+
+- Partial (`delta` returns `Nothing` when no edge guard is satisfied)
+- Has ε-output (an edge with `output = Nothing`)
 - Has final states (`isFinal`)
 
-### fst-aggregate's `GSM`
-
-```haskell
-data GSM s c e = GSM
-  { delta :: s -> c -> Maybe s
-  , omega :: s -> c -> [e]            -- multi-symbol output
-  , ...
-  }
-```
-
-A **partial, deterministic Generalized Sequential Machine**. More general
-than the Transducer — each transition can produce multiple events.
+The symbolic-guard / register-file extensions are not part of the basic
+FST formalism but compose cleanly on top of it — the underlying control
+graph is still a letter FST, and `Keiki.Acceptor.inputAcceptor` /
+`outputAcceptor` recover the unadorned input/output acceptors.
 
 ### crem's `BaseMachineT`
 
@@ -197,15 +207,21 @@ machines with richer behavior.
 The core difference in how the two libraries express "this command is
 invalid in this state":
 
-### fst-aggregate: Runtime `Maybe`
+### keiki: runtime `Maybe`, with optional symbolic checks at build time
 
 ```haskell
-delta PotentialCustomer StartRegistration = Just RequiresConfirmation
-delta Confirmed         StartRegistration = Nothing  -- invalid
+edgesOut PotentialCustomer =
+  [ Edge { guard = matchInCtor inpStartRegistration, …, target = RequiresConfirmation } ]
+edgesOut Confirmed = []  -- no outgoing edge accepts StartRegistration
+
+-- delta t Confirmed regs StartRegistration  ⇒  Nothing
 ```
 
-The transition function is partial. Invalid transitions return `Nothing`.
-The caller handles the `Maybe`.
+The transition is partial: `delta` returns `Just` only when exactly one
+outgoing edge has a satisfied guard. The caller handles the `Maybe`.
+`Keiki.Symbolic.isBot` can additionally prove at build time that an
+edge can never fire (its guard is unsatisfiable), giving a measure of
+the compile-time safety crem buys with type-level topology.
 
 ### crem: Type-level topology
 
@@ -238,13 +254,15 @@ Partial function  f: A → Maybe B
 Total function    f: A' → B       where A' ⊂ A
 
 The subset A' is defined by:
-  - fst-aggregate: the set of (s, c) where delta s c ≠ Nothing
+  - keiki: the set of (s, regs, c) where delta t s regs c ≠ Nothing
   - crem: the set of (s, c) where AllowedTransition topology s c holds
 ```
 
 The information content is identical. The difference is where the
 invariant lives (runtime vs. compile time) and what the consequences
-of violation are (Nothing vs. type error).
+of violation are (`Nothing` vs. type error). keiki's symbolic layer
+narrows the gap further: `isBot` flags unsatisfiable guards at build
+time, and constructor-mutex on `PInCtor` is recognised by SBV.
 
 ---
 
@@ -295,8 +313,11 @@ A single command may produce multiple events. A Mealy machine produces
 exactly one output per input. A GSM produces a sequence.
 
 crem handles this with collection types (`[Event]`) as the output, plus
-`Kleisli` composition for chaining multi-output machines. fst-aggregate
-models it with the `GSM` type.
+`Kleisli` composition for chaining multi-output machines. keiki uses
+*state refinement*: the author introduces internal vertices and chains
+single-event letter edges through them; `Keiki.Decider.toMultiDecider`
+drives the chain end-to-end so the user sees a `decide :: c -> s -> [e]`
+that can return more than one event per command.
 
 ---
 
@@ -308,14 +329,17 @@ models it with the `GSM` type.
 | Output | Always exactly 1 | 0, 1, or many | ε-transitions + multi-event |
 | Final states | None | Yes | Lifecycle termination |
 | Determinism | Deterministic | Possibly non-deterministic | Deterministic in practice |
-| Partiality via | Type-level restriction (crem) | `Maybe` (fst-aggregate) | Either works |
-| ε-output via | `Maybe`/`[]` in output type (crem) | `Nothing` from ω (fst-aggregate) | Either works |
-| Multi-event via | `[]` output + Kleisli (crem) | GSM (fst-aggregate) | Either works |
+| Partiality via | Type-level restriction (crem) | `Maybe` from `delta` + symbolic `isBot` (keiki) | Either works |
+| ε-output via | `Maybe`/`[]` in output type (crem) | `Nothing` from edge `output` (keiki) | Either works |
+| Multi-event via | `[]` output + Kleisli (crem) | State refinement + `toMultiDecider` (keiki) | Either works |
 
 Both libraries end up at the same expressiveness — they just encode the
 constraints differently. crem pushes restrictions into the type system.
-fst-aggregate pushes them into the transition function's partiality.
-The choice is a trade-off between compile-time safety and simplicity.
+keiki keeps them in the transition function's partiality, then uses an
+SBV-backed symbolic layer to recover build-time guarantees where the
+type system would otherwise have nothing to say. The trade-off is
+compile-time safety (crem) vs. structural alphabets, register-file
+discipline, and decidable guard analysis (keiki).
 
 ---
 

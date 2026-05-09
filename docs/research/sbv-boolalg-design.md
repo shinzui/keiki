@@ -512,7 +512,7 @@ v2 instances coexist on the same example without source-level changes.
 
 Tests live in `test/Keiki/SymbolicSpec.hs` (translation, BoolAlg ops,
 sat, isBot, isSingleValuedSym on a synthetic) and
-`test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` (the User
+`jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs` (the User
 Registration symbolic spec).
 
 ### Translation tests (M3)
@@ -660,7 +660,7 @@ corresponds to one section above.
 
 **M7 — User Registration symbolic spec.**
 
-- Create `test/Keiki/Examples/UserRegistrationSymbolicSpec.hs`.
+- Create `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs`.
 - Assert `isSingleValuedSym (withSymPred userReg) == True`.
 - Assert a `symSatExt` round-trip on a register-read predicate.
 

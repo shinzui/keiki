@@ -922,7 +922,7 @@ only the slots live in that vertex, then write `viewFor :: SVertex
 v -> RegFile rs -> View v`. The synthesis note flagged the
 codegen for this shape as opt-in: *"A `genView` TH helper is a
 nice-to-have, not a v1 requirement."* Until EP-13, no aggregate in
-`src/Keiki/Examples/` had a B-view; users would hand-write the
+`jitsurei/src/Jitsurei/` had a B-view; users would hand-write the
 singletons GADT, the View GADT, and the projection function (~40
 lines for a five-vertex aggregate, easy to get wrong — a missed
 vertex turns into a non-exhaustive pattern; a typoed slot name
@@ -953,7 +953,7 @@ lower-cased upper-case letters of the vertex name), and the
 projection function (`userView`). Worked example:
 `Jitsurei.UserRegistration` exports `UserView (..)`,
 `SUserVertex (..)`, and `userView`; six tests in
-`test/Keiki/Examples/UserRegistrationViewSpec.hs` exercise the
+`jitsurei/test/Jitsurei/UserRegistrationViewSpec.hs` exercise the
 projection on hand-constructed register files. See
 `docs/research/genview-th-splice-design.md` for the full design,
 `docs/plans/13-genview-th-splice-and-b-presentation-view-v-gadt.md`

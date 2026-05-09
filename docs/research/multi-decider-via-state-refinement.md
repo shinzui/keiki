@@ -31,7 +31,7 @@ and `Just o` for a single-event edge:
 
 Real aggregates routinely emit *multiple* events for a single
 command. The canonical example is `StartRegistration` in
-`src/Keiki/Examples/UserRegistration.hs`, which logically produces
+`jitsurei/src/Jitsurei/UserRegistration.hs`, which logically produces
 both `RegistrationStarted` and `ConfirmationEmailSent`.
 
 Today this is modelled by *state refinement*: the user adds an
@@ -217,7 +217,7 @@ to the intermediate, then a separate `from intermediate $ onCmd …`
 block) would produce.
 
 The cross-form equivalence test
-(`test/Keiki/Examples/UserRegistrationBuilderSpec.hs` pattern from
+(`jitsurei/test/Jitsurei/UserRegistrationBuilderSpec.hs` pattern from
 Plan 15) re-greens because both author forms describe the same
 letter FST.
 

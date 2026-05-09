@@ -19,7 +19,7 @@ The companion files referenced throughout this note are:
 - `src/Keiki/Generics/TH.hs` — the existing TH module that
   `deriveView` extends; the validation-and-codegen pattern modelled
   after `deriveAggregateCtors`.
-- `src/Keiki/Examples/UserRegistration.hs` — the canonical aggregate
+- `jitsurei/src/Jitsurei/UserRegistration.hs` — the canonical aggregate
   the splice is exercised on.
 
 
@@ -42,7 +42,7 @@ The synthesis note flagged the codegen for this shape as opt-in:
 
 > A `genView` TH helper is a nice-to-have, not a v1 requirement.
 
-Today no aggregate in `src/Keiki/Examples/` ships a B-view. A user
+Today no aggregate in `jitsurei/src/Jitsurei/` ships a B-view. A user
 who wants the typed projection has to hand-write three things per
 aggregate: the per-aggregate `S<Vertex>` singletons GADT (mapping
 each `Vertex` constructor to a singleton tag indexed by the promoted

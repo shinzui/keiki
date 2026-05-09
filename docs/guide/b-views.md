@@ -147,7 +147,7 @@ not named in the spec aren't read — even if they're bound to
 `error` or to a stale value left over from a previous transition,
 the projection doesn't crash.
 
-`test/Keiki/Examples/UserRegistrationViewSpec.hs` exercises this
+`jitsurei/test/Jitsurei/UserRegistrationViewSpec.hs` exercises this
 explicitly:
 
 ```haskell
@@ -284,8 +284,8 @@ present in the codebase because they answer different questions.
 - `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`
   §3 — why B-views are a presentation layer rather than a
   formalism.
-- `src/Keiki/Examples/UserRegistration.hs` — the canonical
+- `jitsurei/src/Jitsurei/UserRegistration.hs` — the canonical
   five-vertex spec, with the splice and its consumers.
-- `test/Keiki/Examples/UserRegistrationViewSpec.hs` — what the
+- `jitsurei/test/Jitsurei/UserRegistrationViewSpec.hs` — what the
   projection actually returns for each vertex, including the
   "ignores stale slots" property.

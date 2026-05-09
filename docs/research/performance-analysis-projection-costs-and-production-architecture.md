@@ -1,5 +1,18 @@
 # Performance Analysis
 
+> **Status: historical.** The central concern of this analysis — the
+> linear scan in `outputProjection` over enumerated commands — applies
+> to the toy `Transducer s c e` formalism. keiki's `applyEvent` uses
+> the structural `solveOutput` walk (no enumeration over commands), so
+> the `toDeciderFast` / `toDeciderArray` mitigations and the
+> `Enum`/`Bounded` requirement on commands are moot. The `MultiDecider`
+> approach mentioned was Approach 3 in MP-7 and was rejected; the
+> shipped path is state refinement plus `Keiki.Decider.toMultiDecider`
+> with a `DriverConfig`. For *current* performance-relevant data, see
+> `symbolic-analysis-and-runtime-implications.md` (SBV solver-call
+> cost ~10ms) and `bench/README.md` (the `keiki-bench` suite). Read
+> the rest of this doc as historical analysis of a rejected encoding.
+
 Performance concerns for using this library in a production event-sourced
 system, ordered from most to least critical.
 

@@ -76,7 +76,7 @@ The aggregate itself stays in `HsPred`-shape — no source-level
 changes to your transducer.
 
 The reference fixture at
-`test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` adds three
+`jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs` adds three
 optional bands of coverage worth borrowing for any non-trivial
 aggregate:
 
@@ -250,6 +250,6 @@ to production — the check belongs in CI.
   — what symbolic analysis is, what it does, what it costs.
 - `docs/research/sbv-boolalg-design.md` — the design log
   behind the SBV-backed `BoolAlg` instance.
-- `test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` — the
+- `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs` — the
   reference fixture: single-valuedness gate, sat smoke checks,
   `symSatExt` round-trip.

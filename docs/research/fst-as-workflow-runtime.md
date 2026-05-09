@@ -1,5 +1,16 @@
 # FST as Workflow Runtime
 
+> **Status: historical.** This note's central type is the toy
+> `ExtTransducer s ctx c e` from the EFSM era. keiki rejected EFSM in
+> favour of the symbolic-register transducer (`SymTransducer phi rs s ci co`),
+> so the code sketches throughout do not match the shipped library. The
+> *runtime architectural ideas* (event store, queue, subscriptions,
+> timers, activities, signals, child workflows, cancellation,
+> versioning, snapshotting) survived into `effects-boundary.md`, which
+> is now the authoritative reference for the pure-core / runtime split.
+> Read this doc for the runtime-capability survey and the Temporal /
+> Cadence positioning, not for the encoding.
+
 How the transducer formalism, paired with an event-sourced database and
 message queue, covers the capabilities of dedicated workflow engines like
 Temporal and Cadence — and what it gives you that they don't.

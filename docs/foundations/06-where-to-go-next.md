@@ -5,69 +5,54 @@ You've built up the vocabulary. The library's design notes live in
 
 ## Required reading
 
-These four cover the core design as it stands today. About 90 minutes
-to read end to end.
+These four cover the design as it stands today.
 
-1. **`core-design-transducer-as-source-of-truth.md`** (~5 min)
-   The kernel — what `Transducer s c e` is and the family of derived
-   types (`Acceptor`, `Decider`, `Sequencer`). Maps directly onto
-   foundations `03` and `04`.
+1. **`synthesis-c-foundation-b-presentation-with-worked-examples.md`** (~30 min)
+   The current direction for handling data, with two fully worked
+   examples (an event-sourced aggregate and a process manager). Maps
+   directly onto foundations `05`. This is the load-bearing design
+   synthesis — start here.
 
 2. **`formalism-choice-mealy-machines-vs-finite-state-transducers.md`** (~20 min)
    Sharper take on why the FST is the right choice for keiki versus
    the Mealy-machine encoding used by `crem`. Reinforces foundations
    `03`. Skip on first pass if you trust the choice.
 
-3. **`fst-as-workflow-runtime.md`** (~30 min)
-   How the pure transducer connects to a real runtime — event store,
-   queue, subscriptions, timers, activities, signals, child workflows,
-   cancellation. Maps Temporal's feature surface onto the FST
-   formulation. Read all of it; this is the operational shape of the
-   library.
+3. **`effects-boundary.md`** (~25 min)
+   The contract between the pure core (`Keiki.Core`) and the runtime
+   layer that gives it durability, time, and an outside world.
+   Specifies what is pure, what is not, and what types cross the
+   boundary in each direction.
 
-4. **`synthesis-c-foundation-b-presentation-with-worked-examples.md`** (~30 min)
-   The current proposed direction for handling data, with two fully
-   worked examples (an event-sourced aggregate and a process manager).
-   Maps directly onto foundations `05`. This is the most up-to-date
-   statement of the design.
+4. **`keiki-generics-design.md`** (~20 min)
+   How `Keiki.Generics` and `Keiki.Generics.TH` derive `InCtor`,
+   `WireCtor`, and `RegFile` shapes from your record types so you
+   don't write the structural alphabet boilerplate by hand.
 
 ## Depth on specific topics
 
 Read these when you hit the topic, not in order.
 
+- **`composition-combinators-design.md`**
+  How `compose`, `alternative`, and `feedback1` are derived; the
+  substitution algorithm and slot-name disjointness machinery.
+  Read when you start composing transducers across bounded contexts.
+
+- **`acceptor-projections-design.md`**
+  How `Keiki.Acceptor.inputAcceptor` and `outputAcceptor` recover the
+  underlying letter automata from a `SymTransducer`. Useful when you
+  want to validate a command sequence or an event log independently
+  of the full transducer.
+
 - **`multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`**
-  When one command needs to produce multiple events, how to model it.
-  Three approaches with trade-offs. Read before you write your first
-  multi-event aggregate.
+  When one command needs to produce multiple events, how to model
+  it. Three approaches with trade-offs; the chosen one
+  (state refinement + `toMultiDecider`) is what `Keiki.Decider` ships.
 
-- **`future-directions-profunctors-effects-and-composition.md`**
-  Composition operations (sequential, parallel, feedback), profunctor
-  structure, the effect-monad story. Read when you start composing
-  transducers or routing across bounded contexts.
-
-- **`orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`**
-  Treats sagas, process managers, and feedback loops as
-  transducers. Read when you're building a process manager and want
-  to know what patterns the formalism handles.
-
-- **`workflow-modeling-approvals-pipelines-and-human-in-the-loop-as-transducers.md`**
-  Worked examples of common workflow shapes. Useful pattern catalogue.
-
-## Background and exploration
-
-These document decisions and explorations rather than the current
-design. Useful when you want to know "why didn't we do X."
-
-- **`architecture-comparison-keiki-vs-crem.md`**
-  How keiki differs from `crem`, the other Haskell FST-shaped library.
-
-- **`efsm-based-workflow-engine-technical-analysis.md`**
-  Earlier analysis of the EFSM extension. Superseded by the
-  symbolic-register approach in the synthesis doc, but documents the
-  reasoning that led there.
-
-- **`performance-analysis-projection-costs-and-production-architecture.md`**
-  Performance considerations for projections and the runtime.
+- **`schema-evolution.md`**
+  How to evolve event and register-file schemas across versions
+  without breaking replay. Forward-looking application-layer
+  guidance.
 
 - **`symbolic-analysis-and-runtime-implications.md`**
   What "symbolic analysis" means in keiki, what `Keiki.Symbolic`
@@ -75,11 +60,57 @@ design. Useful when you want to know "why didn't we do X."
   in `PATH`, ~10ms per solver call). Read before deciding whether
   to import `Keiki.Symbolic` or whether to install z3 in CI.
 
+- **`sbv-boolalg-design.md`**
+  The design rationale for the SBV-backed `BoolAlg` instance —
+  how `HsPred` is translated to SMT, how constructor mutex is
+  encoded, what the witness-extraction story looks like.
+
+- **`architecture-comparison-keiki-vs-crem.md`**
+  How keiki differs from `crem`, the other Haskell FST-shaped
+  library. Useful for sanity-checking design choices.
+
+## Historical and exploratory
+
+These document decisions and explorations rather than the current
+design. They predate the symbolic-register direction and use the toy
+`Transducer s c e` formalism rather than the shipped
+`SymTransducer phi rs s ci co`. Read when you want to understand
+*why* the design landed where it did, not as references for the
+current API.
+
 - **`data-direction-b-indexed-state-per-vertex.md`** and
   **`data-direction-c-symbolic-and-register-automata.md`**
-  The parallel exploration that produced the synthesis. Read these if
-  you want to understand the trade-offs the synthesis makes; skip if
-  you trust the conclusion.
+  The parallel exploration that produced the synthesis. Read these
+  if you want to understand the trade-offs the synthesis makes.
+- **`core-design-transducer-as-source-of-truth.md`** — early kernel
+  sketch. Superseded by the synthesis doc.
+- **`efsm-based-workflow-engine-technical-analysis.md`** — earlier
+  analysis of the EFSM extension; the rejected alternative to
+  symbolic-register.
+- **`fst-as-workflow-runtime.md`** — runtime architecture sketch
+  built on the toy `ExtTransducer` formalism. The architectural
+  ideas (event store, queue, subscriptions, timers) survived into
+  `effects-boundary.md`; the encoding did not.
+- **`future-directions-profunctors-effects-and-composition.md`** —
+  pre-keiki "what we should build" doc. Most of the listed items
+  have shipped under different names (see
+  `architecture-comparison-keiki-vs-crem.md` for the mapping).
+- **`orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`** —
+  saga / choreography / feedback patterns expressed in the toy
+  formalism. Conceptually still valid; the encoding is stale.
+- **`performance-analysis-projection-costs-and-production-architecture.md`** —
+  the central perf concern (linear scan in `outputProjection` over
+  enumerated commands) is for the toy `Transducer s c e`; keiki's
+  `applyEvent` uses structural `solveOutput` and doesn't enumerate.
+  See `symbolic-analysis-and-runtime-implications.md` for the
+  current perf-relevant data (SBV solver-call cost).
+- **`workflow-modeling-approvals-pipelines-and-human-in-the-loop-as-transducers.md`** —
+  workflow patterns catalogue. Patterns are sound; encoding is the
+  toy formalism.
+- **`v1-escape-hatch-retirements-design.md`** — record of which
+  prototype-era escape hatches were retired and what replaced them.
+  Useful when reading older design notes that mention
+  `OFn`/`PMatchC`/`unsafeCombine`/`TInpField`.
 
 ## Benchmarking
 
@@ -90,24 +121,6 @@ exercises the five pure-core operations (`delta`, `omega`, `step`,
 and AST). See **`bench/README.md`** for how to capture a baseline,
 diff against a previous run, and read the `bcompare` ratios in
 the `head-to-head` group.
-
-## How to follow along once code lands
-
-The design notes are ahead of the implementation. When code lands,
-expect:
-
-- A `keiki-core` package with the `SymTransducer`, `Edge`, `RegFile`,
-  and `Update` types described in the synthesis doc.
-- A worked example (likely User Registration from `02` and the
-  synthesis doc) as the smoke test.
-- A runtime module wiring the pure core to a swappable event store and
-  queue (architecture from `fst-as-workflow-runtime.md`).
-- An `examples/` directory expanding the patterns from the worked
-  examples.
-
-If you find a gap between a design note and the implementation, the
-implementation is the source of truth. The design notes will be
-updated to match.
 
 ## Authoring a transducer
 

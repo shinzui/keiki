@@ -293,9 +293,9 @@ each and read clearly.
 
 ## 8. Pointers
 
-- `src/Keiki/Examples/UserRegistration.hs` — `userRegAST` at
+- `jitsurei/src/Jitsurei/UserRegistration.hs` — `userRegAST` at
   the bottom; full five-vertex / four-command AST form.
-- `src/Keiki/Examples/EmailDelivery.hs` — `emailDeliveryAST`;
+- `jitsurei/src/Jitsurei/EmailDelivery.hs` — `emailDeliveryAST`;
   the simplest one-edge AST form.
 - `src/Keiki/Core.hs` — every smart constructor used by the AST
   form, with per-export haddock.

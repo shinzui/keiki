@@ -212,5 +212,5 @@ A short integration checklist:
   right starting point for a reader who hasn't seen any of this
   before.
 - `test/Keiki/SymbolicSpec.hs` and
-  `test/Keiki/Examples/UserRegistrationSymbolicSpec.hs` — what calls
+  `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs` — what calls
   through z3 in the existing test suite.

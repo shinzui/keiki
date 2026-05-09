@@ -158,7 +158,7 @@ top-level module, not an extension of `Keiki/Core.hs`. Rationale:
   It exports `compose` as its single user-facing value.
 
 Tests live in `test/Keiki/CompositionSpec.hs`. The worked example's
-second aggregate lives in `src/Keiki/Examples/EmailDelivery.hs`,
+second aggregate lives in `jitsurei/src/Jitsurei/EmailDelivery.hs`,
 following the existing `Keiki/Examples/UserRegistration.hs`
 pattern.
 
@@ -235,7 +235,7 @@ The composite's edges from `(s1, s2)`:
        Edge
          { guard  = PAnd (liftLPred (guard e1))
                           (substPred (guard e2) o1)
-         , update = liftLU (update e1) `unsafeCombine`
+         , update = liftLU (update e1) `combine`
                     substUpdate (update e2) o1
          , output = fmap (\o2 -> substOut o2 o1) (output e2)
          , target = Composite (target e1) (target e2)
@@ -330,8 +330,8 @@ to be `OPack ic1 wc1 of1` for the structural case):
         error ("compose: TInpCtorField over " <> icName ic2
                  <> " but t1 emits " <> wcName wc1
                  <> " — caller should ensure structural alignment")
-      | otherwise
-      = error "compose: t1 edge has non-OPack output (escape hatch)"
+      -- Post-MP-6 every OutTerm is OPack; the OFn fallback was
+      -- retired by EP-16. There is no other 'OutTerm' shape to handle.
     substTerm (TApp1 f t)              o1  = TApp1 f (substTerm t o1)
     substTerm (TApp2 f a b)            o1  = TApp2 f (substTerm a o1)
                                                        (substTerm b o1)
@@ -361,10 +361,10 @@ walks an `OutFields rs ci fs` chain and returns the `n`-th term
     substPred (PInCtor ic2)  o1
       | OPack _ wc1 _ <- o1, icName ic2 == wcName wc1 = PTop
       | OPack _ _   _ <- o1                            = PBot
-      | otherwise = error "compose: PInCtor against non-OPack t1 output"
-    substPred (PMatchC _)    _o1 =
-      error "compose: PMatchC over mid is unsupported (opaque); \
-            \restructure t2's guard to use PInCtor / PEq / TInpCtorField"
+    -- Post-MP-6: 'HsPred' has no PMatchC constructor (retired by
+    -- EP-17) and 'OutTerm' has no OFn (retired by EP-16), so the
+    -- two opaque-fallback branches present in the v1 prototype
+    -- are gone.
 
 ### Substituting an `Update rs2 mid`
 
@@ -394,9 +394,8 @@ walks an `OutFields rs ci fs` chain and returns the `n`-th term
                                          --   tag — see below.
           wc2_co                        -- wire form is unchanged.
           (substOutFields of2 o1)
-      | otherwise
-      = error "compose: OFn output not supported as t1 edge output"
-    substOut (OFn _) _o1 = error "compose: t2 edge output is OFn (opaque)"
+    -- Post-MP-6: every output is OPack; the OFn fallback branch
+    -- present in the v1 prototype was retired by EP-16.
 
     substOutFields
       :: WeakenR rs1
@@ -458,9 +457,12 @@ input by transitivity.
 `checkHiddenInputs` walks every edge and flags:
 
 - ε-edges whose update reads the input symbol (`updateReadsInput`).
-- `OFn` outputs (opaque).
 - `OPack` outputs whose `OutFields` walk doesn't visit every slot
   of the named `InCtor`.
+
+(The v1 prototype additionally flagged opaque `OFn` outputs;
+post-MP-6 every output is `OPack` so that bullet has no work to
+do.)
 
 The composite's edges inherit these checks. Specifically:
 
@@ -472,9 +474,6 @@ The composite's edges inherit these checks. Specifically:
   walks of_composite for `TInpCtorField ic1 ix1` reads. Slots of
   ic1 not visited produce a warning naming the missing field —
   exactly as if t1's `OPack` were checked directly.
-- If t2's edge has an `OFn` output, the composite emits an `OFn`
-  output too (per `substOut` for the `OFn` case which we'd extend
-  rather than error in a future revision). The check fires.
 
 ### Guarantee 3: symbolic single-valuedness (`isSingleValuedSym`)
 
@@ -560,26 +559,15 @@ pass when t1 and t2 individually pass.
 
 ## Limitations and escape hatches
 
-`compose`'s structural substitution requires:
-
-1. **t1's outputs are all `OPack`** (no `OFn`). If t1 has an `OFn`
-   edge output, the composite errors at the substitution step.
-   Workaround: restructure the t1 transducer to use `OPack` (the
-   v2 keiki style); `OFn` is the v1 escape hatch.
-
-2. **t2's guards on `mid` are structural** (`PInCtor`, `PEq` over
-   `TInpCtorField` reads, no `PMatchC`). If t2 uses `PMatchC` over
-   `mid`, the composite errors. Workaround: use `matchInCtor` /
-   `inpCtor` instead.
-
-3. **t2's outputs are all `OPack`** (no `OFn`). Same rationale.
-
-When any of these is violated, `compose` raises a runtime error
-naming the offending edge. A future improvement is graceful
-fallback: emit a composite edge whose guard / output is wrapped in
-`PMatchC` / `OFn` and let `checkHiddenInputs` flag it. EP-11 does
-not implement that fallback; the error makes the limitation
-visible.
+The v1 prototype's design note enumerated three structural
+prerequisites for `compose` (t1 outputs all `OPack`, t2 guards over
+`mid` structural, t2 outputs all `OPack`). Post-MP-6 these are
+satisfied by *construction*: `OFn` and `PMatchC` were retired
+(EP-16 / EP-17), so every `OutTerm` is `OPack` and every guard
+read of `mid` is `PInCtor` / `PEq` / `TInpCtorField`. The "graceful
+fallback" rumination in the v1 note is moot — see "Graceful
+fallback for non-structural transducers — moot post-MP-6" below for
+the post-MP-6 status.
 
 
 ## Worked example — process manager

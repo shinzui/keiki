@@ -323,6 +323,16 @@ value with no external dependency.
 
 ## 7. What keiki Should Adopt
 
+> **Status (historical record).** Both v1 and v2 below have shipped.
+> v1 lives in `Keiki.Core` (`SymTransducer`, `RegFile`, `Update`,
+> structural `InCtor`/`WireCtor`, mechanical `applyEvent` /
+> `reconstitute` / `solveOutput`, `checkHiddenInputs`, the v1
+> `HsPred` `BoolAlg`). v2 lives in `Keiki.Symbolic` (SBV-backed
+> `SymPred`, `sat`/`isBot`/`isSingleValuedSym`/`symSatExt`).
+> v3 (extended-FST features) was not pursued. Read this section as
+> the prospective plan that produced the shipped library, not as a
+> roadmap.
+
 A focused slice, sequenced:
 
 **v1 — adopt the symbolic-register *shape*, not the SMT plumbing.**
@@ -339,9 +349,11 @@ A focused slice, sequenced:
   (output-injectivity, hidden inputs) implemented enumeratively over
   the control graph plus user-supplied generators for the data
   axis (Hedgehog generators are already in the plan).
-- All existing operations (`inputProjection`, `outputProjection`,
-  `compose`, `union`, `concatenate`, `reconstitute`) ported to the new
-  shape with the signatures from §4.
+- All existing operations ported to the new shape with the signatures
+  from §4. Shipped names: `Keiki.Acceptor.inputAcceptor` /
+  `outputAcceptor`, `Keiki.Composition.compose` / `alternative` /
+  `feedback1`, `Keiki.Core.reconstitute`. The earlier prototype
+  `union` / `concatenate` collapsed into `alternative` /`compose`.
 
 **v2 — SMT-backed `BoolAlg` instance.**
 

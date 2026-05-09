@@ -293,13 +293,14 @@ its `output` is `Nothing` (the ε case), the returned `Maybe co` is
 one input." Plan 4's smoke test calls `step` directly with hardcoded
 inputs.
 
-`delta` and `omega` (synthesis §2) remain available as analysis-only
-projections but are not the primary export. Carving them as separate
-calls would risk the runtime calling them inconsistently — e.g.,
-`delta` accepting an input that `omega` rejects — which `step` makes
-impossible by construction. Following synthesis §2's promise that
-"familiar functions are projections, not fields," `delta` and `omega`
-project from `step` by ignoring or extracting the appropriate
+`delta` and `omega` (synthesis §2) ship as first-class exports of
+`Keiki.Core` for analysis and tests, but `step` is the runtime's only
+intended call site for "advance the transducer by one input." Calling
+`delta` and `omega` separately at runtime would risk inconsistency —
+e.g., `delta` accepting an input that `omega` rejects — which `step`
+makes impossible by construction. Following synthesis §2's promise
+that "familiar functions are projections, not fields," `delta` and
+`omega` project from `step` by ignoring or extracting the appropriate
 components.
 
 ### `reconstitute`
@@ -374,7 +375,7 @@ selects v1 or v2 behavior.
 
 For the User Registration aggregate, `isSingleValuedSym (withSymPred
 userReg) == True` is asserted in
-`test/Keiki/Examples/UserRegistrationSymbolicSpec.hs`; the proof goes
+`jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs`; the proof goes
 through the constructor-mutex translation of `PInCtor`. See
 `docs/research/sbv-boolalg-design.md` for the full v2 design record
 and `docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md`
@@ -515,18 +516,24 @@ nondeterminism.
 ### Worked example: `freshCode` becomes a payload field
 
 Synthesis §4's User Registration uses pseudosyntax `freshCode` inside
-the `ResendConfirmation` edge to denote "rotate to a new code":
+the `ResendConfirmation` edge to denote "rotate to a new code". In
+the shipped builder DSL the edge looks like:
 
-    Edge { guard  = matchCmd \(ResendConfirmation _) -> True
-         , update = Combine (Set #confirmCode freshCode)
-                            (Set #registeredAt (\(ResendConfirmation d) -> d.at))
-         , ...
-         }
+    B.onCmd inCtorResend $ \d -> B.do
+      B.slot @"confirmCode"  .= d.code
+      B.slot @"registeredAt" .= d.at
+      B.emit wireConfirmationResent ConfirmationResentTermFields
+        { email       = #email
+        , confirmCode = d.code
+        , at          = d.at
+        }
+      B.goto RequiresConfirmation
 
-In a fully pure formalism, `freshCode` cannot be a runtime-generated
-value: the transducer would have to call `IO`. The fix is to add the
-fresh code as a field of `ResendConfirmationData`, pre-populated by
-the adapter:
+Note that `d.code` is a *field of the command payload*, not a runtime-
+generated value. In a fully pure formalism, a `freshCode` produced by
+`IO` cannot appear inside the edge: the transducer would have to call
+`IO`. The fix is to add the fresh code as a field of
+`ResendConfirmationData`, pre-populated by the adapter:
 
     data ResendConfirmationData = ResendConfirmationData
       { code :: ConfirmationCode
@@ -551,9 +558,9 @@ End-to-end:
        that solveOutput can recover it on replay.
 
 The synthesis's pseudosyntax `Set #confirmCode freshCode` becomes
-`Set #confirmCode (\(ResendConfirmation d) -> d.code)`. The
-transducer is now pure; the adapter is now responsible for
-generating fresh codes.
+`B.slot @"confirmCode" .= d.code` — `d.code` reads the field that the
+adapter pre-populated. The transducer is pure; the adapter is
+responsible for generating fresh codes.
 
 Same three implications as time: the code is part of the command's
 identity; randomness skew (e.g., the adapter using a weak RNG) is an
@@ -697,21 +704,21 @@ edges that emit/consume them. That is all.
 
 ## Module layout
 
-Two modules at minimum, named here as a forward-looking aid for plan
-4 and any future runtime plan:
+Two modules at minimum:
 
-    Keiki.Core      -- pure types and projections; what plan 4 implements
+    Keiki.Core      -- pure types and projections (shipped via plan 4)
     Keiki.Runtime   -- IO-wired event store, queue, subscriptions, timer
-                       (deferred to a future plan)
+                       (deferred; not yet shipped)
 
 `Keiki.Core` exports:
 
 - The types: `SymTransducer`, `Edge`, `Term`, `OutTerm`, `Update`,
   `RegFile`, `Index`, `BoolAlg phi`, and the helpers needed to
-  construct them. (Exact constructors are plan 1's territory.)
-- The functions: `step`, `reconstitute`, `delta`, `omega`,
-  `solveOutput`, `evalTerm`, `evalOut`, `runUpdate`, `models`,
-  `checkHiddenInputs`, `isSingleValued`.
+  construct them.
+- The functions: `step`, `reconstitute`, `applyEvent`, `applyEvents`,
+  `delta`, `omega`, `solveOutput`, `evalTerm`, `evalOut`, `runUpdate`,
+  `models`, `checkHiddenInputs`. (`isSingleValuedSym` lives in
+  `Keiki.Symbolic` since it depends on the SBV-backed `BoolAlg`.)
 - No `IO` import. No `MonadIO`. No `Eff`. No effect type variable
   on any function or type. A reader who tries to mentally compile
   `Keiki.Core` should find that it works with the ghc flag
@@ -744,16 +751,15 @@ is fine. The constraint is the boundary, not the file count: no
 `IO` ever enters `Keiki.Core`.
 
 
-## Prototype scope (v1)
+## Prototype scope (v1, shipped)
 
-The v1 prototype implements only `Keiki.Core`. It provides `step`
-and `reconstitute`. It does NOT implement `runTransducer`,
-`InputSource`, `OutputSink`, `Subscription`, `Dispatch`, or any
-timer code. The smoke test calls `step` and `reconstitute` directly
-with hardcoded inputs and a hardcoded `[Output]` event log.
-
-That paragraph is intended to be copy-pasted verbatim into plan 4's
-scope. Beyond what it says, three implications worth highlighting:
+The v1 prototype implements only `Keiki.Core`. It provides `step`,
+`reconstitute`, `applyEvent`, and `applyEvents`. It does NOT implement
+`runTransducer`, `InputSource`, `OutputSink`, `Subscription`,
+`Dispatch`, or any timer code. The smoke tests in
+`jitsurei/test/Jitsurei/` call these directly with hardcoded inputs
+and hardcoded `[Output]` event logs. This was the verbatim scope of
+plan 4 (now complete). Three implications worth highlighting:
 
 - **There is no `Keiki.Runtime` package in the v1 cabal file.**
   Adding one — even an empty one — would risk a contributor
