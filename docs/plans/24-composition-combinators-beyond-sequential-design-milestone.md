@@ -1020,7 +1020,7 @@ to the following artefacts in the working tree:
 - `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`,
   `docs/research/effects-boundary.md`,
   `docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`,
-  `docs/research/architecture-comparison-fst-aggregate-vs-crem.md`,
+  `docs/research/architecture-comparison-keiki-vs-crem.md`,
   `docs/research/keiki-generics-design.md` — design context.
 - `docs/masterplans/4-composition-combinators-on-symtransducer.md`
   and `docs/plans/11-composition-combinators-on-symtransducer.md`

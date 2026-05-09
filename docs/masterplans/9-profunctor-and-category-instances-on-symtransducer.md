@@ -33,7 +33,7 @@ The futures note
 `Transducer s c e` and lays out the existential wrapper pattern
 needed to participate in the standard `profunctors` /
 `Control.Category` ecosystem. The crem comparison note
-(`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`)
+(`docs/research/architecture-comparison-keiki-vs-crem.md`)
 documents that crem ships `Category`, `Profunctor`, `Strong`,
 `Choice`, `Arrow`, and `ArrowChoice` instances on `StateMachineT`,
 and that keiki shipping equivalents would close one of the named

@@ -30,7 +30,7 @@ unevaluated thunks across `step` invocations, memory grows
 without bound and `reconstitute` slows down — a classic
 long-running-Haskell-service failure mode. crem ships `NoThunks`
 instances for the same reason
-(`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`
+(`docs/research/architecture-comparison-keiki-vs-crem.md`
 lists this as a crem-vs-keiki gap under §"Production Readiness").
 
 After this change, a keiki user embedding the library in a

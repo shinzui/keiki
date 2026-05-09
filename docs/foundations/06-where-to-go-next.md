@@ -58,7 +58,7 @@ Read these when you hit the topic, not in order.
 These document decisions and explorations rather than the current
 design. Useful when you want to know "why didn't we do X."
 
-- **`architecture-comparison-fst-aggregate-vs-crem.md`**
+- **`architecture-comparison-keiki-vs-crem.md`**
   How keiki differs from `crem`, the other Haskell FST-shaped library.
 
 - **`efsm-based-workflow-engine-technical-analysis.md`**

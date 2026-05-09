@@ -63,7 +63,7 @@ The MasterPlan
 `docs/masterplans/10-mermaid-topology-renderer-for-symtransducer.md`
 motivates this: the futures note (`docs/research/future-directions-profunctors-effects-and-composition.md`
 §5) and the crem comparison
-(`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`) both flag
+(`docs/research/architecture-comparison-keiki-vs-crem.md`) both flag
 diagram rendering as a "domain-expert communication" gap. This plan closes that
 gap for single transducers; the sibling plan
 `docs/plans/31-mermaid-rendering-for-composite-symtransducers.md` extends it

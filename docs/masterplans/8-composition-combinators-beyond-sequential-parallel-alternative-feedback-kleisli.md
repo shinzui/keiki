@@ -21,7 +21,7 @@ the categorical sequential composition delivered by MP-4 / EP-11.
 improvements (deferred)" section lists four crem-style combinators
 that EP-11 deliberately punted with documented rationale:
 `parallel`, `alternative`, `feedback`, and `Kleisli`. The
-`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`
+`docs/research/architecture-comparison-keiki-vs-crem.md`
 note records these as the gap that keeps keiki's pure-core surface
 behind crem's for orchestration patterns that don't reduce to a
 linear chain of `compose`.

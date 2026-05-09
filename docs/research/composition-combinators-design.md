@@ -16,7 +16,7 @@ The companion files referenced throughout this note are:
 - `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
   — process manager / saga / policy patterns and how they map to
   composition.
-- `docs/research/architecture-comparison-fst-aggregate-vs-crem.md`
+- `docs/research/architecture-comparison-keiki-vs-crem.md`
   — the crem comparison whose §"crem's composition primitives"
   catalogues the six-combinator menu.
 - `docs/research/keiki-generics-design.md` — the DX note whose

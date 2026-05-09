@@ -33,7 +33,7 @@ After this plan ships, a keiki user can write
 
 These three call sites — `lmapMaybeCi`, `rmapCo`, and `dimap` — close the named
 "command routing", "event versioning", and "ecosystem profunctor interop" gaps
-called out in `docs/research/architecture-comparison-fst-aggregate-vs-crem.md`
+called out in `docs/research/architecture-comparison-keiki-vs-crem.md`
 (crem ships these; keiki currently does not).
 
 The user-visible deliverables are:
@@ -394,7 +394,7 @@ transducer back out (via pattern match on the existential) and feed it to
 
 ### The crem comparison
 
-`docs/research/architecture-comparison-fst-aggregate-vs-crem.md` documents
+`docs/research/architecture-comparison-keiki-vs-crem.md` documents
 that crem (a comparable Haskell library) ships `Category`, `Profunctor`,
 `Strong`, `Choice`, `Arrow`, and `ArrowChoice` instances on its
 `StateMachineT` type, and that keiki shipping equivalents would close one

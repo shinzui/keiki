@@ -377,7 +377,7 @@ adding a new combinator-using test of your own.
 - `docs/masterplans/9-profunctor-and-category-instances-on-symtransducer.md`
   — the parent MasterPlan; tracks EP-28 (Category instance) and
   EP-29 (Strong / Choice / Arrow) as follow-on work.
-- `docs/research/architecture-comparison-fst-aggregate-vs-crem.md`
+- `docs/research/architecture-comparison-keiki-vs-crem.md`
   — the named "ecosystem profunctor instances" gap this plan
   closes against crem.
 - `docs/research/future-directions-profunctors-effects-and-composition.md`

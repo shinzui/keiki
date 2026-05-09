@@ -8,7 +8,7 @@ ergonomics break down, and how the resulting DX compares to two
 reference points: a *naive decider* (the canonical functional
 event-sourcing pattern) and `crem` (the production-grade Haskell
 Mealy-machine library compared in
-`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`).
+`docs/research/architecture-comparison-keiki-vs-crem.md`).
 
 The comparison is specifically about **authoring DX** — how much code
 the user writes to declare an aggregate. Functional comparisons (what
@@ -293,7 +293,7 @@ deeper guarantees.
 
 `crem` (Compositional Representable Executable Machines) is the
 production-grade Haskell Mealy-machine library compared functionally
-in `docs/research/architecture-comparison-fst-aggregate-vs-crem.md`.
+in `docs/research/architecture-comparison-keiki-vs-crem.md`.
 This section adds the **authoring DX** angle that note doesn't
 cover.
 

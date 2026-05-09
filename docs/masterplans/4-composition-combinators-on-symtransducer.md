@@ -24,7 +24,7 @@ The keiki library currently ships **two** composition operators on
   `docs/research/keiki-generics-design.md` but not implemented.
 
 The crem comparison note
-(`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`)
+(`docs/research/architecture-comparison-keiki-vs-crem.md`)
 documents that crem ships **six** composition primitives:
 `Sequential`, `Parallel`, `Alternative`, `Feedback`, `Kleisli`, plus
 the full Profunctor hierarchy. The `keiki-generics-design.md` note

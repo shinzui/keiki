@@ -33,7 +33,7 @@ that each handle a subset of the input alphabet. The
 `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
 note documents how each pattern maps onto the formalism. crem (the
 production-grade Haskell Mealy-machine library compared in
-`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`)
+`docs/research/architecture-comparison-keiki-vs-crem.md`)
 ships six composition primitives — `Sequential`, `Parallel`,
 `Alternative`, `Feedback`, `Kleisli`, plus the full Profunctor
 hierarchy — and the keiki-generics-design.md note catalogues this
@@ -415,7 +415,7 @@ Modules and notes relevant to this plan:
       synthesis-c-foundation-b-presentation-with-worked-examples.md
       core-design-transducer-as-source-of-truth.md
       orchestration-sagas-choreography-and-feedback-loops-as-transducers.md
-      architecture-comparison-fst-aggregate-vs-crem.md
+      architecture-comparison-keiki-vs-crem.md
       keiki-generics-design.md       — catalogues item F
     docs/masterplans/
       4-composition-combinators-on-symtransducer.md  — this plan's parent
@@ -588,7 +588,7 @@ milestone. Sub-steps:
 
 1. *Survey.* Read top-to-bottom:
    - `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
-   - `docs/research/architecture-comparison-fst-aggregate-vs-crem.md` §"crem's composition primitives"
+   - `docs/research/architecture-comparison-keiki-vs-crem.md` §"crem's composition primitives"
    - `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md` §5 (Order Fulfillment process manager)
    - `docs/research/core-design-transducer-as-source-of-truth.md`
    - `docs/research/effects-boundary.md`

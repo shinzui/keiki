@@ -36,7 +36,7 @@ existential wrapper introduced in
 
 These three classes round out the keiki/crem parity story for the
 `profunctors` ecosystem (see
-`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`'s
+`docs/research/architecture-comparison-keiki-vs-crem.md`'s
 named gaps).
 
 The user-visible deliverable is verified by:
@@ -81,7 +81,7 @@ This section must always reflect the actual current state of the work.
 - [ ] M3: Arrow instance — `arr` via a stateless one-edge transducer; `(>>>)` and `first` delegate to Category and Strong
 - [ ] M3: Spec for Arrow (arr, >>>, first); ArrowChoice in scope only if MP-8 ships a Kleisli-shaped helper (otherwise out of scope per Decision Log)
 - [ ] M3: Update MP-9 Progress section, mark this EP Complete in registry, fill in Outcomes & Retrospective
-- [ ] M3: Update `docs/research/architecture-comparison-fst-aggregate-vs-crem.md` "DX gaps" section to record the parity is now closed (modulo arr-inversion caveat)
+- [ ] M3: Update `docs/research/architecture-comparison-keiki-vs-crem.md` "DX gaps" section to record the parity is now closed (modulo arr-inversion caveat)
 
 
 ## Surprises & Discoveries
@@ -568,7 +568,7 @@ What will exist at the end:
     - Update the Vision & Scope's `Arrow` bullet to clarify that
       `arr`-produced transducers do not support `solveOutput`.
 
-6.  Update `docs/research/architecture-comparison-fst-aggregate-vs-crem.md`:
+6.  Update `docs/research/architecture-comparison-keiki-vs-crem.md`:
     the section that names crem-parity gaps gets a one-line update
     noting the gap is closed (modulo the lossy-`solveOutput`
     caveat for `lmap`/`rmap`/`first`/`arr`).

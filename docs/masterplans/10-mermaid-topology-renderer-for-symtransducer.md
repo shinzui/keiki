@@ -25,7 +25,7 @@ constructor name on the output side (via `WireCtor`'s `wcName`
 field). That's everything a Mermaid `stateDiagram-v2` block
 needs.
 
-`docs/research/architecture-comparison-fst-aggregate-vs-crem.md`
+`docs/research/architecture-comparison-keiki-vs-crem.md`
 documents Mermaid rendering as a crem-vs-keiki gap (crem ships
 `renderStateDiagram` for both per-machine topologies and composed
 machine flows; keiki ships nothing). The futures note
