@@ -9,6 +9,8 @@ import { renderMermaidSVG } from 'beautiful-mermaid'
 const root = process.cwd()
 const outDir = path.join(root, 'site-dist')
 const assetsDir = path.join(root, 'site/assets')
+const pragmataSourceDir = process.env.PRAGMATA_PRO_DIR ?? path.join(process.env.HOME ?? '', 'Downloads/PragmataPro0.903')
+const bundlePragmata = process.env.BUNDLE_PRAGMATA_PRO === '1'
 
 const collections = [
   { key: 'masterplans', label: 'Master Plans', dir: 'docs/masterplans', route: 'masterplans', kind: 'master-plan' },
@@ -70,6 +72,7 @@ md.renderer.rules.fence = (tokens, idx) => {
 await fs.rm(outDir, { recursive: true, force: true })
 await fs.mkdir(outDir, { recursive: true })
 await fs.cp(assetsDir, path.join(outDir, 'assets'), { recursive: true })
+const hasPragmataAssets = await copyPragmataAssets()
 await fs.cp(path.join(root, 'docs'), path.join(outDir, 'docs'), {
   recursive: true,
   filter: (source) => !source.endsWith('.DS_Store'),
@@ -119,7 +122,7 @@ for (const collection of collections) {
 }
 
 await fs.writeFile(path.join(outDir, 'index.html'), indexPage(), 'utf8')
-await fs.writeFile(path.join(outDir, 'styles.css'), stylesheet(), 'utf8')
+await fs.writeFile(path.join(outDir, 'styles.css'), stylesheet(hasPragmataAssets), 'utf8')
 await fs.writeFile(path.join(outDir, 'app.js'), clientScript(), 'utf8')
 
 console.log(`Built ${allDocs.length + collections.length + 1} site pages into site-dist/`)
@@ -673,13 +676,42 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;')
 }
 
-function stylesheet() {
+async function copyPragmataAssets() {
+  if (!bundlePragmata) return false
+
+  const files = [
+    ['PragmataPro_Mono_R_liga_0903.ttf', 'PragmataPro-Mono-Regular-Liga.ttf'],
+    ['PragmataPro_Mono_B_liga_0903.ttf', 'PragmataPro-Mono-Bold-Liga.ttf'],
+  ]
+  const targetDir = path.join(outDir, 'assets/pragmata')
+
+  try {
+    await fs.mkdir(targetDir, { recursive: true })
+    for (const [sourceName, targetName] of files) {
+      await fs.copyFile(path.join(pragmataSourceDir, sourceName), path.join(targetDir, targetName))
+    }
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      console.warn(`Pragmata Pro fonts not found in ${pragmataSourceDir}; code blocks will use the system monospace fallback.`)
+      return false
+    }
+    throw error
+  }
+}
+
+function stylesheet(hasPragmataAssets) {
+  const pragmataFaces = hasPragmataAssets
+    ? `@font-face{font-family:"Pragmata Pro";src:url("assets/pragmata/PragmataPro-Mono-Regular-Liga.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"Pragmata Pro";src:url("assets/pragmata/PragmataPro-Mono-Bold-Liga.ttf") format("truetype");font-weight:700;font-display:swap}
+`
+    : ''
+
   return `@font-face{font-family:Inter;src:url("assets/fonts/Inter-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:Inter;src:url("assets/fonts/Inter-Medium.woff2") format("woff2");font-weight:500;font-display:swap}
 @font-face{font-family:Inter;src:url("assets/fonts/Inter-SemiBold.woff2") format("woff2");font-weight:600;font-display:swap}
 @font-face{font-family:Inter;src:url("assets/fonts/Inter-Bold.woff2") format("woff2");font-weight:700;font-display:swap}
-@font-face{font-family:"Pragmata Pro";src:url("assets/pragmata/PragmataPro-Mono-Regular-Liga.ttf") format("truetype");font-weight:400;font-display:swap}
-@font-face{font-family:"Pragmata Pro";src:url("assets/pragmata/PragmataPro-Mono-Bold-Liga.ttf") format("truetype");font-weight:700;font-display:swap}
+${pragmataFaces}
 :root{--bg:#fbfaf7;--paper:#fff;--ink:#202124;--muted:#68645f;--line:#ded7ca;--soft:#f2efe7;--soft2:#ece7dc;--accent:#246f74;--accent2:#8a4b2f;--ok:#2d6a4f;--shadow:0 14px 40px rgba(43,37,28,.08);font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.6}a{color:var(--accent);text-underline-offset:.18em}code,pre,kbd,samp{font-family:"Pragmata Pro",ui-monospace,SFMono-Regular,Menlo,monospace;font-feature-settings:"liga" 1,"calt" 1}
 .skip-link{position:absolute;left:16px;top:-40px;background:var(--ink);color:white;padding:8px 12px;z-index:10}.skip-link:focus{top:12px}

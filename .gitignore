@@ -17,3 +17,5 @@ cabal.project.local
 .pre-commit-config.yaml
 node_modules/
 .DS_Store
+site/assets/pragmata/
+site-dist/assets/pragmata/
