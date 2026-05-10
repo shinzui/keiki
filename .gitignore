@@ -18,4 +18,4 @@ cabal.project.local
 node_modules/
 .DS_Store
 site/assets/pragmata/
-site-dist/assets/pragmata/
+site-dist/
