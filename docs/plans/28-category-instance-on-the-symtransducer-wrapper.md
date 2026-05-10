@@ -59,10 +59,10 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M0: Verify EP-27 has shipped (`SomeSymTransducer` type and smart constructor exist in `Keiki.Profunctor`); run `cabal build all` and `cabal test keiki-test`; record baseline
-- [ ] M1: Settle the disjointness-resolution decision (unsafe-coerce vs runtime-check vs avoidance); document in Decision Log
-- [ ] M1: Define `IdVertex`, `identityInCtor`, `identityWireCtor`, `identityTransducer` in `Keiki.Profunctor`
-- [ ] M1: Add an internal helper that discharges the `Disjoint` and `WeakenR` constraints at the wrapper boundary per the M1 decision
+- [x] M0 (2026-05-09): Verified EP-27 shipped (`data SomeSymTransducer` and `someSymTransducer` present in `src/Keiki/Profunctor.hs`); `cabal build all` succeeds (GHC 9.12.3); `cabal test keiki-test --test-show-details=direct` reports **146 examples, 0 failures**; baseline recorded in Surprises &amp; Discoveries
+- [x] M1 (2026-05-09): Settled disjointness via Option (A) — runtime overlap check + `unsafeCoerce`-fabricated `DictDisjoint`; documented in Decision Log. Also added a sibling `DictWrapper` / `unsafeCoerceWrapperDict` for `(WeakenR (Append rs1 rs2), KnownSlotNames (Append rs1 rs2))` since closure under `Append` is true but not provable from skolem `rs1`/`rs2`.
+- [x] M1 (2026-05-09): Defined `IdVertex`, `identityInCtor` (private), `identityWireCtor` (private), `identityTransducer` (exported) in `Keiki.Profunctor`. The phantom `'[("payload", a)]` slot list lets a single definition serve every alphabet `a` without per-type machinery. Skipped a `NoThunks IdVertex` instance — `Keiki.NoThunks` ships only `RegFile` instances, mirroring how `EmailVertex` and `PingVertex` get away with no `NoThunks` instance today.
+- [x] M1 (2026-05-09): Added private `CategoryOverlapError`, `DictDisjoint`, `unsafeCoerceDisjointness`, `DictWrapper`, `unsafeCoerceWrapperDict`, plus the `composeWrappers` helper that the (still-unwritten in this task entry but actually shipped below) `Cat..` instance method delegates to.
 - [ ] M2: Add `Category SomeSymTransducer` instance to `Keiki.Profunctor`
 - [ ] M2: Write `test/Keiki/CategorySpec.hs` covering Category laws up to state-isomorphism
 - [ ] M2: Register the test module in `keiki.cabal` and `test/Spec.hs`
@@ -88,6 +88,16 @@ implementation. Provide concise evidence.
   by walking `xs` against `'[]`-membership which is also trivially
   true). So Category laws are typeable; only general composition
   needs the M1 escape hatch.
+
+- 2026-05-09 / M0 baseline: `cabal build all` succeeds on GHC 9.12.3.
+  `cabal test keiki-test --test-show-details=direct` reports
+  `146 examples, 0 failures`. The EP-27 surface
+  (`data SomeSymTransducer`, `someSymTransducer`,
+  `lmapCi`/`rmapCo`/`dimapTransducer`/`lmapMaybeCi`, the `Profunctor`
+  and `Functor` instances) is present in `src/Keiki/Profunctor.hs`
+  and exercised by `test/Keiki/ProfunctorSpec.hs` (the
+  `Keiki.Profunctor (EP-27)` describe block in `test/Spec.hs`).
+  M0 prerequisites satisfied.
 
 - 2026-05-03 / authoring: An identity transducer for an *arbitrary*
   alphabet `a` does not require per-type `Generic`-derived machinery.
@@ -118,6 +128,62 @@ Record every decision made while working on the plan.
   per-type instances, which is what `Category.id`'s
   unconstrained-`a` signature requires.
   Date: 2026-05-03
+
+- Decision: Disjointness in `Cat..` is resolved via **Option (A)**:
+  a value-level slot-name overlap check followed by an
+  `unsafeCoerce`-fabricated `DictDisjoint` evidence pattern. On
+  overlap the operator raises `CategoryOverlapError` carrying the
+  colliding slot names. The exception type is exported so users can
+  catch it.
+  Rationale: Option (A) is the only one of the three candidates
+  considered (runtime check, slot renaming, parallel
+  `composeUnchecked`) that *catches* an overlap with a clear error
+  rather than silently producing a broken composite. It matches
+  EP-18's posture for `UCombine` (trust the unsafe path inside
+  trusted infrastructure code, with a documented precondition lifted
+  to a runtime invariant). It avoids a `Keiki.Composition` refactor.
+  Future improvement: a slot-renaming approach (Option B refined
+  with proper `KnownSymbol` instance manufacture) would push the
+  check back to compile time.
+  Date: 2026-05-09
+
+- Decision: The `SomeSymTransducer` wrapper's existential constraint
+  set is amended from `()` (no constraints — EP-27 actually shipped
+  with no packed constraints, despite MP-9 IP-1's claim that it
+  shipped `WeakenR rs`) to `(WeakenR rs, KnownSlotNames rs)`.
+  Rationale: `WeakenR rs` is required when the wrapper's
+  `Cat..` calls `compose` (which has `WeakenR rs1` as a constraint).
+  `KnownSlotNames rs` is required so the runtime overlap check can
+  read each transducer's slot names at the value level via
+  `slotNames @rs`. Both constraints are structural — every concrete
+  `[Slot]` has automatic instances — so the amendment is
+  backward-compatible at every existing call site (the existing
+  `Profunctor`/`Functor`/`someSymTransducer` use sites all hold a
+  concrete `rs` whose instances are already in scope).
+  Date: 2026-05-09
+
+- Decision: Add a parallel `DictWrapper` / `unsafeCoerceWrapperDict`
+  pair alongside the disjointness one to fabricate
+  `(WeakenR (Append rs1 rs2), KnownSlotNames (Append rs1 rs2))` at
+  the wrap-back step.
+  Rationale: After `compose t1 t2 :: SymTransducer ... (Append rs1
+  rs2) ...`, re-wrapping into `SomeSymTransducer` requires both
+  classes hold for `Append rs1 rs2`. Both classes have structural
+  instances per spine, but GHC cannot reduce `Append rs1 rs2` when
+  `rs1` is a skolem. The closure under `Append` is true (provable
+  by induction on `rs1`'s spine if we had a value-level witness),
+  so the `unsafeCoerce` fabrication is sound. Same posture as the
+  disjointness fabrication.
+  Date: 2026-05-09
+
+- Decision: Expose `slotNames` from `Keiki.Core` (changed `, KnownSlotNames`
+  to `, KnownSlotNames (..)` in the export list) so `Keiki.Profunctor`
+  can call `slotNames @rs` at the value level.
+  Rationale: `KnownSlotNames` was already exported as an opaque
+  class; only its `slotNames` method was hidden. Exposing the method
+  is purely additive — every user that already had the class in
+  scope gains the method too. No downstream impact.
+  Date: 2026-05-09
 
 
 ## Outcomes & Retrospective

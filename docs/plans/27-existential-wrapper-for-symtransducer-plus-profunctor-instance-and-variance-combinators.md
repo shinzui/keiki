@@ -150,6 +150,21 @@ Record every decision made while working on the plan.
   and in M3's spec").
   Date: 2026-05-03
 
+- Backward-pointer (added 2026-05-09 by EP-28 M1 per MP-9 IP-1's
+  "Coordination rule"): EP-28 amended the `SomeSymTransducer`
+  wrapper from no packed constraints to
+  `(WeakenR rs, KnownSlotNames rs)`. `WeakenR` lets the
+  `Cat..` instance call `Keiki.Composition.compose`;
+  `KnownSlotNames` lets the runtime overlap check read each
+  transducer's slot names. Both are structural — concrete `[Slot]`
+  values automatically satisfy them — so every existing call site
+  in this plan's deliverables (`someSymTransducer`,
+  `Profunctor SomeSymTransducer`, `Functor (SomeSymTransducer ci)`)
+  continues to typecheck without modification. See
+  `docs/plans/28-category-instance-on-the-symtransducer-wrapper.md`'s
+  M1 Decision Log for the full rationale.
+  Date: 2026-05-09
+
 
 ## Outcomes & Retrospective
 

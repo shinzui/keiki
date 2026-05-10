@@ -1,6 +1,12 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+-- 'unsafeCoerceDisjointness' fabricates a 'Disjoint' constraint
+-- dictionary via 'unsafeCoerce' on the trivially-disjoint
+-- @Disjoint '[] '[]@ witness. GHC sees the @forall xs ys.@ as
+-- ambiguous because neither @xs@ nor @ys@ appear in the result; that
+-- is intentional — call sites pin them via 'TypeApplications'.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | Existential wrapper for 'SymTransducer' enabling participation in
 -- the standard 'Profunctor' / 'Category' ecosystem, plus standalone
@@ -21,6 +27,16 @@
 -- 'Keiki.Core.evalTerm') is unaffected; only the inversion-from-event
 -- path is dropped on lmapped/rmapped edges. See each combinator's
 -- haddock for the precise contract.
+--
+-- This module also hosts the 'Control.Category.Category' instance
+-- on 'SomeSymTransducer' (EP-28 of MasterPlan 9). The 'Cat.id' lift
+-- uses 'identityTransducer' (a one-vertex transducer that emits its
+-- input as its output via a phantom one-slot register file); 'Cat..'
+-- delegates to 'Keiki.Composition.compose' after a *runtime*
+-- slot-name overlap check that raises 'CategoryOverlapError' on
+-- collisions. The check exists because the wrapper hides @rs@, so
+-- 'compose''s static @Disjoint (Names rs1) (Names rs2)@ constraint
+-- cannot be discharged by GHC at the wrapper boundary.
 module Keiki.Profunctor
   ( -- * Existential wrapper
     SomeSymTransducer (..)
@@ -30,11 +46,22 @@ module Keiki.Profunctor
   , rmapCo
   , dimapTransducer
   , lmapMaybeCi
+    -- * Identity transducer (used by the 'Cat.Category' instance's 'Cat.id')
+  , IdVertex (..)
+  , identityTransducer
+    -- * Category-instance overlap exception
+  , CategoryOverlapError (..)
   ) where
 
+import Control.Exception (Exception, throw)
+import qualified Control.Category as Cat
+import Data.Proxy (Proxy (..))
 import Data.Profunctor (Profunctor (..))
+import Unsafe.Coerce (unsafeCoerce)
 
 import Keiki.Core
+import Keiki.Composition (WeakenR, compose)
+import Keiki.Generics (Append)
 
 
 -- | Existential wrapper hiding @rs@ (register-file slot list) and
@@ -42,12 +69,23 @@ import Keiki.Core
 -- output alphabet @co@. Predicate carrier is fixed to 'HsPred' since
 -- "Keiki.Composition"'s combinators are pinned to that carrier.
 --
+-- The packed constraints @WeakenR rs@ and @KnownSlotNames rs@ are
+-- needed by the 'Cat.Category' instance: 'compose' demands
+-- @WeakenR rs1@, and the runtime slot-overlap check that guards
+-- 'Cat..' reads each transducer's slot names at the value level
+-- via @KnownSlotNames@. Both constraints are structural — every
+-- concrete @[Slot]@ has automatic instances — so packing them does
+-- not restrict what users can wrap.
+--
 -- Pattern-match on the constructor to recover the underlying
 -- 'SymTransducer' (the @rs@ and @s@ variables come into scope as
 -- skolem types — they may not escape the pattern match).
 data SomeSymTransducer ci co where
   SomeSymTransducer
-    :: SymTransducer (HsPred rs ci) rs s ci co
+    :: ( WeakenR rs
+       , KnownSlotNames rs
+       )
+    => SymTransducer (HsPred rs ci) rs s ci co
     -> SomeSymTransducer ci co
 
 
@@ -56,7 +94,10 @@ data SomeSymTransducer ci co where
 -- naming consistency with the rest of @Keiki.Profunctor@'s exports
 -- and for users who prefer functions over constructors.
 someSymTransducer
-  :: SymTransducer (HsPred rs ci) rs s ci co
+  :: ( WeakenR rs
+     , KnownSlotNames rs
+     )
+  => SymTransducer (HsPred rs ci) rs s ci co
   -> SomeSymTransducer ci co
 someSymTransducer = SomeSymTransducer
 
@@ -158,6 +199,208 @@ instance Profunctor SomeSymTransducer where
 -- | 'Functor' on the output alphabet. @'fmap' = 'rmap'@.
 instance Functor (SomeSymTransducer ci) where
   fmap = rmap
+
+
+-- * Identity transducer (used by 'Cat.id') ------------------------------
+
+-- | One-vertex enum used as the control vertex of 'identityTransducer'.
+-- The single nullary constructor lets the identity transducer have a
+-- single edge (from 'IdVertex' back to 'IdVertex') that copies the
+-- input straight through to the output.
+data IdVertex = IdVertex
+  deriving stock (Eq, Show, Bounded, Enum)
+
+
+-- | An 'InCtor' for an arbitrary alphabet @a@. Uses a phantom
+-- one-slot register file @'[ '("payload", a) ]@ to bridge the
+-- alphabet through the inversion machinery: 'icMatch' wraps any @a@
+-- as a singleton 'RegFile'; 'icBuild' unwraps the same. The phantom
+-- slot exists only inside this 'InCtor''s wrapping types — the
+-- transducer's *real* @initialRegs@ stays 'RNil', so no runtime
+-- register is allocated.
+identityInCtor :: forall a. InCtor a '[ '("payload", a) ]
+identityInCtor = InCtor
+  { icName  = "Identity"
+  , icMatch = \a -> Just (RCons (Proxy @"payload") a RNil)
+  , icBuild = \(RCons _ a RNil) -> a
+  }
+
+
+-- | A 'WireCtor' for an arbitrary alphabet @a@. Uses the field-tuple
+-- @(a, ())@ that 'OutFields' produces for a single-element list: one
+-- field of type @a@ followed by the trailing 'OFNil' encoded as
+-- @()@. Forward construction unwraps the tuple to its single
+-- payload; inversion via 'wcMatch' wraps an @a@ back up.
+identityWireCtor :: forall a. WireCtor a (a, ())
+identityWireCtor = WireCtor
+  { wcName  = "Identity"
+  , wcMatch = \a -> Just (a, ())
+  , wcBuild = \(a, ()) -> a
+  }
+
+
+-- | The identity transducer for an arbitrary alphabet @a@. One vertex
+-- ('IdVertex'); one edge that always fires (@'PTop'@), writes nothing
+-- (@'UKeep'@), and emits its input as the wire output. Used by
+-- 'Cat.id' on 'SomeSymTransducer'.
+--
+-- Forward processing on input @a@ evaluates the 'OutFields' by
+-- reading the @"payload"@ slot via the 'InCtor' (which round-trips
+-- @a@ through the phantom register file), then 'wcBuild :: (a, ()) -> a'
+-- unwraps the field tuple to produce @a@. Inversion via
+-- 'Keiki.Core.solveOutput' goes the other way and is similarly
+-- well-defined; the identity transducer satisfies all keiki
+-- guarantees by construction.
+identityTransducer
+  :: forall a.
+     SymTransducer (HsPred '[] a) '[] IdVertex a a
+identityTransducer = SymTransducer
+  { edgesOut    = \IdVertex ->
+      [ Edge { guard  = PTop
+             , update = UKeep
+             , output = Just identityOutTerm
+             , target = IdVertex
+             }
+      ]
+  , initial     = IdVertex
+  , initialRegs = RNil
+  , isFinal     = const True
+  }
+  where
+    identityOutTerm :: OutTerm '[] a a
+    identityOutTerm =
+      OPack identityInCtor identityWireCtor
+            (OFCons (TInpCtorField identityInCtor ZIdx) OFNil)
+
+
+-- * Disjointness escape hatch (private) ---------------------------------
+
+-- | Exception raised when 'Cat..' is invoked on two
+-- 'SomeSymTransducer' values whose underlying register files share a
+-- slot name. Carries the colliding slot names so the message points
+-- at the actual offender.
+--
+-- Catch with @Control.Exception.catch@ or use @evaluate@ to force
+-- the throw at a controlled point in your program.
+data CategoryOverlapError = CategoryOverlapError
+  { coeSlots :: [String]
+  } deriving stock (Eq, Show)
+
+
+instance Exception CategoryOverlapError
+
+
+-- | A constraint dictionary for @'Disjoint' xs ys@. Used together
+-- with 'unsafeCoerceDisjointness' to smuggle the constraint into
+-- scope after a value-level overlap check.
+data DictDisjoint xs ys where
+  DictDisjoint :: Disjoint xs ys => DictDisjoint xs ys
+
+
+-- | Fabricate a 'DictDisjoint' for arbitrary @xs@ and @ys@. The
+-- only safe call site is the body of 'Cat..' on
+-- 'SomeSymTransducer', after the value-level check has confirmed
+-- the slot lists are disjoint. The 'CategoryOverlapError' exception
+-- raised on overlap is the *only* safety net; calling this without
+-- a prior check can produce a semantically broken composite.
+--
+-- Implementation: @'Disjoint' '[] '[]@ reduces to the trivially-true
+-- constraint @()@, so @DictDisjoint @'[] @'[]@ is always
+-- constructible. 'unsafeCoerce' rewrites the existential type
+-- arguments to whatever the call site demands.
+unsafeCoerceDisjointness
+  :: forall xs ys.
+     DictDisjoint xs ys
+unsafeCoerceDisjointness =
+  unsafeCoerce (DictDisjoint :: DictDisjoint '[] '[])
+
+
+-- | A constraint dictionary witnessing that a slot list satisfies
+-- the two structural classes the wrapper packs. Used together with
+-- 'unsafeCoerceWrapperDict' to wrap a freshly-composed
+-- @SymTransducer ... (Append rs1 rs2) ...@ back into
+-- 'SomeSymTransducer' when 'GHC' cannot reduce
+-- @WeakenR (Append rs1 rs2)@ / @KnownSlotNames (Append rs1 rs2)@
+-- (because the spines @rs1@ and @rs2@ are skolems).
+data DictWrapper rs where
+  DictWrapper :: (WeakenR rs, KnownSlotNames rs) => DictWrapper rs
+
+
+-- | Fabricate a 'DictWrapper' for an arbitrary slot list. Both
+-- 'WeakenR' and 'KnownSlotNames' are structural classes with
+-- automatic instances for every concrete @[Slot]@: whenever both
+-- @rs1@ and @rs2@ have these instances, so does @'Append' rs1 rs2@
+-- (provable by induction on @rs1@'s spine, which we cannot perform
+-- without a value-level witness — hence the 'unsafeCoerce').
+--
+-- Safe at the 'Cat..' call site because both inner transducers'
+-- packed @WeakenR@ + @KnownSlotNames@ constraints already hold for
+-- @rs1@ and @rs2@ individually, and the composite slot list
+-- @'Append' rs1 rs2@ inherits the structural property.
+unsafeCoerceWrapperDict
+  :: forall rs.
+     DictWrapper rs
+unsafeCoerceWrapperDict =
+  unsafeCoerce (DictWrapper :: DictWrapper '[])
+
+
+-- * Category instance --------------------------------------------------
+
+-- | Standard 'Control.Category.Category' instance.
+--
+-- @'Cat.id'@ is 'identityTransducer' lifted into 'SomeSymTransducer'.
+-- Its register file is empty, so @'Cat.id' Cat.. t@ and
+-- @t Cat.. 'Cat.id'@ both compose without invoking the runtime
+-- overlap check (the 'Disjoint' type family reduces to @()@ when
+-- either side's slot list is @'[]@).
+--
+-- @'Cat..'@ delegates to 'Keiki.Composition.compose'. The wrapper
+-- hides @rs@, so @compose@'s static @Disjoint (Names rs1) (Names rs2)@
+-- constraint cannot be discharged by GHC; instead, the operator
+-- reads each transducer's slot names at the value level via
+-- 'KnownSlotNames', checks for overlap, and either:
+--
+--   * raises 'CategoryOverlapError' (synchronously, on overlap), or
+--   * uses 'unsafeCoerceDisjointness' to fabricate the constraint
+--     evidence and calls 'compose' with the existential @rs@'s
+--     restored as the composite @'Append' rs1 rs2@.
+--
+-- The Category laws hold up to state-isomorphism: @id Cat.. t@ and
+-- @t Cat.. id@ each produce a 'Composite' vertex whose extra @()@
+-- carries no behaviour. Behaviourally these are equivalent to @t@,
+-- though the underlying Haskell types differ (the wrapper hides
+-- the difference). See @test/Keiki/CategorySpec.hs@ for the
+-- behavioural law tests.
+instance Cat.Category SomeSymTransducer where
+  id = SomeSymTransducer identityTransducer
+
+  SomeSymTransducer t2 . SomeSymTransducer t1 = composeWrappers t1 t2
+
+
+-- | Compose two existentially-packed transducers, performing the
+-- runtime overlap check that 'Cat..' delegates to. Factored out so
+-- the existential @rs1@ and @rs2@ skolems are bound to named type
+-- variables (the instance method's pattern signatures cannot, on
+-- their own, name them in a form usable inside 'TypeApplications').
+composeWrappers
+  :: forall rs1 rs2 s1 s2 ci mid co.
+     ( WeakenR rs1
+     , KnownSlotNames rs1
+     , KnownSlotNames rs2
+     )
+  => SymTransducer (HsPred rs1 ci)  rs1 s1 ci  mid
+  -> SymTransducer (HsPred rs2 mid) rs2 s2 mid co
+  -> SomeSymTransducer ci co
+composeWrappers t1 t2 =
+  let names1  = slotNames @rs1
+      names2  = slotNames @rs2
+      overlap = filter (`elem` names2) names1
+  in if not (null overlap)
+       then throw (CategoryOverlapError overlap)
+       else case unsafeCoerceDisjointness @(Names rs1) @(Names rs2) of
+              DictDisjoint ->
+                case unsafeCoerceWrapperDict @(Append rs1 rs2) of
+                  DictWrapper -> SomeSymTransducer (compose t1 t2)
 
 
 -- * Internal rewriters --------------------------------------------------

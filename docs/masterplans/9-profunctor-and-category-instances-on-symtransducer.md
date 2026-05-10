@@ -186,7 +186,7 @@ C to live in limbo within a partially-complete plan.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Existential wrapper for SymTransducer + Profunctor instance + variance combinators | docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md | None | EP-11 (external) | Complete |
-| 2 | Category instance on the SymTransducer wrapper | docs/plans/28-category-instance-on-the-symtransducer-wrapper.md | EP-1 | EP-11 (external) | Not Started |
+| 2 | Category instance on the SymTransducer wrapper | docs/plans/28-category-instance-on-the-symtransducer-wrapper.md | EP-1 | EP-11 (external) | In Progress |
 | 3 | Strong / Choice / Arrow instances on the SymTransducer wrapper | docs/plans/29-strong-choice-and-arrow-instances-on-the-symtransducer-wrapper.md | EP-1, EP-2 | MP-8 children (alternative shipped; parallel/Kleisli declined — see EP-29 Decision Log) | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.

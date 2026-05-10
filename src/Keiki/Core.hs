@@ -36,7 +36,7 @@ module Keiki.Core
     -- * Input-side structural constructor (v2)
   , InCtor (..)
   , AssembleRegFile
-  , KnownSlotNames
+  , KnownSlotNames (..)
     -- * Slot-name machinery (re-exported from "Keiki.Internal.Slots")
   , IndexN (..)
   , HasIndexN (..)
