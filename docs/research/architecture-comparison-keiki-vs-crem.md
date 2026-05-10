@@ -12,6 +12,13 @@ earlier comparison written when the project was called *fst-aggregate*
 and most of keiki's user-facing surface was still proposed; that
 prototype-era framing no longer matches what `Keiki.*` ships.
 
+For a code-level comparison of the same trade-offs through a non-trivial
+worked example, see
+`worked-comparison-loanworkflow-keiki-vs-crem.md` — it walks the
+three-aggregate LoanWorkflow (intake aggregate, downstream aggregate,
+process manager, async cross-context wiring) through both libraries
+side by side.
+
 ---
 
 ## Architectural overview

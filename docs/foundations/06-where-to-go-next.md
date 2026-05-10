@@ -69,6 +69,13 @@ Read these when you hit the topic, not in order.
   How keiki differs from `crem`, the other Haskell FST-shaped
   library. Useful for sanity-checking design choices.
 
+- **`worked-comparison-loanworkflow-keiki-vs-crem.md`**
+  The same comparison in code — walks the three-aggregate
+  LoanWorkflow (LoanApplication / Loan / CoreBankingSync) through
+  both libraries side by side, ten dimensions, including the
+  cross-context routing gap that's the sharpest place keiki
+  trails crem today.
+
 ## Historical and exploratory
 
 These document decisions and explorations rather than the current
