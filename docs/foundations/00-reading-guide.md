@@ -46,15 +46,18 @@ Total commitment: about an hour.
 ## After the foundations
 
 `06-where-to-go-next.md` lists the design notes in `docs/research/`
-in recommended reading order. The shortest path through the library's
-own design after the foundations is:
+in recommended reading order. The shortest path through the
+library's own design after the foundations is:
 
-1. `core-design-transducer-as-source-of-truth.md`
-2. `synthesis-c-foundation-b-presentation-with-worked-examples.md`
+1. `synthesis-c-foundation-b-presentation-with-worked-examples.md`
+   — the load-bearing design synthesis.
+2. `effects-boundary.md` — the pure-core / runtime split.
+3. `architecture-comparison-keiki-vs-crem.md` — where keiki sits
+   relative to the closest neighbour library.
 
 Everything else is depth on specific topics (multi-event commands,
-symbolic-vs-indexed alternatives, workflow runtime, profunctor
-structure).
+symbolic-vs-indexed alternatives, composition combinators,
+generics).
 
 If you'd rather skip the design notes and start writing an
 aggregate, jump to **`docs/guide/user-guide.md`** — the action-

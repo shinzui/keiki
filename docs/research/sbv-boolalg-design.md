@@ -1,4 +1,4 @@
-# SBV-backed BoolAlg design — symbolic emptiness, satisfiability, and single-valuedness (EP-2 of MasterPlan 2)
+# SBV-backed BoolAlg design — symbolic emptiness, satisfiability, and single-valuedness
 
 This note pins the v2 retirement of the v1 best-effort `BoolAlg` instance
 on `HsPred` and the v1 placeholder `sat`/`isBot` methods. It is the
@@ -302,7 +302,7 @@ would have remained available as a v1-grandfathered escape hatch
 trading symbolic precision for ergonomics. EP-17 of MP-6
 (`docs/plans/17-retire-pmatchc-and-matchcmd-from-keiki-core.md`)
 removed `PMatchC` and `matchCmd` entirely on 2026-05-02 — the survey
-in `docs/research/v1-escape-hatch-retirements-design.md` confirmed
+in `docs/historical/v1-escape-hatch-retirements-design.md` confirmed
 zero aggregate uses, so the back-compat hatch had no users to
 preserve. The `translatePred` function now handles the seven
 remaining `HsPred` constructors exhaustively and the SBV side has no
@@ -666,7 +666,7 @@ corresponds to one section above.
 
 **M8 — note updates + verdict.**
 
-- Update `docs/research/dsl-shape-for-symbolic-register.md`'s
+- Update `docs/historical/dsl-shape-for-symbolic-register.md`'s
   predicate-carrier section to reflect the v2 BoolAlg upgrade.
 - Update `docs/research/effects-boundary.md` §5
   ("isSingleValued") to reflect the upgrade.

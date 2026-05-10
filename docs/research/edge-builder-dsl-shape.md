@@ -1,14 +1,10 @@
 # Edge-builder DSL: shape decisions for `Keiki.Builder`
 
-This note settles the seven open questions raised by EP-15
-(`docs/plans/15-edge-builder-monadic-dsl-for-authoring-symtransducer-edges.md`)
-M1. The output is the contract that M2 (spike) and M3
-(`src/Keiki/Builder.hs`) consume verbatim.
-
-`Keiki.Builder` is *additive*: it sits on top of the post-MP-6
-`Keiki.Core` AST and produces values of the existing AST types. The
-AST is unchanged. Users who prefer the AST keep writing the AST; the
-builder is recommended but not mandatory.
+This note records the seven design decisions that shape
+`Keiki.Builder`. The builder is *additive*: it sits on top of
+`Keiki.Core`'s AST and produces values of the existing AST types.
+The AST is unchanged. Users who prefer the AST keep writing the
+AST; the builder is recommended but not mandatory.
 
 
 ## Q1 — Indexed-monad carrier shape
@@ -420,11 +416,11 @@ existing import.
 
 ## Worked example — EmailDelivery in the new DSL
 
-The full `emailDeliveryEdges` re-expressed in the M3 surface,
-side-by-side with the post-MP-6 AST form. The AST form is what
+The full `emailDeliveryEdges` re-expressed in the builder surface,
+side-by-side with the AST form that
 `jitsurei/src/Jitsurei/EmailDelivery.hs:163` ships today.
 
-    -- AST form (post-MP-6, current master, lines 163–183).
+    -- AST form (lines 163–183).
     emailDeliveryASTEdges = \case
 
       EmailPending ->

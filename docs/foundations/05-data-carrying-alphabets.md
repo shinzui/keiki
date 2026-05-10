@@ -60,9 +60,11 @@ has to write `evolve` (called `apply` in keiki) by hand and verify it
 matches via tests. We're back to the original event-determinism
 contract.
 
-The keiki research notes explored this option; see
-`docs/research/fst-as-workflow-runtime.md` §1. It got us workflow
-support but at the cost of the central derivation property from `04`.
+The keiki research notes explored this EFSM-with-opaque-context
+option early on. It would buy workflow support but at the cost of
+the central derivation property from `04`, which is why keiki picked
+the symbolic-register direction instead (see
+`docs/research/data-direction-c-symbolic-and-register-automata.md`).
 
 ## Better idea: predicates instead of symbols
 

@@ -380,7 +380,3 @@ adding a new combinator-using test of your own.
 - `docs/research/architecture-comparison-keiki-vs-crem.md`
   — the named "ecosystem profunctor instances" gap this plan
   closes against crem.
-- `docs/research/future-directions-profunctors-effects-and-composition.md`
-  §1 — the original variance sketch (written for the v0
-  pre-symbolic Transducer; the current SymTransducer required
-  the variance contract to be tightened, see §3 above).

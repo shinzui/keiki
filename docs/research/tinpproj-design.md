@@ -1,4 +1,4 @@
-# TInpProj design — structural input projection (EP-1 of MasterPlan 2)
+# TInpProj design — structural input projection
 
 This note pins the v2 retirement of the v1 `TInpField` escape hatch and
 the v1 hand-written `OPack` inverse field. It is the hand-off contract
@@ -579,7 +579,7 @@ Edit `test/Keiki/CoreSpec.hs`:
 Verify with `git grep TInpField src/ test/` — expect zero hits.
 
 **M8 — design notes + verdict.** Edit
-`docs/research/dsl-shape-for-symbolic-register.md` per the EP-1 plan's
+`docs/historical/dsl-shape-for-symbolic-register.md` per the EP-1 plan's
 M8 milestone. Write the EP-1 verdict in this plan's Outcomes &
 Retrospective. Mark EP-1 Complete in the MasterPlan.
 

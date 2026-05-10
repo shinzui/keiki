@@ -754,7 +754,7 @@ Conceptually:
                                 ▲
                                 │
               event store + queue + subscriptions
-              (the runtime described in fst-as-workflow-runtime.md)
+              (the runtime layer; see effects-boundary.md)
 ```
 
 Each arrow into the PM is a subscription that reads an event from
@@ -908,9 +908,8 @@ event store and queue, and use `compose` only for *analysis*:
   observationally equivalent?" — symbolic equivalence within the
   single-valued fragment. Decidable per Veanes (2012).
 
-The runtime architecture (event store + queue + subscriptions from
-`fst-as-workflow-runtime.md` §2–§5) is unchanged. The formalism just
-upgrades.
+The runtime architecture (event store + queue + subscriptions, per
+`effects-boundary.md`) is unchanged. The formalism just upgrades.
 
 ---
 
@@ -956,8 +955,8 @@ upgrades.
    with the hidden-input check actually firing on the unfixed event
    schema.
 
-3. **Add the runtime loop from `fst-as-workflow-runtime.md` §5** with
-   an in-memory event store and an in-memory queue. Run a single
+3. **Add the runtime loop** (per `effects-boundary.md`) with an
+   in-memory event store and an in-memory queue. Run a single
    `orderPM` instance through the happy path and a compensation path.
 
 4. **Write the v2 SBV-backed `BoolAlg` instance** with a curated

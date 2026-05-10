@@ -11,16 +11,11 @@ The companion files referenced throughout this note are:
 
 - `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`
   — the formal projection.
-- `docs/research/core-design-transducer-as-source-of-truth.md` —
-  why `SymTransducer` is the source of truth.
-- `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
-  — process manager / saga / policy patterns and how they map to
-  composition.
 - `docs/research/architecture-comparison-keiki-vs-crem.md`
   — the crem comparison whose §"crem's composition primitives"
   catalogues the six-combinator menu.
-- `docs/research/keiki-generics-design.md` — the DX note whose
-  "Future improvements" item F asks for these combinators.
+- `docs/research/keiki-generics-design.md` — the DX note that
+  motivated these combinators.
 
 
 ## Problem statement
@@ -460,10 +455,6 @@ input by transitivity.
 - `OPack` outputs whose `OutFields` walk doesn't visit every slot
   of the named `InCtor`.
 
-(The v1 prototype additionally flagged opaque `OFn` outputs;
-post-MP-6 every output is `OPack` so that bullet has no work to
-do.)
-
 The composite's edges inherit these checks. Specifically:
 
 - A composite ε-edge (lifted t1 ε-edge) reads ci1's input via the
@@ -557,22 +548,9 @@ pass when t1 and t2 individually pass.
   v3 MasterPlan).
 
 
-## Limitations and escape hatches
-
-The v1 prototype's design note enumerated three structural
-prerequisites for `compose` (t1 outputs all `OPack`, t2 guards over
-`mid` structural, t2 outputs all `OPack`). Post-MP-6 these are
-satisfied by *construction*: `OFn` and `PMatchC` were retired
-(EP-16 / EP-17), so every `OutTerm` is `OPack` and every guard
-read of `mid` is `PInCtor` / `PEq` / `TInpCtorField`. The "graceful
-fallback" rumination in the v1 note is moot — see "Graceful
-fallback for non-structural transducers — moot post-MP-6" below for
-the post-MP-6 status.
-
-
 ## Worked example — process manager
 
-The worked example in EP-11 demonstrates `compose` on a small
+The worked example demonstrates `compose` on a small
 multi-aggregate scenario.
 
 ### The Email Delivery aggregate
@@ -672,33 +650,26 @@ The acceptance test in `test/Keiki/CompositionSpec.hs` covers:
 
 ## Combinators beyond `compose` — per-combinator design records
 
-This section is owned by EP-24 of MasterPlan 8
-(`docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md`).
-EP-24 re-evaluated the four combinators that EP-11 deferred —
-`parallel`, `alternative`, `feedback`, `Kleisli` — against the
-post-MP-1..MP-7 keiki core, and produced the verdicts below. Each
-admitted combinator gets its own record (signature, semantics,
-single-step example, preservation arguments, acceptance criteria).
-Each re-deferred combinator gets a "Re-deferred" record naming the
-deferral conditions and pointing to the sibling research that
-covers the same need. The post-MP-6 retirements (`OFn` retired in
-EP-16, `PMatchC` retired in EP-17) eliminate the substitution
-caveats EP-11 listed for `compose`, simplifying the new
-combinators' design surface.
+This section re-evaluates the four combinators that the initial
+`compose` design deferred — `parallel`, `alternative`, `feedback`,
+`Kleisli`. Each admitted combinator gets its own record (signature,
+semantics, single-step example, preservation arguments, acceptance
+criteria). Each re-deferred combinator gets a "Re-deferred" record
+naming the deferral conditions and pointing to the sibling research
+that covers the same need.
 
 
 ### `alternative` — admitted
 
-> **2026-05-03 update (EP-25 M4 implementation discovery).** The
-> original design specified a sum vertex `CompositeSum s1 s2 = InL
-> s1 | InR s2` with `initial = InL (initial t1)`. EP-25's
-> acceptance tests revealed this is degenerate: the composite has
-> no path from `InL` to `InR`, so it is stuck in t1's arm forever.
-> The intended semantics — sibling aggregates with **independent
-> state** evolving in parallel as Left/Right inputs arrive —
-> requires the *product* vertex `Composite s1 s2` (the same
-> vertex `compose` already uses). Each composite vertex emits the
-> union of t1's edges (gated on `Left`, target keeps t2's
+`alternative` uses the *product* vertex `Composite s1 s2` (the
+same vertex `compose` already uses), not a sum vertex `InL s1 |
+InR s2`. The sum-vertex shape was tried during implementation and
+discovered degenerate: it has no path from `InL` to `InR`, so the
+composite is stuck in t1's arm forever. The intended semantics —
+sibling aggregates with **independent state** evolving in parallel
+as Left/Right inputs arrive — requires the product vertex. Each
+composite vertex emits the union of t1's edges (gated on `Left`,
+target keeps t2's
 > sub-vertex) and t2's edges (gated on `Right`, target keeps t1's
 > sub-vertex). The signature, semantics, and preservation
 > arguments below are the **revised** form that EP-25 actually
@@ -1237,17 +1208,6 @@ actually delivers (concretely: `Choice` follows from `alternative`;
 `Category` follows from `compose`; `Strong` is contingent on a
 future `parallel` admission). MP-8 ships only the combinators
 themselves.
-
-
-### Graceful fallback for non-structural transducers — moot post-MP-6
-
-EP-11's design note flagged "graceful fallback when t1 has `OFn`
-outputs or t2 has `PMatchC` guards" as a future improvement. After
-MP-6 (escape-hatch retirements: EP-16 retired `OFn`, EP-17 retired
-`PMatchC`), no aggregate authored against the post-MP-6 core has
-either form. The fallback is moot. New combinators (`alternative`,
-`feedback1`) inherit `compose`'s structural-only contract by
-construction and do not need to enumerate fallback rules.
 
 
 ### Static topology safety — out of scope (item G in keiki-generics-design)

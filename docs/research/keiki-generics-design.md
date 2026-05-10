@@ -838,11 +838,8 @@ composite's `OPack`, hidden-input check on transitively-hidden
 fields, and symbolic single-valuedness when both underlying
 transducers are individually single-valued. The substitution
 restricts t1 outputs to `OPack` and t2 mid-side guards to
-structural patterns (`PInCtor` / `PEq` / `TInpCtorField`); v1
-escape hatches (`OFn`, `PMatchC` over `mid`) used to raise a
-runtime error naming the offending edge — moot post-MP-6, since
-EP-16 retired `OFn` and EP-17 retired `PMatchC`. The worked
-example at `test/Keiki/CompositionSpec.hs` composes a tiny
+structural patterns (`PInCtor` / `PEq` / `TInpCtorField`). The
+worked example at `test/Keiki/CompositionSpec.hs` composes a tiny
 `AlertSource` fixture with `Jitsurei.EmailDelivery`; six
 tests verify `step`, `omega`, `reconstitute`,
 `checkHiddenInputs`, and `isSingleValuedSym` on the composite.

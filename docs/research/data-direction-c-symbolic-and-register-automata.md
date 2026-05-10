@@ -4,10 +4,10 @@ The base `Transducer s c e` requires `(Enum, Bounded)` on every parameter.
 That is what makes input/output projection, deadlock detection, and
 exhaustive contract checks possible — and what keeps payload data off the
 formal map. `StartRegistration Email`, `SubmitApproval UserId`,
-`ActivitySucceeded ActivityId Result`: in the current model these are tags.
-The data they carry lives in `ctx` (the EFSM extension in
-`fst-as-workflow-runtime.md` §1), opaque to δ and ω. Guards over `ctx`
-work at runtime but evaporate the moment we try to *enumerate* anything.
+`ActivitySucceeded ActivityId Result`: in such a model these are tags
+and the data they carry lives in an opaque `ctx`, opaque to δ and ω.
+Guards over `ctx` work at runtime but evaporate the moment we try to
+*enumerate* anything.
 
 This note picks the **symbolic / register / nominal** family off that
 landscape and asks what would actually carry over into a Haskell library.

@@ -299,9 +299,6 @@ each and read clearly.
   the simplest one-edge AST form.
 - `src/Keiki/Core.hs` — every smart constructor used by the AST
   form, with per-export haddock.
-- `docs/research/dsl-shape-for-symbolic-register.md` — the
-  underlying DSL design; covers the rationale for each
-  constructor in the AST.
 - `docs/research/edge-builder-dsl-shape.md` — the builder design
   note; useful when you want to understand what the builder
   buys you over the AST.

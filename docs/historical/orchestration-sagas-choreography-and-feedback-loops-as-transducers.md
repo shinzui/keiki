@@ -1,18 +1,5 @@
 # Transducers for Orchestration
 
-> **Status: historical (encoding only).** The conceptual content —
-> sagas, process managers, choreography, compensating transactions,
-> aggregate ↔ policy feedback as composed transducers — is still
-> sound and is referenced from `effects-boundary.md` and
-> `composition-combinators-design.md`. The *encoding* throughout uses
-> the toy `Transducer s c e` shape (`delta s c -> Maybe s`,
-> `omega s c -> Maybe e`, `compose : Transducer s1 c e1 -> Transducer s2 e1 e2 -> Transducer (s1, s2) c e2`,
-> `inputProjection` / `outputProjection`, `toDecider`). None of those
-> signatures match the shipped `SymTransducer` / `Keiki.Composition` /
-> `Keiki.Acceptor` / `Keiki.Decider` surface. Read for patterns; map
-> the encoding to current names via
-> `architecture-comparison-keiki-vs-crem.md`.
-
 Transducers model orchestration naturally because a process manager,
 saga, or policy is itself a transducer — it consumes events and produces
 commands, maintaining state to track progress. This document shows how

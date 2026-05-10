@@ -1,17 +1,5 @@
 # FST Aggregate: Design Notes
 
-> **Status: historical.** This is the early kernel sketch from when
-> the project was called *fst-aggregate* and the central type was
-> `Transducer s c e`. It has been superseded by the symbolic-register
-> direction; the load-bearing reference is now
-> `synthesis-c-foundation-b-presentation-with-worked-examples.md`,
-> and the architectural overview lives in
-> `architecture-comparison-keiki-vs-crem.md`. The shipped types
-> (`SymTransducer phi rs s ci co`, `Acceptor a s`, `Decider c e s`,
-> `inputAcceptor`, `outputAcceptor`, `applyEvent`) do not match the
-> sketches below. Read for the original framing, not as an API
-> reference.
-
 ## Architectural Difference from tan-event-source
 
 ```

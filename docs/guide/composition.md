@@ -239,16 +239,11 @@ note; treat the parenthesisation as a free choice and test the
 result. The vertex type stacks: `Composite (Composite s1 s2) s3`,
 which `Bounded`/`Enum` derive cleanly.
 
-For non-sequential composition shapes (parallel, choreography,
-unbounded feedback) see
-`docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
-and
-`docs/research/future-directions-profunctors-effects-and-composition.md`.
 keiki ships sequential `compose`, disjoint-input `alternative`
-(§8), and single-step `feedback1` (§9); `parallel` and `Kleisli`
-remain deferred (rationale in
+(§8), and single-step `feedback1` (§9). `parallel` and `Kleisli`
+are deferred; the rationale is in
 `docs/research/composition-combinators-design.md` under
-"Combinators beyond `compose`").
+"Combinators beyond `compose`".
 
 ---
 
@@ -657,8 +652,3 @@ want `compose` instead.
   `EmailDelivery ⊕ Pinger` fixture for `alternative`.
 - `test/Keiki/CompositionFeedback1Spec.hs` — toggle ↔ echo-policy
   fixture for `feedback1`.
-- `docs/research/orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
-  — the bigger design picture for non-sequential composition.
-- `docs/masterplans/8-composition-combinators-beyond-sequential-parallel-alternative-feedback-kleisli.md`
-  — MP-8's outcome record (which combinators landed, which were
-  re-deferred, and why).

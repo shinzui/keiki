@@ -1,32 +1,5 @@
 # DSL shape for the symbolic-register transducer
 
-> **Status: largely historical.** This note settled the *v1 prototype*
-> DSL — the AST shapes (`Term`, `OutTerm`, `Update`, `HsPred`) plus
-> several intentionally-temporary "escape hatch" helpers that have
-> since been retired. The retired helpers (`matchCmd`, `mkOut`,
-> `OFn`/`InpFn`, `PMatchC`, `TInpField`, `unsafeCombine`) appear
-> throughout the body below as if they were the live API; they are
-> not. The retirements are recorded in
-> `v1-escape-hatch-retirements-design.md` — the table at the top of
-> that note maps each retired helper to its structural successor
-> (`InCtor`, `WireCtor` + `OPack`, `PInCtor` / `matchInCtor`,
-> `combine` with static `Disjoint`).
->
-> For the **current** DSL surface, read in this order:
-> 1. `docs/research/edge-builder-dsl-shape.md` — design of the
->    QualifiedDo `Keiki.Builder` DSL that authors actually use.
-> 2. The haddock for `Keiki.Builder` and `Keiki.Core` modules.
-> 3. The worked examples in `jitsurei/src/Jitsurei/UserRegistration.hs`
->    and `jitsurei/src/Jitsurei/EmailDelivery.hs` — each ships the
->    same transducer authored in both the AST and the Builder forms,
->    side by side.
->
-> The AST shapes (`Term`, `OutTerm`, `Update`, `HsPred`) and the
-> `RegFile` survey survived essentially unchanged into the shipped
-> `Keiki.Core`; those parts of this note are still accurate. The
-> User Registration transcription in the body uses the v1 escape
-> hatches and would not compile against current `Keiki.Core`.
-
 This note settled the embedded-DSL surface that keiki users will write to
 declare a `SymTransducer`. It picks concrete Haskell datatype shapes for
 `Term`, `OutTerm`, `Update`, `Edge`, `SymTransducer`, `RegFile`, `Index`,

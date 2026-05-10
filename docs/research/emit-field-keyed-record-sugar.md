@@ -1,4 +1,4 @@
-# Emit field-keyed record sugar — design note (EP-21 M3)
+# Emit field-keyed record sugar — design note
 
 ## Purpose
 

@@ -2,45 +2,34 @@
 
 This note pins down the contract between keiki's pure core (the
 symbolic-register transducer specified in
-`synthesis-c-foundation-b-presentation-with-worked-examples.md`) and the
-runtime layer that gives it durability, time, and an outside world. It
-specifies exactly what is pure, what is not, what types cross the
-boundary in each direction, and what the v1 prototype does and does not
-implement.
+`synthesis-c-foundation-b-presentation-with-worked-examples.md`) and
+the runtime layer that gives it durability, time, and an outside
+world. It specifies exactly what is pure, what is not, what types
+cross the boundary in each direction, and what `Keiki.Core` does and
+does not provide.
 
 The reader who finishes this note should be able to:
 
-- Predict, for any proposed function, whether it belongs in `Keiki.Core`
-  or `Keiki.Runtime` without consulting the synthesis.
+- Predict, for any proposed function, whether it belongs in
+  `Keiki.Core` or `Keiki.Runtime` without consulting the synthesis.
 - Write a `Keiki.Runtime` adapter on top of `IO`, `ReaderT IO`,
   `Effectful`, or any other monad without disturbing `Keiki.Core`.
-- Implement plan 4 (the prototype) by copying the v1 prototype scope
-  paragraph in §11 verbatim.
 
 
 ## Inputs and prerequisites
 
-Read first, in this order:
+Read `synthesis-c-foundation-b-presentation-with-worked-examples.md`
+first, in particular:
 
-1. `synthesis-c-foundation-b-presentation-with-worked-examples.md` —
-   §4's data discipline notes (UTCTime is a command field;
-   `ConfirmationCode` is generated outside the transducer); §5's "How
-   the runtime threads the alphabets," "Timer," and "Reconstitution"
-   subsections; §6 "Composition."
-2. `fst-as-workflow-runtime.md` — the runtime architecture sketch:
-   event store, queue, subscriptions, timers, activities, signals,
-   queries, child workflows, cancellation, versioning, snapshotting.
-3. `orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`
-   — the subscription/routing model from a different angle.
-4. `future-directions-profunctors-effects-and-composition.md` — names
-   `lmapMaybeC` (the routing combinator).
-
-This note refines the runtime sketch in (2) into a concrete boundary;
-it does not replace it.
+- §4's data discipline notes (UTCTime is a command field;
+  `ConfirmationCode` is generated outside the transducer).
+- §5's "How the runtime threads the alphabets," "Timer," and
+  "Reconstitution" subsections.
+- §6 "Composition."
 
 The terms **pure layer**, **runtime layer**, **effects boundary**,
-**subscription**, **dispatch**, **timer service**, and **replay** carry
-the meanings established in plan 3's "Terms used in this plan" section.
+**subscription**, **dispatch**, **timer service**, and **replay** are
+defined in this note's body.
 
 
 ## What the runtime is responsible for
@@ -381,17 +370,12 @@ through the constructor-mutex translation of `PInCtor`. See
 and `docs/plans/6-sbv-backed-boolalg-instance-for-symbolic-emptiness.md`
 for the implementation plan.
 
-Plan 4 implemented `step`, `reconstitute`, and `checkHiddenInputs`
-without exercising `isSingleValued`; EP-2 of MasterPlan 2 added
-`isSingleValuedSym` and the symbolic User Registration spec.
-
-
 ## Runtime-side ports
 
 These are *names* of types and functions the runtime exposes. The
-pure layer does not import them. Plan 4 does not implement them. They
-exist in this note so future runtime plans have something to point
-at.
+pure layer does not import them; the runtime layer does not yet ship
+a concrete adapter. They exist in this note so future runtime work
+has a contract to honour.
 
     -- Runtime-defined; produces ci values from somewhere.
     -- Concrete shape might be `Stream IO ci`, `IO ci`, `Eff es ci`,
@@ -425,10 +409,8 @@ A skeleton implementation, for orientation only:
           push sink co                          -- atomic with ack
           ack  source ci
 
-This is `fst-as-workflow-runtime.md` §5's loop, refined to use the
-pure layer's `step` and `reconstitute`. Every line involving
-`source`, `sink`, or "restore" is `IO`. The line involving `step` is
-not.
+Every line involving `source`, `sink`, or "restore" is `IO`. The
+line involving `step` is not.
 
 
 ## Time discipline
@@ -599,8 +581,7 @@ This is the synthesis's `lmapMaybeC` shape. Given a function from
 `Nothing` if the event is irrelevant)," the runtime registers it
 and routes accordingly.
 
-Concrete signatures, drawing from
-`future-directions-profunctors-effects-and-composition.md` §1:
+Concrete signatures:
 
     -- Build a routed input source from a wider one.
     -- The runtime composes these to feed multiple upstream streams
@@ -706,9 +687,9 @@ edges that emit/consume them. That is all.
 
 Two modules at minimum:
 
-    Keiki.Core      -- pure types and projections (shipped via plan 4)
+    Keiki.Core      -- pure types and projections
     Keiki.Runtime   -- IO-wired event store, queue, subscriptions, timer
-                       (deferred; not yet shipped)
+                       (not yet shipped)
 
 `Keiki.Core` exports:
 
@@ -720,12 +701,11 @@ Two modules at minimum:
   `models`, `checkHiddenInputs`. (`isSingleValuedSym` lives in
   `Keiki.Symbolic` since it depends on the SBV-backed `BoolAlg`.)
 - No `IO` import. No `MonadIO`. No `Eff`. No effect type variable
-  on any function or type. A reader who tries to mentally compile
-  `Keiki.Core` should find that it works with the ghc flag
+  on any function or type. `Keiki.Core` works with the ghc flag
   `-XSafe` (or its modern equivalent), modulo the language
   extensions for the typed register file.
 
-`Keiki.Runtime` (deferred) exports:
+`Keiki.Runtime` exports:
 
 - The types: `InputSource`, `OutputSink`, `Subscription`,
   `Dispatch`, `EventStore`, `Queue`, `TimerService`, etc.
@@ -735,44 +715,6 @@ Two modules at minimum:
 - This module imports `IO` (or `Eff` or `IOE`, depending on the
   runtime author's choice). It depends on `Keiki.Core` but not the
   reverse.
-
-Optionally, for the smoke test:
-
-    Jitsurei.UserRegistration
-
-Plan 4's deliverable. Imports only `Keiki.Core`. Defines
-`UserCmd`, `UserEvent`, `UserRegRegs`, `userReg`. Used by the test
-suite.
-
-This module layout is a proposal, not a freeze; if plan 4 finds
-during implementation that splitting `Keiki.Core` into
-`Keiki.Core.Types` and `Keiki.Core.Step` reads more clearly, that
-is fine. The constraint is the boundary, not the file count: no
-`IO` ever enters `Keiki.Core`.
-
-
-## Prototype scope (v1, shipped)
-
-The v1 prototype implements only `Keiki.Core`. It provides `step`,
-`reconstitute`, `applyEvent`, and `applyEvents`. It does NOT implement
-`runTransducer`, `InputSource`, `OutputSink`, `Subscription`,
-`Dispatch`, or any timer code. The smoke tests in
-`jitsurei/test/Jitsurei/` call these directly with hardcoded inputs
-and hardcoded `[Output]` event logs. This was the verbatim scope of
-plan 4 (now complete). Three implications worth highlighting:
-
-- **There is no `Keiki.Runtime` package in the v1 cabal file.**
-  Adding one — even an empty one — would risk a contributor
-  putting `IO` in it before the runtime design is ready.
-- **There is no event store in v1.** The "log" is a Haskell list
-  literal `[UserEvent]` in the test suite. Plan 4's
-  `reconstitute userReg fixtureLog == Just (Deleted, expectedRegs)`
-  is the entire integration test.
-- **There is no time mocking, no random mocking.** The test
-  fixtures hardcode `UTCTime` values and `ConfirmationCode` values.
-  This is a feature: the prototype validates that the time and
-  randomness disciplines work, by construction, because the test
-  suite literally cannot pull a clock or RNG.
 
 
 ## Cross-check
@@ -796,8 +738,6 @@ A reader has finished this note. Can they:
 - ☑ Predict whether `appendEvent :: EventStore -> orderId -> e ->
   IO ()` belongs in `Keiki.Core`? No — `IO` and `EventStore` are
   both runtime. (See §3 and §5.)
-- ☑ Implement the v1 prototype in plan 4 by copying §11's scope
-  paragraph and the §5 signatures? Yes.
 
 If any answer is "I'm not sure," this note has failed and needs
 extension.

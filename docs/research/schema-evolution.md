@@ -3,8 +3,7 @@
 This note pins down keiki's schema-evolution model: how events, commands, and
 register files change shape over time, and how the symbolic-register
 transducer keeps replay correct across those changes. It complements the
-synthesis note (`synthesis-c-foundation-b-presentation-with-worked-examples.md`)
-and is the directional input the v1 prototype consumes.
+synthesis note (`synthesis-c-foundation-b-presentation-with-worked-examples.md`).
 
 The headline:
 
@@ -32,10 +31,9 @@ Read these in order:
    event must carry every field the edge's update or guard reads).
 2. `multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`
    for the User Registration aggregate the scenarios below modify.
-3. `fst-as-workflow-runtime.md` for the runtime architecture (event store +
-   queue + subscriptions); schema evolution touches the event store directly,
-   and §2's "Versioning = Event Upcasting" paragraph already gestures at the
-   answer this note formalises.
+3. `effects-boundary.md` for the runtime architecture (event store +
+   queue + subscriptions); schema evolution touches the event store
+   directly.
 
 Definitions used below:
 
@@ -927,6 +925,6 @@ without consulting the synthesis note again:
   snapshot is discarded, and replay from event 0 runs through the
   upcaster.
 
-- **Does the v1 prototype need to handle any of this?** No. The v1
-  prototype runs against a single static schema and uses a stub
-  shape-tag.
+- **Does keiki itself need to handle any of this?** No. The library
+  is schema-evolution-agnostic; the upcaster lives in the
+  application's event-store adapter.

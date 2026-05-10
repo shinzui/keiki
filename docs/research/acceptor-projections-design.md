@@ -12,9 +12,6 @@ The companion files referenced throughout this note are:
   the foundations chapter that motivates the projections in plain
   English. Defines π₁ (input projection / command acceptor) and π₂
   (output projection / event acceptor).
-- `docs/research/core-design-transducer-as-source-of-truth.md` — why
-  the `SymTransducer` is the single source of truth that the
-  acceptors project from.
 - `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`
   — the synthesis the keiki library is built around. The acceptor
   vocabulary lines up with §"Direction C" — symbolic-register

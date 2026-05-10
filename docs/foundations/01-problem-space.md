@@ -79,7 +79,7 @@ analysis tools, same composition rules.
 
 The pure core stays pure. The infrastructure (event store, queue,
 subscriptions for side effects) is a separate, swappable layer
-described in `docs/research/fst-as-workflow-runtime.md`.
+described in `docs/research/effects-boundary.md`.
 
 ## What this buys
 

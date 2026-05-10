@@ -423,9 +423,7 @@ hoist :: (forall x. m x -> n x) -> StateMachineT m a b -> StateMachineT n a b
 `docs/research/effects-boundary.md` is: the pure layer computes
 `step`, `reconstitute`, `applyEvent`, the analyses; the runtime layer
 (future `Keiki.Runtime`) handles the event store, dispatch, timers,
-subscriptions, snapshotting. This is no longer "proposed" — it is the
-architecture, with the v1 prototype scope spelled out in §11 of the
-boundary note.
+subscriptions, snapshotting.
 
 The trade-off: crem mixes effects directly into the machine type;
 keiki keeps the machine pure and lets the runtime monomorphise the

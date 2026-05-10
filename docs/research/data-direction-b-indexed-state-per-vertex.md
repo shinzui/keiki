@@ -1,6 +1,6 @@
 # Direction B: Indexed State, Data Per Vertex
 
-The `ExtTransducer s ctx c e` from `fst-as-workflow-runtime.md` §1 grafts a
+The `ExtTransducer s ctx c e` from `docs/historical/fst-as-workflow-runtime.md` §1 grafts a
 single uniform `ctx` onto a finite control state. That works when every
 control vertex carries the same data shape. It breaks the moment two
 vertices want different fields:
@@ -547,7 +547,7 @@ Honest accounting versus `ExtTransducer s ctx c e`:
 - Effectful step functions need to thread the singleton:
   `step :: forall v. SVertex v -> State v -> c -> m (Maybe SomeState)`
   is a `forall`-quantified field, which fights `EffTransducer m c e`'s
-  existential-state encoding from `future-directions.md` §6. Combining
+  existential-state encoding from `docs/historical/future-directions-profunctors-effects-and-composition.md` §6. Combining
   Direction B with the coalgebraic encoding needs care.
 - Pure `delta` cannot read the clock for `ApprovedS apAt`. Either
   events carry the timestamp (clock lives at the boundary that emits
@@ -580,7 +580,7 @@ Stick with `ExtTransducer s ctx c e` (uniform context) when:
 3. The workflow is going to be regenerated/rewritten frequently
    enough that the GADT refactoring tax exceeds the safety win.
 
-The Multi-Approval workflow from `fst-as-workflow-runtime.md` is on
+The Multi-Approval workflow from `docs/historical/fst-as-workflow-runtime.md` is on
 the boundary. `Pending` carries `(docId, requiredCount)`; `Awaiting`
 adds `approvedBy, rejectedBy`; `Approved` and `Rejected` shed
 collections and add finalisation data. Four vertices, four genuinely
@@ -646,7 +646,7 @@ This works fine — the vertex is finite — but you can no longer ask
 "is vertex `v` reachable from vertex `v'`." The data dimension is
 unbounded.
 
-**Visualisation.** `toDot` from `future-directions.md` §5 enumerates
+**Visualisation.** `toDot` from `docs/historical/future-directions-profunctors-effects-and-composition.md` §5 enumerates
 `[minBound..maxBound]` over states and commands. Under Direction B,
 `toDot` shows only the vertex graph; data updates are annotations,
 not separate nodes. This is arguably *better* (state explosion

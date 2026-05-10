@@ -76,48 +76,21 @@ Read these when you hit the topic, not in order.
   cross-context routing gap that's the sharpest place keiki
   trails crem today.
 
-## Historical and exploratory
-
-These document decisions and explorations rather than the current
-design. They predate the symbolic-register direction and use the toy
-`Transducer s c e` formalism rather than the shipped
-`SymTransducer phi rs s ci co`. Read when you want to understand
-*why* the design landed where it did, not as references for the
-current API.
+## Background and exploration
 
 - **`data-direction-b-indexed-state-per-vertex.md`** and
   **`data-direction-c-symbolic-and-register-automata.md`**
   The parallel exploration that produced the synthesis. Read these
-  if you want to understand the trade-offs the synthesis makes.
-- **`core-design-transducer-as-source-of-truth.md`** — early kernel
-  sketch. Superseded by the synthesis doc.
-- **`efsm-based-workflow-engine-technical-analysis.md`** — earlier
-  analysis of the EFSM extension; the rejected alternative to
-  symbolic-register.
-- **`fst-as-workflow-runtime.md`** — runtime architecture sketch
-  built on the toy `ExtTransducer` formalism. The architectural
-  ideas (event store, queue, subscriptions, timers) survived into
-  `effects-boundary.md`; the encoding did not.
-- **`future-directions-profunctors-effects-and-composition.md`** —
-  pre-keiki "what we should build" doc. Most of the listed items
-  have shipped under different names (see
-  `architecture-comparison-keiki-vs-crem.md` for the mapping).
-- **`orchestration-sagas-choreography-and-feedback-loops-as-transducers.md`** —
-  saga / choreography / feedback patterns expressed in the toy
-  formalism. Conceptually still valid; the encoding is stale.
-- **`performance-analysis-projection-costs-and-production-architecture.md`** —
-  the central perf concern (linear scan in `outputProjection` over
-  enumerated commands) is for the toy `Transducer s c e`; keiki's
-  `applyEvent` uses structural `solveOutput` and doesn't enumerate.
-  See `symbolic-analysis-and-runtime-implications.md` for the
-  current perf-relevant data (SBV solver-call cost).
-- **`workflow-modeling-approvals-pipelines-and-human-in-the-loop-as-transducers.md`** —
-  workflow patterns catalogue. Patterns are sound; encoding is the
-  toy formalism.
-- **`v1-escape-hatch-retirements-design.md`** — record of which
-  prototype-era escape hatches were retired and what replaced them.
-  Useful when reading older design notes that mention
-  `OFn`/`PMatchC`/`unsafeCombine`/`TInpField`.
+  if you want to understand the trade-offs the synthesis makes;
+  skip if you trust the conclusion.
+
+Older design notes that predate the symbolic-register direction —
+early kernel sketches, the rejected EFSM analysis, the v1-prototype
+DSL, the original "future directions" wish list, and the record of
+which prototype-era escape hatches were retired — live under
+`docs/historical/` with a folder README. Read them only if you need
+to understand *why* the design landed where it did, not as
+references for the current API.
 
 ## Benchmarking
 
