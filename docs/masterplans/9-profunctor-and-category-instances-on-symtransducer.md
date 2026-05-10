@@ -186,7 +186,7 @@ C to live in limbo within a partially-complete plan.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Existential wrapper for SymTransducer + Profunctor instance + variance combinators | docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md | None | EP-11 (external) | Complete |
-| 2 | Category instance on the SymTransducer wrapper | docs/plans/28-category-instance-on-the-symtransducer-wrapper.md | EP-1 | EP-11 (external) | In Progress |
+| 2 | Category instance on the SymTransducer wrapper | docs/plans/28-category-instance-on-the-symtransducer-wrapper.md | EP-1 | EP-11 (external) | Complete |
 | 3 | Strong / Choice / Arrow instances on the SymTransducer wrapper | docs/plans/29-strong-choice-and-arrow-instances-on-the-symtransducer-wrapper.md | EP-1, EP-2 | MP-8 children (alternative shipped; parallel/Kleisli declined — see EP-29 Decision Log) | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -257,29 +257,46 @@ instance is dropped from scope (see EP-29 Decision Log).
 
 **Plans involved:** EP-25 (defines), EP-26 / EP-27 (consume).
 
-**Owner:** EP-27. The recommended shape (recorded in EP-27's
-plan-of-work M1) is the `phi`-baked-in variant since
-`Keiki.Composition.compose` is currently pinned to `HsPred`:
+**Owner:** EP-27. The final shape (after EP-28's amendments) has
+two constructors and a richer existential constraint set:
 
     data SomeSymTransducer ci co where
       SomeSymTransducer
-        :: ( WeakenR rs, KnownSlotNames rs )
+        :: ( WeakenR rs
+           , KnownSlotNames rs
+           , Bounded s
+           , Enum s
+           )
         => SymTransducer (HsPred rs ci) rs s ci co
         -> SomeSymTransducer ci co
+      SomeSymIdentity :: SomeSymTransducer a a
 
-The two existential constraints (`WeakenR rs` for `compose` /
-`alternative`'s constraint discharge, `KnownSlotNames rs` for
-EP-28's runtime overlap check) are *added incrementally*: EP-27
-ships with `WeakenR rs`; EP-28 amends to add `KnownSlotNames rs`
-when its disjointness escape hatch needs it (recorded in EP-28
-M1's Decision Log).
+EP-27 actually shipped with **no** packed constraints (the body
+of `data SomeSymTransducer ci co where SomeSymTransducer :: ... ->
+SomeSymTransducer ci co`); the original IP-1 description's claim
+that EP-27 ships with `WeakenR rs` was aspirational. EP-28's M1
+added `(WeakenR rs, KnownSlotNames rs)`; EP-28's M2 added
+`(Bounded s, Enum s)` and the second `SomeSymIdentity` constructor
+(see Surprises & Discoveries for why the sentinel was needed).
+All four constraints have automatic instances on every keiki
+vertex / register-file shape, so each amendment was
+backward-compatible at every existing call site.
 
 **Coordination rule:** EP-28 and EP-29 use this wrapper. If
-EP-28 / EP-29 discover a missing constraint that's not already
-packed in the existential, the responsible EP amends the wrapper
-in its M1 (with a backward-pointing note in EP-27's Decision
-Log). EP-28 has already exercised this protocol for
-`KnownSlotNames`.
+EP-29 discovers a missing constraint that's not already packed in
+the existential, the responsible EP amends the wrapper (with a
+backward-pointing note in EP-27's Decision Log). EP-28 has
+already exercised this protocol three times: `KnownSlotNames`,
+`WeakenR`, and `(Bounded, Enum)`. The pattern is well-trodden;
+EP-29 should not hesitate.
+
+**Pattern-match consumers must handle both constructors:** any
+code that pulls a transducer out of the wrapper via
+`case s of SomeSymTransducer t -> ...` is now non-exhaustive and
+must add a `SomeSymIdentity -> ...` arm. The sentinel can be
+materialised into a concrete identity transducer via
+`SomeSymTransducer identityTransducer` if the consumer needs a
+real `SymTransducer`.
 
 ### IP-2: `Keiki.Profunctor` (or sibling) module
 
@@ -296,24 +313,32 @@ combinator functions.
 **Plans involved:** EP-26 (defines, since `Category.id` needs
 it).
 
-**Owner:** EP-28. The identity transducer ships in EP-28 using
-the **phantom-slot technique** (resolved during EP-28 authoring,
-documented in MP-9's Surprises & Discoveries). Both candidate
-strategies originally proposed (`Generic`-driven and explicit
-per-type instance) are unnecessary: a single phantom slot
-`'[("payload", a)]` carried inside an `InCtor a '[ '("payload",
-a) ]` and a matching `WireCtor a (a, ())` lets a generic
-`identityTransducer :: forall a. SymTransducer (HsPred '[] a)
-'[] IdVertex a a` roundtrip any value without per-type
-machinery. The real `initialRegs` stays `RNil`.
+**Owner:** EP-28. EP-28 ships **two** identity-related artefacts:
+
+1.  `identityTransducer :: forall a. SymTransducer (HsPred '[] a)
+    '[] IdVertex a a` — a concrete-form identity transducer using
+    the **phantom-slot technique** (`InCtor a '[ '("payload", a) ]`
+    + `WireCtor a (a, ())`; the real `initialRegs` stays `RNil`).
+    Exported for users who need a real `SymTransducer`-shaped
+    identity (e.g. for non-Category contexts, testing, or
+    comparison fixtures).
+2.  `SomeSymIdentity :: SomeSymTransducer a a` — a *sentinel
+    constructor* on the wrapper GADT. `Cat.id` returns the sentinel;
+    `Cat..` short-circuits when either operand is the sentinel.
+    The sentinel exists because `Keiki.Composition.compose`'s
+    substitution algorithm cannot accept a generic identity
+    transducer — see EP-28's Surprises & Discoveries for the
+    discovery and rationale.
 
 **Coordination rule:** EP-29's `Arrow` instance reuses
-EP-28's `identityInCtor` and `identityWireCtor` for `arr`'s
-construction (the only difference is `wcBuild = \(a, ()) -> f a`
-instead of `\(a, ()) -> a`). EP-29 imports them from
-`Keiki.Profunctor` (or, if they were left private in EP-28, M3
-of EP-29 promotes them to internal-but-cross-module via a
-sub-module like `Keiki.Profunctor.Internal`).
+`identityTransducer` directly when it needs a concrete identity
+shape (e.g. for `arr`'s construction with the only difference
+being `wcBuild = \(a, ()) -> f a` instead of `\(a, ()) -> a`).
+The private helpers `identityInCtor` / `identityWireCtor` stay
+private in EP-28; if EP-29 needs them, EP-29 promotes them via
+a sub-module like `Keiki.Profunctor.Internal`. EP-29's `(>>>)`
+inherits `Cat..`'s sentinel short-circuit automatically because
+`(>>>)` defaults to `flip Cat..`.
 
 ### IP-4: MP-8 combinators (`parallel`, `alternative`)
 
@@ -349,10 +374,10 @@ entry names the child plan and the milestone.
 - [x] EP-27: Picked Option (c) — ship `lmapCi` with documented `solveOutput` loss; documented in Decision Log (M1, 2026-05-03)
 - [x] EP-27: Created `Keiki.Profunctor`; shipped `lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi` on concrete SymTransducer (M2, 2026-05-03)
 - [x] EP-27: Added `Profunctor` and `Functor` instances on the wrapper; 11 new tests assert variance contract; total 196/0 (M3, 2026-05-03)
-- [ ] EP-28: Settle disjointness resolution (runtime-checked unsafeCoerce vs alternatives) (M1)
-- [ ] EP-28: Define identity transducer via the phantom-slot technique (M1)
-- [ ] EP-28: Amend EP-27's wrapper to also pack `KnownSlotNames rs` (M1)
-- [ ] EP-28: Add `Category` instance with runtime overlap check; tests assert `id . t == t == t . id` up to state-isomorphism + the `CategoryOverlapError` exception path (M2)
+- [x] EP-28 (2026-05-09): Settled disjointness via Option (A) — runtime overlap check + `unsafeCoerce`-fabricated `DictDisjoint`; raises `CategoryOverlapError` on collision (M1)
+- [x] EP-28 (2026-05-09): Defined identity transducer via the phantom-slot technique; `identityTransducer` exported. `Cat.id` ultimately uses a sentinel constructor instead — see Surprises &amp; Discoveries (M1+M2)
+- [x] EP-28 (2026-05-09): Amended EP-27's wrapper to pack `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` — adding `Bounded s, Enum s` beyond the originally-projected `KnownSlotNames` so symbolic analyses can run on unwrapped transducers (M1+M2)
+- [x] EP-28 (2026-05-09): Added `Cat.Category SomeSymTransducer` with `SomeSymIdentity` sentinel constructor for `Cat.id`; `(.)` short-circuits on the sentinel and otherwise runs through a runtime overlap check + `compose`. `test/Keiki/CategorySpec.hs` covers L1/L2/L3 behaviourally, plus `CategoryOverlapError` and `isSingleValuedSym` survival; total 156/0 (baseline 146 + 10 CategorySpec) (M2)
 - [ ] EP-29: Add `Choice` instance via `Keiki.Composition.alternative` (M1)
 - [ ] EP-29: Implement `firstSym` from primitives (since MP-8 declined `parallel`); add `Strong` instance (M2)
 - [ ] EP-29: Add `Arrow` instance with `arr` via stateless one-edge transducer (M3)
@@ -411,6 +436,50 @@ entry names the child plan and the milestone.
   `wcBuild` field, which is invoked only at runtime. The forward
   path works; `solveOutput` returns `Nothing` (no inverse). Same
   lossy contract as `lmapCi`/`rmapCo`/`first'`.
+
+- 2026-05-09 / EP-28 implementation pivot:
+  `Keiki.Composition.compose`'s substitution algorithm
+  (`src/Keiki/Composition.hs:344` `substTerm` over
+  `TInpCtorField`) requires `icName ic2 == wcName wc1`, raising a
+  runtime "structural mismatch" error otherwise. A *generic*
+  identity transducer's `InCtor` is named `"Identity"`; real
+  upstream transducers emit differently-named wires (e.g.
+  `"EmailSent"`). The substitution *cannot* succeed for
+  `(SomeSymTransducer identityTransducer) Cat.. someEmail`. EP-28's
+  M2 plan-of-work assumed `compose` would Just Work on the identity
+  transducer; it does not.
+  Resolution: EP-28 ships a sentinel constructor
+  `SomeSymIdentity :: SomeSymTransducer a a` and short-circuits
+  `Cat..` when either operand is the sentinel. The concrete
+  `identityTransducer` stays exported (for non-Category use), but
+  `Cat.id` returns the sentinel. Category laws hold by definition
+  rather than by behavioural equivalence to a real identity
+  transducer. The `Profunctor`/`Functor` instances materialise the
+  sentinel into `identityTransducer` before applying their
+  variance combinators, keeping `dimap`/`fmap` uniform across
+  both wrapper shapes.
+  Cross-EP impact for EP-29: the `Arrow` instance's `(>>>)` and
+  `(<<<)` will inherit the same short-circuit (they delegate to
+  `Cat..`). EP-29's `arr` should also produce a sentinel-shaped
+  wrapper when the lifted function is the identity — or, more
+  pragmatically, just delegate to `Cat.id` when the function is
+  observably `id` (rare to detect; usually `arr id` will go
+  through the regular `arr` path and that's fine).
+
+- 2026-05-09 / EP-28 wrapper amendment expanded beyond M1's
+  projection: the wrapper's existential constraint set grew from
+  `()` (EP-27's actual ship) to
+  `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)`. M1
+  projected `(WeakenR rs, KnownSlotNames rs)` only; `Bounded s,
+  Enum s` were added in M2 so `isSingleValuedSym` and
+  `checkHiddenInputs` can run on transducers pulled out of the
+  wrapper. All four constraints have automatic instances on
+  every keiki vertex / register-file shape, so the amendment is
+  backward-compatible at every existing call site.
+  Cross-EP impact: IP-1's wrapper-shape description (below) now
+  reflects the final shape; EP-29 should expect to add further
+  constraints if its `Strong`/`Choice`/`Arrow` instances need
+  them, following IP-1's "Coordination rule".
 
 
 ## Decision Log
@@ -515,6 +584,39 @@ entry names the child plan and the milestone.
   derivation; per-type `IdentityWireCtor` instance). See EP-28's
   Decision Log for the worked example.
   Date: 2026-05-03
+
+- Decision: `Cat.id` is a **sentinel constructor**
+  (`SomeSymIdentity :: SomeSymTransducer a a`) on the wrapper
+  GADT, not a wrap of `identityTransducer`. `Cat..` short-circuits
+  on the sentinel.
+  Rationale: discovered during EP-28 M2 implementation that
+  `Keiki.Composition.compose`'s substitution algorithm
+  (`substTerm` / `substPred`) requires `icName ic2 == wcName wc1`
+  — the InCtor name on t2's reads must match the WireCtor name on
+  t1's emissions. The generic identity transducer's InCtor is
+  named `"Identity"`, which can never match an upstream wire's
+  name (e.g. `"EmailSent"`); evaluating
+  `(SomeSymTransducer identityTransducer) Cat.. someEmail` raises
+  a runtime "structural mismatch" error. The sentinel sidesteps
+  the substitution. The concrete `identityTransducer` stays
+  exported for non-Category use (testing, composition with itself,
+  etc.). Cross-cuts EP-28 (ships) and EP-29 (`Arrow` inherits the
+  short-circuit via `(>>>) = flip Cat..`).
+  Date: 2026-05-09
+
+- Decision: Wrapper existential constraints final shape is
+  `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` — three
+  amendments over EP-27's actual ship of `()`.
+  Rationale: each amendment was discovered as required by an
+  EP-28 instance: `WeakenR` for `compose`'s constraint discharge,
+  `KnownSlotNames` for the runtime slot-overlap check, and
+  `(Bounded s, Enum s)` for symbolic analyses
+  (`isSingleValuedSym`, `checkHiddenInputs`) that enumerate the
+  vertex via `[minBound .. maxBound]`. All four are universally
+  satisfied by keiki vertex / register-file shapes, so each
+  amendment was backward-compatible. Future child plans (EP-29)
+  may amend further per IP-1's coordination rule.
+  Date: 2026-05-09
 
 
 ## Outcomes & Retrospective
