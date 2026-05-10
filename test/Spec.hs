@@ -2,6 +2,7 @@ module Main (main) where
 
 import Test.Hspec
 import qualified Keiki.AcceptorSpec
+import qualified Keiki.ArrowSpec
 import qualified Keiki.BuilderSpec
 import qualified Keiki.BuilderSpike
 import qualified Keiki.CategorySpec
@@ -38,5 +39,6 @@ main = hspec $ do
   describe "Keiki.NoThunks"                               Keiki.NoThunksSpec.spec
   describe "Keiki.Profunctor (EP-27)"                     Keiki.ProfunctorSpec.spec
   describe "Keiki.Profunctor (Strong, EP-29 M2)"          Keiki.StrongSpec.spec
+  describe "Keiki.Profunctor (Arrow, EP-29 M3)"           Keiki.ArrowSpec.spec
   describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec

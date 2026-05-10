@@ -56,9 +56,10 @@ Composition (Keiki.Composition)
 
 Wrapper for the profunctor ecosystem (Keiki.Profunctor)
   SomeSymTransducer ci co
-  Profunctor, Functor instances
-  lmapCi, lmapMaybeCi, rmapCo, dimapTransducer
-  (Category, Strong, Choice, Arrow planned, not shipped)
+  Profunctor, Functor, Category, Choice, Strong, Arrow instances
+  lmapCi, lmapMaybeCi, rmapCo, dimapTransducer, identityTransducer,
+    firstSym, arrTransducer
+  (ArrowChoice, Closed/Costrong/Cochoice out of scope)
 
 Symbolic layer (Keiki.Symbolic)
   SymPred, BoolAlg via SBV/Z3
@@ -246,17 +247,30 @@ Plus `Category`, `Profunctor`, `Strong`, `Choice`, `Arrow`, and
 | Combinator   | crem                  | keiki                                     | DDD meaning                       |
 |--------------|-----------------------|-------------------------------------------|-----------------------------------|
 | Sequential   | `Category (.)`         | `compose`                                  | Saga / pipeline                   |
-| Alternative  | `Alternative` / `Choice` | `alternative` (no `Choice` instance yet)  | Command routing                   |
+| Alternative  | `Alternative` / `Choice` | `alternative` + `Choice SomeSymTransducer` (EP-29 M1) | Command routing       |
 | Feedback     | `Feedback`             | `feedback1` (single-step)                  | Aggregate ↔ policy loop           |
 | Profunctor   | `Profunctor`           | `Profunctor SomeSymTransducer`             | Variance / contramap routing      |
-| Parallel     | `Parallel` / `Strong`  | Re-deferred (MP-8 EP-24 decision log)      | Independent invariants            |
-| Kleisli      | `Kleisli`              | Re-deferred (same)                         | Multi-event pipeline              |
-| Category     | `Category`             | Planned (EP-28, not shipped)               | Composition identity              |
-| Strong/Choice/Arrow | yes              | Planned (EP-29, not shipped)               | Profunctor ecosystem integration  |
+| Parallel     | `Parallel` / `Strong`  | `Strong SomeSymTransducer` via in-house `firstSym` (EP-29 M2; MP-8 declined a general `parallel`) | Independent invariants |
+| Kleisli      | `Kleisli`              | Re-deferred (MP-8 EP-24)                   | Multi-event pipeline              |
+| Category     | `Category`             | `Category SomeSymTransducer` (EP-28)       | Composition identity              |
+| Arrow        | `Arrow`                | `Arrow SomeSymTransducer` (EP-29 M3)       | Arrow notation / ecosystem hook   |
+| ArrowChoice  | `ArrowChoice`          | Out of scope (EP-29 Decision Log)          | Arrow + Choice tower              |
 
-The previous version of this note listed every crem combinator as
-"missing." Three are now shipped, four remain (two re-deferred, the
-typeclass tower planned in MP-9).
+MP-9 closes the typeclass tower: `Profunctor`, `Functor`, `Category`,
+`Choice`, `Strong`, and `Arrow` all ship on `SomeSymTransducer`.
+`ArrowChoice` and the wider profunctor classes (`Closed`, `Costrong`,
+`Cochoice`) stay out of scope until a real authoring need surfaces.
+`parallel` and `Kleisli` remain re-deferred per MP-8's design
+milestone — `Strong` is implemented from primitives in EP-29 M2
+rather than waiting for or reviving `parallel`.
+
+/Lossy-`solveOutput` caveat:/ transducers produced by `lmapCi`,
+`rmapCo`, `dimapTransducer`, `first'`, `second'`, and `Arr.arr` ship
+with a documented inversion gap — `Keiki.Core.solveOutput` returns
+`Nothing` on these. Forward processing (`delta`, `omega`, `evalPred`,
+`evalTerm`) is unaffected. Replay-from-events users who need the
+inversion path should construct their transducers without going
+through these combinators.
 
 ### 4. Decider pattern
 
@@ -521,8 +535,8 @@ Both libraries render Mermaid.
 |-------------------------------------------|-----------------------------------------------------------------------|
 | Type-level topology                       | Compile-time transition enforcement, not just runtime guard failure.  |
 | Vertex-indexed state GADTs                | Per-vertex typed state data without a separate register-file layer.   |
-| `Category`, `Strong`, `Choice`, `Arrow`   | Full profunctor ecosystem; planned (MP-9 EP-28/EP-29) but not shipped. |
-| `Parallel` / `Kleisli` combinators        | Two re-deferred composition shapes (MP-8 EP-24 decision log).         |
+| `ArrowChoice`, `Closed`, `Costrong`, `Cochoice` | Wider profunctor / arrow tower; out of scope for MP-9. |
+| `Parallel` / `Kleisli` combinators        | Two re-deferred composition shapes (MP-8 EP-24 decision log; `Strong` ships from primitives in EP-29 M2 instead). |
 | Effect monad parameterisation in the core | `hoist` to swap effect contexts; today keiki's effect story lives entirely in the runtime layer. |
 | `machines` integration                    | Streaming via `ProcessT`.                                             |
 
@@ -543,10 +557,14 @@ existed in fst-aggregate. That picture has shifted:
   `outputProjection`, `Acceptor`, `toDecider`, `toMultiDecider`. crem
   has none of these.
 - **Layer 3 (composition).** keiki ships `compose`, `alternative`,
-  `feedback1`, `Profunctor`. The remainder (`parallel`, `Kleisli`,
-  `Category`, `Strong`, `Choice`, `Arrow`) is the still-open MP-8 /
-  MP-9 surface; whether to import the full crem tower or stop at the
-  shipped subset is the live design call.
+  `feedback1`, plus the typeclass tower `Profunctor`, `Functor`,
+  `Category`, `Choice`, `Strong`, `Arrow` on the existential wrapper
+  `SomeSymTransducer` (MP-9 closed 2026-05-09). `parallel` and
+  `Kleisli` remain re-deferred per MP-8's design milestone (`Strong`
+  ships from in-house primitives in EP-29 M2 rather than waiting for
+  `parallel`). `ArrowChoice` and the wider profunctor tower
+  (`Closed`, `Costrong`, `Cochoice`) stay out of scope until a real
+  authoring need surfaces.
 
 The synthesis question that remains genuinely interesting is
 **topology safety**: whether keiki should add an optional type-level

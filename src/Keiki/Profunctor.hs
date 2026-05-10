@@ -49,10 +49,13 @@ module Keiki.Profunctor
     -- * Identity transducer (concrete form; 'Cat.id' uses the sentinel constructor)
   , IdVertex (..)
   , identityTransducer
+    -- * Arrow's @arr@ (concrete form; the 'Arr.Arrow' instance wraps it)
+  , arrTransducer
     -- * Category-instance overlap exception
   , CategoryOverlapError (..)
   ) where
 
+import qualified Control.Arrow as Arr
 import Control.Exception (Exception, throw)
 import qualified Control.Category as Cat
 import Data.Proxy (Proxy (..))
@@ -676,6 +679,88 @@ instance Strong SomeSymTransducer where
     where
       swap :: forall x y. (x, y) -> (y, x)
       swap (x, y) = (y, x)
+
+
+-- * Arrow instance ------------------------------------------------------
+
+-- | A stateless one-edge transducer that lifts an arbitrary Haskell
+-- function. Used by the 'Arr.Arrow' instance's 'Arr.arr' method.
+--
+-- Construction: one vertex ('IdVertex'); one edge whose guard is
+-- @'PInCtor' 'identityInCtor'@ (always-fires standalone, but
+-- arm-discriminating when lifted by 'Keiki.Composition.alternative'
+-- — see 'identityTransducer' for the same lesson); the edge's
+-- 'WireCtor's 'wcBuild' applies @f@ to the read input.
+--
+-- /Variance caveat:/ same lossy-@solveOutput@ contract as
+-- 'lmapCi' / 'rmapCo' / 'firstSym'. The 'WireCtor's 'wcMatch' is
+-- @const Nothing@ — there is no inverse function in general.
+-- Forward processing ('Keiki.Core.delta', 'Keiki.Core.omega') is
+-- unaffected.
+--
+-- /Composition limitation:/ 'Keiki.Composition.compose' substitutes
+-- t2's 'TInpCtorField' against t1's 'WireCtor'-emitted output and
+-- demands 'icName ic2 == wcName wc1'. An 'arrTransducer'-produced
+-- transducer's 'WireCtor' is named @"arr"@ but the next stage's
+-- 'TInpCtorField' uses 'identityInCtor' (named @"Identity"@), so
+-- 'arr f >>> arr g' will not produce 'arr (g . f)' through 'Cat..'
+-- — substitution turns the composed guard into 'PBot' and the
+-- composite never fires. This is documented rather than worked
+-- around because the symbolic 'Term' AST has no
+-- 'TPure'-style constructor for arbitrary function application
+-- (intentional; see 'Keiki.Symbolic.translateTermSym' for why
+-- function applications would be untranslatable). Use 'Arr.arr'
+-- standalone for adapter purposes; for actual composition, build
+-- one transducer that wraps the combined function.
+arrTransducer
+  :: forall a b.
+     (a -> b)
+  -> SymTransducer (HsPred '[] a) '[] IdVertex a b
+arrTransducer f = SymTransducer
+  { edgesOut    = \IdVertex ->
+      [ Edge { guard  = PInCtor identityInCtor
+             , update = UKeep
+             , output = Just arrOut
+             , target = IdVertex
+             }
+      ]
+  , initial     = IdVertex
+  , initialRegs = RNil
+  , isFinal     = const True
+  }
+  where
+    arrOut :: OutTerm '[] a b
+    arrOut =
+      OPack identityInCtor arrWc
+            (OFCons (TInpCtorField identityInCtor ZIdx) OFNil)
+
+    arrWc :: WireCtor b (a, ())
+    arrWc = WireCtor
+      { wcName  = "arr"
+      , wcMatch = \_ -> Nothing
+      , wcBuild = \(a, ()) -> f a
+      }
+
+
+-- | Standard 'Control.Arrow.Arrow' instance.
+--
+-- @'Arr.arr' f@ wraps 'arrTransducer' (a stateless one-edge
+-- transducer with @'wcBuild' = \\(a, ()) -> f a@). @'Arr.first'@
+-- delegates to 'Strong.first''; @'Arr.second'@ delegates to
+-- 'Strong.second''. @'Arr.>>>'@ and @'Arr.<<<'@ inherit the
+-- 'Cat.Category' instance's runtime overlap check + sentinel
+-- short-circuit.
+--
+-- The default @'***'@ and @'&&&'@ methods of 'Arr.Arrow' use
+-- 'Arr.arr', 'Arr.first', and 'Arr.>>>' under the hood; they
+-- typecheck and produce composite transducers. The same
+-- @icName == wcName@ alignment limitation that affects
+-- 'arr f >>> arr g' applies — see 'arrTransducer' for the full
+-- caveat.
+instance Arr.Arrow SomeSymTransducer where
+  arr    f = SomeSymTransducer (arrTransducer f)
+  first    = first'
+  second   = second'
 
 
 -- * Internal rewriters --------------------------------------------------

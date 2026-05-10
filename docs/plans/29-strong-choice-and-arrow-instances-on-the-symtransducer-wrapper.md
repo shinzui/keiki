@@ -78,10 +78,11 @@ This section must always reflect the actual current state of the work.
 - [x] M2 (2026-05-09): Implemented `firstSym` from primitives — walks each edge, contramaps guards/updates with `fst`, and rewrites each `OPack`'s `OutFields` by prepending a `pairSndInCtor`-read of `c` and replacing the `WireCtor` with one that consumes `(c, fs)` to produce `(co, c)`. Field-tuple math: `OFCons (TInpCtorField pairSndInCtor ZIdx) (contraOutFields fst fields)` extends the existing fs to `(c, fs)` and `wcBuild = \(cv, fs) -> (b fs, cv)` repackages.
 - [x] M2 (2026-05-09): Added `Strong SomeSymTransducer` with `first'` delegating to `firstSym` and `second'` derived via `swap`. Sentinel arms preserved on both. `pairSndInCtor` is a private helper.
 - [x] M2 (2026-05-09): Added `test/Keiki/StrongSpec.hs` with 6 assertions covering `first'` / `second'` forward thread-through on `EmailDelivery + RequestId`, sentinel preservation on both, and `isSingleValuedSym` survival on both. Total tests 164 → 170 / 0.
-- [ ] M3: Arrow instance — `arr` via a stateless one-edge transducer; `(>>>)` and `first` delegate to Category and Strong
-- [ ] M3: Spec for Arrow (arr, >>>, first); ArrowChoice in scope only if MP-8 ships a Kleisli-shaped helper (otherwise out of scope per Decision Log)
-- [ ] M3: Update MP-9 Progress section, mark this EP Complete in registry, fill in Outcomes & Retrospective
-- [ ] M3: Update `docs/research/architecture-comparison-keiki-vs-crem.md` "DX gaps" section to record the parity is now closed (modulo arr-inversion caveat)
+- [x] M3 (2026-05-09): Added `arrTransducer :: (a -> b) -> SymTransducer (HsPred '[] a) '[] IdVertex a b` — a stateless one-edge transducer with `wcBuild = \(a, ()) -> f a`. Guard is `PInCtor identityInCtor` (same arm-discriminating shape as `identityTransducer`'s post-M1 fix). Exported.
+- [x] M3 (2026-05-09): Added `Arr.Arrow SomeSymTransducer` with `arr` wrapping `arrTransducer`, `first = first'`, `second = second'`. `(>>>)` / `(<<<)` inherit the Category instance's runtime overlap check + sentinel short-circuit.
+- [x] M3 (2026-05-09): Added `test/Keiki/ArrowSpec.hs` with 5 assertions covering single-arr forward eval, sentinel-non-detection on `arr id`, `Arr.first` delegation, and `arr f >>> Cat.id` / `Cat.id <<< arr f` sentinel short-circuit. Total tests 170 → 175 / 0.
+- [x] M3 (2026-05-09): Updated MP-9 Progress / Registry / Surprises to mark EP-29 Complete (this commit). Updated `docs/research/architecture-comparison-keiki-vs-crem.md` to mark the typeclass tower closed (modulo lossy-`solveOutput` and the `arr f >>> arr g` composition limitation).
+- [x] M3 (2026-05-09): `ArrowChoice` declared out of scope in EP-29 Decision Log (predates this milestone); out-of-scope addition propagated to MP-9 and the crem-comparison doc.
 
 
 ## Surprises & Discoveries
@@ -127,6 +128,24 @@ implementation. Provide concise evidence.
   default methods; this is incorrect. Those operators belong to
   `Control.Arrow.ArrowChoice`, which is declared out of scope for
   EP-29. The Choice instance ships only `left'` and `right'`.
+
+- 2026-05-09 / M3 implementation: `arr f >>> arr g` does *not*
+  compose to `arr (g . f)` on this wrapper. The `Cat..` operator
+  delegates to `Keiki.Composition.compose`, whose `substTerm` /
+  `substPred` substitution requires `icName ic2 == wcName wc1` for
+  the substitution to be sound. An `arrTransducer`-produced
+  transducer's `WireCtor` is named `"arr"`; the next stage's
+  `TInpCtorField` uses `identityInCtor` (named `"Identity"`).
+  Substitution gives `PBot` and the composite never fires. This is
+  fundamentally a consequence of the symbolic `Term` AST having no
+  `TPure` / `TApply` constructor (intentional — function
+  applications would be untranslatable by
+  `Keiki.Symbolic.translateTermSym`). Documented in `arrTransducer`'s
+  haddock; `arr` is for adapter use, and users wanting composed
+  functions should build a single transducer wrapping the combined
+  function. ArrowSpec's `(>>>)` test instead covers
+  `arr f >>> Cat.id` (which works via the sentinel short-circuit),
+  not `arr f >>> arr g`.
 
 - 2026-05-03 / authoring: `Keiki.Core.Term` has no `TPure :: (a ->
   b) -> Term rs ci a -> Term rs ci b` constructor — i.e. no way
@@ -174,7 +193,97 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Closure summary (2026-05-09)
+
+EP-29 ships `Choice`, `Strong`, and `Arrow` typeclass instances on
+`SomeSymTransducer`, plus the public-facing `arrTransducer` builder.
+With EP-27 (Profunctor / Functor + variance combinators) and EP-28
+(Category instance + identity transducer), MP-9 now closes the
+typeclass tower the master plan set out to deliver:
+
+- `Profunctor`, `Functor` (EP-27)
+- `Category` (EP-28)
+- `Choice`, `Strong`, `Arrow` (this plan)
+
+Test count: 156 (M0 baseline) → 175 (M3 ship). Each milestone added a
+focused spec (8 ChoiceSpec, 6 StrongSpec, 5 ArrowSpec) plus the
+behavioural assertions that the keiki guarantees survive each
+combinator.
+
+### What landed vs. what was dropped
+
+- **Shipped**: full `Profunctor` / `Choice` / `Strong` / `Arrow` tower
+  on `SomeSymTransducer`, with sentinel preservation across every
+  instance and the documented lossy-`solveOutput` contract on the
+  variance-rewriting combinators.
+- **Dropped from scope**: `ArrowChoice` (Decision Log, 2026-05-03 —
+  the surface interacts with `arr`'s lossy contract in ways that
+  complicate the test surface; defer to a future MasterPlan that
+  wants the full Arrow-tower at once).
+- **Re-deferred upstream (MP-8)**: `parallel` and `Kleisli`. Strong
+  ships from in-house primitives (a one-off `firstSym`, ~80 LoC
+  including helpers) rather than waiting for `parallel`.
+
+### Surprises that affected scope
+
+1. *Identity transducer guard*: EP-28 shipped `identityTransducer`
+   with a `PTop` guard. M1 discovered this is *broken under
+   `Keiki.Composition.alternative`* — `liftRPredAlt PTop = PTop`,
+   so the identity arm fires on the wrong side of an `Either`
+   composite. Fixed by switching to `PInCtor identityInCtor` (which
+   lifts to an arm-discriminating guard via `leftInCtor` /
+   `rightInCtor` in the alternative composite). EP-28 CategorySpec
+   tests still pass; the change is internal to the edge guard
+   shape. The same lesson applied to `arrTransducer`'s guard.
+
+2. *Choice's surface*: the EP-29 plan-of-work claimed `(+++)` /
+   `(|||)` would come from `Data.Profunctor.Choice`'s default
+   methods. They don't — those operators live in
+   `Control.Arrow.ArrowChoice`. The Choice instance ships only
+   `left'` and `right'`.
+
+3. *`arr` composition*: `arr f >>> arr g` does NOT yield
+   `arr (g . f)` on the wrapper. The `compose` substitution
+   demands `icName ic2 == wcName wc1`, and an `arrTransducer`'s
+   InCtor is `"Identity"` while its WireCtor is `"arr"` — a
+   mismatch that turns the substituted guard into `PBot`. This is
+   structurally inherent to the closed `Term` AST (no `TPure`
+   constructor; function applications would be un-translatable by
+   `Keiki.Symbolic.translateTermSym`). Documented in
+   `arrTransducer`'s haddock; `arr` is for adapter use, not for
+   composition with itself. ArrowSpec's `(>>>)` test instead
+   exercises `arr f >>> Cat.id` (sentinel short-circuit path).
+
+### Lessons for future MP-9-shape plans
+
+- **Test-from-fixtures approach paid off.** Reusing
+  `Keiki.Fixtures.EmailDelivery` across EP-27 / EP-28 / EP-29 and
+  the `Pinger` re-export from `Keiki.CompositionAlternativeSpec`
+  meant each spec only had to construct routing fixtures — the
+  underlying transducer was already understood.
+
+- **Sentinel + short-circuit pattern generalises.** EP-28
+  introduced `SomeSymIdentity` for `Cat.id`. EP-29 propagated this
+  into every wrapper-level method that takes a transducer: every
+  instance pattern-matches the sentinel and returns it (or
+  short-circuits) before invoking the underlying machinery. The
+  pattern adds one line per method but eliminates a whole class of
+  composition-substitution failures.
+
+- **`Disjoint`-fabrication scales.** The `unsafeCoerceDisjointness`
+  + `unsafeCoerceWrapperDict` pattern EP-28 introduced for the
+  Category instance was reused unchanged for Choice's
+  `left'` / `right'`. The "fabricate the constraint at the
+  existential boundary, then trust the static instance system to
+  use it" trick has proven well-suited to keiki's slot-name
+  discipline.
+
+- **Plan-of-work language drift is real and tolerable.** Both
+  `(+++)`/`(|||)` (M1) and the Arrow `(>>>)` test (M3) had
+  plan-of-work claims that turned out wrong. Surfacing the
+  discrepancy in the Surprises log and amending the plan-of-work
+  in-place was the right pattern; the alternative (rejecting the
+  plan and re-authoring) would have been disproportionate.
 
 
 ## Context and Orientation

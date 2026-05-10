@@ -187,7 +187,7 @@ C to live in limbo within a partially-complete plan.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Existential wrapper for SymTransducer + Profunctor instance + variance combinators | docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md | None | EP-11 (external) | Complete |
 | 2 | Category instance on the SymTransducer wrapper | docs/plans/28-category-instance-on-the-symtransducer-wrapper.md | EP-1 | EP-11 (external) | Complete |
-| 3 | Strong / Choice / Arrow instances on the SymTransducer wrapper | docs/plans/29-strong-choice-and-arrow-instances-on-the-symtransducer-wrapper.md | EP-1, EP-2 | MP-8 children (alternative shipped; parallel/Kleisli declined — see EP-29 Decision Log) | In Progress |
+| 3 | Strong / Choice / Arrow instances on the SymTransducer wrapper | docs/plans/29-strong-choice-and-arrow-instances-on-the-symtransducer-wrapper.md | EP-1, EP-2 | MP-8 children (alternative shipped; parallel/Kleisli declined — see EP-29 Decision Log) | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix.
@@ -378,10 +378,11 @@ entry names the child plan and the milestone.
 - [x] EP-28 (2026-05-09): Defined identity transducer via the phantom-slot technique; `identityTransducer` exported. `Cat.id` ultimately uses a sentinel constructor instead — see Surprises &amp; Discoveries (M1+M2)
 - [x] EP-28 (2026-05-09): Amended EP-27's wrapper to pack `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` — adding `Bounded s, Enum s` beyond the originally-projected `KnownSlotNames` so symbolic analyses can run on unwrapped transducers (M1+M2)
 - [x] EP-28 (2026-05-09): Added `Cat.Category SomeSymTransducer` with `SomeSymIdentity` sentinel constructor for `Cat.id`; `(.)` short-circuits on the sentinel and otherwise runs through a runtime overlap check + `compose`. `test/Keiki/CategorySpec.hs` covers L1/L2/L3 behaviourally, plus `CategoryOverlapError` and `isSingleValuedSym` survival; total 156/0 (baseline 146 + 10 CategorySpec) (M2)
-- [ ] EP-29: Add `Choice` instance via `Keiki.Composition.alternative` (M1)
-- [ ] EP-29: Implement `firstSym` from primitives (since MP-8 declined `parallel`); add `Strong` instance (M2)
-- [ ] EP-29: Add `Arrow` instance with `arr` via stateless one-edge transducer (M3)
-- [ ] EP-29: `ArrowChoice` declared out of scope (deferred to a future plan) (M3)
+- [x] EP-29 (2026-05-09): Verified prerequisites; baseline 156 examples, 0 failures (M0)
+- [x] EP-29 (2026-05-09): Added `Choice SomeSymTransducer` via `Keiki.Composition.alternative` + `identityTransducer`. Sentinel arms preserved on both `left'` / `right'`. `(+++)` / `(|||)` are NOT methods of `Data.Profunctor.Choice` (they belong to `ArrowChoice`, out of scope). Also fixed `identityTransducer`'s guard from `PTop` to `PInCtor identityInCtor` so it lifts to an arm-discriminating guard under `alternative`. Test count 156 → 164 / 0. (M1)
+- [x] EP-29 (2026-05-09): Implemented `firstSym` from primitives — walks each edge, contramaps guards/updates with `fst`, and prepends a `pairSndInCtor`-read at the head of each output's `OutFields`. Added `Strong SomeSymTransducer` with `first'` delegating to `firstSym` and `second'` derived via `swap`. Test count 164 → 170 / 0. (M2)
+- [x] EP-29 (2026-05-09): Added `arrTransducer :: (a -> b) -> SymTransducer (HsPred '[] a) '[] IdVertex a b` and `Arr.Arrow SomeSymTransducer` instance. `arr f >>> arr g` does NOT compose to `arr (g . f)` (compose's substitution requires `icName == wcName` and an `arrTransducer`'s names mismatch); `arr` is for adapter use, not for composition with itself. Test count 170 → 175 / 0. (M3)
+- [x] EP-29 (2026-05-09): `ArrowChoice` declared out of scope (predates this milestone in the Decision Log; out-of-scope addition propagated to MP-9 Vision & Scope and crem-comparison doc). (M3)
 
 
 ## Surprises & Discoveries
@@ -480,6 +481,49 @@ entry names the child plan and the milestone.
   reflects the final shape; EP-29 should expect to add further
   constraints if its `Strong`/`Choice`/`Arrow` instances need
   them, following IP-1's "Coordination rule".
+
+- 2026-05-09 / EP-29 M1: `identityTransducer`'s edge guard was
+  `PTop` (always-fires) per EP-28. M1 found this is correct
+  standalone but **broken under `Keiki.Composition.alternative`**:
+  `liftRPredAlt PTop = PTop` has no `PInCtor` to wrap, so the
+  identity arm fires on the wrong side of an `Either` composite.
+  Fixed by replacing the guard with `PInCtor identityInCtor`
+  (semantically a no-op standalone — `icMatch` always returns
+  `Just _` — but lifts to an arm-discriminating guard via
+  `leftInCtor` / `rightInCtor`). EP-28 CategorySpec is
+  unaffected.
+  Cross-EP impact: EP-28's claim that `identityTransducer`
+  satisfies all keiki guarantees by construction stands; the change
+  is to which guard expresses the always-fires intent. The same
+  lesson informed `arrTransducer`'s guard choice in M3.
+
+- 2026-05-09 / EP-29 M3: `arr f >>> arr g` does NOT compose to
+  `arr (g . f)` on this wrapper. The `Cat..` operator delegates to
+  `Keiki.Composition.compose`, which substitutes
+  `TInpCtorField` against the upstream `WireCtor` and demands
+  `icName ic2 == wcName wc1`. An `arrTransducer`-produced
+  transducer's `WireCtor` is named `"arr"` but the next stage's
+  `TInpCtorField` reads via `identityInCtor` (named `"Identity"`),
+  so substitution gives `PBot` and the composite never fires.
+  This is structurally inherent to the closed `Term` AST (no
+  `TPure` / `TApply` constructor; function applications would be
+  un-translatable by `Keiki.Symbolic.translateTermSym`).
+  Documented in `arrTransducer`'s haddock; `arr` is for adapter
+  use, not for composition with itself.
+  Cross-EP impact: this surfaces a design tension worth recording
+  for any future MasterPlan that wants free-form arrow-style
+  composition — solving it would require either extending the
+  `Term` AST with an opaque-function constructor (giving up some
+  symbolic-analysis tractability) or building a second composition
+  path that handles arr-arr specially.
+
+- 2026-05-09 / EP-29 M1: `Data.Profunctor.Choice` has only `left'`
+  and `right'` — not `(+++)` and `(|||)`. The original EP-29
+  plan-of-work claim that `(+++)` / `(|||)` would come from the
+  Choice typeclass's default methods was wrong; those operators
+  belong to `Control.Arrow.ArrowChoice`, declared out of scope by
+  the EP-29 Decision Log. The Choice instance on the wrapper
+  ships exactly `left'` and `right'`.
 
 
 ## Decision Log
@@ -621,4 +665,119 @@ entry names the child plan and the milestone.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+### Closure summary (2026-05-09)
+
+MP-9 closes with all three child ExecPlans Complete and the full
+typeclass tower shipped on `SomeSymTransducer`:
+
+- **EP-27 (existential wrapper + Profunctor + variance combinators).**
+  Shipped 2026-05-03. `SomeSymTransducer ci co`, `someSymTransducer`,
+  `lmapCi` / `rmapCo` / `dimapTransducer` / `lmapMaybeCi`, plus the
+  `Profunctor` and `Functor` instances. The lossy-`solveOutput`
+  contract on lmap-rewritten transducers was the load-bearing
+  Decision Log entry.
+- **EP-28 (Category + identity transducer + disjointness escape
+  hatch).** Shipped 2026-05-09. `Cat.Category SomeSymTransducer`
+  with the `SomeSymIdentity` sentinel for `Cat.id` and the
+  runtime-checked + `unsafeCoerce`-fabricated disjointness path
+  for `Cat..`. Wrapper grew packed constraints from `()` to
+  `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` over three
+  amendments.
+- **EP-29 (Choice + Strong + Arrow instances).** Shipped 2026-05-09.
+  `Choice` delegates to `Keiki.Composition.alternative` plus the
+  identity transducer. `Strong` ships from primitives via a
+  one-off `firstSym` (since MP-8 declined `parallel`). `Arrow`
+  wraps `arrTransducer` and reuses the Strong / Category
+  delegations. `ArrowChoice` is out of scope.
+
+Test count progression across MP-9: 146 (post-EP-25 baseline) →
+156 (EP-28 ships) → 175 (EP-29 ships). 29 new examples across the
+MP-9 lifecycle.
+
+### Vision delivered vs. dropped
+
+Original Vision & Scope deliverables (rechecked 2026-05-09):
+
+- ✓ Existential wrapper newtype hiding `s` and `rs`. **Shipped.**
+- ✓ Standalone `lmapCi` / `rmapCo` / `dimapTransducer`. **Shipped.**
+- ✓ `lmapMaybeCi`. **Shipped.**
+- ✓ `Profunctor` and `Functor` (on `co`) instances. **Shipped.**
+- ✓ `Category` instance. **Shipped (with sentinel).**
+- ✓ `Strong` / `Choice` instances. **Shipped (Strong from
+  primitives because MP-8 declined `parallel`).**
+- ✓ `Arrow` instance. **Shipped (with documented `arr f >>> arr g`
+  composition limitation).**
+- ✗ `ArrowChoice`. **Dropped from scope** during EP-29 authoring;
+  added to "Out of scope" list. Future MasterPlan may revive
+  alongside `Closed` / `Costrong` / `Cochoice`.
+
+### What was *most* surprising
+
+1. **`identityTransducer`'s `PTop` guard was wrong under
+   `alternative`.** EP-28 shipped it that way; EP-29 M1 found and
+   fixed it. The lesson — a guard that "fires on every input"
+   must use `PInCtor` rather than `PTop` if it's to participate
+   in `alternative`-style routing — generalises to any future
+   "always fires" transducer EP-28+ ships.
+
+2. **`compose`'s naming substitution rules out arr-arr
+   composition.** `Cat..` works for naturally-named transducers
+   (where the upstream WireCtor names match the downstream
+   InCtor names by construction — typically because both come
+   from generic-derived structural alphabets). It does *not*
+   work when one or both stages are `arr`-built. This is a
+   structural property of the closed `Term` AST, not a bug; it's
+   documented in `arrTransducer`'s haddock and surfaces a real
+   design tension for users wanting Arrow-notation composition.
+
+3. **The sentinel + short-circuit pattern propagated cleanly.**
+   EP-28 introduced `SomeSymIdentity`; EP-29 mirrored it across
+   `Choice.left'` / `Choice.right'` / `Strong.first'` /
+   `Strong.second'`. Every wrapper-level method now has a one-line
+   sentinel arm before delegating to the underlying machinery.
+   The pattern adds boilerplate but eliminates a whole class of
+   composition failures.
+
+4. **`Data.Profunctor.Choice` is *just* `left'`/`right'`.** The
+   plan-of-work assumption that `(+++)` / `(|||)` would come for
+   free from Choice's defaults was wrong. Those operators live in
+   `Control.Arrow.ArrowChoice`. Surfacing the discrepancy in
+   Surprises and amending the plan-of-work in-place was the right
+   pattern.
+
+### Retrospective on the decomposition
+
+The three-EP decomposition (wrapper, Category, Strong/Choice/Arrow)
+held up under implementation. EP-28's wrapper amendments
+(`Bounded` / `Enum` / `KnownSlotNames`) were straightforward
+extensions of EP-27's surface; EP-29's instances reused the
+`unsafeCoerceDisjointness` + `unsafeCoerceWrapperDict` pattern
+EP-28 introduced. No EP needed to be split, merged, or cancelled.
+
+The soft-dependency on MP-8's combinators turned out load-bearing
+in one place (`alternative` for `Choice`) and inert in another
+(`parallel` for `Strong`, which EP-29 implemented from primitives
+instead). Holding the soft-dep classification was the right call
+— a hard dep on `parallel` would have stalled MP-9 for an
+indefinite period.
+
+### Forward-looking notes
+
+- A future MasterPlan that wants `ArrowChoice` should also pull
+  in `Closed`, `Costrong`, `Cochoice` and revisit whether the
+  closed `Term` AST should grow a `TPure` / `TApply` constructor
+  to enable arr-arr composition. The trade-off is symbolic-
+  analysis tractability vs. ergonomic Arrow-notation use.
+
+- The lossy-`solveOutput` contract is now applied to *seven*
+  combinators (`lmapCi`, `lmapMaybeCi`, `rmapCo`,
+  `dimapTransducer`, `first'`, `second'`, `arr`). If keiki's
+  replay-from-events story grows in importance, a future plan
+  could explore a "preserve inversion" subset of these
+  combinators (e.g., `Profunctor` over `Iso`-like bidirectional
+  arrows). For now, the documented contract is sufficient.
+
+- The wrapper's existential constraint set may grow further if
+  later instances need it. The IP-1 coordination rule (amend
+  with a backward-pointing note in EP-27's Decision Log) has
+  been exercised four times in MP-9; the pattern is well-trodden.
