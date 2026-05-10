@@ -56,7 +56,7 @@ module Keiki.Profunctor
 import Control.Exception (Exception, throw)
 import qualified Control.Category as Cat
 import Data.Proxy (Proxy (..))
-import Data.Profunctor (Profunctor (..), Choice (..))
+import Data.Profunctor (Profunctor (..), Choice (..), Strong (..))
 import Unsafe.Coerce (unsafeCoerce)
 
 import Keiki.Core
@@ -559,6 +559,123 @@ rightWrap t =
       case unsafeCoerceWrapperDict @(Append '[] rs) of
         DictWrapper ->
           SomeSymTransducer (alternative (identityTransducer @c) t)
+
+
+-- * Strong instance ----------------------------------------------------
+
+-- | An 'InCtor' that projects the second component of a pair input.
+-- @'icMatch' (a, c) = Just (RCons _ c RNil)@ for every pair; the
+-- phantom one-slot register file @'[ '("snd", c) ]@ surfaces @c@ to
+-- 'TInpCtorField' / 'evalTerm'.
+--
+-- 'icBuild' is poisoned (the @firstSym@ rewrite cannot reconstruct
+-- the @ci@ component from a single @c@), matching the standard lossy
+-- variance contract for combinators that drop information.
+pairSndInCtor :: forall ci c. InCtor (ci, c) '[ '("snd", c) ]
+pairSndInCtor = InCtor
+  { icName  = "FirstSnd"
+  , icMatch = \(_ci, c) -> Just (RCons (Proxy @"snd") c RNil)
+  , icBuild = \_ -> error
+      "Keiki.Profunctor.pairSndInCtor.icBuild: firstSym-produced \
+      \transducers cannot reconstruct the (ci, c) input from the wire \
+      \event via solveOutput. See Keiki.Profunctor.firstSym haddock."
+  }
+
+
+-- | Thread an unrelated value @c@ through a transducer that only
+-- knows about @ci -> co@. Implemented from primitives because MP-8
+-- declined the general 'parallel' combinator (see
+-- @docs/plans/24-composition-combinators-beyond-sequential-design-milestone.md@).
+--
+-- Implementation walks each edge of @t@:
+--
+--   * Guards / updates are rewritten via 'contraPred' / 'contraUpdate'
+--     with @fst@ as the contramap. The original guards (which test
+--     'PInCtor's against @ci@) become guards that test the same
+--     'PInCtor's against the @ci@ projection of @(ci, c)@.
+--   * Outputs (each @'OPack' ic wc fields@) are rewritten by
+--     prepending a @c@-projection field at the head of the
+--     'OutFields' chain (read via 'pairSndInCtor') and replacing the
+--     'WireCtor' with one that consumes @(c, fs)@ and produces
+--     @(co, c)@ — @\\(c, fs) -> (wcBuild wc fs, c)@.
+--
+-- /Variance caveat:/ same lossy-@solveOutput@ contract as 'lmapCi' /
+-- 'rmapCo'. The contramapped 'InCtor's 'icBuild' is poisoned, the
+-- new 'WireCtor's 'wcMatch' is @const Nothing@, and 'pairSndInCtor''s
+-- 'icBuild' is poisoned. Forward processing
+-- ('Keiki.Core.delta', 'Keiki.Core.omega') is unaffected.
+firstSym
+  :: forall rs s ci co c.
+     SymTransducer (HsPred rs ci) rs s ci co
+  -> SymTransducer (HsPred rs (ci, c)) rs s (ci, c) (co, c)
+firstSym t = SymTransducer
+  { edgesOut    = \s -> map firstEdge (edgesOut t s)
+  , initial     = initial t
+  , initialRegs = initialRegs t
+  , isFinal     = isFinal t
+  }
+  where
+    firstEdge
+      :: Edge (HsPred rs ci) rs ci co s
+      -> Edge (HsPred rs (ci, c)) rs (ci, c) (co, c) s
+    firstEdge Edge { guard = g, update = u, output = mo, target = tgt } = Edge
+      { guard  = contraPred fst g
+      , update = contraUpdate fst u
+      , output = fmap firstOutTerm mo
+      , target = tgt
+      }
+
+    firstOutTerm :: OutTerm rs ci co -> OutTerm rs (ci, c) (co, c)
+    firstOutTerm (OPack ic wc fields) =
+      OPack (contraInCtor fst ic)
+            (firstWireCtor wc)
+            (firstOutFields fields)
+
+    firstWireCtor :: forall fs. WireCtor co fs -> WireCtor (co, c) (c, fs)
+    firstWireCtor WireCtor { wcName = n, wcBuild = b } = WireCtor
+      { wcName  = n <> "_first"
+      , wcMatch = \_ -> Nothing
+      , wcBuild = \(cv, fs) -> (b fs, cv)
+      }
+
+    firstOutFields :: forall fs. OutFields rs ci fs -> OutFields rs (ci, c) (c, fs)
+    firstOutFields fields =
+      OFCons (TInpCtorField (pairSndInCtor @ci @c) ZIdx)
+             (contraOutFields fst fields)
+
+
+-- | Standard 'Data.Profunctor.Strong.Strong' instance. Threads an
+-- unrelated value through a transducer.
+--
+-- @'first''@ delegates to 'firstSym' on a wrapped concrete
+-- transducer; on the 'SomeSymIdentity' sentinel it returns
+-- 'SomeSymIdentity' (since @(a, c) -> (a, c)@ is identity).
+--
+-- @'second''@ is derived via @swap@: @second' = lmap swap . first' . rmap swap@,
+-- which compiles to one extra contramap pair around the @firstSym@
+-- core. A direct @secondSym@ implementation could shave the two
+-- rewrites for ~10% better build cost, but the current shape keeps
+-- the symmetry obvious and the implementation small.
+--
+-- /Variance caveat:/ inherits 'firstSym''s lossy-@solveOutput@
+-- contract.
+instance Strong SomeSymTransducer where
+  first' :: forall a b c.
+            SomeSymTransducer a b
+         -> SomeSymTransducer (a, c) (b, c)
+  first' SomeSymIdentity        = SomeSymIdentity
+  first' (SomeSymTransducer t)  = SomeSymTransducer (firstSym t)
+
+  second' :: forall a b c.
+             SomeSymTransducer a b
+          -> SomeSymTransducer (c, a) (c, b)
+  second' SomeSymIdentity       = SomeSymIdentity
+  second' (SomeSymTransducer t) =
+    SomeSymTransducer
+      (lmapCi swap (rmapCo swap (firstSym t)))
+    where
+      swap :: forall x y. (x, y) -> (y, x)
+      swap (x, y) = (y, x)
 
 
 -- * Internal rewriters --------------------------------------------------

@@ -78,6 +78,7 @@ test-suite keiki-test
                         Keiki.NoThunksSpec
                         Keiki.ProfunctorSpec
                         Keiki.Render.MermaidSpec
+                        Keiki.StrongSpec
                         Keiki.SymbolicSpec
     build-depends:      base ^>= 4.21,
                         keiki,

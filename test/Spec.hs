@@ -17,6 +17,7 @@ import qualified Keiki.Generics.THSpec
 import qualified Keiki.NoThunksSpec
 import qualified Keiki.ProfunctorSpec
 import qualified Keiki.Render.MermaidSpec
+import qualified Keiki.StrongSpec
 import qualified Keiki.SymbolicSpec
 
 main :: IO ()
@@ -36,5 +37,6 @@ main = hspec $ do
   describe "Keiki.Generics.TH"                            Keiki.Generics.THSpec.spec
   describe "Keiki.NoThunks"                               Keiki.NoThunksSpec.spec
   describe "Keiki.Profunctor (EP-27)"                     Keiki.ProfunctorSpec.spec
+  describe "Keiki.Profunctor (Strong, EP-29 M2)"          Keiki.StrongSpec.spec
   describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
   describe "Keiki.Symbolic"                               Keiki.SymbolicSpec.spec
