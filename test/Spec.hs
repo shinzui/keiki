@@ -5,6 +5,7 @@ import qualified Keiki.AcceptorSpec
 import qualified Keiki.BuilderSpec
 import qualified Keiki.BuilderSpike
 import qualified Keiki.CategorySpec
+import qualified Keiki.ChoiceSpec
 import qualified Keiki.CompositionSpec
 import qualified Keiki.CompositionAlternativeSpec
 import qualified Keiki.CompositionFeedback1Spec
@@ -24,6 +25,7 @@ main = hspec $ do
   describe "Keiki.Builder (EP-15 M6)"                     Keiki.BuilderSpec.spec
   describe "Keiki.BuilderSpike (EP-15 M2)"                Keiki.BuilderSpike.spec
   describe "Keiki.Profunctor (Category, EP-28)"           Keiki.CategorySpec.spec
+  describe "Keiki.Profunctor (Choice, EP-29 M1)"          Keiki.ChoiceSpec.spec
   describe "Keiki.Composition"                            Keiki.CompositionSpec.spec
   describe "Keiki.Composition (alternative, EP-25)"       Keiki.CompositionAlternativeSpec.spec
   describe "Keiki.Composition (feedback1, EP-26)"         Keiki.CompositionFeedback1Spec.spec

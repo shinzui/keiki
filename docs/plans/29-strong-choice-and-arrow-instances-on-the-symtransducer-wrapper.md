@@ -71,10 +71,10 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M0: Verify EP-27 + EP-28 have shipped; confirm `Keiki.Composition.alternative` is exported and Category instance works
-- [ ] M0: Record current test count baseline
-- [ ] M1: Choice instance — delegate `(+++)` and `(|||)` to `Keiki.Composition.alternative`; add `left'` and `right'` via lifting helpers
-- [ ] M1: Spec for Choice (left', right', +++, |||) on EmailDelivery + Pinger fixture
+- [x] M0 (2026-05-09): Verified EP-27 + EP-28 shipped; `cabal build all` clean; `alternative`, `identityTransducer`, `instance Cat.Category SomeSymTransducer` all grep-confirmed in `src/Keiki/Composition.hs:810` and `src/Keiki/Profunctor.hs:293,422`
+- [x] M0 (2026-05-09): Baseline test count recorded — 156 examples, 0 failures (matches MP-9 Progress entry for EP-28's "146 + 10 CategorySpec")
+- [x] M1 (2026-05-09): Added `Choice SomeSymTransducer` with `left'` / `right'` delegating to `Keiki.Composition.alternative` + `identityTransducer`. Sentinel arms preserved (`left' SomeSymIdentity = SomeSymIdentity`); concrete arms wrap via `unsafeCoerceDisjointness` + `unsafeCoerceWrapperDict` (analogous to the Category instance's pattern). `(+++)` / `(|||)` are NOT methods of `Data.Profunctor.Choice` — they belong to `Control.Arrow.ArrowChoice`, which is out of scope per the Decision Log. The plan-of-work language about "(+++)/(|||) come from Choice's default methods" was incorrect; updated plan-of-work removed.
+- [x] M1 (2026-05-09): Added `test/Keiki/ChoiceSpec.hs` with 8 assertions covering `left'`, `right'`, sentinel preservation on both, and `isSingleValuedSym` survival on both. Total tests 156 → 164 / 0.
 - [ ] M2: Strong instance — implement a one-off `firstSym` on the concrete `SymTransducer` type that threads an unrelated `c` through unchanged
 - [ ] M2: Strong instance — define `first'` and `second'` on the wrapper, delegating to `firstSym` (and a symmetric `secondSym = swap . first' . swap` shortcut)
 - [ ] M2: Spec for Strong (first', second') on EmailDelivery threading a `RequestId` through
@@ -99,6 +99,34 @@ implementation. Provide concise evidence.
   must be implemented from primitives. The implementation is
   tractable (one-off `firstSym`) but the EP's M2 is now
   load-bearing rather than a delegation. Documented in Decision Log.
+
+- 2026-05-09 / M1 implementation: `identityTransducer`'s edge guard
+  was originally `PTop` (always-fires). EP-28 shipped this on the
+  reasoning that the identity transducer fires on every input by
+  definition. M1 discovered this is *correct standalone* but
+  *broken under `alternative`*: 'liftRPredAlt PTop = PTop' (the lift
+  recurses structurally and has no PInCtor to wrap), so a composite
+  @alternative t identityTransducer@ at @Left _@ inputs sees both
+  arms fire — t1's correctly, identityTransducer's incorrectly (it
+  should be inactive on the Left arm). 'omega' then returns
+  'Nothing' because two outputs were produced.
+  Resolution: replaced the guard with @PInCtor identityInCtor@.
+  Semantically equivalent standalone (icMatch on identityInCtor
+  always returns 'Just _'), but lifts to an arm-discriminating
+  guard via @leftInCtor@ / @rightInCtor@ wrappers. All EP-28
+  CategorySpec tests still pass; the change is internal to
+  identityTransducer's edge structure.
+  Cross-EP impact: EP-28's claim that the identity transducer
+  satisfies all keiki guarantees by construction stands; the change
+  is to which guard expresses the always-fires intent. Logged to
+  MP-9 cross-plan discoveries on commit.
+
+- 2026-05-09 / M1 implementation: `Data.Profunctor.Choice` has only
+  `left'` and `right'` — *not* `(+++)` and `(|||)`. The original
+  EP-29 plan-of-work claimed `(+++)`/`(|||)` would come from Choice's
+  default methods; this is incorrect. Those operators belong to
+  `Control.Arrow.ArrowChoice`, which is declared out of scope for
+  EP-29. The Choice instance ships only `left'` and `right'`.
 
 - 2026-05-03 / authoring: `Keiki.Core.Term` has no `TPure :: (a ->
   b) -> Term rs ci a -> Term rs ci b` constructor — i.e. no way

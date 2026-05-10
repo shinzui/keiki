@@ -64,6 +64,7 @@ test-suite keiki-test
                         Keiki.BuilderSpec
                         Keiki.BuilderSpike
                         Keiki.CategorySpec
+                        Keiki.ChoiceSpec
                         Keiki.CompositionSpec
                         Keiki.CompositionAlternativeSpec
                         Keiki.CompositionFeedback1Spec

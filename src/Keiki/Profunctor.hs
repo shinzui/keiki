@@ -56,11 +56,11 @@ module Keiki.Profunctor
 import Control.Exception (Exception, throw)
 import qualified Control.Category as Cat
 import Data.Proxy (Proxy (..))
-import Data.Profunctor (Profunctor (..))
+import Data.Profunctor (Profunctor (..), Choice (..))
 import Unsafe.Coerce (unsafeCoerce)
 
 import Keiki.Core
-import Keiki.Composition (WeakenR, compose)
+import Keiki.Composition (WeakenR, alternative, compose)
 import Keiki.Generics (Append)
 
 
@@ -279,7 +279,10 @@ identityWireCtor = WireCtor
 
 
 -- | The identity transducer for an arbitrary alphabet @a@. One vertex
--- ('IdVertex'); one edge that always fires (@'PTop'@), writes nothing
+-- ('IdVertex'); one edge whose guard is @'PInCtor' 'identityInCtor'@
+-- (semantically equivalent to 'PTop' standalone — 'identityInCtor''s
+-- 'icMatch' always returns 'Just' — but arm-discriminating when
+-- lifted by 'Keiki.Composition.alternative'), writes nothing
 -- (@'UKeep'@), and emits its input as the wire output. Used by
 -- 'Cat.id' on 'SomeSymTransducer'.
 --
@@ -290,12 +293,26 @@ identityWireCtor = WireCtor
 -- 'Keiki.Core.solveOutput' goes the other way and is similarly
 -- well-defined; the identity transducer satisfies all keiki
 -- guarantees by construction.
+--
+-- /Why @PInCtor identityInCtor@ rather than @PTop@:/ EP-29 M1
+-- discovered that the simpler @PTop@ guard fires on every input,
+-- including the *wrong arm* of an 'Keiki.Composition.alternative'
+-- composite. 'liftRPredAlt PTop = PTop' (the lift recurses
+-- structurally and has no PInCtor to lift), so an
+-- @alternative t identityTransducer@ composite at @Left _@ inputs
+-- would see *both* arms' edges fire — t1's correctly, but
+-- identityTransducer's incorrectly (it should be inactive on the
+-- Left arm). Replacing 'PTop' with 'PInCtor identityInCtor' is
+-- semantically a no-op standalone (icMatch always succeeds) but
+-- becomes arm-discriminating after 'liftLPredAlt' / 'liftRPredAlt'
+-- wraps the InCtor in 'leftInCtor' / 'rightInCtor' (whose
+-- 'icMatch' returns 'Nothing' on the wrong arm).
 identityTransducer
   :: forall a.
      SymTransducer (HsPred '[] a) '[] IdVertex a a
 identityTransducer = SymTransducer
   { edgesOut    = \IdVertex ->
-      [ Edge { guard  = PTop
+      [ Edge { guard  = PInCtor identityInCtor
              , update = UKeep
              , output = Just identityOutTerm
              , target = IdVertex
@@ -454,6 +471,94 @@ composeWrappers t1 t2 =
               DictDisjoint ->
                 case unsafeCoerceWrapperDict @(Append rs1 rs2) of
                   DictWrapper -> SomeSymTransducer (compose t1 t2)
+
+
+-- * Choice instance ----------------------------------------------------
+
+-- | Standard 'Data.Profunctor.Choice.Choice' instance.
+--
+-- @'left''@ on @t :: 'SomeSymTransducer' a b@ produces a transducer
+-- of type @'SomeSymTransducer' (Either a c) (Either b c)@: a @Left a@
+-- input is routed through @t@ producing @Left b@; a @Right c@ input
+-- passes straight through unchanged. Implemented as
+-- @'alternative' t 'identityTransducer'@ — the right arm is the
+-- one-vertex identity transducer at alphabet @c@.
+--
+-- @'right''@ is the symmetric routing: @'alternative' identityTransducer t@.
+--
+-- /No slot-name overlap risk:/ 'identityTransducer' has @rs = '[]@,
+-- so the @'Disjoint' (Names rs) (Names '[])@ side condition on
+-- 'alternative' reduces to a vacuous constraint — no
+-- 'CategoryOverlapError' path is needed (unlike 'Cat..'). The
+-- 'unsafeCoerceDisjointness' call below fabricates the constraint
+-- evidence purely because GHC cannot reduce the type family with
+-- @rs@ being a skolem; the underlying claim
+-- (@Disjoint xs '[]@ is always vacuously true) is sound by the
+-- definition of 'Disjoint' in "Keiki.Internal.Slots".
+--
+-- /Sentinel handling:/ when the input is the 'SomeSymIdentity'
+-- sentinel, both @'left''@ and @'right''@ return 'SomeSymIdentity' —
+-- @'left'' Cat.id = Cat.id@ at the @Either@ alphabet, by definition
+-- of identity. The Choice law @left' Cat.id = Cat.id@ holds *by
+-- construction* on the wrapper.
+--
+-- /Variance caveat:/ inherits 'Keiki.Composition.alternative''s
+-- mechanical-inversion preservation: @solveOutput@ on edges produced
+-- by @left'@ / @right'@ runs the underlying alternative's
+-- @leftInCtor@ / @rightInCtor@ wrappers, which preserve round-trip
+-- behaviour. This is *more* preservation than the
+-- 'lmapCi' / 'rmapCo' combinators (which poison @icBuild@); the
+-- Choice instance does not introduce additional loss.
+instance Choice SomeSymTransducer where
+  left' :: forall a b c. SomeSymTransducer a b
+        -> SomeSymTransducer (Either a c) (Either b c)
+  left' SomeSymIdentity        = SomeSymIdentity
+  left' (SomeSymTransducer t)  = leftWrap t
+
+  right' :: forall a b c. SomeSymTransducer a b
+         -> SomeSymTransducer (Either c a) (Either c b)
+  right' SomeSymIdentity       = SomeSymIdentity
+  right' (SomeSymTransducer t) = rightWrap t
+
+
+-- | Helper for 'left'' on a wrapped concrete transducer. Factored out
+-- to bind the existentially-packed @rs@ and @s@ to named type
+-- variables so 'TypeApplications' on 'unsafeCoerceDisjointness' /
+-- 'unsafeCoerceWrapperDict' can reach them.
+leftWrap
+  :: forall rs s ci co c.
+     ( WeakenR rs
+     , KnownSlotNames rs
+     , Bounded s
+     , Enum s
+     )
+  => SymTransducer (HsPred rs ci) rs s ci co
+  -> SomeSymTransducer (Either ci c) (Either co c)
+leftWrap t =
+  case unsafeCoerceDisjointness @(Names rs) @(Names '[]) of
+    DictDisjoint ->
+      case unsafeCoerceWrapperDict @(Append rs '[]) of
+        DictWrapper ->
+          SomeSymTransducer (alternative t (identityTransducer @c))
+
+
+-- | Helper for 'right'' on a wrapped concrete transducer. Symmetric
+-- to 'leftWrap'.
+rightWrap
+  :: forall rs s ci co c.
+     ( WeakenR rs
+     , KnownSlotNames rs
+     , Bounded s
+     , Enum s
+     )
+  => SymTransducer (HsPred rs ci) rs s ci co
+  -> SomeSymTransducer (Either c ci) (Either c co)
+rightWrap t =
+  case unsafeCoerceDisjointness @(Names '[]) @(Names rs) of
+    DictDisjoint ->
+      case unsafeCoerceWrapperDict @(Append '[] rs) of
+        DictWrapper ->
+          SomeSymTransducer (alternative (identityTransducer @c) t)
 
 
 -- * Internal rewriters --------------------------------------------------
