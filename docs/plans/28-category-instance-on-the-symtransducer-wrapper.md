@@ -63,11 +63,11 @@ This section must always reflect the actual current state of the work.
 - [x] M1 (2026-05-09): Settled disjointness via Option (A) — runtime overlap check + `unsafeCoerce`-fabricated `DictDisjoint`; documented in Decision Log. Also added a sibling `DictWrapper` / `unsafeCoerceWrapperDict` for `(WeakenR (Append rs1 rs2), KnownSlotNames (Append rs1 rs2))` since closure under `Append` is true but not provable from skolem `rs1`/`rs2`.
 - [x] M1 (2026-05-09): Defined `IdVertex`, `identityInCtor` (private), `identityWireCtor` (private), `identityTransducer` (exported) in `Keiki.Profunctor`. The phantom `'[("payload", a)]` slot list lets a single definition serve every alphabet `a` without per-type machinery. Skipped a `NoThunks IdVertex` instance — `Keiki.NoThunks` ships only `RegFile` instances, mirroring how `EmailVertex` and `PingVertex` get away with no `NoThunks` instance today.
 - [x] M1 (2026-05-09): Added private `CategoryOverlapError`, `DictDisjoint`, `unsafeCoerceDisjointness`, `DictWrapper`, `unsafeCoerceWrapperDict`, plus the `composeWrappers` helper that the (still-unwritten in this task entry but actually shipped below) `Cat..` instance method delegates to.
-- [ ] M2: Add `Category SomeSymTransducer` instance to `Keiki.Profunctor`
-- [ ] M2: Write `test/Keiki/CategorySpec.hs` covering Category laws up to state-isomorphism
-- [ ] M2: Register the test module in `keiki.cabal` and `test/Spec.hs`
-- [ ] M2: Run `cabal test keiki-test`, capture transcript, mark milestones complete in MP-9
-- [ ] M2: Update MP-9 Exec-Plan Registry — set this EP to Complete; check off Progress entries
+- [x] M2 (2026-05-09): Added `Cat.Category SomeSymTransducer` instance and the `composeWrappers` helper. The instance uses a sentinel `SomeSymIdentity` constructor for `Cat.id` (see Surprises &amp; Discoveries) and short-circuits `(.)` on the sentinel; non-identity composition delegates to `composeWrappers` → `compose` with the runtime overlap check.
+- [x] M2 (2026-05-09): Wrote `test/Keiki/CategorySpec.hs` with 10 tests across four describe blocks: `Cat.id` (2), `Category laws (behavioural)` (4: L1, L2, L3, L1-concrete), `CategoryOverlapError` (2: raise + non-raise), `isSingleValuedSym survives id . t` (2). Behavioural equality is asserted via a small `runOmega` helper that delegates to `Keiki.Core.omega` on the unwrapped transducer (or returns the input verbatim for the sentinel).
+- [x] M2 (2026-05-09): Registered `Keiki.CategorySpec` in `keiki.cabal`'s test-suite `other-modules` and added `describe "Keiki.Profunctor (Category, EP-28)" Keiki.CategorySpec.spec` to `test/Spec.hs`.
+- [x] M2 (2026-05-09): `cabal test keiki-test --test-show-details=direct` reports `156 examples, 0 failures` (baseline 146 + 10 CategorySpec). Transcript captured below in Outcomes &amp; Retrospective.
+- [ ] M2: Update MP-9 Exec-Plan Registry — set this EP to Complete; check off Progress entries (handled by the post-implementation MP-9 update step)
 
 
 ## Surprises & Discoveries
@@ -88,6 +88,50 @@ implementation. Provide concise evidence.
   by walking `xs` against `'[]`-membership which is also trivially
   true). So Category laws are typeable; only general composition
   needs the M1 escape hatch.
+
+- 2026-05-09 / M2 implementation pivot: The plan's M2 design called
+  for `Cat.id = SomeSymTransducer identityTransducer` — i.e. lift
+  the concrete identity transducer into the wrapper. This *does
+  not work* with `Keiki.Composition.compose`. The substitution
+  algorithm in `compose` (`substTerm` at `src/Keiki/Composition.hs:344`)
+  rewrites t2's `TInpCtorField ic2 ix2` against t1's emitted
+  `OPack ic1 wc1 ofs1` and demands `icName ic2 == wcName wc1`,
+  raising a runtime "structural mismatch" error otherwise. The
+  identity transducer's `InCtor` is named `"Identity"` (and is
+  generic in `a`); a real upstream transducer like `emailDelivery`
+  emits `wireEmailSent` (named `"EmailSent"`). The names cannot
+  match because the identity is generic but compose requires
+  per-constructor alignment. Concretely: running
+  `(SomeSymTransducer identityTransducer) Cat.. (someSymTransducer
+  emailDelivery)` raised "TInpCtorField over Identity but t1's edge
+  produced EmailSent" at evaluation time.
+
+  Resolution: introduce a sentinel constructor
+  `SomeSymIdentity :: SomeSymTransducer a a` to the wrapper GADT.
+  `Cat.id` returns the sentinel; `Cat..` short-circuits on the
+  sentinel by returning the other operand unchanged. Category laws
+  hold *by definition* (the short-circuit), not by behavioural
+  equivalence to a runtime identity transducer. The concrete
+  `identityTransducer` stays exported for users who want a real
+  identity 'SymTransducer' (e.g. for testing in non-Category
+  contexts), and the `Profunctor`/`Functor` instances materialise
+  the sentinel into `identityTransducer` before applying their
+  variance combinators so `dimap`/`fmap` continue to work uniformly
+  on both wrapper shapes.
+
+  Cross-EP impact: EP-29's `Arrow` instance must also handle
+  `SomeSymIdentity` in its `(>>>)`, `(<<<)` (which delegate to
+  `Cat..`) and `arr` paths. EP-29 should adopt the same sentinel
+  pattern for `arr (id :: a -> a)` if it short-circuits, or call
+  through to `Cat.id` directly which already returns the sentinel.
+
+- 2026-05-09 / M2 wrapper amendment: Added `(Bounded s, Enum s)` to
+  the wrapper's existential constraint set (alongside M1's
+  `WeakenR rs, KnownSlotNames rs`). Required by
+  `Keiki.Symbolic.isSingleValuedSym`'s `[minBound .. maxBound]`
+  enumeration. Universally satisfied by keiki vertex types (every
+  fixture's vertex derives `Bounded, Enum`), so backward-compatible
+  at every existing call site.
 
 - 2026-05-09 / M0 baseline: `cabal build all` succeeds on GHC 9.12.3.
   `cabal test keiki-test --test-show-details=direct` reports
@@ -185,13 +229,124 @@ Record every decision made while working on the plan.
   scope gains the method too. No downstream impact.
   Date: 2026-05-09
 
+- Decision: `Cat.id` is implemented as a **sentinel constructor**
+  `SomeSymIdentity :: SomeSymTransducer a a` rather than as
+  `SomeSymTransducer identityTransducer`. `Cat..` short-circuits on
+  the sentinel; non-identity composition flows through
+  `composeWrappers`/`compose`.
+  Rationale: see the M2 implementation-pivot Surprise above.
+  `compose`'s substitution algorithm (`substTerm` /
+  `substPred`) requires t2's `InCtor` names to match t1's
+  `WireCtor` names. The generic identity transducer's `InCtor`
+  is named `"Identity"`; a real upstream transducer emits
+  differently-named wires. The substitution would always raise
+  "TInpCtorField over Identity but t1's edge produced X". The
+  sentinel sidesteps this by handling identity at the wrapper
+  layer rather than the substitution layer.
+  Date: 2026-05-09
+
+- Decision: Extend the wrapper's existential constraints to
+  `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` (adding
+  `Bounded s, Enum s` on top of M1's pair). Required by
+  `isSingleValuedSym` and `checkHiddenInputs`, both of which
+  enumerate the vertex via `[minBound .. maxBound]`. Every keiki
+  vertex type already derives both classes; backward-compatible at
+  every existing call site.
+  Date: 2026-05-09
+
+- Decision: The `Profunctor SomeSymTransducer` and
+  `Functor (SomeSymTransducer ci)` instances materialise
+  `SomeSymIdentity` into `SomeSymTransducer identityTransducer`
+  before applying their variance combinators, so `dimap`/`fmap`
+  return a uniform-shape `SomeSymTransducer` regardless of which
+  wrapper constructor was passed in.
+  Rationale: variance combinators (`lmapCi`/`rmapCo`/`dimapTransducer`)
+  rewrite the wrapped transducer's edges. The sentinel has no edges
+  to rewrite. Materialising it once at the boundary keeps the
+  combinator implementations simple (single-case, real
+  transducer) and gives `dimap (Just . unWrap) (...) Cat.id` a
+  meaningful result instead of `SomeSymIdentity` (which would have
+  the wrong alphabet types).
+  Date: 2026-05-09
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+### Achieved (2026-05-09)
+
+After this plan, a keiki user can write
+
+    import Control.Category ((.), id)
+    import Prelude hiding ((.), id)
+
+    pipeline :: SomeSymTransducer EmailCmd FinalEvent
+    pipeline = secondTransducer . firstTransducer
+
+    passThrough :: SomeSymTransducer EmailCmd EmailCmd
+    passThrough = id
+
+— exactly the user-visible deliverable the Purpose section called
+for. The Category laws hold (left/right identity by sentinel
+short-circuit; associativity by `compose`'s associativity, asserted
+behaviourally on the EmailDelivery fixture). Slot-name overlaps
+between two existentially-packed transducers raise
+`CategoryOverlapError` synchronously when the composite is
+evaluated.
+
+`cabal test keiki-test --test-show-details=direct` reports
+`156 examples, 0 failures` (baseline 146 + 10 new). The new
+`Keiki.Profunctor (Category, EP-28)` describe block contains the
+ten assertions enumerated in M2's progress entries.
+
+### Gaps versus the original plan
+
+The plan envisioned `Cat.id = SomeSymTransducer identityTransducer`
+and a single-constructor wrapper. Implementation revealed that
+`Keiki.Composition.compose`'s substitution algorithm cannot accept
+a generic identity transducer (the InCtor-name vs WireCtor-name
+match fails for any non-Identity wire). The two-constructor wrapper
+(adding `SomeSymIdentity`) is the minimal change that preserves
+Category laws without modifying `Keiki.Composition`. See M2
+Surprises &amp; Discoveries for the full discovery and rationale.
+
+The wrapper's existential constraint set grew further than M1
+projected: from `()` (EP-27's actual ship) to
+`(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` (EP-28's
+final). All four constraints have automatic instances on
+keiki-shaped transducers, so the amendment is backward-compatible
+at every existing call site. The MP-9 IP-1 description should be
+updated to reflect this final constraint set (handled in the MP-9
+update step).
+
+### Lessons
+
+- The plan's M2 design called for a real identity transducer
+  composed via `compose`. The discovery that `compose`'s
+  substitution algorithm requires per-constructor name alignment
+  (and a generic identity can't satisfy it) only surfaced once the
+  test ran. A small "spike" against `compose` with a candidate
+  identity transducer would have caught this earlier — worth doing
+  in similar plans that involve composition with a novel
+  transducer shape.
+
+- The wrapper-existential constraint set is best treated as a
+  *living* design surface during composition-instance work. Each
+  ecosystem typeclass instance (`Profunctor`, `Category`, `Strong`,
+  `Choice`, `Arrow`, the symbolic-analysis pass-throughs) tends to
+  demand an additional constraint. Rather than over-pack EP-27's
+  shipping wrapper, MP-9's "incremental amendment" coordination
+  rule (IP-1) was the right shape — each child plan adds what its
+  instance demands and back-points to EP-27. EP-29 should expect
+  to do the same if it discovers a missing constraint.
+
+- The `unsafeCoerce`-and-`Dict` pattern (the `DictDisjoint` /
+  `DictWrapper` helpers) is reusable and small. EP-29's `Strong`
+  / `Choice` / `Arrow` instances will hit similar
+  GHC-can't-discharge-this-from-skolems issues; they can copy the
+  pattern from `Keiki.Profunctor`.
 
 
 ## Context and Orientation

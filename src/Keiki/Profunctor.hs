@@ -46,7 +46,7 @@ module Keiki.Profunctor
   , rmapCo
   , dimapTransducer
   , lmapMaybeCi
-    -- * Identity transducer (used by the 'Cat.Category' instance's 'Cat.id')
+    -- * Identity transducer (concrete form; 'Cat.id' uses the sentinel constructor)
   , IdVertex (..)
   , identityTransducer
     -- * Category-instance overlap exception
@@ -73,20 +73,47 @@ import Keiki.Generics (Append)
 -- needed by the 'Cat.Category' instance: 'compose' demands
 -- @WeakenR rs1@, and the runtime slot-overlap check that guards
 -- 'Cat..' reads each transducer's slot names at the value level
--- via @KnownSlotNames@. Both constraints are structural — every
--- concrete @[Slot]@ has automatic instances — so packing them does
--- not restrict what users can wrap.
+-- via @KnownSlotNames@. The packed constraints @Bounded s@ and
+-- @Enum s@ let pattern-matched-out transducers participate in the
+-- symbolic analyses ('Keiki.Symbolic.isSingleValuedSym',
+-- 'Keiki.Core.checkHiddenInputs'), which both enumerate the vertex
+-- type. Every keiki vertex type already derives 'Bounded' and
+-- 'Enum' (see 'Keiki.Fixtures.EmailDelivery.EmailVertex',
+-- 'Keiki.CompositionAlternativeSpec.PingVertex', and 'IdVertex'
+-- in this module), so packing the constraints does not restrict
+-- what users can wrap.
+--
+-- The wrapper has two constructors:
+--
+--   * 'SomeSymTransducer' — wraps a concrete 'SymTransducer'.
+--   * 'SomeSymIdentity'   — a sentinel for 'Cat.id'. Constraint
+--     @ci ~ co@ comes from the constructor's GADT signature.
+--
+-- The sentinel exists because 'Keiki.Composition.compose' substitutes
+-- t2's 'TInpCtorField'-on-@ic2@ against t1's 'WireCtor'-named
+-- emission, requiring @icName ic2 == wcName wc1@ for the substitution
+-- to be sound. A *generic* identity transducer (one whose 'InCtor' is
+-- the same regardless of @ci@) cannot satisfy this for arbitrary
+-- upstream wire names. The sentinel sidesteps this by short-circuiting
+-- @id . t@ and @t . id@ in 'Cat..' rather than running them through
+-- 'compose'. See 'identityTransducer' for the concrete-identity
+-- transducer that some non-Category code paths still want.
 --
 -- Pattern-match on the constructor to recover the underlying
 -- 'SymTransducer' (the @rs@ and @s@ variables come into scope as
--- skolem types — they may not escape the pattern match).
+-- skolem types — they may not escape the pattern match). Handle
+-- 'SomeSymIdentity' explicitly when traversing arbitrary
+-- 'SomeSymTransducer' values.
 data SomeSymTransducer ci co where
   SomeSymTransducer
     :: ( WeakenR rs
        , KnownSlotNames rs
+       , Bounded s
+       , Enum s
        )
     => SymTransducer (HsPred rs ci) rs s ci co
     -> SomeSymTransducer ci co
+  SomeSymIdentity :: SomeSymTransducer a a
 
 
 -- | Smart constructor: lift a concrete 'SymTransducer' into the
@@ -96,6 +123,8 @@ data SomeSymTransducer ci co where
 someSymTransducer
   :: ( WeakenR rs
      , KnownSlotNames rs
+     , Bounded s
+     , Enum s
      )
   => SymTransducer (HsPred rs ci) rs s ci co
   -> SomeSymTransducer ci co
@@ -187,13 +216,23 @@ dimapTransducer f g = rmapCo g . lmapCi f
 -- 'lmap' / 'rmap' / 'dimap' on the wrapper produce transducers whose
 -- 'Keiki.Core.solveOutput' is no longer informative — see each
 -- combinator's haddock.
+--
+-- The 'SomeSymIdentity' sentinel is materialised into a concrete
+-- 'identityTransducer' wrap before the variance combinators run, so
+-- the @ci@/@co@ rewrites apply uniformly.
 instance Profunctor SomeSymTransducer where
   dimap f g (SomeSymTransducer t) =
     SomeSymTransducer (dimapTransducer f g t)
+  dimap f g SomeSymIdentity =
+    SomeSymTransducer (dimapTransducer f g identityTransducer)
   lmap  f   (SomeSymTransducer t) =
     SomeSymTransducer (lmapCi f t)
+  lmap  f   SomeSymIdentity =
+    SomeSymTransducer (lmapCi f identityTransducer)
   rmap    g (SomeSymTransducer t) =
     SomeSymTransducer (rmapCo g t)
+  rmap    g SomeSymIdentity =
+    SomeSymTransducer (rmapCo g identityTransducer)
 
 
 -- | 'Functor' on the output alphabet. @'fmap' = 'rmap'@.
@@ -348,33 +387,45 @@ unsafeCoerceWrapperDict =
 
 -- | Standard 'Control.Category.Category' instance.
 --
--- @'Cat.id'@ is 'identityTransducer' lifted into 'SomeSymTransducer'.
--- Its register file is empty, so @'Cat.id' Cat.. t@ and
--- @t Cat.. 'Cat.id'@ both compose without invoking the runtime
--- overlap check (the 'Disjoint' type family reduces to @()@ when
--- either side's slot list is @'[]@).
+-- @'Cat.id'@ is the 'SomeSymIdentity' sentinel constructor; @'Cat..'@
+-- short-circuits when either argument is the sentinel, returning the
+-- other argument unchanged. The Category laws @id . t = t@ and
+-- @t . id = t@ thus hold *by definition* (no behavioural test
+-- needed). 'identityTransducer' is the concrete-form identity used
+-- by the 'Profunctor' / 'Functor' instances when they need to apply
+-- variance combinators to the sentinel; it is not used by 'Cat..'.
 --
--- @'Cat..'@ delegates to 'Keiki.Composition.compose'. The wrapper
--- hides @rs@, so @compose@'s static @Disjoint (Names rs1) (Names rs2)@
--- constraint cannot be discharged by GHC; instead, the operator
--- reads each transducer's slot names at the value level via
--- 'KnownSlotNames', checks for overlap, and either:
+-- For non-identity composition, @'Cat..'@ delegates to
+-- 'Keiki.Composition.compose'. The wrapper hides @rs@, so
+-- @compose@'s static @Disjoint (Names rs1) (Names rs2)@ constraint
+-- cannot be discharged by GHC; instead, the operator reads each
+-- transducer's slot names at the value level via 'KnownSlotNames',
+-- checks for overlap, and either:
 --
 --   * raises 'CategoryOverlapError' (synchronously, on overlap), or
 --   * uses 'unsafeCoerceDisjointness' to fabricate the constraint
 --     evidence and calls 'compose' with the existential @rs@'s
 --     restored as the composite @'Append' rs1 rs2@.
 --
--- The Category laws hold up to state-isomorphism: @id Cat.. t@ and
--- @t Cat.. id@ each produce a 'Composite' vertex whose extra @()@
--- carries no behaviour. Behaviourally these are equivalent to @t@,
--- though the underlying Haskell types differ (the wrapper hides
--- the difference). See @test/Keiki/CategorySpec.hs@ for the
--- behavioural law tests.
+-- /Why a sentinel rather than a real identity transducer:/
+-- 'Keiki.Composition.compose' substitutes t2's @TInpCtorField ic2@
+-- against t1's emitted 'WireCtor' @wc1@ and demands
+-- @icName ic2 == wcName wc1@; otherwise it raises a "structural
+-- mismatch" runtime error. A *generic* identity transducer (one
+-- 'InCtor' that serves every alphabet) cannot satisfy this for
+-- arbitrary upstream wire names, so feeding it through 'compose'
+-- would always fail. The sentinel sidesteps this by short-circuiting.
+--
+-- See @test/Keiki/CategorySpec.hs@ for the law tests (behavioural
+-- equality on @id . t@, @t . id@, and associativity, plus the
+-- 'CategoryOverlapError' path).
 instance Cat.Category SomeSymTransducer where
-  id = SomeSymTransducer identityTransducer
+  id = SomeSymIdentity
 
-  SomeSymTransducer t2 . SomeSymTransducer t1 = composeWrappers t1 t2
+  SomeSymIdentity              . t                            = t
+  t                            . SomeSymIdentity              = t
+  SomeSymTransducer t2         . SomeSymTransducer t1         =
+    composeWrappers t1 t2
 
 
 -- | Compose two existentially-packed transducers, performing the
@@ -387,6 +438,8 @@ composeWrappers
      ( WeakenR rs1
      , KnownSlotNames rs1
      , KnownSlotNames rs2
+     , Bounded s1, Enum s1
+     , Bounded s2, Enum s2
      )
   => SymTransducer (HsPred rs1 ci)  rs1 s1 ci  mid
   -> SymTransducer (HsPred rs2 mid) rs2 s2 mid co

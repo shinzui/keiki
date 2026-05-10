@@ -63,6 +63,7 @@ test-suite keiki-test
     other-modules:      Keiki.AcceptorSpec
                         Keiki.BuilderSpec
                         Keiki.BuilderSpike
+                        Keiki.CategorySpec
                         Keiki.CompositionSpec
                         Keiki.CompositionAlternativeSpec
                         Keiki.CompositionFeedback1Spec
