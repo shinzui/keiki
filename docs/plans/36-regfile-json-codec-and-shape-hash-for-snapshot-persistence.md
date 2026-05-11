@@ -4,6 +4,8 @@ slug: regfile-json-codec-and-shape-hash-for-snapshot-persistence
 title: "RegFile JSON codec and shape hash for snapshot persistence"
 kind: exec-plan
 created_at: 2026-05-09T13:56:24Z
+intention: "intention_01kr96br7gec191n9gqbmhvt42"
+master_plan: "docs/masterplans/11-keiki-codec-json-package-implementation-and-rollout.md"
 ---
 
 # RegFile JSON codec and shape hash for snapshot persistence
