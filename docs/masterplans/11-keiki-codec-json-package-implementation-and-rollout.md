@@ -278,8 +278,11 @@ plan and the milestone.
       `keiki-codec-json` alongside `.` and `jitsurei`; sibling package directory
       `keiki-codec-json/` holds an empty `Keiki.Codec.JSON` module and a passing
       scaffold test. `cabal build all` green.
-- [ ] EP-36 M1: `Keiki.Shape` module with `CanonicalTypeName`, `KnownRegFileShape`,
-      `regFileShapeHash`, `renderStableTypeRep`. SHA-256 dep added. Unit tests.
+- [x] EP-36 M1: `Keiki.Shape` module shipped (2026-05-13) with `CanonicalTypeName`
+      (default + pre-declared base/text/time instances), `KnownRegFileShape`,
+      `regFileShapeCanonical`, `regFileShapeHash`, `renderStableTypeRep`, `sha256Hex`.
+      `cryptohash-sha256 ^>= 0.11` and `bytestring ^>= 0.12` added to keiki's deps.
+      `Keiki.ShapeSpec` (11 golden assertions) green; 186/186 keiki tests pass.
 - [ ] EP-36 M2: `keiki-codec-json` package with `Keiki.Codec.JSON`. `RegFileToJSON`
       class with three methods (`regFileToJSON`, `regFileFromJSON`,
       `regFileToEncoding`). Unit roundtrip tests.

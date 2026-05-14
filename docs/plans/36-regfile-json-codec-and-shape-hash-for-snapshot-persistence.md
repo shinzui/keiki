@@ -80,9 +80,20 @@ research foundation):
       `Keiki.Codec.JSON` module, and a passing scaffold test suite.
       `cabal build all` and `cabal test keiki-codec-json:keiki-codec-json-test`
       both green; no behavioural change to keiki or jitsurei.
-- [ ] M1 — `Keiki.Shape` lands in `keiki` with `CanonicalTypeName`, `KnownRegFileShape`,
-      `regFileShapeHash`, `renderStableTypeRep`. SHA-256 dep added. Inductive instances
-      and unit tests in place. `cabal test` passes.
+- [x] M1 — `Keiki.Shape` lands in `keiki` (2026-05-13) with `CanonicalTypeName`
+      (default via `Typeable`, plus pre-declared instances for `()`/`Bool`/`Char`/
+      `Int{,8,16,32,64}`/`Word{,8,16,32,64}`/`Integer`/`Double`/`Float`/`Text`/`UTCTime`/
+      `Day`/`Maybe`/`[]`/`Either`/`(,)`/`(,,)`), `KnownRegFileShape`, `regFileShapeHash`,
+      `regFileShapeCanonical` (exposed for debugging and alternate-hash users),
+      `renderStableTypeRep`, and `sha256Hex`. SHA-256 dep added
+      (`cryptohash-sha256 ^>= 0.11`) alongside `bytestring ^>= 0.12`. New test module
+      `Keiki.ShapeSpec` carries 11 golden-value assertions covering: TypeRep rendering
+      for `Int`, `Maybe Int`, `UTCTime`; canonical encoding for the empty list and a
+      one-slot list; pinned hashes for the empty list and one-slot list; the
+      slot-order-sensitivity invariant (P10) via a flipped two-slot pair; the
+      `regFileShapeHash = sha256Hex . regFileShapeCanonical` definitional law; and
+      the SHA-256 empty-string and `"abc"` test vectors. `cabal test keiki:keiki-test`
+      reports 186 examples, 0 failures (11 new, 175 pre-existing).
 - [ ] M2 — `keiki-codec-json` package compiles. `Keiki.Codec.JSON` exposes
       `RegFileToJSON` with strict encode/decode. Unit roundtrip tests pass.
 - [ ] M3 — Property tests pass: roundtrip over QuickCheck-generated slot values
@@ -110,6 +121,26 @@ research foundation):
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
+- 2026-05-13 — During M1 implementation, the §7 interface sketch's inductive
+  `regFileShapeHash` definition (which hashes recursively, producing a Merkle
+  chain of length /n/ for a slot list of length /n/) did not match §3 R3's
+  wording ("a single SHA-256 over the byte concatenation"). The two are NOT
+  byte-equivalent for any /n/ > 0, and §3 R3 is the binding contract since it
+  defines the wire-stable hash. M1 therefore implements the class with an
+  inductive `regFileShapeCanonical :: Proxy rs -> Text` method that assembles
+  the full canonical string, and a top-level `regFileShapeHash` that hashes
+  once. The §7 sketch is now interpreted as illustrative rather than
+  authoritative; the canonical method is also independently useful (debugging,
+  alternate-hash users), so exposing it is a strict win. Evidence:
+  `regFileShapeCanonical (Proxy @'[ '("retryCount", Int) ])` =
+  `"retryCount:GHC.Types.Int;regfile:0"`, and the pinned hash
+  `e2c8839d…39700` is `sha256Hex` of that string (verified by the
+  definitional-law test). M0/M1 also surfaced that `Int`'s module name on
+  GHC 9.12.3 is `GHC.Types`, whereas `Maybe`'s is `GHC.Internal.Maybe` and
+  `UTCTime`'s is `Data.Time.Clock.Internal.UTCTime` — three different roots,
+  pinned now in the golden test; the cross-GHC gate (M5) is the place where
+  drift on any of these would be caught.
+
 - 2026-05-13 — MP-11 (`docs/masterplans/11-keiki-codec-json-package-implementation-
   and-rollout.md`) deep-validation pass surfaced that this plan's "no built-in
   JSON or binary" citation pointed at `docs/research/02-keiki-decide-loop.md`,
@@ -129,6 +160,28 @@ implementation. Provide concise evidence.
 
 
 ## Decision Log
+
+- Decision: The class method on `KnownRegFileShape` is `regFileShapeCanonical ::
+  Proxy rs -> Text` (the pre-hash byte concatenation), and `regFileShapeHash` is a
+  top-level function `sha256Hex . regFileShapeCanonical`. The §7 sketch's
+  recursive `regFileShapeHash` body (Merkle-chain style) is dropped because it
+  contradicts §3 R3's "single SHA-256 over the byte concatenation" wording, which
+  is the binding contract. Exposing `regFileShapeCanonical` also makes the
+  pre-hash form available for debugging and for users who want to attach their
+  own hash algorithm — a strict win over hiding it.
+  Date: 2026-05-13.
+
+- Decision: Ship `CanonicalTypeName` instances for a fixed set of common base /
+  text / time types so that `KnownRegFileShape rs` works out of the box for typical
+  RegFiles. Covered: `()`, `Bool`, `Char`, all `Int{,8,16,32,64}`, all
+  `Word{,8,16,32,64}`, `Integer`, `Double`, `Float`, `Text`, `UTCTime`, `Day`,
+  `Maybe`, `[]`, `Either`, 2-tuple, 3-tuple. All bodies are empty (using the
+  `Typeable`-based default); users override with a non-empty instance for any
+  type where the rendered TypeRep is not stable enough (P9 escape hatch).
+  Rationale: without these, every slot type — even `Int` — would need a hand-
+  rolled `instance CanonicalTypeName Int`. That violates the spirit of "default
+  instances over the slot list" (R1 wording, applied analogously here).
+  Date: 2026-05-13.
 
 - Decision: Implement the shape hash and `KnownRegFileShape` in the existing `keiki`
   package (new module `Keiki.Shape`); implement the JSON codec in a new sibling cabal

@@ -45,9 +45,12 @@ library
                         Keiki.NoThunks
                         Keiki.Profunctor
                         Keiki.Render.Mermaid
+                        Keiki.Shape
                         Keiki.Symbolic
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
+                        bytestring ^>= 0.12,
+                        cryptohash-sha256 ^>= 0.11,
                         nothunks >= 0.3 && < 0.4,
                         profunctors >= 5.6 && < 6,
                         sbv >= 11.7 && < 15,
@@ -79,6 +82,7 @@ test-suite keiki-test
                         Keiki.NoThunksSpec
                         Keiki.ProfunctorSpec
                         Keiki.Render.MermaidSpec
+                        Keiki.ShapeSpec
                         Keiki.StrongSpec
                         Keiki.SymbolicSpec
     build-depends:      base ^>= 4.21,
