@@ -110,9 +110,20 @@ research foundation):
       `Aeson.Value` Object uses an alphabetically-sorted `KeyMap`, so the Value
       path emits in sort order while the Encoding path emits in slot-list
       order; both round-trip correctly).
-- [ ] M3 — Property tests pass: roundtrip over QuickCheck-generated slot values
-      (covering both `regFileToJSON` and `regFileToEncoding` paths), determinism
-      (R9), sensitivity (P7.4). Golden hash file checked in.
+- [x] M3 — Property tests shipped (2026-05-13). New modules under
+      `keiki-codec-json/test/Keiki/Codec/JSON/`: `Fixtures.hs` (exemplar
+      `ExemplarSlots` baseline + §4 mutation aliases + `OrderId`/`Address`/
+      `RenamedAddress` + inductive `ArbitraryRegFile`), `PropSpec.hs` (4
+      properties × 100 samples each: Value+Encoding roundtrip, within-path
+      determinism for R9), `SensitivitySpec.hs` (9 assertions, one per §4
+      case #1–9, each asserts the mutated hash != baseline), and
+      `GoldenSpec.hs` (the pinned exemplar hash for GHC 9.12.*:
+      `a37b2b77042a635f394a082765f3410ea23a0b89745b0c77242b925a03aa172b`).
+      Adds `QuickCheck ^>= 2.15`, `quickcheck-instances ^>= 0.3`, and
+      `time ^>= 1.12` to the test stanza. 30/30 tests pass. The §4 case #9
+      is exercised via `RenamedAddress` — the hash is over types, so the
+      disciplined practice (rename on breaking change) is what makes it
+      observable.
 - [ ] M4 — Performance baselines via `tasty-bench`. Benchmark fixtures derived from
       §10 cases A–D: condensed multi-party signing (Case A, ~100 KB), batch
       reconciliation (Case B, ~10 MB), ticket aggregate (Case C, ~500 KB), auction
