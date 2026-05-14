@@ -2,5 +2,3 @@ packages: .
           jitsurei
           keiki-codec-json
           keiki-codec-json-test
-
-with-compiler: ghc-9.12.4

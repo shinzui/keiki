@@ -71,7 +71,7 @@ expand the matrix to **at least two** entries:
 Update the matching CI matrix in `.github/workflows/ci.yml`:
 
     matrix:
-      ghc: ['9.10.7', '9.12.4']
+      ghc: ['9.10.7', '9.12.2']
 
 Install the second GHC locally (if not already present) and run:
 
@@ -134,7 +134,7 @@ The extracted tarballs must build green in an isolated directory:
     packages: keiki-X.Y.Z.0
               keiki-codec-json-X.Y.Z.0
               keiki-codec-json-test-X.Y.Z.0
-    with-compiler: ghc-9.12.4
+    with-compiler: ghc-9.12.2
     EOF
 
     cabal build all

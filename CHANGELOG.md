@@ -58,7 +58,7 @@ symbolic-register transducer formalism described in
 
 ### Validated against
 
-- GHC 9.12.4 on macOS aarch64 and Linux x86_64 (CI matrix; see
+- GHC 9.12.2 on macOS aarch64 and Linux x86_64 (CI matrix; see
   `.github/workflows/ci.yml`).
 - 186 hspec assertions in the in-tree test suite, including 11
   `Keiki.ShapeSpec` golden assertions for the shape hash.
