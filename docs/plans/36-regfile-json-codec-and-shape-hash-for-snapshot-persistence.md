@@ -141,9 +141,21 @@ research foundation):
       pressure on the Value path is roughly 1.5× the Encoding path across
       all four fixtures, matching the §10 Case B rationale for R10.
       Total bench duration: ~32 s.
-- [ ] M5 — Cross-GHC CI gate active. The cross-GHC golden hash test (P7.2) runs against
-      every entry in `tested-with`. A diff between rows is a release-blocking bug per
-      the §8 procedure.
+- [x] M5 — Cross-GHC CI gate active (2026-05-13). `.github/workflows/ci.yml`
+      builds and tests on every GHC in `keiki.cabal`'s `tested-with` (currently
+      `GHC == 9.12.*`; structural gate is in place — the matrix must grow to
+      ≥ 2 entries for the gate to do real cross-version work, tracked on EP-37
+      per the MP-11 Dependency Graph). The workflow has three jobs: `test`
+      (per-GHC matrix, runs `keiki-test` and `keiki-codec-json-test`, the
+      latter includes the M3 golden hash assertion), `test-perturbed-deps`
+      (rebuilds with `--allow-newer='text'` — a representative dependency
+      perturbation; the golden must remain unchanged), and `bench` (tracked,
+      not gated, runs only on pull_request). The §8 procedure is documented
+      at `keiki-codec-json/CONTRIBUTING.md` with the exact `cabal test`
+      invocation, the three branching outcomes (GHC semantics drift →
+      `CanonicalTypeName` override + major bump; impl bug → fix code; clean →
+      bump `tested-with`), and the discipline of updating the golden when
+      the fixture changes.
 - [ ] M6 — Documentation: haddock on every public symbol (including the P11
       slot-value-size guidance on `RegFileToJSON` and §10-case pointers); a worked
       example in `docs/research/regfile-codec-design.md`; the keiki README's "no

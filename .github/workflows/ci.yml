@@ -1,0 +1,110 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # The release-blocking gate. Every GHC in keiki.cabal's `tested-with`
+  # field is built; the test suite includes the golden hash assertion
+  # (keiki-codec-json/test/Keiki/Codec/JSON/GoldenSpec.hs) that pins
+  # `regFileShapeHash (Proxy @ExemplarSlots)` to a known value. Drift
+  # between GHC versions means the hash discriminator is no longer
+  # cross-version stable — release-blocking per EP-36 §8.
+  test:
+    name: ghc-${{ matrix.ghc }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # Keep this matrix aligned with keiki.cabal `tested-with`.
+        # Expanding it to >= 2 GHC versions is a Phase B prerequisite
+        # tracked on EP-37 — see MP-11 Dependency Graph.
+        ghc: ['9.12.3']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        id: setup-haskell
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: 'latest'
+
+      - name: Configure
+        run: |
+          cabal update
+          cabal configure --enable-tests --enable-benchmarks
+
+      - name: Cache cabal store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.setup-haskell.outputs.cabal-store }}
+          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            cabal-${{ runner.os }}-${{ matrix.ghc }}-
+
+      - name: Build
+        run: cabal build all
+
+      - name: Test (keiki — includes Keiki.ShapeSpec)
+        run: cabal test keiki:keiki-test
+
+      - name: Test (keiki-codec-json — includes golden hash gate)
+        run: cabal test keiki-codec-json:keiki-codec-json-test
+
+  # The cross-cabal-build perturbation. Rebuilds the test suite with a
+  # bumped lower bound on `text` (a representative dependency in the
+  # transitive closure). If the golden hash flips under a dep perturbation
+  # that should NOT affect `tyConModule + tyConName`, the hash has an
+  # unintentional dependency on a non-stable accessor — release-blocking.
+  test-perturbed-deps:
+    name: perturbed deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        id: setup-haskell
+        with:
+          ghc-version: '9.12.3'
+          cabal-version: 'latest'
+
+      - name: Build + test with --allow-newer text
+        run: |
+          cabal update
+          cabal configure --enable-tests --allow-newer='text'
+          cabal build all
+          cabal test keiki-codec-json:keiki-codec-json-test
+
+  # Tracked-but-not-gated bench drift. Posts the bench summary as a job
+  # output; a future workflow step compares against bench/baseline.csv.
+  bench:
+    name: bench (tracked, not gated)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.12.3'
+          cabal-version: 'latest'
+
+      - name: Build bench
+        run: |
+          cabal update
+          cabal build keiki-codec-json:keiki-codec-json-bench
+
+      - name: Run bench (capture CSV)
+        run: |
+          cabal bench keiki-codec-json:keiki-codec-json-bench \
+            --benchmark-options="--csv bench-current.csv --timeout 60"
+          echo "--- new baseline ---"
+          cat bench-current.csv
+          echo "--- committed baseline ---"
+          cat keiki-codec-json/bench/baseline.csv

@@ -298,7 +298,12 @@ plan and the milestone.
       `keiki-codec-json/bench/baseline.csv`. Encoding path is ~1.5× faster
       than Value path on the streaming-motivating BenchB fixture (5,000-entry
       list, 890 μs vs 1.30 ms, with 33 % less allocation).
-- [ ] EP-36 M5: Cross-GHC CI gate (P7.2, release-blocking).
+- [x] EP-36 M5: Cross-GHC CI gate (2026-05-13). `.github/workflows/ci.yml`
+      lands with three jobs (`test` per-GHC matrix, `test-perturbed-deps`
+      with `--allow-newer text`, and an advisory `bench` on PRs). §8 procedure
+      documented at `keiki-codec-json/CONTRIBUTING.md`. Gate is structurally
+      complete; operational meaningfulness depends on expanding
+      `tested-with` to ≥ 2 GHC entries (Phase B prerequisite tracked on EP-37).
 - [ ] EP-36 M6: Documentation — haddock with P11 guidance, design note, README
       updates.
 - [ ] EP-37 (placeholder until plan is authored): Hackage release of v0.1.
