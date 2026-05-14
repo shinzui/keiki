@@ -21,10 +21,14 @@ and is half of every `SymTransducer phi rs s ci co`'s joint state `(s, RegFile r
 Workflow concerns live there: timers, retry counters, correlation context, child-workflow
 handles, awakeable handles, journaled step results.
 
-keiki today exposes **zero** serialization machinery for `RegFile`. The keiki survey at
-`docs/research/02-keiki-decide-loop.md` §"Effectful Story" records this as deliberate
-("no built-in JSON or binary"), and `Keiki.Generics` provides only the structural pieces
-(`GRecord`, `appendRegFile`, `splitRegFile`, `EmptyRegFile`, `KnownSlotNames`) — not
+keiki today exposes **zero** serialization machinery for `RegFile`. The keiki-side
+architectural anchor at `docs/research/effects-boundary.md` lines 72–73 records this
+as deliberate — "Serialization. JSON / CBOR / Protobuf to and from on-the-wire
+bytes. The pure layer talks only typed Haskell values." — and the consumer-side
+survey at `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story"
+reiterates the same stance from the integrator's perspective ("no built-in JSON
+or binary"). `Keiki.Generics` provides only the structural pieces (`GRecord`,
+`appendRegFile`, `splitRegFile`, `EmptyRegFile`, `KnownSlotNames`) — not
 encode/decode, not a shape hash.
 
 The keiki research at `docs/research/schema-evolution.md` lines 19–22 already pre-commits
@@ -51,8 +55,10 @@ After this plan completes:
   hash) and GHC upgrades (via the hash's stability guarantee), without hand-rolling a
   RegFile walker per aggregate.
 - keiki adopts a multi-package layout for the first time. The existing codec-free
-  commitment in `02-keiki-decide-loop.md` is honoured structurally: `keiki` itself never
-  gains a dependency on `aeson`.
+  commitment in `docs/research/effects-boundary.md` lines 72–73 (keiki-side anchor)
+  and `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story" (consumer-side
+  reiteration) is honoured structurally: `keiki` itself never gains a dependency on
+  `aeson`.
 
 Consumers known today (only the first is in-tree; the others are documented in keiro's
 research foundation):
@@ -100,7 +106,22 @@ research foundation):
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- 2026-05-13 — MP-11 (`docs/masterplans/11-keiki-codec-json-package-implementation-
+  and-rollout.md`) deep-validation pass surfaced that this plan's "no built-in
+  JSON or binary" citation pointed at `docs/research/02-keiki-decide-loop.md`,
+  which does not exist in the keiki repository (it lives at
+  `keiro/docs/research/02-keiki-decide-loop.md`). The keiki-side architectural
+  anchor for the codec-free stance is `docs/research/effects-boundary.md` lines
+  72–73 ("Serialization … The pure layer talks only typed Haskell values").
+  All EP-36 citations of `02-keiki-decide-loop.md` were rewritten to either
+  point at the keiro path explicitly (as a consumer-side reiteration) or at
+  `effects-boundary.md` (as the keiki-side anchor). M6 acceptance was also
+  rewritten so the doc update lands in `effects-boundary.md` (a file the keiki
+  maintainer owns) rather than `02-keiki-decide-loop.md` (which lives in keiro
+  and is the keiro maintainer's to update via the integration ExecPlan loop).
+  Evidence: `find /Users/shinzui/Keikaku/bokuno/keiki -name '02-keiki-decide-
+  loop*'` returns nothing; the file is at
+  `/Users/shinzui/Keikaku/bokuno/keiro/docs/research/02-keiki-decide-loop.md`.
 
 
 ## Decision Log
@@ -108,8 +129,10 @@ implementation. Provide concise evidence.
 - Decision: Implement the shape hash and `KnownRegFileShape` in the existing `keiki`
   package (new module `Keiki.Shape`); implement the JSON codec in a new sibling cabal
   package `keiki-codec-json` (new module `Keiki.Codec.JSON`).
-  Rationale: Honours the codec-free commitment in `docs/research/02-keiki-decide-loop.md`
-  §"Effectful Story" structurally — `keiki` itself never gains an `aeson` dependency.
+  Rationale: Honours the codec-free commitment in
+  `docs/research/effects-boundary.md` lines 72–73 (keiki-side anchor) and
+  `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story" (consumer-side
+  reiteration) structurally — `keiki` itself never gains an `aeson` dependency.
   The shape hash has only `Typeable` + `text` + `bytestring`/SHA-256 deps and is
   structurally a property of `RegFile` types, so it belongs in core. Sets the
   multi-package precedent for keiki cleanly. Other splits (e.g., `keiki-symbolic`) land
@@ -907,14 +930,18 @@ Acceptance: CI green on every supported GHC. The §8 procedure documented in
   consumer using both classes, and reproduces the §10 reference cases as durable
   design context (so the cases survive even if this ExecPlan is later moved to an
   archive folder).
-- Update `docs/research/02-keiki-decide-loop.md` §"Effectful Story" to note that
-  `keiki-codec-json` is a sibling package providing optional JSON for `RegFile rs`,
-  preserving the codec-free promise of `keiki` itself.
+- Update `docs/research/effects-boundary.md` (the keiki-side codec-free anchor) to
+  note that `keiki-codec-json` is a sibling package providing optional JSON for
+  `RegFile rs`, preserving the codec-free promise of `keiki` itself. The keiro-side
+  survey `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story" reiterates
+  the same stance; the keiro maintainer is responsible for updating that downstream
+  passage when the package ships (notify keiro via the integration ExecPlan at
+  `keiro/docs/plans/9-integrate-keiki-codec-json-into-keiro-snapshot-path.md`).
 - Update `docs/research/schema-evolution.md` to cross-reference this plan as the
   implementation of its "snapshots carry a register-file shape hash" commitment.
 
 Acceptance: `cabal haddock all` is clean; the design note compiles in `mdformat` (or
-whatever keiki uses for doc lint); the cross-references in `02-keiki-decide-loop.md`
+whatever keiki uses for doc lint); the cross-references in `effects-boundary.md`
 and `schema-evolution.md` resolve.
 
 
@@ -1027,7 +1054,11 @@ Working directory: `/Users/shinzui/Keikaku/bokuno/keiki`.
 2. Author `docs/research/regfile-codec-design.md` (the design note; ~5–10 pages,
    reproduces §10 reference cases).
 
-3. Update the cross-references in `02-keiki-decide-loop.md` and `schema-evolution.md`.
+3. Update the cross-references in `docs/research/effects-boundary.md` (keiki-side
+   codec-free anchor) and `docs/research/schema-evolution.md`. The keiro-side
+   passage at `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story" is
+   updated by the keiro maintainer when notified via the integration ExecPlan
+   (`keiro/docs/plans/9-integrate-keiki-codec-json-into-keiro-snapshot-path.md`).
 
 4. `cabal haddock all` — expect clean.
 
@@ -1161,7 +1192,10 @@ unaffected unless they choose to depend on `Keiki.Shape` (new, opt-in) or
 
 - This ExecPlan: `docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md`
 - Pre-existing keiki commitment: `docs/research/schema-evolution.md` lines 19–22
-- Codec-free survey passage: `docs/research/02-keiki-decide-loop.md` §"Effectful Story"
+- Codec-free architectural anchor (keiki-side):
+  `docs/research/effects-boundary.md` lines 72–73
+- Codec-free survey passage (consumer-side, in keiro):
+  `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story"
 - `RegFile` definition: `src/Keiki/Core.hs:126-129`
 - `KnownSlotNames`: `src/Keiki/Core.hs:249-257`
 - `GRecord`, `EmptyRegFile`: `src/Keiki/Generics.hs:53-87`, `296-307`
@@ -1171,3 +1205,25 @@ unaffected unless they choose to depend on `Keiki.Shape` (new, opt-in) or
   - `keiro/docs/research/11-upstream-roadmap.md` §7.1, §7.2
   - `keiro/docs/research/10-workflow-roadmap.md` §3, §6
   - `keiro/docs/masterplans/1-keiro-research-foundation.md` §"Outcomes & Retrospective"
+
+
+## Revisions
+
+- 2026-05-13 — Citation cascade from MP-11's deep-validation pass. The plan
+  previously cited `docs/research/02-keiki-decide-loop.md` (which lives in keiro,
+  not keiki) as the "no built-in JSON or binary" anchor in five places: the
+  Purpose / Big Picture intro, the "Why this plan now" subsection, the Decision
+  Log entry on the package split, M6's concrete steps and acceptance, and the
+  References list. All five were rewritten to use
+  `docs/research/effects-boundary.md` lines 72–73 (the keiki-side anchor) as the
+  primary citation and `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful
+  Story" as a consumer-side reiteration. The M6 acceptance criterion was changed
+  from "cross-references in `02-keiki-decide-loop.md` … resolve" to
+  "cross-references in `effects-boundary.md` … resolve" because the keiki
+  maintainer can only update keiki-side files; the keiro-side passage is
+  updated by the keiro maintainer via the integration ExecPlan loop at
+  `keiro/docs/plans/9-integrate-keiki-codec-json-into-keiro-snapshot-path.md`.
+  Reason: the prior citation was broken (the file does not exist in the keiki
+  repository), which would have surfaced as an M6 acceptance failure during
+  implementation. Decision Log and Surprises & Discoveries entries record the
+  change. No design changes; citation-only revision.
