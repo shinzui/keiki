@@ -94,11 +94,32 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1 — Sibling package scaffolding: new `keiki-codec-json-test/` directory with `keiki-codec-json-test.cabal`; `cabal.project` updated to include it; `cabal build all` green with an empty library.
-- [ ] M2 — `Keiki.Codec.JSON.Test.Golden` module (the lede): `SlotGolden`, `slotGoldenSpec`; haddock; unit smoke test against the existing `OrderId` / `Address` slot types.
-- [ ] M3 — `Keiki.Codec.JSON.Test` module: `regFileCodecProps`, `regFileShapeSensitivitySpec`, `ArbitraryRegFile` (lifted from `keiki-codec-json/test/Keiki/Codec/JSON/Fixtures.hs`); haddock.
-- [ ] M4 — Self-test suite `keiki-codec-json-test:test`: a tiny example consumer (`Demo` module) exercises every helper end-to-end; all green.
-- [ ] M5 — README authored at `keiki-codec-json-test/README.md`; cross-link from `keiki-codec-json/README.md`'s "Test toolkit" section.
+- [x] M1 — (2026-05-14) `keiki-codec-json-test/keiki-codec-json-test.cabal`
+      ships with library stanza (two exposed modules) + test stanza;
+      `cabal.project` lists the new package; `cabal build all` green
+      with all packages compiling clean.
+- [x] M2 — (2026-05-14) `Keiki.Codec.JSON.Test.Golden` exports
+      `SlotGolden (..)` and `slotGoldenSpec`. The detector runs two
+      assertions inside a `describe` block: `ToJSON matches golden
+      bytes` and `FromJSON parses golden bytes back to the input`.
+      Haddock 100% (3/3).
+- [x] M3 — (2026-05-14) `Keiki.Codec.JSON.Test` exports
+      `ArbitraryRegFile`, `regFileCodecProps`, `SomeKnownRegFileShape`,
+      `someKnownShape`, `regFileShapeSensitivitySpec`. Property-suite
+      implementation mirrors the in-tree EP-36 M3 spec
+      (`keiki-codec-json/test/Keiki/Codec/JSON/PropSpec.hs`)
+      parameterised in the slot list. Haddock 100% (9/9).
+- [x] M4 — (2026-05-14) `keiki-codec-json-test/test/Spec.hs` plus
+      `Demo.hs` exercise every helper against a toy `Email` slot
+      type, `DemoSlots` baseline, and `DemoSlotsRenamed` mutation.
+      `cabal test keiki-codec-json-test:keiki-codec-json-test-test`
+      reports 7 examples, 0 failures.
+- [x] M5 — (2026-05-14) `keiki-codec-json-test/README.md` authored
+      with three sections (What this is for; Using; When you don't
+      need this; Running the self-test). Cross-link from
+      `keiki-codec-json/README.md` "Test toolkit for downstream
+      consumers" section placed between "Benchmarks" and "Test
+      suite".
 
 
 ## Surprises & Discoveries
@@ -162,7 +183,54 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**2026-05-14 — Plan complete.** Five milestones landed in one
+session. The new sibling package `keiki-codec-json-test` is the
+toolkit's home; two modules ship:
+
+* `Keiki.Codec.JSON.Test.Golden` — the lede. `SlotGolden { sgInput,
+  sgBytes }` + `slotGoldenSpec :: (ToJSON a, FromJSON a, Eq a, Show
+  a) => String -> SlotGolden a -> Spec`. Two assertions per slot type
+  (ToJSON-matches-golden and FromJSON-round-trips). Catches EP-36 §4
+  case #10 exactly as the plan intended.
+* `Keiki.Codec.JSON.Test` — the library-ised round-trip + sensitivity
+  helpers. `ArbitraryRegFile` (the class lifted from EP-36's
+  in-tree fixtures), `regFileCodecProps @rs` (four QuickCheck
+  properties), `SomeKnownRegFileShape` + `someKnownShape` +
+  `regFileShapeSensitivitySpec :: Proxy baseline -> [(String,
+  SomeKnownRegFileShape)] -> Spec` (asserts each mutation flips the
+  hash).
+
+Self-test reports 7 examples, 0 failures
+(`cabal test keiki-codec-json-test:keiki-codec-json-test-test`).
+Haddock 100% on both modules (3/3 + 9/9). `keiki` and
+`keiki-codec-json` build-depends unchanged — the new
+`QuickCheck`/`hspec`/`quickcheck-instances` deps are scoped to the
+third package only.
+
+The implementation matched the plan very closely. The only mild
+surprise was the haddock warning on `'SomeKnownRegFileShape' is
+ambiguous` — the data type and its single constructor have the same
+name, and haddock disambiguates by defaulting to the type. Not a
+correctness issue and the haddock still renders correctly; left as-is.
+
+EP-37 coordination: the addition of a third package is now real.
+EP-37's M5 (`cabal sdist all`) and M6 (candidate upload runbook)
+already cover "every package in the project" semantics, so the
+expansion is operational rather than structural. The Decision Log
+entry of 2026-05-14 on this scope creep is the durable record.
+
+Open follow-ups (not blocking close):
+
+* A `tasty-golden`-style helper for *managing* the golden bytes
+  files instead of inline literals could reduce the friction of
+  re-pinning when the user intentionally evolves a type's `ToJSON`.
+  Not a v0.1 priority — inline literals are simpler and produce
+  better diff output on failure.
+* A "compose multiple slot lists" sensitivity helper could let
+  consumers express "any of these mutations must flip the hash"
+  without re-pasting `someKnownShape @` per row. Not a v0.1 priority
+  either; the current per-row spec is readable and the cost is one
+  line per mutation.
 
 
 ## Context and Orientation

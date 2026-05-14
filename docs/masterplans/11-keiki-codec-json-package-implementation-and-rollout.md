@@ -148,7 +148,7 @@ exists.
 | 1 | RegFile JSON codec and shape hash for snapshot persistence | docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md | None | None | Complete |
 | 2 | Coordinated Hackage release of keiki and keiki-codec-json v0.1 | docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md | EP-1 | EP-4 (see Decision Log 2026-05-14 on third-package coordination) | Not Started |
 | 3 | TH derivation helpers for RegFileToJSON in keiki-codec-json | docs/plans/38-th-derivation-helpers-for-regfiletojson-in-keiki-codec-json.md | EP-1 | None | Complete |
-| 4 | Property-test toolkit for downstream codec users with case-10 ToJSON change detector | docs/plans/39-property-test-toolkit-for-downstream-codec-users-with-case-10-tojson-change-detector.md | EP-1 | None | Not Started |
+| 4 | Property-test toolkit for downstream codec users with case-10 ToJSON change detector | docs/plans/39-property-test-toolkit-for-downstream-codec-users-with-case-10-tojson-change-detector.md | EP-1 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their `EP-N` prefix (where `N` is
@@ -335,9 +335,15 @@ plan and the milestone.
       example. 40/40 tests pass; haddock coverage 100% on the new
       module. `keiki` core's build-depends unchanged — the aeson-free
       invariant survives.
-- [ ] EP-39 milestones: sibling package scaffold; case-#10 detector
-      module; round-trip + sensitivity helpers module; self-test
-      suite; README + cross-link.
+- [x] EP-39 complete (2026-05-14): new sibling package
+      `keiki-codec-json-test` ships two modules.
+      `Keiki.Codec.JSON.Test.Golden` carries the lede `slotGoldenSpec`
+      case-#10 detector. `Keiki.Codec.JSON.Test` carries
+      `regFileCodecProps`, `regFileShapeSensitivitySpec`,
+      `ArbitraryRegFile`, `SomeKnownRegFileShape`, `someKnownShape`.
+      `cabal test keiki-codec-json-test:keiki-codec-json-test-test`
+      reports 7/7 green; haddock 100% on both modules. Production
+      consumers of `keiki-codec-json` see no new transitive deps.
 
 
 ## Surprises & Discoveries

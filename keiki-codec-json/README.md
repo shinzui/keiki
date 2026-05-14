@@ -111,6 +111,18 @@ run on macOS aarch64. CI runs the bench on every push and flags drift
 gate (EP-36 M5) is the release-blocking gate; the bench is a tracked
 metric.
 
+## Test toolkit for downstream consumers
+
+If you persist `RegFile rs` to JSON and want to guard against the
+schema-evolution case the shape hash cannot catch by design — a
+silent change to a slot type's `Aeson.ToJSON` instance — see the
+sibling package
+[`keiki-codec-json-test`](../keiki-codec-json-test/README.md). It
+ships a per-slot-type golden-byte detector (`slotGoldenSpec`) plus
+library-ised versions of the EP-36 M3 round-trip and sensitivity
+disciplines, parameterised over your own slot list. Production
+consumers of `keiki-codec-json` do not need to depend on it.
+
 ## Test suite
 
     cabal test keiki-codec-json:keiki-codec-json-test
