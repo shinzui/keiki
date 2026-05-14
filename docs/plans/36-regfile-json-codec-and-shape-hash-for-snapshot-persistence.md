@@ -94,8 +94,22 @@ research foundation):
       `regFileShapeHash = sha256Hex . regFileShapeCanonical` definitional law; and
       the SHA-256 empty-string and `"abc"` test vectors. `cabal test keiki:keiki-test`
       reports 186 examples, 0 failures (11 new, 175 pre-existing).
-- [ ] M2 — `keiki-codec-json` package compiles. `Keiki.Codec.JSON` exposes
-      `RegFileToJSON` with strict encode/decode. Unit roundtrip tests pass.
+- [x] M2 — `keiki-codec-json` ships `Keiki.Codec.JSON` (2026-05-13) with the
+      `RegFileToJSON` class (three methods: `regFileToJSON` over `Aeson.Value`,
+      `regFileToEncoding` over `Aeson.Encoding`, `regFileFromJSON` strict
+      decoder) plus a hidden inductive helper class `RegFileWalk` (methods:
+      `regFilePairs`, `regFileSeries`, `regFileReadObject`). One generic
+      instance `RegFileWalk rs => RegFileToJSON rs` covers every slot list whose
+      components carry `Aeson.ToJSON` + `Aeson.FromJSON`. Decoder is strict on
+      missing, type-mismatched, and unknown-extra fields, returning
+      `"<slotName>: <reason>"` and `"regfile: unknown extra fields: ..."` per
+      EP-36 R2. 16/16 unit tests pass (`cabal test
+      keiki-codec-json:keiki-codec-json-test`). Cross-path byte equality
+      assertion replaced by within-path determinism + cross-path semantic
+      round-trip equality (see the M2 Surprises entry — aeson 2.2's
+      `Aeson.Value` Object uses an alphabetically-sorted `KeyMap`, so the Value
+      path emits in sort order while the Encoding path emits in slot-list
+      order; both round-trip correctly).
 - [ ] M3 — Property tests pass: roundtrip over QuickCheck-generated slot values
       (covering both `regFileToJSON` and `regFileToEncoding` paths), determinism
       (R9), sensitivity (P7.4). Golden hash file checked in.
@@ -120,6 +134,33 @@ research foundation):
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
+
+- 2026-05-13 — M2 surfaced an unstated tension between R9's wording ("the
+  encoder emits object keys in slot-list order") and aeson 2.2's `Aeson.Value`
+  data model. `Aeson.Value`'s `Object` is `Aeson.KeyMap`, whose internal
+  representation in aeson 2.2 (default build) is `Map Key Value`. Iteration
+  order is therefore alphabetical, not insertion order. As a result, the
+  Value path `Aeson.encode . regFileToJSON` emits keys alphabetically; the
+  Encoding path `Aeson.encodingToLazyByteString . regFileToEncoding`
+  (`Aeson.pairs . regFileSeries`) emits keys in slot-list order via
+  `Aeson.Series`. The two byte streams differ for any slot list whose
+  slot-list order is not alphabetical. The original M2 acceptance line
+  ("both paths produce byte-equal output") is therefore impossible to satisfy
+  in general; what we /can/ guarantee — and what is verified by the test
+  suite — is (a) within-path determinism (R9): re-encoding the same RegFile
+  via the same path produces byte-equal output, and (b) cross-path semantic
+  equality: both paths round-trip through `regFileFromJSON` to the same
+  RegFile. For users who need the canonical, slot-list-order byte stream
+  (e.g., snapshot persisters where byte stability across machines matters),
+  the Encoding path is the contract; the Value path is for in-memory
+  manipulation. The M2 progress bullet and the test descriptions document
+  this. R9 should be tightened in a future revision (M3 property tests
+  capture the within-path determinism, which is the load-bearing claim).
+  Evidence: test
+  "Encoding path emits keys in slot-list order; Value path is sorted"
+  asserts the literal byte strings
+  `{"retryCount":5,"note":"hello"}` (Encoding) vs
+  `{"note":"hello","retryCount":5}` (Value).
 
 - 2026-05-13 — During M1 implementation, the §7 interface sketch's inductive
   `regFileShapeHash` definition (which hashes recursively, producing a Merkle
@@ -160,6 +201,39 @@ implementation. Provide concise evidence.
 
 
 ## Decision Log
+
+- Decision: `RegFileToJSON` has three methods (`regFileToJSON`,
+  `regFileToEncoding`, `regFileFromJSON`); a hidden inductive helper class
+  `RegFileWalk` (with `regFilePairs`, `regFileSeries`, `regFileReadObject`)
+  carries the recursion; one generic `instance RegFileWalk rs =>
+  RegFileToJSON rs` covers every slot list whose components carry
+  `Aeson.ToJSON` and `Aeson.FromJSON`. Rationale: the §7 sketch's "Inductive
+  instances over '[] and (s, t) ': rs" is operationally satisfied by the
+  `RegFileWalk` instances; the user-visible `RegFileToJSON` class is
+  effectively a record-of-functions that bundles the three methods behind a
+  single constraint. This shape keeps the inductive recursion in one place
+  (`RegFileWalk`) and gives users one constraint to write
+  (`RegFileToJSON rs =>`) rather than three. The alternative — putting all
+  recursion on `RegFileToJSON` itself — would require three slightly
+  different inductive bodies (Value-Object building, Series building,
+  Object-key consumption) on every `RegFileToJSON ('(s,t) ': rs)` instance,
+  which is the same work spread less cleanly.
+  Date: 2026-05-13.
+
+- Decision: M2 acceptance is reinterpreted as within-path determinism
+  + cross-path semantic round-trip, not cross-path byte equality. R9's
+  "byte-equal" guarantee applies within a single path. The Encoding path is
+  the canonical, slot-list-order byte stream for snapshot persistence; the
+  Value path goes through `Aeson.Value`/`KeyMap` and emits keys in
+  KeyMap-implementation order (alphabetical for aeson 2.2's default `Map
+  Key` backing). Users who need byte-stable cross-machine encoding use the
+  Encoding path. The Value path is for in-memory manipulation (composition
+  with other Aeson values, projection, etc.). EP-36 §3 R9 carries the original
+  wording; a future revision should split R9 into R9.a (within-path
+  determinism) and R9.b (Encoding path emits slot-list order). M3's
+  determinism property test (R9 in the Plan of Work) covers the within-
+  path case.
+  Date: 2026-05-13.
 
 - Decision: The class method on `KnownRegFileShape` is `regFileShapeCanonical ::
   Proxy rs -> Text` (the pre-hash byte concatenation), and `regFileShapeHash` is a

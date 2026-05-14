@@ -283,9 +283,12 @@ plan and the milestone.
       `regFileShapeCanonical`, `regFileShapeHash`, `renderStableTypeRep`, `sha256Hex`.
       `cryptohash-sha256 ^>= 0.11` and `bytestring ^>= 0.12` added to keiki's deps.
       `Keiki.ShapeSpec` (11 golden assertions) green; 186/186 keiki tests pass.
-- [ ] EP-36 M2: `keiki-codec-json` package with `Keiki.Codec.JSON`. `RegFileToJSON`
-      class with three methods (`regFileToJSON`, `regFileFromJSON`,
-      `regFileToEncoding`). Unit roundtrip tests.
+- [x] EP-36 M2: `Keiki.Codec.JSON` ships (2026-05-13) the `RegFileToJSON` class
+      with three methods (`regFileToJSON`, `regFileToEncoding`,
+      `regFileFromJSON`); 16/16 unit tests pass; cross-path-byte-equality
+      assumption relaxed to within-path determinism + cross-path semantic
+      round-trip (aeson 2.2's `Aeson.Value`/`KeyMap` emits sorted-order, the
+      Encoding path emits slot-list order — both round-trip correctly).
 - [ ] EP-36 M3: Property tests (R5, R9, R10, P7.4) — both Value and Encoding paths,
       determinism, sensitivity.
 - [ ] EP-36 M4: Performance baselines via `tasty-bench` against the §10 reference

@@ -46,6 +46,7 @@ test-suite keiki-codec-json-test
     main-is:            Spec.hs
     build-depends:      base ^>= 4.21,
                         aeson ^>= 2.2,
+                        bytestring ^>= 0.12,
                         hspec ^>= 2.11,
                         keiki,
                         keiki-codec-json,
