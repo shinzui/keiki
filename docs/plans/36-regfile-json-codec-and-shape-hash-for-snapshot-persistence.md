@@ -156,11 +156,24 @@ research foundation):
       `CanonicalTypeName` override + major bump; impl bug → fix code; clean →
       bump `tested-with`), and the discipline of updating the golden when
       the fixture changes.
-- [ ] M6 — Documentation: haddock on every public symbol (including the P11
-      slot-value-size guidance on `RegFileToJSON` and §10-case pointers); a worked
-      example in `docs/research/regfile-codec-design.md`; the keiki README's "no
-      built-in JSON" passage updated to clarify that `keiki-codec-json` is a sibling
-      package.
+- [x] M6 — Documentation (2026-05-13). Haddock on every public symbol in
+      `Keiki.Shape` (CanonicalTypeName, KnownRegFileShape, regFileShapeHash,
+      regFileShapeCanonical, renderStableTypeRep, sha256Hex) and
+      `Keiki.Codec.JSON` (RegFileToJSON class with its three methods +
+      module-level P11 guidance). Worked example shipped at
+      `docs/research/regfile-codec-design.md` covering the two-package layout,
+      the discrimination contract, the two-discriminant snapshot pattern with
+      a runnable keiro-style persister/hydrator code excerpt, and the slot-
+      value-size guidance with bench-derived numbers. Updated
+      `docs/research/effects-boundary.md` lines 72–73 (the keiki-side codec-
+      free anchor) to point at `keiki-codec-json` and at the design note;
+      updated `docs/research/schema-evolution.md` lines 19–22 to point at
+      `Keiki.Shape` and the design note as the implementation of the "shape
+      hash" commitment. The keiro-side survey passage at
+      `keiro/docs/research/02-keiki-decide-loop.md` §"Effectful Story" is the
+      keiro maintainer's to update via the integration ExecPlan
+      `keiro/docs/plans/9-...`; per the MP-11 2026-05-13 validation pass that
+      hand-off is non-blocking.
 
 
 ## Surprises & Discoveries

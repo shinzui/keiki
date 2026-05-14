@@ -17,7 +17,11 @@ The library never sees a "v1 event"; the event store hands it events that are
 already current, because the application has run them through an upcaster. The
 hidden-input check therefore runs against the current schema only. Snapshots
 carry a register-file shape hash; mismatched hashes invalidate the snapshot
-and force a replay from the start.
+and force a replay from the start. The shape-hash primitive is shipped in
+[`Keiki.Shape`](../../src/Keiki/Shape.hs) and consumed by the JSON codec in
+the sibling package [`keiki-codec-json`](../../keiki-codec-json/); see
+[`regfile-codec-design.md`](regfile-codec-design.md) for the worked
+example.
 
 ---
 

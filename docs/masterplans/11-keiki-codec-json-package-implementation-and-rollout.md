@@ -304,8 +304,11 @@ plan and the milestone.
       documented at `keiki-codec-json/CONTRIBUTING.md`. Gate is structurally
       complete; operational meaningfulness depends on expanding
       `tested-with` to ≥ 2 GHC entries (Phase B prerequisite tracked on EP-37).
-- [ ] EP-36 M6: Documentation — haddock with P11 guidance, design note, README
-      updates.
+- [x] EP-36 M6: Documentation shipped (2026-05-13). Haddock on every public
+      symbol in `Keiki.Shape` + `Keiki.Codec.JSON`; new design note at
+      `docs/research/regfile-codec-design.md`; `effects-boundary.md` and
+      `schema-evolution.md` cross-reference the new artifacts; package
+      `README.md` and `CONTRIBUTING.md` complete the consumer-facing surface.
 - [ ] EP-37 (placeholder until plan is authored): Hackage release of v0.1.
 - [ ] EP-38 (placeholder until plan is authored): TH derivation helpers shipped.
 - [ ] EP-39 (placeholder until plan is authored): Property-test toolkit shipped.

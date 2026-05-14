@@ -70,7 +70,16 @@ Everything else is the runtime's job. Concretely:
 - **Snapshot reads/writes.** Optionally accelerate reconstitution by
   storing `(s, RegFile rs)` periodically.
 - **Serialization.** JSON / CBOR / Protobuf to and from on-the-wire
-  bytes. The pure layer talks only typed Haskell values.
+  bytes. The pure layer talks only typed Haskell values. The
+  *optional* sibling cabal package
+  [`keiki-codec-json`](../../keiki-codec-json/) ships JSON for
+  `RegFile rs` (encoder, decoder, streaming encoder) plus a worked-
+  example design note at
+  [`regfile-codec-design.md`](regfile-codec-design.md); the
+  `keiki` package itself never depends on `aeson`. The shape hash
+  primitive (`Keiki.Shape.regFileShapeHash`) that snapshot persisters
+  carry as a discriminator lives in `keiki` core (`Typeable` + SHA-256
+  only; no codec dep).
 - **Errors.** Schema mismatch, optimistic-concurrency conflict,
   network failure, queue unavailable, deserialization error,
   hidden-input warning escalations, timer service unreachable.
