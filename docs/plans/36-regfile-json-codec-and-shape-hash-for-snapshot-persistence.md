@@ -73,9 +73,13 @@ research foundation):
 
 ## Progress
 
-- [ ] M0 — Decision pass and cabal-project shape decided. Spec read; `Decision Log`
-      below carries the locked decisions; `cabal.project` updated to declare both
-      packages; new package `keiki-codec-json/` directory created with empty cabal stub.
+- [x] M0 — Decision pass and cabal-project shape decided (2026-05-13). Spec read;
+      `Decision Log` below carries the locked decisions; `cabal.project` updated
+      to declare `keiki-codec-json` alongside `.` (keiki) and `jitsurei`; new
+      package `keiki-codec-json/` directory created with cabal manifest, empty
+      `Keiki.Codec.JSON` module, and a passing scaffold test suite.
+      `cabal build all` and `cabal test keiki-codec-json:keiki-codec-json-test`
+      both green; no behavioural change to keiki or jitsurei.
 - [ ] M1 — `Keiki.Shape` lands in `keiki` with `CanonicalTypeName`, `KnownRegFileShape`,
       `regFileShapeHash`, `renderStableTypeRep`. SHA-256 dep added. Inductive instances
       and unit tests in place. `cabal test` passes.

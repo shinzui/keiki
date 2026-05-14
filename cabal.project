@@ -1,4 +1,5 @@
 packages: .
           jitsurei
+          keiki-codec-json
 
 with-compiler: ghc-9.12.3

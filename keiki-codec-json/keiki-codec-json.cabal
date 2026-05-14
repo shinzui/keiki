@@ -1,0 +1,52 @@
+cabal-version:      3.0
+name:               keiki-codec-json
+version:            0.1.0.0
+synopsis:           Optional JSON codec and shape hash for keiki's RegFile.
+description:
+    Sibling package to keiki providing a JSON encoder, decoder, and
+    streaming encoder for @RegFile rs@. The keiki core remains
+    aeson-free; this package opts in. See keiki's @Keiki.Shape@ module
+    for the GHC-upgrade-safe shape hash used to discriminate snapshots.
+license:            BSD-3-Clause
+author:             Nadeem Bitar
+maintainer:         nadeem@gmail.com
+copyright:          2026 Nadeem Bitar
+category:           Codec
+build-type:         Simple
+tested-with:        GHC == 9.12.*
+
+common warnings
+    ghc-options:        -Wall -Wcompat -Widentities
+                        -Wincomplete-record-updates -Wincomplete-uni-patterns
+                        -Wpartial-fields -Wredundant-constraints
+
+common shared-extensions
+    default-language:   GHC2024
+    default-extensions: OverloadedLabels
+                        OverloadedStrings
+                        UndecidableInstances
+                        FunctionalDependencies
+                        DuplicateRecordFields
+                        OverloadedRecordDot
+                        AllowAmbiguousTypes
+
+library
+    import:             warnings, shared-extensions
+    exposed-modules:    Keiki.Codec.JSON
+    hs-source-dirs:     src
+    build-depends:      base ^>= 4.21,
+                        aeson ^>= 2.2,
+                        keiki,
+                        text ^>= 2.1
+
+test-suite keiki-codec-json-test
+    import:             warnings, shared-extensions
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Spec.hs
+    build-depends:      base ^>= 4.21,
+                        aeson ^>= 2.2,
+                        hspec ^>= 2.11,
+                        keiki,
+                        keiki-codec-json,
+                        text ^>= 2.1

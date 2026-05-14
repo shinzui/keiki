@@ -274,8 +274,10 @@ EP-36's prerogative.
 Track milestone-level progress across all child plans. Each entry names the child
 plan and the milestone.
 
-- [ ] EP-36 M0: Cabal-project scaffolding (`cabal.project`, sibling package directory,
-      empty stubs).
+- [x] EP-36 M0: Cabal-project scaffolding (2026-05-13) — `cabal.project` declares
+      `keiki-codec-json` alongside `.` and `jitsurei`; sibling package directory
+      `keiki-codec-json/` holds an empty `Keiki.Codec.JSON` module and a passing
+      scaffold test. `cabal build all` green.
 - [ ] EP-36 M1: `Keiki.Shape` module with `CanonicalTypeName`, `KnownRegFileShape`,
       `regFileShapeHash`, `renderStableTypeRep`. SHA-256 dep added. Unit tests.
 - [ ] EP-36 M2: `keiki-codec-json` package with `Keiki.Codec.JSON`. `RegFileToJSON`
