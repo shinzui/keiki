@@ -36,6 +36,47 @@ This package ships:
       Nothing -> Left "snapshot bytes not JSON"
       Just v  -> regFileFromJSON @Snapshot v
 
+## Deriving the codec for a record type
+
+If you have a plain Haskell record and want the three codec functions
+without writing them by hand, use the TH splice from
+`Keiki.Codec.JSON.TH`:
+
+    {-# LANGUAGE DeriveGeneric #-}
+    {-# LANGUAGE TemplateHaskell #-}
+    import qualified Data.Aeson as Aeson
+    import Data.Text (Text)
+    import GHC.Generics (Generic)
+    import Keiki.Codec.JSON.TH (deriveRegFileCodec)
+
+    data Snapshot = Snapshot
+      { retryCount :: Int
+      , note       :: Text
+      }
+      deriving stock (Eq, Show, Generic)
+
+    $(deriveRegFileCodec ''Snapshot)
+    --  emits:
+    --    snapshotToJSON     :: Snapshot -> Aeson.Value
+    --    snapshotToEncoding :: Snapshot -> Aeson.Encoding
+    --    snapshotFromJSON   :: Aeson.Value -> Either String Snapshot
+
+The emitted functions route through the same `RegFileToJSON` class as
+the hand-written path: the record's field names become the JSON object's
+keys, missing/extra/type-mismatched fields are rejected with the same
+per-slot error messages, and the encoding path streams without
+allocating an intermediate `Aeson.Value`.
+
+Every field type must carry `Aeson.ToJSON` + `Aeson.FromJSON`. If a
+field type lacks either instance, compilation fails at the use site of
+the emitted function with a precise per-field error pointing at the
+missing instance.
+
+The record must have `deriving (Generic)` — the splice does not emit
+a `Generic` instance for you. Multi-constructor sum types, positional
+(non-record-syntax) constructors, and type synonyms are rejected at
+splice time with a precise error message.
+
 ## When to use the streaming encoder
 
 `regFileToJSON` builds an `Aeson.Value` whose `Object` is an

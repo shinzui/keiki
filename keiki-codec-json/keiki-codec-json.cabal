@@ -33,10 +33,12 @@ common shared-extensions
 library
     import:             warnings, shared-extensions
     exposed-modules:    Keiki.Codec.JSON
+                        Keiki.Codec.JSON.TH
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
                         aeson ^>= 2.2,
                         keiki,
+                        template-haskell ^>= 2.23,
                         text ^>= 2.1
 
 benchmark keiki-codec-json-bench
@@ -64,6 +66,7 @@ test-suite keiki-codec-json-test
                         Keiki.Codec.JSON.PropSpec
                         Keiki.Codec.JSON.SensitivitySpec
                         Keiki.Codec.JSON.GoldenSpec
+                        Keiki.Codec.JSON.THSpec
     build-depends:      QuickCheck ^>= 2.15,
                         aeson ^>= 2.2,
                         base ^>= 4.21,

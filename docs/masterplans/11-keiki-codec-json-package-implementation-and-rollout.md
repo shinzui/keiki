@@ -147,7 +147,7 @@ exists.
 |---|-------|------|-----------|-----------|--------|
 | 1 | RegFile JSON codec and shape hash for snapshot persistence | docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md | None | None | Complete |
 | 2 | Coordinated Hackage release of keiki and keiki-codec-json v0.1 | docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md | EP-1 | EP-4 (see Decision Log 2026-05-14 on third-package coordination) | Not Started |
-| 3 | TH derivation helpers for RegFileToJSON in keiki-codec-json | docs/plans/38-th-derivation-helpers-for-regfiletojson-in-keiki-codec-json.md | EP-1 | None | Not Started |
+| 3 | TH derivation helpers for RegFileToJSON in keiki-codec-json | docs/plans/38-th-derivation-helpers-for-regfiletojson-in-keiki-codec-json.md | EP-1 | None | Complete |
 | 4 | Property-test toolkit for downstream codec users with case-10 ToJSON change detector | docs/plans/39-property-test-toolkit-for-downstream-codec-users-with-case-10-tojson-change-detector.md | EP-1 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -327,8 +327,14 @@ plan and the milestone.
       candidate upload runbook. **Does not include the actual `cabal
       upload --publish` step** — that is the maintainer's final
       manual gate.
-- [ ] EP-38 milestones: scaffold module + cabal dep; implement
-      `deriveRegFileCodec`; test suite (THSpec); README polish.
+- [x] EP-38 complete (2026-05-14): `Keiki.Codec.JSON.TH` ships
+      `deriveRegFileCodec` + `deriveRegFileCodecAs`;
+      `keiki-codec-json/test/Keiki/Codec/JSON/THSpec.hs` adds 10 tests
+      (round-trip on both paths, slot-list order, three strict-decoder
+      rejections, empty-record edge case); README carries the worked
+      example. 40/40 tests pass; haddock coverage 100% on the new
+      module. `keiki` core's build-depends unchanged — the aeson-free
+      invariant survives.
 - [ ] EP-39 milestones: sibling package scaffold; case-#10 detector
       module; round-trip + sensitivity helpers module; self-test
       suite; README + cross-link.

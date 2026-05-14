@@ -33,6 +33,7 @@ import Test.Hspec
 import qualified Keiki.Codec.JSON.GoldenSpec
 import qualified Keiki.Codec.JSON.PropSpec
 import qualified Keiki.Codec.JSON.SensitivitySpec
+import qualified Keiki.Codec.JSON.THSpec
 
 import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
 import Keiki.Core (RegFile (..))
@@ -44,6 +45,7 @@ main = hspec $ do
   describe "M3 properties" Keiki.Codec.JSON.PropSpec.spec
   describe "M3 sensitivity" Keiki.Codec.JSON.SensitivitySpec.spec
   describe "M3 golden hash" Keiki.Codec.JSON.GoldenSpec.spec
+  describe "EP-38 deriveRegFileCodec" Keiki.Codec.JSON.THSpec.spec
 
 
 spec :: Spec

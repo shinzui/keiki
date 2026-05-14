@@ -65,10 +65,24 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1 — Add `template-haskell` dep to `keiki-codec-json.cabal`; create empty `Keiki.Codec.JSON.TH` module; `cabal build all` green.
-- [ ] M2 — Implement `deriveRegFileCodec :: Name -> Q [Dec]` with the three-function emission described in Plan of Work; haddock on every public symbol.
-- [ ] M3 — Test suite: a new `Keiki.Codec.JSON.THSpec` module exercising round-trip, encoding-path / value-path semantic agreement, missing/extra-field rejection, and a TH-time error case for a record with a non-ToJSON field type. `cabal test keiki-codec-json:keiki-codec-json-test` green.
-- [ ] M4 — Update `keiki-codec-json/README.md` with the splice and a worked example; update `keiki-codec-json.cabal`'s `exposed-modules` to list the new module.
+- [x] M1+M2 — (2026-05-14) `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs` ships
+      `deriveRegFileCodec` + `deriveRegFileCodecAs`. `template-haskell ^>= 2.23`
+      added to `keiki-codec-json.cabal`. `cabal build all` green.
+      Haddock coverage 100% (3/3) on the new module.
+- [x] M3 — (2026-05-14) `keiki-codec-json/test/Keiki/Codec/JSON/THSpec.hs`
+      ships 10 tests across two fixtures (`TestRec` two-field record and
+      `Empty` singleton): round-trip on both paths, slot-list order
+      assertion, three strict-decoder rejection cases, and the empty-
+      record edge case. Wired into `test/Spec.hs` under "EP-38
+      deriveRegFileCodec". `cabal test keiki-codec-json:keiki-codec-json-test`
+      reports 40/40 examples, 0 failures.
+- [x] M4 — (2026-05-14) `keiki-codec-json/README.md` carries a new
+      "Deriving the codec for a record type" section between "Using"
+      and "When to use the streaming encoder". The section is a single
+      worked example plus three notes on the splice's contract (must
+      `deriving Generic`, every field type needs `Aeson.ToJSON` +
+      `Aeson.FromJSON`, multi-constructor and positional-constructor
+      types are rejected at splice time).
 
 
 ## Surprises & Discoveries
@@ -131,7 +145,50 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**2026-05-14 — Plan complete.** All four milestones landed in one
+session. `Keiki.Codec.JSON.TH` exports
+`deriveRegFileCodec :: Name -> Q [Dec]` and
+`deriveRegFileCodecAs :: String -> Name -> Q [Dec]`; both reify the
+named record type, validate it is a single-constructor record-syntax
+(or singleton) declaration, and emit three top-level functions —
+`<prefix>ToJSON`, `<prefix>ToEncoding`, `<prefix>FromJSON` — routed
+through `RegFile (RegFieldsOf TypeName)`. Compilation fails at the
+*use site* of the emitted function (not at the splice site) when a
+field type lacks `Aeson.ToJSON` / `Aeson.FromJSON`, which is the
+right place for the error: the user can read the GHC message and
+locate the offending field directly. 40/40 tests pass including the
+new 10-test THSpec; haddock coverage 100%.
+
+The implementation is shorter than the plan anticipated: the splice
+body is roughly 70 lines including haddock, with most of the work
+delegated to `[t| ... |]` / `[e| ... |]` quotation rather than
+hand-built `Dec`/`Exp` values. The fact that `RegFieldsOf MyRecord`
+fully grounds the slot-list type at splice expansion (no type
+variables remaining) means the emitted functions need no
+constraint context, simplifying the SigD significantly.
+
+The keiki-side aeson-free invariant was preserved structurally:
+`grep '^build-depends' keiki/keiki.cabal` confirms no `aeson` entry.
+The `keiki` core build is unchanged by this plan; only
+`keiki-codec-json` gained `template-haskell` as a dep.
+
+No surprises arose during implementation. The MP-11 Decision Log
+entry of 2026-05-13 on splice location proved correct: the splice's
+body references `regFileToJSON`/`regFileToEncoding`/`regFileFromJSON`
+by name, so the splice cannot live in a package that does not
+import the codec.
+
+Open follow-ups (not blocking close):
+
+* The manual negative-test procedure documented in `THSpec.hs`
+  (replace a field with `Int -> Int`, watch the build fail) could
+  be automated via a `should-not-compile` test runner in a future
+  EP. The toolkit-side EP-39 may carry this if it makes sense
+  there; the current setup is sufficient for the v0.2 release.
+* The `mySnapshotFromJSON`-style function names are conventional
+  but a future enhancement could allow `Snapshot { toJSON,
+  toEncoding, fromJSON }` record-style access via a single derived
+  helper record. Not a v0.2 priority.
 
 
 ## Context and Orientation
