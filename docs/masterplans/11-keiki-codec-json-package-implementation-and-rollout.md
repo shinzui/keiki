@@ -146,9 +146,9 @@ exists.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | RegFile JSON codec and shape hash for snapshot persistence | docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md | None | None | Complete |
-| 2 | Coordinated Hackage release of keiki and keiki-codec-json | docs/plans/37-...  *(to be authored when Phase B begins)* | EP-1 | None | Not Started |
-| 3 | TH derivation helpers for RegFileToJSON | docs/plans/38-... *(to be authored when Phase B begins)* | EP-1 | None | Not Started |
-| 4 | Property-test toolkit for downstream codec users | docs/plans/39-... *(to be authored when Phase B begins)* | EP-1 | None | Not Started |
+| 2 | Coordinated Hackage release of keiki and keiki-codec-json v0.1 | docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md | EP-1 | EP-4 (see Decision Log 2026-05-14 on third-package coordination) | Not Started |
+| 3 | TH derivation helpers for RegFileToJSON in keiki-codec-json | docs/plans/38-th-derivation-helpers-for-regfiletojson-in-keiki-codec-json.md | EP-1 | None | Not Started |
+| 4 | Property-test toolkit for downstream codec users with case-10 ToJSON change detector | docs/plans/39-property-test-toolkit-for-downstream-codec-users-with-case-10-tojson-change-detector.md | EP-1 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their `EP-N` prefix (where `N` is
@@ -309,9 +309,29 @@ plan and the milestone.
       `docs/research/regfile-codec-design.md`; `effects-boundary.md` and
       `schema-evolution.md` cross-reference the new artifacts; package
       `README.md` and `CONTRIBUTING.md` complete the consumer-facing surface.
-- [ ] EP-37 (placeholder until plan is authored): Hackage release of v0.1.
-- [ ] EP-38 (placeholder until plan is authored): TH derivation helpers shipped.
-- [ ] EP-39 (placeholder until plan is authored): Property-test toolkit shipped.
+- [x] Phase B authored (2026-05-14): EP-37, EP-38, EP-39 plans created
+      under `docs/plans/` and linked into the Exec-Plan Registry above.
+      EP-37 covers a *coordinated* Hackage release. EP-38 places its
+      TH splice in a new `Keiki.Codec.JSON.TH` module inside
+      `keiki-codec-json` (preserving the aeson-free-keiki invariant)
+      and renames the splice from the MP-tentative
+      `deriveRegFileToJSON` to `deriveRegFileCodec`. EP-39 ships a
+      third sibling package `keiki-codec-json-test` whose lede
+      deliverable is the EP-36 §4 case-#10 detector
+      (`slotGoldenSpec`); the round-trip / sensitivity helpers are
+      framed as library-isations of EP-36 M3 disciplines. The
+      addition of a third package is a soft-dependency between EP-39
+      and EP-37 (EP-37 must release three tarballs, not two).
+- [ ] EP-37 milestones: tested-with matrix expansion, cabal metadata
+      polish, CHANGELOG + README polish, `cabal sdist` + clean rebuild,
+      candidate upload runbook. **Does not include the actual `cabal
+      upload --publish` step** — that is the maintainer's final
+      manual gate.
+- [ ] EP-38 milestones: scaffold module + cabal dep; implement
+      `deriveRegFileCodec`; test suite (THSpec); README polish.
+- [ ] EP-39 milestones: sibling package scaffold; case-#10 detector
+      module; round-trip + sensitivity helpers module; self-test
+      suite; README + cross-link.
 
 
 ## Surprises & Discoveries
@@ -347,6 +367,30 @@ interactions between child plans. Provide concise evidence.
   uses `regFileShapeCanonical` as the inductive class method and
   `regFileShapeHash` as a top-level wrapper. Documented in EP-36
   Decision Log + Surprises; worth a spec touch-up in EP-37.
+
+- 2026-05-14 — Phase B authoring complete; three cross-plan refinements
+  surfaced during drafting:
+  (a) EP-38's splice is renamed from the MP-tentative
+  `deriveRegFileToJSON` to `deriveRegFileCodec`. Rationale recorded in
+  EP-38's Decision Log: `RegFileToJSON` is an auto-derived class
+  (instance `RegFileWalk rs => RegFileToJSON rs`), so "deriving an
+  instance" is a misnomer. The splice emits three top-level
+  *functions* per record; "codec" matches what it ships. The
+  Integration Points "`Keiki.Codec.JSON.TH` module" entry below
+  should read "deriveRegFileCodec" on next pass.
+  (b) EP-39 ships its toolkit as a **third sibling cabal package**
+  `keiki-codec-json-test`, not as an exposed module of
+  `keiki-codec-json` proper. Rationale: keeps production consumers
+  of `keiki-codec-json` free of `QuickCheck` / `hspec` /
+  `quickcheck-instances` transitive deps. The MP's Integration
+  Points "EP-39 may add `tasty-quickcheck` to the test stanza or
+  split a sibling test-utility package" pre-blessed both options;
+  the toolkit picks the sibling-package path.
+  (c) EP-37's release scope therefore extends to three packages on
+  Hackage, not two. EP-37's Decision Log notes the scope creep; its
+  M5 (`cabal sdist all`) and M6 (candidate upload runbook) extend
+  to cover the third package without additional design work, so the
+  scope expansion is operational, not structural.
 
 - 2026-05-13 — Deep validation pass against EP-36 and the keiki / keiro source
   trees surfaced six issues, all corrected in the same revision: (1) the cited
