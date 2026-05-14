@@ -59,12 +59,63 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1 — Hackage presence check + version-coordination decision recorded.
-- [ ] M2 — `tested-with` matrix expanded to two GHC versions; CI matrix expanded; golden hash green on both.
-- [ ] M3 — Cabal metadata polish: `description`, `homepage`, `bug-reports`, `source-repository`, `extra-doc-files` on both packages.
-- [ ] M4 — CHANGELOG.md authored for both packages; README polish for the first-time consumer.
-- [ ] M5 — `cabal check` + `cabal sdist` green on both packages; tarballs unpacked and rebuilt from scratch in a clean directory.
-- [ ] M6 — Candidate upload runbook authored and dry-run (no `--publish`); release procedure documented at `docs/research/release-procedure.md`.
+- [x] M1 — (2026-05-14) `cabal info keiki` against a refreshed Hackage
+      index returns "no package named 'keiki'". **Path 1 applies:**
+      this release is the first Hackage push for both packages. The
+      `build-depends: keiki ^>= 0.1` lower bound in
+      `keiki-codec-json` (and now also `keiki-codec-json-test`) is
+      correct without a minor bump.
+- [ ] M2 — **Held for maintainer.** `tested-with` matrix expansion to
+      ≥ 2 GHC versions requires local installation of a second GHC
+      (recommended `9.10.7`) so the golden hash assertion can be
+      verified against EP-36's pinned value before the matrix change
+      is committed. `ghcup` is not present in the session that
+      prepared the v0.1 artifacts; the maintainer must run
+      `ghcup install ghc 9.10.7`, then
+      `GHCUP_GHC_VERSION=9.10.7 cabal test keiki-codec-json:keiki-codec-json-test
+      --test-options="--match 'M3 golden hash'"`, and only commit the
+      matrix change if the assertion passes. EP-36 §8 documents the
+      failure path.
+- [x] M3 — (2026-05-14) Cabal metadata polished:
+      `description` (multi-line) and `extra-doc-files`
+      (README, CHANGELOG, CONTRIBUTING where applicable) added to
+      all three `.cabal` files. `source-repository head` deferred
+      until the maintainer commits to a GitHub URL; the `keiki`
+      package carries an informational `[no-repository]`
+      warning from `cabal check`, which is the only remaining
+      warning across all three packages.
+      `cabal check` reports zero warnings on
+      `keiki-codec-json` and `keiki-codec-json-test`.
+- [x] M4 — (2026-05-14) `CHANGELOG.md` authored at the root of all
+      three packages, each with a `[Unreleased]` placeholder plus a
+      provisional `[0.1.0.0] — TBD` section listing the public
+      surface, validation results, and out-of-scope items.
+      `keiki/README.md` already exists from an earlier commit and is
+      first-time-consumer friendly; `keiki-codec-json/README.md`
+      gained a "Test toolkit for downstream consumers" cross-link
+      section (added by EP-39 M5). No further README polish needed
+      for v0.1.
+- [x] M5 — (2026-05-14) `cabal check` on each package is clean
+      modulo the `keiki [no-repository]` informational warning.
+      `cabal sdist all` produces three release-candidate tarballs at
+      `dist-newstyle/sdist/{keiki-0.1.0.0,keiki-codec-json-0.1.0.0,
+      keiki-codec-json-test-0.1.0.0}.tar.gz`. Extracted in
+      `/tmp/release-check/` with a stand-alone `cabal.project` that
+      lists just the three extracted packages and pins
+      `with-compiler: ghc-9.12.3`. `cabal build all` green;
+      `cabal test all` green (186 + 40 + 7 = 233 examples, 0
+      failures from the clean-room copy).
+      An `extra-source-files: bench/baseline.csv` line was added to
+      `keiki-codec-json.cabal` after the first sdist iteration
+      revealed the CSV was missing from the tarball; the second
+      sdist iteration includes it.
+- [x] M6 — (2026-05-14) `docs/research/release-procedure.md`
+      authored as the living maintainer runbook covering the
+      coordinated three-package push (pre-publish checklist, upload
+      sequence, failure recovery). `keiki-codec-json/CONTRIBUTING.md`
+      gained a `## Releasing` section linking to it. The `cabal
+      upload` and `cabal upload --publish` commands are documented
+      but not executed; the maintainer is the final human gate.
 
 
 ## Surprises & Discoveries
@@ -97,6 +148,39 @@ Record every decision made while working on the plan.
   autonomous Hackage publishing.
   Date: 2026-05-14.
 
+- Decision: Hackage path 1 applies — `keiki` is not yet on Hackage.
+  `cabal info keiki` against a refreshed index (2026-05-13T23:24:16Z)
+  returned "no package named 'keiki'". The first release is a
+  first-time push for all three packages; `keiki-codec-json`'s
+  `build-depends: keiki ^>= 0.1` is correct as-is.
+  Date: 2026-05-14.
+
+- Decision: Scope-creep absorbed — this plan now ships *three*
+  packages (`keiki`, `keiki-codec-json`, `keiki-codec-json-test`),
+  not two as originally framed.
+  Rationale: EP-39 (Property-test toolkit) lands its toolkit as a
+  third sibling cabal package per the EP-39 Decision Log entry of
+  2026-05-14. The MP-11 Surprises & Discoveries entry of 2026-05-14
+  acknowledges the cascade. Operationally the `cabal sdist all` /
+  `cabal upload` workflow already covers "every package"; the
+  expansion adds one extra upload command per release, no
+  structural change to the runbook.
+  Date: 2026-05-14.
+
+- Decision: M2 (cross-GHC matrix expansion) is intentionally held
+  for the maintainer rather than executed in the artifact-prep
+  session.
+  Rationale: Adding a row to `tested-with` claims the package is
+  validated against that GHC version. Without local installation of
+  the second GHC and execution of the EP-36 §8 golden-hash test,
+  the claim cannot be made honestly. `ghcup` was not available in
+  the session that prepared the v0.1 artifacts. Silently committing
+  a matrix expansion that would only first be exercised on CI
+  would risk a release-blocking CI failure surfacing at the wrong
+  time. The Progress section and `release-procedure.md`
+  pre-publish checklist explicitly call this out.
+  Date: 2026-05-14.
+
 - Decision: Expand `tested-with` to two GHC versions (`9.12.*` plus one
   more — the maintainer chooses, but the plan recommends `9.10.*`) as
   part of release readiness, not as a follow-up.
@@ -114,7 +198,57 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**2026-05-14 — Release artifacts prepared (M1, M3, M4, M5, M6).
+M2 held for maintainer.** Five of six milestones landed; the
+remaining M2 (GHC matrix expansion) requires a tool (`ghcup`) that
+was not available in the session that prepared the artifacts, and
+silently expanding `tested-with` without verifying the golden hash
+on a second GHC would violate the EP-36 §8 contract.
+
+Concrete deliverables:
+
+* Three `.cabal` files carry `version: 0.1.0.0`, multi-line
+  `description`, and `extra-doc-files` pointing at the relevant
+  README / CHANGELOG / CONTRIBUTING files.
+* Three `CHANGELOG.md` files at each package's root list the v0.1
+  public surface against the in-tree validation results.
+* `docs/research/release-procedure.md` is the maintainer's living
+  runbook: pre-publish checklist (cross-GHC gate, `cabal check`,
+  CHANGELOG entries, version coordination, clean-room rebuild),
+  upload sequence (candidate inspection → publish), and failure
+  recovery.
+* `cabal sdist all` produces three release-candidate tarballs whose
+  extracted, re-built copies pass 233 / 233 tests in a clean
+  /tmp/ directory.
+
+What's still required before the maintainer runs `cabal upload`:
+
+1. **M2 cross-GHC matrix expansion.** Install a second GHC locally
+   (`ghcup install ghc 9.10.7`), run the EP-36 §8 golden-hash test,
+   commit the matrix expansion in `keiki.cabal`,
+   `keiki-codec-json.cabal`, and `.github/workflows/ci.yml`, watch
+   CI go green on both rows.
+2. **`source-repository head` stanzas.** Once a GitHub URL is
+   committed, add the standard stanza to all three `.cabal` files.
+   This removes the `keiki [no-repository]` warning from
+   `cabal check`.
+
+Once those two items are green, the maintainer follows the upload
+sequence in `docs/research/release-procedure.md`.
+
+Surprises:
+
+* `cabal sdist` does not include `extra-source-files: bench/baseline.csv`
+  unless explicitly declared. The first iteration of M5 produced a
+  tarball that was missing the bench baseline despite the CSV being
+  committed in the working tree; declaring `extra-source-files:
+  bench/baseline.csv` in `keiki-codec-json.cabal` fixed it. Worth
+  remembering on future releases that add non-source data files.
+* The `keiki [no-repository]` warning is the only `cabal check`
+  finding once upper bounds and `extra-doc-files` are in place. It
+  is informational and does not block publish; the warning will be
+  removed when the maintainer adds the `source-repository head`
+  stanza.
 
 
 ## Context and Orientation

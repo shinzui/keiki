@@ -146,7 +146,7 @@ exists.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | RegFile JSON codec and shape hash for snapshot persistence | docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md | None | None | Complete |
-| 2 | Coordinated Hackage release of keiki and keiki-codec-json v0.1 | docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md | EP-1 | EP-4 (see Decision Log 2026-05-14 on third-package coordination) | Not Started |
+| 2 | Coordinated Hackage release of keiki and keiki-codec-json v0.1 | docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md | EP-1 | EP-4 (third-package coordination) | In Progress — artifacts prepared 2026-05-14; M2 + `cabal upload --publish` held for maintainer |
 | 3 | TH derivation helpers for RegFileToJSON in keiki-codec-json | docs/plans/38-th-derivation-helpers-for-regfiletojson-in-keiki-codec-json.md | EP-1 | None | Complete |
 | 4 | Property-test toolkit for downstream codec users with case-10 ToJSON change detector | docs/plans/39-property-test-toolkit-for-downstream-codec-users-with-case-10-tojson-change-detector.md | EP-1 | None | Complete |
 
@@ -322,11 +322,24 @@ plan and the milestone.
       framed as library-isations of EP-36 M3 disciplines. The
       addition of a third package is a soft-dependency between EP-39
       and EP-37 (EP-37 must release three tarballs, not two).
-- [ ] EP-37 milestones: tested-with matrix expansion, cabal metadata
-      polish, CHANGELOG + README polish, `cabal sdist` + clean rebuild,
-      candidate upload runbook. **Does not include the actual `cabal
-      upload --publish` step** — that is the maintainer's final
-      manual gate.
+- [x] EP-37 release artifacts prepared (2026-05-14): Hackage presence
+      check resolved (path 1 — first push); cabal metadata polished on
+      all three packages (multi-line `description`, `extra-doc-files`,
+      upper bounds on `keiki` and `keiki-codec-json` dep lines);
+      CHANGELOG.md authored at all three package roots;
+      `cabal check` clean on the two child packages and informational
+      only on `keiki`; `cabal sdist all` produces three tarballs; the
+      extracted tarballs in an isolated `/tmp/` clean room build and
+      pass all 233 tests (186 + 40 + 7); `docs/research/release-procedure.md`
+      ships the maintainer runbook; `keiki-codec-json/CONTRIBUTING.md`
+      gains a `## Releasing` cross-link section.
+- [ ] EP-37 remaining (maintainer-only): expand `tested-with` matrix
+      to ≥ 2 GHC versions per EP-36 §8 (requires a local `ghcup
+      install ghc 9.10.7` to verify the golden hash on the second
+      GHC); add a `source-repository head` stanza once a GitHub URL
+      is decided; run the candidate-upload sequence in
+      `docs/research/release-procedure.md`; final
+      `cabal upload --publish`.
 - [x] EP-38 complete (2026-05-14): `Keiki.Codec.JSON.TH` ships
       `deriveRegFileCodec` + `deriveRegFileCodecAs`;
       `keiki-codec-json/test/Keiki/Codec/JSON/THSpec.hs` adds 10 tests
@@ -379,6 +392,18 @@ interactions between child plans. Provide concise evidence.
   uses `regFileShapeCanonical` as the inductive class method and
   `regFileShapeHash` as a top-level wrapper. Documented in EP-36
   Decision Log + Surprises; worth a spec touch-up in EP-37.
+
+- 2026-05-14 — Phase B implementations green and EP-37 artifacts
+  prepared. EP-38 (TH derivation, `deriveRegFileCodec` in
+  `Keiki.Codec.JSON.TH`) and EP-39 (toolkit, third sibling package
+  `keiki-codec-json-test`) both landed end-to-end with full tests
+  (40/40 and 7/7 respectively). EP-37 release artifacts (cabal
+  metadata, CHANGELOGs, sdist tarballs, clean-room rebuild verifying
+  233 tests pass from extracted copies, `docs/research/release-procedure.md`)
+  are committed; M2 (cross-GHC matrix expansion) and the final
+  `cabal upload --publish` are intentionally held for the maintainer
+  per the scope decision documented in EP-37 Decision Log of
+  2026-05-14. **MP-11 is one human gate away from close.**
 
 - 2026-05-14 — Phase B authoring complete; three cross-plan refinements
   surfaced during drafting:

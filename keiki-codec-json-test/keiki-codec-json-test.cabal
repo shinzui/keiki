@@ -26,6 +26,8 @@ copyright:          2026 Nadeem Bitar
 category:           Codec, Testing
 build-type:         Simple
 tested-with:        GHC == 9.12.*
+extra-doc-files:    README.md
+                    CHANGELOG.md
 
 common warnings
     ghc-options:        -Wall -Wcompat -Widentities
@@ -52,8 +54,8 @@ library
                         base ^>= 4.21,
                         bytestring ^>= 0.12,
                         hspec ^>= 2.11,
-                        keiki,
-                        keiki-codec-json,
+                        keiki ^>= 0.1,
+                        keiki-codec-json ^>= 0.1,
                         quickcheck-instances ^>= 0.3,
                         text ^>= 2.1
 
@@ -68,8 +70,8 @@ test-suite keiki-codec-json-test-test
                         base ^>= 4.21,
                         bytestring ^>= 0.12,
                         hspec ^>= 2.11,
-                        keiki,
-                        keiki-codec-json,
-                        keiki-codec-json-test,
+                        keiki ^>= 0.1,
+                        keiki-codec-json ^>= 0.1,
+                        keiki-codec-json-test ^>= 0.1,
                         quickcheck-instances ^>= 0.3,
                         text ^>= 2.1

@@ -3,4 +3,4 @@ packages: .
           keiki-codec-json
           keiki-codec-json-test
 
-with-compiler: ghc-9.12.3
+with-compiler: ghc-9.12.4

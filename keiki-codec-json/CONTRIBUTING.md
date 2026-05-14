@@ -52,6 +52,16 @@ gate is the release blocker, not the bench, because (a) bench numbers
 are noisier than hash determinism, and (b) the meaningful unit of
 latency budget belongs to the consumer (keiro), not to keiki itself.
 
+## Releasing
+
+The full release procedure lives at
+[`../docs/research/release-procedure.md`](../docs/research/release-procedure.md).
+That document covers the coordinated push of `keiki`,
+`keiki-codec-json`, and `keiki-codec-json-test`, the pre-publish
+checklist, and the candidate-upload runbook. The EP-37 ExecPlan at
+[`../docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md`](../docs/plans/37-coordinated-hackage-release-of-keiki-and-keiki-codec-json-v0-1.md)
+is the per-milestone narrative for the v0.1 first release.
+
 ## Adding a slot type to the test fixtures
 
 If you add a new slot type to `Keiki.Codec.JSON.Fixtures.ExemplarSlots`,

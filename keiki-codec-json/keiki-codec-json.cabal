@@ -1,12 +1,35 @@
 cabal-version:      3.0
 name:               keiki-codec-json
 version:            0.1.0.0
-synopsis:           Optional JSON codec and shape hash for keiki's RegFile.
+synopsis:           Optional JSON codec for keiki's RegFile.
 description:
     Sibling package to keiki providing a JSON encoder, decoder, and
     streaming encoder for @RegFile rs@. The keiki core remains
-    aeson-free; this package opts in. See keiki's @Keiki.Shape@ module
-    for the GHC-upgrade-safe shape hash used to discriminate snapshots.
+    aeson-free; this package opts in. See keiki's @Keiki.Shape@
+    module for the GHC-upgrade-safe shape hash used to discriminate
+    snapshots — the two halves of the snapshot persistence story.
+    .
+    Three methods on @class RegFileToJSON rs@:
+    .
+    * @regFileToJSON :: RegFile rs -> Aeson.Value@ — strict
+    Value-path encoder.
+    .
+    * @regFileFromJSON :: Aeson.Value -> Either String (RegFile rs)@
+    — strict decoder with per-slot error messages on missing /
+    extra / type-mismatched fields.
+    .
+    * @regFileToEncoding :: RegFile rs -> Aeson.Encoding@ —
+    streaming encoder over @Aeson.Series@, avoiding the
+    O(output-size) intermediate @Aeson.Value@ allocation. Recommended
+    for RegFiles with multi-MB slot values.
+    .
+    Also ships a Template Haskell helper module
+    @Keiki.Codec.JSON.TH@ with @deriveRegFileCodec@ that emits the
+    three codec functions for a record type with @deriving Generic@.
+    .
+    The companion package @keiki-codec-json-test@ ships a property-
+    test toolkit for downstream consumers (case-#10 ToJSON-change
+    detector plus library-ised round-trip / sensitivity helpers).
 license:            BSD-3-Clause
 author:             Nadeem Bitar
 maintainer:         nadeem@gmail.com
@@ -14,6 +37,10 @@ copyright:          2026 Nadeem Bitar
 category:           Codec
 build-type:         Simple
 tested-with:        GHC == 9.12.*
+extra-doc-files:    README.md
+                    CHANGELOG.md
+                    CONTRIBUTING.md
+extra-source-files: bench/baseline.csv
 
 common warnings
     ghc-options:        -Wall -Wcompat -Widentities
@@ -37,7 +64,7 @@ library
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
                         aeson ^>= 2.2,
-                        keiki,
+                        keiki ^>= 0.1,
                         template-haskell ^>= 2.23,
                         text ^>= 2.1
 
@@ -50,8 +77,8 @@ benchmark keiki-codec-json-bench
                         base ^>= 4.21,
                         bytestring ^>= 0.12,
                         deepseq ^>= 1.5,
-                        keiki,
-                        keiki-codec-json,
+                        keiki ^>= 0.1,
+                        keiki-codec-json ^>= 0.1,
                         tasty-bench ^>= 0.4 || ^>= 0.5,
                         text ^>= 2.1
     ghc-options:        -fproc-alignment=64
@@ -72,8 +99,8 @@ test-suite keiki-codec-json-test
                         base ^>= 4.21,
                         bytestring ^>= 0.12,
                         hspec ^>= 2.11,
-                        keiki,
-                        keiki-codec-json,
+                        keiki ^>= 0.1,
+                        keiki-codec-json ^>= 0.1,
                         quickcheck-instances ^>= 0.3,
                         text ^>= 2.1,
                         time ^>= 1.12
