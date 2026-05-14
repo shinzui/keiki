@@ -145,7 +145,7 @@ exists.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | RegFile JSON codec and shape hash for snapshot persistence | docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md | None | None | In Progress |
+| 1 | RegFile JSON codec and shape hash for snapshot persistence | docs/plans/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md | None | None | Complete |
 | 2 | Coordinated Hackage release of keiki and keiki-codec-json | docs/plans/37-...  *(to be authored when Phase B begins)* | EP-1 | None | Not Started |
 | 3 | TH derivation helpers for RegFileToJSON | docs/plans/38-... *(to be authored when Phase B begins)* | EP-1 | None | Not Started |
 | 4 | Property-test toolkit for downstream codec users | docs/plans/39-... *(to be authored when Phase B begins)* | EP-1 | None | Not Started |
@@ -318,6 +318,35 @@ plan and the milestone.
 
 Document cross-plan insights, dependency changes, scope adjustments, or unexpected
 interactions between child plans. Provide concise evidence.
+
+- 2026-05-13 — Phase A complete: EP-36 lands all seven milestones in one
+  session. New sibling cabal package `keiki-codec-json/`; new module
+  `Keiki.Shape` in `keiki` core (Typeable + SHA-256 deps only). The
+  cabal-project layout, the `RegFileToJSON` class with three methods
+  (`regFileToJSON` / `regFileToEncoding` / `regFileFromJSON`), the M3
+  property + sensitivity + golden test suite (30/30 tests pass), the M4
+  tasty-bench baseline (Encoding path 1.5× faster + 33 % less allocation
+  on Case B), the M5 cross-GHC CI workflow + §8 procedure, and the M6
+  design note + docs cross-references all land. Cross-plan implications
+  for Phase B:
+  (a) `Keiki.Shape` is new public surface in `keiki` core, so EP-37
+  must own a coordinated release of both packages (already recorded
+  in Integration Points 2026-05-13).
+  (b) The cross-GHC gate is structurally in place but operationally
+  vacuous with one row in `tested-with`; widening the matrix is the
+  release-readiness prerequisite (already recorded as a Phase B
+  prerequisite on EP-37).
+  (c) Aeson 2.2's `Aeson.Value` Object emits keys in `KeyMap` order
+  (alphabetical), while the Encoding path emits in slot-list order.
+  This was an unstated assumption broken on first contact with the
+  M2 test; reinterpreted as within-path determinism + cross-path
+  semantic round-trip. Worth documenting in the spec when EP-37 ships
+  (R9 should split into R9.a and R9.b).
+  (d) The §7 inductive sketch (Merkle-chain) and §3 R3 (single SHA-256
+  over canonical concatenation) disagreed; R3 wins. The implementation
+  uses `regFileShapeCanonical` as the inductive class method and
+  `regFileShapeHash` as a top-level wrapper. Documented in EP-36
+  Decision Log + Surprises; worth a spec touch-up in EP-37.
 
 - 2026-05-13 — Deep validation pass against EP-36 and the keiki / keiro source
   trees surfaced six issues, all corrected in the same revision: (1) the cited

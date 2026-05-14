@@ -399,6 +399,91 @@ implementation. Provide concise evidence.
 
 ## Outcomes & Retrospective
 
+**2026-05-13 — Phase A complete (M0–M6).** EP-36 ships in one session.
+All seven milestones green; one new sibling cabal package
+(`keiki-codec-json`), one new module in keiki core (`Keiki.Shape`), one
+design note (`docs/research/regfile-codec-design.md`), one CI workflow
+(`.github/workflows/ci.yml`), one CONTRIBUTING with the §8 procedure, a
+README at the package root, and a 30/30-test test suite plus a tasty-
+bench bench with checked-in baseline.csv. Total: 8 commits, ~1,400 LOC
+across source + tests + docs + CI.
+
+**What the original vision predicted, and what actually shipped.**
+
+- *Predicted:* a JSON codec primitive + a GHC-upgrade-safe shape hash,
+  in a sibling package so keiki core stays aeson-free, with a cross-GHC
+  CI gate that catches drift. *Shipped:* exactly that. The two-package
+  split is structural (keiki has no aeson in its build-depends);
+  Keiki.Shape ships with cryptohash-sha256 + bytestring as the only new
+  deps; Keiki.Codec.JSON has aeson and pulls keiki.
+
+- *Predicted:* the streaming encoder (R10) would matter for §10 Case B
+  (5,000-entry batch reconciliation). *Shipped:* the bench confirms a
+  1.5× speedup and 33 % allocation reduction on the condensed Case B
+  fixture, matching the headline prediction. The Value path remains
+  available for in-memory manipulation where the bytes don't need to be
+  emitted immediately.
+
+- *Predicted:* the hash catches §4 cases #1–9 and misses #10–12 by
+  design (the consumer's `stateCodecVersion` covers #10–12). *Shipped:*
+  the M3 sensitivity spec asserts all 9 mutation cases produce
+  different hashes; the docs spell out the disjointness of the two
+  discriminants.
+
+- *Predicted:* the §8 procedure makes GHC bumps deliberate rather than
+  silent. *Shipped:* CONTRIBUTING.md carries the three-branch decision
+  tree (GHC semantics drift / impl bug / clean). The cross-GHC gate is
+  structurally in place; operational meaningfulness depends on
+  expanding `tested-with` to ≥ 2 entries (a Phase B task — see MP-11).
+
+**Two clarifications that emerged during implementation.**
+
+- The §7 interface sketch's inductive `regFileShapeHash` body is a
+  Merkle chain (one SHA-256 per slot). §3 R3 specifies a single SHA-256
+  over the whole canonical byte string. The discrepancy is documented
+  in Decision Log + Surprises & Discoveries; the implementation follows
+  R3 (the binding contract). `regFileShapeCanonical` is exposed
+  alongside `regFileShapeHash` as the inductive class method.
+
+- Aeson 2.2's `Aeson.Value` Object is a `KeyMap`, whose default
+  representation orders keys alphabetically. The Value path's
+  `Aeson.encode` therefore emits in sort order; the Encoding path's
+  `Aeson.pairs . regFileSeries` emits in slot-list order. The two byte
+  streams are NOT cross-path equal for any slot list whose order is
+  not alphabetical. The M2 acceptance was reinterpreted (and the test
+  rewritten) as within-path determinism + cross-path semantic
+  round-trip. R9's "object keys in slot-list order" wording applies
+  literally to the Encoding path; the Value path is for in-memory
+  manipulation where the order is implementation-defined but stable
+  per build.
+
+**What remains for Phase B (out of this ExecPlan's scope).**
+
+- EP-37: Hackage release of v0.1 for both `keiki` and `keiki-codec-json`
+  (a coordinated release; `Keiki.Shape` is new public surface in
+  `keiki`). Includes expanding `tested-with` to ≥ 2 GHC entries to make
+  the cross-GHC gate operationally meaningful.
+- EP-38: TH derivation helpers (`deriveRegFileToJSON`) in a new module
+  `Keiki.Codec.JSON.TH` inside `keiki-codec-json` (must NOT live in
+  keiki's Keiki.Generics.TH, to preserve R8).
+- EP-39: Property-test toolkit; the §4 case-#10 ToJSON-change detector
+  is the lede deliverable (the rest is library-izing this plan's M3
+  in-tree disciplines).
+
+These three are tracked in MP-11's Exec-Plan Registry; they will be
+authored when Phase B begins, per the MasterPlan's deferred-authoring
+decision (recorded in MP-11 Decision Log 2026-05-10).
+
+**What I'd do differently.** The §7 sketch and §3 R3 should be
+reconciled before authoring future ExecPlans — a single inductive class
+method that does the work, paired with a top-level wrapper, is the
+clean shape, and the spec's wording should describe that rather than a
+Merkle-chain illustrative form. Same for R9: separate into "within-path
+determinism" and "Encoding path emits slot-list order" so the cross-
+path expectation is not buried in subordinate wording.
+
+
+
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
