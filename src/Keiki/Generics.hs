@@ -1,8 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 -- | DX spike (EP-2 follow-up): generic-derived inversions between
 -- Haskell records and 'RegFile's so users can build 'InCtor' values

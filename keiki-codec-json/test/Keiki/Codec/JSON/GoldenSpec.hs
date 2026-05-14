@@ -1,6 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-
 -- | EP-36 M3 golden hash file.
 --
 -- Pins the shape hash of 'ExemplarSlots' for the current GHC version.

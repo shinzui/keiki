@@ -1,10 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeOperators #-}
 
 -- | EP-15 M6: hand-written unit tests for 'Keiki.Builder'. Tests use
 -- a tiny in-spec toy transducer (single-slot register file, two

@@ -1,9 +1,4 @@
-{-# LANGUAGE BangPatterns       #-}
-{-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications   #-}
 -- 'Vertex' is a user-defined nullary enum in
 -- "Keiki.Fixtures.UserRegistration"; we add an orphan
 -- @NoThunks Vertex@ here purely for the canonical-log assertion.

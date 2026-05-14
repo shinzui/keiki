@@ -1,6 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeApplications #-}
 
 -- | EP-36 M1: golden-value tests for 'Keiki.Shape'.
 --

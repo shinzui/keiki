@@ -1,6 +1,4 @@
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
 -- | The /shape hash/ for @RegFile rs@.
 --

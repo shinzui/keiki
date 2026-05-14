@@ -42,7 +42,7 @@ distributions.
 The cross-GHC golden-hash CI gate that EP-36 M5 set up
 (`.github/workflows/ci.yml` job `test`) becomes operationally meaningful
 only once the GHC matrix has at least two entries (today it has one,
-`9.12.3`; see MP-11 Decision Log entry of 2026-05-13). Expanding the
+`9.12.2`; see MP-11 Decision Log entry of 2026-05-13). Expanding the
 matrix to a second supported GHC version is therefore a release-
 readiness prerequisite carried by this plan rather than a follow-up.
 
@@ -102,7 +102,7 @@ This section must always reflect the actual current state of the work.
       keiki-codec-json-test-0.1.0.0}.tar.gz`. Extracted in
       `/tmp/release-check/` with a stand-alone `cabal.project` that
       lists just the three extracted packages and pins
-      `with-compiler: ghc-9.12.3`. `cabal build all` green;
+      `with-compiler: ghc-9.12.2`. `cabal build all` green;
       `cabal test all` green (186 + 40 + 7 = 233 examples, 0
       failures from the clean-room copy).
       An `extra-source-files: bench/baseline.csv` line was added to
@@ -267,11 +267,11 @@ layout at the start of this plan is:
   ^>= 2.2, keiki, text ^>= 2.1, base ^>= 4.21`. Exposes one module
   `Keiki.Codec.JSON`.
 * `cabal.project` — declares `packages: . jitsurei keiki-codec-json` and pins
-  `with-compiler: ghc-9.12.3`. Only `.` (keiki) and `keiki-codec-json` are
+  `with-compiler: ghc-9.12.2`. Only `.` (keiki) and `keiki-codec-json` are
   in scope for Hackage; `jitsurei` is a local example aggregate, not a
   published package.
 * `.github/workflows/ci.yml` — three jobs from EP-36 M5: `test` (cross-GHC
-  matrix, currently one row `9.12.3`), `test-perturbed-deps`
+  matrix, currently one row `9.12.2`), `test-perturbed-deps`
   (`--allow-newer text`), and an advisory `bench` on PRs.
 * `keiki-codec-json/CONTRIBUTING.md` — the GHC-upgrade procedure (release
   gate § "GHC upgrade procedure (release-blocking)"). This plan extends it
@@ -357,7 +357,7 @@ yet.
 **M2 — Expand `tested-with` and CI matrix to two GHC versions.**
 
 Today both `.cabal` files declare `tested-with: GHC == 9.12.*` and CI's
-`test` job's `matrix.ghc` has one row `'9.12.3'`. The cross-GHC golden
+`test` job's `matrix.ghc` has one row `'9.12.2'`. The cross-GHC golden
 hash gate has nothing to compare against in this state. Pick a second
 GHC version — recommended is `9.10.*` (one minor below 9.12, well-
 supported by `haskell-actions/setup@v2`, and the version most likely to
@@ -371,7 +371,7 @@ Edit three files:
 2. `keiki-codec-json/keiki-codec-json.cabal` line 16: same change, for
    symmetry.
 3. `.github/workflows/ci.yml`, the `test` job's `matrix.ghc` field
-   (line 26): add a second entry, e.g. `ghc: ['9.10.7', '9.12.3']`. Pin
+   (line 26): add a second entry, e.g. `ghc: ['9.10.7', '9.12.2']`. Pin
    the patch version explicitly so CI does not silently float; if a new
    patch version comes out and we want to validate against it, that is
    a separate intentional bump.

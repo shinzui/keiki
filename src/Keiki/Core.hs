@@ -1,6 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE UndecidableInstances #-}
 -- 'combine''s 'Disjoint' constraint is the static check itself; GHC
 -- sees it as unused (the body is @UCombine@) and would otherwise warn.
 -- Same reasoning for any future helpers that re-export the constraint

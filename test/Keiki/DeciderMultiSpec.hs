@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 module Keiki.DeciderMultiSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)

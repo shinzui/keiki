@@ -1,7 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
-
 -- | Self-test for @keiki-codec-json-test@. Exercises every public
 -- helper against the toy 'Email' / 'DemoSlots' / 'DemoSlotsRenamed'
 -- fixtures defined in "Keiki.Codec.JSON.Test.Demo".

@@ -1,6 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 -- 'unsafeCoerceDisjointness' fabricates a 'Disjoint' constraint
 -- dictionary via 'unsafeCoerce' on the trivially-disjoint
 -- @Disjoint '[] '[]@ witness. GHC sees the @forall xs ys.@ as

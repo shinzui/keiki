@@ -1,6 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | Mermaid 'stateDiagram-v2' renderer for 'SymTransducer' values whose
 -- vertex type is enumerable.
 --

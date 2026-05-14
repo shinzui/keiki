@@ -1,8 +1,4 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
 -- 'compose''s @Disjoint (Names rs1) (Names rs2)@ constraint is the
 -- documented precondition that @rs1@ and @rs2@ have disjoint
 -- slot-name domains; the body uses raw 'UCombine' (decision logged

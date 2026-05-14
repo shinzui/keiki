@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
 -- The 'NoThunks' instances for 'RegFile' are deliberate orphans: the
 -- type lives in "Keiki.Core" (which stays free of observability deps)
 -- and the class lives in @nothunks@. See the Decision Log of

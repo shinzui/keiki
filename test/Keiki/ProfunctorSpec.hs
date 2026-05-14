@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 
 -- | Acceptance tests for 'Keiki.Profunctor' (EP-27 of MasterPlan 9).
 --

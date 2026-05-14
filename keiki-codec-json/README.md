@@ -105,7 +105,7 @@ Four fixtures condensed from EP-36 §10:
 
 Per fixture: `encode-via-Value`, `encode-via-Encoding`, `decode`, `hash`.
 
-`bench/baseline.csv` carries the reference numbers from a GHC 9.12.3
+`bench/baseline.csv` carries the reference numbers from a GHC 9.12.2
 run on macOS aarch64. CI runs the bench on every push and flags drift
 (>20%) as a PR comment but does NOT block merges. The cross-GHC hash
 gate (EP-36 M5) is the release-blocking gate; the bench is a tracked

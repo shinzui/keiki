@@ -1,6 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-
 -- | EP-36 M3 sensitivity tests (P7.4).
 --
 -- The baseline 'ExemplarSlots' shape hash is computed once, and each

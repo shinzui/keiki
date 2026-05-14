@@ -1,7 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE TypeOperators #-}
 -- 'Disjoint' on '(.=)' is the static check itself; GHC otherwise warns.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
