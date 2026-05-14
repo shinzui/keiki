@@ -124,13 +124,23 @@ research foundation):
       is exercised via `RenamedAddress` — the hash is over types, so the
       disciplined practice (rename on breaking change) is what makes it
       observable.
-- [ ] M4 — Performance baselines via `tasty-bench`. Benchmark fixtures derived from
-      §10 cases A–D: condensed multi-party signing (Case A, ~100 KB), batch
-      reconciliation (Case B, ~10 MB), ticket aggregate (Case C, ~500 KB), auction
-      aggregate (Case D, ~2 MB). Reports encode-via-Value, encode-via-Encoding, and
-      decode times per fixture; reports peak resident memory delta. Numbers checked
-      in as a baseline; CI reports drift (does NOT block merges — the cross-GHC
-      hash gate is the release blocker, not the bench).
+- [x] M4 — Performance baselines via `tasty-bench` (2026-05-13).
+      `keiki-codec-json/bench/Bench.hs` defines four `tasty-bench` groups
+      named `BenchA_ContractSign` (§10 Case A, 5 parties + 50 audit rows),
+      `BenchB_BatchRecon` (§10 Case B, 5,000 processedItems — the streaming-
+      encoder motivating case), `BenchC_TicketAgg` (§10 Case C, 100 comments),
+      `BenchD_Auction` (§10 Case D, 1,000 bids). Per group: four benchmarks
+      (`encode-via-Value`, `encode-via-Encoding`, `decode`, `hash`).
+      `keiki-codec-json/bench/baseline.csv` carries the reference numbers from
+      a GHC 9.12.3 run on macOS aarch64; CI runs the bench on every push and
+      flags drift but does NOT block merges. Wall-clock summary
+      (mean, GHC 9.12.3 / M-series Mac): BenchB encode-via-Value 1.30 ms,
+      encode-via-Encoding 890 μs (1.5× faster + 33 % less allocation —
+      the streaming encoder's headline win for the §10 Case B shape); decode
+      2.93 ms; hash 1.77 μs. BenchA / C / D scale linearly. Allocation
+      pressure on the Value path is roughly 1.5× the Encoding path across
+      all four fixtures, matching the §10 Case B rationale for R10.
+      Total bench duration: ~32 s.
 - [ ] M5 — Cross-GHC CI gate active. The cross-GHC golden hash test (P7.2) runs against
       every entry in `tested-with`. A diff between rows is a release-blocking bug per
       the §8 procedure.

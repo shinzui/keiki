@@ -1,0 +1,17 @@
+Name,Mean (ps),2*Stdev (ps),Allocated,Copied,Peak Memory
+All.BenchA_ContractSign.encode-via-Value,6807769,347816,34269,2,49283072
+All.BenchA_ContractSign.encode-via-Encoding,3387927,264216,16065,0,65011712
+All.BenchA_ContractSign.decode,12882232,1220802,106640,20,65011712
+All.BenchA_ContractSign.hash,1747040,133960,5737,0,65011712
+All.BenchB_BatchRecon.encode-via-Value,1311845312,130324330,6544326,89657,65011712
+All.BenchB_BatchRecon.encode-via-Encoding,890765625,52914452,4256444,105,65011712
+All.BenchB_BatchRecon.decode,2989114062,286069958,16482818,368064,65011712
+All.BenchB_BatchRecon.hash,1784275,106480,5737,0,65011712
+All.BenchC_TicketAgg.encode-via-Value,15564422,1321522,97357,7,65011712
+All.BenchC_TicketAgg.encode-via-Encoding,7660565,566564,57640,0,78643200
+All.BenchC_TicketAgg.decode,30095593,2245184,243181,55,78643200
+All.BenchC_TicketAgg.hash,1799739,107384,5806,0,78643200
+All.BenchD_Auction.encode-via-Value,234994824,16470910,1291776,4027,78643200
+All.BenchD_Auction.encode-via-Encoding,153516113,10548170,778679,16,78643200
+All.BenchD_Auction.decode,521485937,36636576,3347864,16826,78643200
+All.BenchD_Auction.hash,1748992,160464,5772,0,78643200

@@ -39,6 +39,22 @@ library
                         keiki,
                         text ^>= 2.1
 
+benchmark keiki-codec-json-bench
+    import:             warnings, shared-extensions
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     bench
+    main-is:            Bench.hs
+    build-depends:      aeson ^>= 2.2,
+                        base ^>= 4.21,
+                        bytestring ^>= 0.12,
+                        deepseq ^>= 1.5,
+                        keiki,
+                        keiki-codec-json,
+                        tasty-bench ^>= 0.4 || ^>= 0.5,
+                        text ^>= 2.1
+    ghc-options:        -fproc-alignment=64
+                        "-with-rtsopts=-A32m -T"
+
 test-suite keiki-codec-json-test
     import:             warnings, shared-extensions
     type:               exitcode-stdio-1.0

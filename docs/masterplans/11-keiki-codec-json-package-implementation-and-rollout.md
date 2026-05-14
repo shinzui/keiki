@@ -293,8 +293,11 @@ plan and the milestone.
       samples each, Value+Encoding roundtrip and within-path determinism),
       9 sensitivity assertions (§4 cases #1–9), and a pinned golden hash for
       the GHC-9.12.* exemplar. 30/30 tests pass.
-- [ ] EP-36 M4: Performance baselines via `tasty-bench` against the §10 reference
-      fixtures. Tracked, not gated.
+- [x] EP-36 M4: Performance baselines via `tasty-bench` shipped (2026-05-13).
+      Four fixtures × four measurements; baseline CSV checked in at
+      `keiki-codec-json/bench/baseline.csv`. Encoding path is ~1.5× faster
+      than Value path on the streaming-motivating BenchB fixture (5,000-entry
+      list, 890 μs vs 1.30 ms, with 33 % less allocation).
 - [ ] EP-36 M5: Cross-GHC CI gate (P7.2, release-blocking).
 - [ ] EP-36 M6: Documentation — haddock with P11 guidance, design note, README
       updates.
