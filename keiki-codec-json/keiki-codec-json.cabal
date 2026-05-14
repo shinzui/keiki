@@ -44,10 +44,17 @@ test-suite keiki-codec-json-test
     type:               exitcode-stdio-1.0
     hs-source-dirs:     test
     main-is:            Spec.hs
-    build-depends:      base ^>= 4.21,
+    other-modules:      Keiki.Codec.JSON.Fixtures
+                        Keiki.Codec.JSON.PropSpec
+                        Keiki.Codec.JSON.SensitivitySpec
+                        Keiki.Codec.JSON.GoldenSpec
+    build-depends:      QuickCheck ^>= 2.15,
                         aeson ^>= 2.2,
+                        base ^>= 4.21,
                         bytestring ^>= 0.12,
                         hspec ^>= 2.11,
                         keiki,
                         keiki-codec-json,
-                        text ^>= 2.1
+                        quickcheck-instances ^>= 0.3,
+                        text ^>= 2.1,
+                        time ^>= 1.12

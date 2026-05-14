@@ -289,8 +289,10 @@ plan and the milestone.
       assumption relaxed to within-path determinism + cross-path semantic
       round-trip (aeson 2.2's `Aeson.Value`/`KeyMap` emits sorted-order, the
       Encoding path emits slot-list order — both round-trip correctly).
-- [ ] EP-36 M3: Property tests (R5, R9, R10, P7.4) — both Value and Encoding paths,
-      determinism, sensitivity.
+- [x] EP-36 M3: Property tests shipped (2026-05-13). 4 QC properties (100
+      samples each, Value+Encoding roundtrip and within-path determinism),
+      9 sensitivity assertions (§4 cases #1–9), and a pinned golden hash for
+      the GHC-9.12.* exemplar. 30/30 tests pass.
 - [ ] EP-36 M4: Performance baselines via `tasty-bench` against the §10 reference
       fixtures. Tracked, not gated.
 - [ ] EP-36 M5: Cross-GHC CI gate (P7.2, release-blocking).
