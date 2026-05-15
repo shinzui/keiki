@@ -75,7 +75,7 @@ library
                         sbv >= 11.7 && < 15,
                         template-haskell ^>= 2.23,
                         text ^>= 2.1,
-                        time ^>= 1.12
+                        time ^>= 1.14
 
 test-suite keiki-test
     import:             warnings, shared-extensions
@@ -112,4 +112,4 @@ test-suite keiki-test
                         profunctors >= 5.6 && < 6,
                         sbv >= 11.7 && < 15,
                         text ^>= 2.1,
-                        time ^>= 1.12
+                        time ^>= 1.14

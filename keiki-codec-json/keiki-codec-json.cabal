@@ -103,4 +103,4 @@ test-suite keiki-codec-json-test
                         keiki-codec-json ^>= 0.1,
                         quickcheck-instances ^>= 0.3,
                         text ^>= 2.1,
-                        time ^>= 1.12
+                        time ^>= 1.14
