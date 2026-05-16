@@ -284,7 +284,7 @@ mkToy src tgt isSrc isFinalAt = SymTransducer
                           then [Edge
                                  { guard  = PInCtor inCtorTick
                                  , update = UKeep
-                                 , output = Just (pack inCtorTick wireTick OFNil)
+                                 , output = [ pack inCtorTick wireTick OFNil ]
                                  , target = tgt
                                  }]
                           else []

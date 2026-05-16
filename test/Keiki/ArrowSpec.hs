@@ -39,7 +39,7 @@ spec = do
       case lifted of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (42 :: Int)
-            `shouldBe` Just ("42" :: Text)
+            `shouldBe` [("42" :: Text)]
         SomeSymIdentity ->
           expectationFailure
             "Arr.arr unexpectedly returned the identity sentinel"
@@ -54,7 +54,7 @@ spec = do
       case lifted of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (7 :: Int)
-            `shouldBe` Just 7
+            `shouldBe` [7]
         SomeSymIdentity ->
           expectationFailure
             "Arr.arr id should NOT short-circuit to SomeSymIdentity \
@@ -68,7 +68,7 @@ spec = do
       case lifted of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (42 :: Int, "extra" :: Text)
-            `shouldBe` Just ("42", "extra")
+            `shouldBe` [("42", "extra")]
         SomeSymIdentity ->
           expectationFailure
             "Arr.first on a non-identity wrapper returned the sentinel"
@@ -85,7 +85,7 @@ spec = do
       in case lifted of
            SomeSymTransducer t ->
              omega t (initial t) (initialRegs t) (99 :: Int)
-               `shouldBe` Just ("99" :: Text)
+               `shouldBe` [("99" :: Text)]
            SomeSymIdentity ->
              expectationFailure
                "arr f >>> Cat.id unexpectedly returned the sentinel \
@@ -98,7 +98,7 @@ spec = do
       in case lifted of
            SomeSymTransducer t ->
              omega t (initial t) (initialRegs t) (5 :: Int)
-               `shouldBe` Just ("5" :: Text)
+               `shouldBe` [("5" :: Text)]
            SomeSymIdentity ->
              expectationFailure
                "Cat.id <<< arr f unexpectedly returned the sentinel"

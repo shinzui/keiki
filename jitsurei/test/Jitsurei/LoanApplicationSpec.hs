@@ -82,7 +82,7 @@ spec = do
           case step loanApplication (CollectingDocuments, regs) Continue of
             Just (s, _, mco) -> do
               s   `shouldBe` UnderReview
-              mco `shouldBe` Nothing
+              mco `shouldBe` []
             Nothing ->
               expectationFailure "step with Continue returned Nothing"
         _ -> expectationFailure "evidence log did not land at CollectingDocuments"
@@ -108,7 +108,7 @@ spec = do
           case delta loanApplication CollectingDocuments regs Continue of
             Just (UnderReview, regs') ->
               case step loanApplication (UnderReview, regs') Continue of
-                Just (Approved, _, Just (ApplicationApproved a)) -> do
+                Just (Approved, _, [ApplicationApproved a]) -> do
                   a.applicantId     `shouldBe` "alice"
                   a.requestedAmount `shouldBe` 250_000
                   a.creditScore     `shouldBe` 720

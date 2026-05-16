@@ -61,7 +61,7 @@ synthetic = SymTransducer
   { edgesOut = \case
       False -> [ Edge { guard  = matchInCtor inCtorTrue
                       , update = UKeep
-                      , output = Just (pack inCtorTrue wcStringTrue OFNil)
+                      , output = [ pack inCtorTrue wcStringTrue OFNil ]
                       , target = True
                       }
                 ]
@@ -119,7 +119,7 @@ spec = do
     it "delta moves False -> True on input True (state)" $
       fmap fst (delta synthetic False RNil True) `shouldBe` Just True
     it "omega emits \"true\" on the matching edge" $
-      omega synthetic False RNil True `shouldBe` Just "true"
+      omega synthetic False RNil True `shouldBe` ["true"]
     it "delta returns Nothing when the guard is unsatisfied" $
       fmap fst (delta synthetic False RNil False) `shouldBe` Nothing
     it "delta returns Nothing in the True (sink) vertex" $
@@ -128,7 +128,7 @@ spec = do
   describe "step" $ do
     it "produces (s', _, Just co) on a matching output edge" $ do
       case step synthetic (False, RNil) True of
-        Just (s', _, Just co) -> (s', co) `shouldBe` (True, "true")
+        Just (s', _, [co]) -> (s', co) `shouldBe` (True, "true")
         other                 -> expectationFailure (show3 other)
     it "returns Nothing in the sink vertex" $
       case step synthetic (True, RNil) True of
@@ -197,9 +197,9 @@ spec = do
   where
     -- 'show' over `Maybe (s, RegFile rs, Maybe co)` is awkward because
     -- RegFile has no Show. Use a thin coercion to a printable summary.
-    show3 :: Show s => Show co => Maybe (s, x, Maybe co) -> String
+    show3 :: Show s => Show co => Maybe (s, x, [co]) -> String
     show3 Nothing                = "Nothing"
-    show3 (Just (s, _, mco))     = "Just (" ++ show s ++ ", _, " ++ show mco ++ ")"
+    show3 (Just (s, _, cos_))    = "Just (" ++ show s ++ ", _, " ++ show cos_ ++ ")"
 
 
 -- | Output sum mirroring 'TinyCmd' for the M3 structural-path tests.

@@ -52,7 +52,6 @@ module Jitsurei.UserRegistration
     -- * The transducer
   , userReg
   , userRegAST
-  , userRegChained
   , emptyRegs
     -- * Multi-event driver configuration (EP-20 M4)
   , userRegDriverConfig
@@ -355,83 +354,6 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
   -- Deleted is terminal; defaults to [] without an explicit `from`.
 
 
--- * Chained-builder form (EP-20 M5) ---------------------------------------
-
--- | The same transducer authored with 'Keiki.Builder.chainTo' for
--- the multi-event entrance. The @PotentialCustomer ->
--- RequiresConfirmation@ transition is now declared as a single
--- 'onCmd' block whose body emits two events with a 'chainTo'
--- between them; the intermediate vertex 'Registering' and the
--- internal advancement 'Continue' are *named* in the chain but
--- not declared with a separate @from Registering@ block.
---
--- Compiles to the same letter-FST 'Edge' values as 'userReg'; the
--- equivalence test in
--- 'Jitsurei.UserRegistrationChainedSpec' asserts byte-
--- identical behavior on the canonical event log.
-userRegChained :: SymTransducer (HsPred UserRegRegs UserCmd)
-                                UserRegRegs
-                                Vertex
-                                UserCmd
-                                UserEvent
-userRegChained = B.buildTransducer PotentialCustomer emptyRegs
-                   (\case Deleted -> True; _ -> False) do
-
-  B.from PotentialCustomer do
-    B.onCmd inCtorStart $ \d -> B.do
-      B.slot @"email"        .= d.email
-      B.slot @"confirmCode"  .= d.confirmCode
-      B.slot @"registeredAt" .= d.at
-      B.emit wireRegistrationStarted RegistrationStartedTermFields
-        { email       = d.email
-        , confirmCode = d.confirmCode
-        , at          = d.at
-        }
-      B.chainTo Registering inCtorContinue
-      B.emit wireConfirmationEmailSent
-        ConfirmationEmailSentTermFields { email = #email }
-      B.goto RequiresConfirmation
-
-  -- No explicit 'from Registering' block — the chained edge from
-  -- 'Registering' to 'RequiresConfirmation' was registered by the
-  -- 'chainTo' above.
-
-  B.from RequiresConfirmation do
-    B.onCmd inCtorConfirm $ \d -> B.do
-      B.requireEq d.confirmCode #confirmCode
-      B.slot @"confirmedAt" .= d.at
-      B.emit wireAccountConfirmed AccountConfirmedTermFields
-        { email       = #email
-        , confirmCode = d.confirmCode
-        , at          = d.at
-        }
-      B.goto Confirmed
-
-    B.onCmd inCtorResend $ \d -> B.do
-      B.slot @"confirmCode"  .= d.code
-      B.slot @"registeredAt" .= d.at
-      B.emit wireConfirmationResent ConfirmationResentTermFields
-        { email       = #email
-        , confirmCode = d.code
-        , at          = d.at
-        }
-      B.goto RequiresConfirmation
-
-    B.onCmd inCtorGdpr $ \d -> B.do
-      B.slot @"deletedAt" .= d.at
-      B.noEmit
-      B.goto Deleted
-
-  B.from Confirmed do
-    B.onCmd inCtorGdpr $ \d -> B.do
-      B.slot @"deletedAt" .= d.at
-      B.emit wireAccountDeleted AccountDeletedTermFields
-        { email = #email
-        , at    = d.at
-        }
-      B.goto Deleted
-
-
 -- * AST form (legacy, retained for the M5 equivalence test) ----------------
 
 -- | The same transducer hand-authored against the post-MP-6
@@ -468,12 +390,12 @@ userRegASTEdges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpStart #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorStart
             wireRegistrationStarted
             (OFCons (inpStart #email)
               (OFCons (inpStart #confirmCode)
-                (OFCons (inpStart #at) OFNil)))
+                (OFCons (inpStart #at) OFNil))) ]
         , target = Registering
         }
     ]
@@ -483,10 +405,10 @@ userRegASTEdges = \case
     [ Edge
         { guard  = isContinue
         , update = UKeep
-        , output = Just $ pack
+        , output = [ pack
             inCtorContinue
             wireConfirmationEmailSent
-            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
+            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil) ]
         , target = RequiresConfirmation
         }
     ]
@@ -500,12 +422,12 @@ userRegASTEdges = \case
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
         , update = USet (#confirmedAt :: IndexN "confirmedAt" UserRegRegs UTCTime)
                         (inpConfirm #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorConfirm
             wireAccountConfirmed
             (OFCons (proj (#email :: Index UserRegRegs Email))
               (OFCons (inpConfirm #confirmCode)
-                (OFCons (inpConfirm #at) OFNil)))
+                (OFCons (inpConfirm #at) OFNil))) ]
         , target = Confirmed
         }
       -- Resend: rotate the code (code arrives in the command).
@@ -517,12 +439,12 @@ userRegASTEdges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpResend #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorResend
             wireConfirmationResent
             (OFCons (proj (#email :: Index UserRegRegs Email))
               (OFCons (inpResend #code)
-                (OFCons (inpResend #at) OFNil)))
+                (OFCons (inpResend #at) OFNil))) ]
         , target = RequiresConfirmation
         }
       -- GDPR before confirmation: silent ε-edge (no event).
@@ -530,7 +452,7 @@ userRegASTEdges = \case
         { guard  = isGdpr
         , update = USet (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
                         (inpGdpr #at)
-        , output = Nothing
+        , output = []
         , target = Deleted
         }
     ]
@@ -540,11 +462,11 @@ userRegASTEdges = \case
         { guard  = isGdpr
         , update = USet (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
                         (inpGdpr #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorGdpr
             wireAccountDeleted
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpGdpr #at) OFNil))
+              (OFCons (inpGdpr #at) OFNil)) ]
         , target = Deleted
         }
     ]

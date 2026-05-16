@@ -712,8 +712,16 @@ compose t1 t2 = SymTransducer
       -> [Edge (HsPred (Append rs1 rs2) ci1)
                (Append rs1 rs2) ci1 co (Composite s1 s2)]
     composeEdge _s1Source s2 e1 = case output e1 of
-      Nothing  -> [epsilonEdge e1 s2]
-      Just o1  -> map (productEdge e1 o1) (edgesOut t2 s2)
+      []     -> [epsilonEdge e1 s2]
+      [o1]   -> map (productEdge e1 o1) (edgesOut t2 s2)
+      (o1:_) ->
+        -- M2 temporary semantics for multi-event first-edges:
+        -- compose against the head only, preserving letter-FST
+        -- behaviour for length-1 callers. M6 replaces this with
+        -- library-side chain expansion that threads T2's state
+        -- across each mid-symbol and re-collapses into a length-N
+        -- composite edge. See docs/research/gsm-widening-design.md §5.
+        map (productEdge e1 o1) (edgesOut t2 s2)
 
     epsilonEdge
       :: Edge (HsPred rs1 ci1) rs1 ci1 mid s1 -> s2
@@ -723,7 +731,7 @@ compose t1 t2 = SymTransducer
       Edge { update = u1 } -> Edge
         { guard  = weakenLPred @rs1 @rs2 (guard e1)
         , update = weakenLUpdate @rs1 @rs2 u1
-        , output = Nothing
+        , output = []
         , target = Composite (target e1) s2
         }
 
@@ -753,7 +761,7 @@ compose t1 t2 = SymTransducer
         , update = UCombine
                      (weakenLUpdate @rs1 @rs2 u1)
                      (substUpdate   @rs1 @rs2 u2 o1)
-        , output = fmap (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2)
+        , output = map (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2)
         , target = Composite (target e1) (target e2)
         }
 
@@ -843,9 +851,9 @@ alternative t1 t2 = SymTransducer
                                  (weakenLPred @rs1 @rs2 (guard e1))
         , update = liftLUpdateAlt @(Append rs1 rs2) @_ @ci1 @ci2
                                    (weakenLUpdate @rs1 @rs2 u1)
-        , output = fmap (liftLOutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
+        , output = map (liftLOutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
                           . weakenLOut @rs1 @rs2)
-                        (output e1)
+                       (output e1)
         , target = Composite (target e1) s2
         }
 
@@ -861,9 +869,9 @@ alternative t1 t2 = SymTransducer
                                  (weakenRPred @rs1 @rs2 (guard e2))
         , update = liftRUpdateAlt @(Append rs1 rs2) @_ @ci1 @ci2
                                    (weakenRUpdate @rs1 @rs2 u2)
-        , output = fmap (liftROutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
+        , output = map (liftROutAlt @(Append rs1 rs2) @ci1 @ci2 @co1 @co2
                           . weakenROut @rs1 @rs2)
-                        (output e2)
+                       (output e2)
         , target = Composite s1 (target e2)
         }
 

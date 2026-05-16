@@ -119,8 +119,8 @@ toggleEdges = \case
     [ Edge
         { guard  = isFlip
         , update = UKeep
-        , output = Just $ pack inCtorFlip wireFlipped
-            (OFCons (inpFlip #tValue) OFNil)
+        , output = [ pack inCtorFlip wireFlipped
+            (OFCons (inpFlip #tValue) OFNil) ]
         , target = On
         }
     ]
@@ -129,8 +129,8 @@ toggleEdges = \case
     [ Edge
         { guard  = isFlip
         , update = UKeep
-        , output = Just $ pack inCtorFlip wireFlipped
-            (OFCons (inpFlip #tValue) OFNil)
+        , output = [ pack inCtorFlip wireFlipped
+            (OFCons (inpFlip #tValue) OFNil) ]
         , target = Off
         }
     ]
@@ -183,8 +183,8 @@ policyEdges = \case
     [ Edge
         { guard  = isPFlipped
         , update = UKeep
-        , output = Just $ pack inCtorPFlipped wirePFlip
-            (OFCons (inpPFlipped #tValue) OFNil)
+        , output = [ pack inCtorPFlipped wirePFlip
+            (OFCons (inpPFlipped #tValue) OFNil) ]
         , target = Pol
         }
     ]
@@ -232,20 +232,20 @@ spec = do
     describe "single-step cascade" $ do
       it "Composite Off (Composite Pol Off) -- TgFlip{42} --> Composite On (Composite Pol On), emitting TgFlipped{42}" $
         case step loop (initial loop, initialRegs loop) externalCmd of
-          Just (Composite outerT (Composite policy innerT), _, Just co) -> do
+          Just (Composite outerT (Composite policy innerT), _, [co]) -> do
             outerT `shouldBe` On       -- outer toggle stepped Off → On
             policy `shouldBe` Pol      -- policy self-loops
             innerT `shouldBe` On       -- inner toggle stepped Off → On (proves cascade ran)
             co     `shouldBe` cascadedEvent
           other -> expectationFailure
-            ("expected Just (Composite On (Composite Pol On), _, Just TgFlipped{42}), got "
+            ("expected Just (Composite On (Composite Pol On), _, [TgFlipped{42}]), got "
               <> showStep other)
 
       it "two consecutive composite steps return to the initial vertex" $
         case step loop (initial loop, initialRegs loop) externalCmd of
           Just (s1, regs1, _) ->
             case step loop (s1, regs1) externalCmd of
-              Just (Composite outerT (Composite policy innerT), _, Just co) -> do
+              Just (Composite outerT (Composite policy innerT), _, [co]) -> do
                 outerT `shouldBe` Off  -- back to initial
                 policy `shouldBe` Pol
                 innerT `shouldBe` Off
@@ -285,13 +285,13 @@ spec = do
     describe "omega (the wire event for one external command)" $ do
       it "produces cascadedEvent on externalCmd from the initial composite state" $
         omega loop (initial loop) (initialRegs loop) externalCmd
-          `shouldBe` Just cascadedEvent
+          `shouldBe` [cascadedEvent]
 
   where
     showStep
       :: Maybe ( Composite ToggleVertex (Composite PolicyVertex ToggleVertex)
-               , x, Maybe TgEv )
+               , x, [TgEv] )
       -> String
-    showStep Nothing             = "Nothing"
-    showStep (Just (cs, _, mco)) =
-      "Just (" <> show cs <> ", _, " <> show mco <> ")"
+    showStep Nothing              = "Nothing"
+    showStep (Just (cs, _, cos_)) =
+      "Just (" <> show cs <> ", _, " <> show cos_ <> ")"

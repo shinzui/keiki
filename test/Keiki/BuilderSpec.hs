@@ -185,16 +185,19 @@ spec = do
       case delta tr A emptyR cmd of
         Nothing -> expectationFailure "delta returned Nothing"
         Just (s', regs') -> case omega tr A emptyR cmd of
-          Nothing -> expectationFailure "omega returned Nothing"
-          Just co -> case applyEvent tr A emptyR co of
+          []     -> expectationFailure "omega returned []"
+          [co]   -> case applyEvent tr A emptyR co of
             Nothing -> expectationFailure "applyEvent returned Nothing"
             Just (s'', regs'') -> do
               s'' `shouldBe` s'
               (regs'' K.! (#counter :: Index Regs Int))
                 `shouldBe` (regs' K.! (#counter :: Index Regs Int))
+          cos_   -> expectationFailure
+                      ("omega returned an unexpected multi-event list of "
+                       <> show (length cos_))
 
-    -- Case 5: noEmit produces an Edge whose output is Nothing.
-    it "case 5: noEmit yields output = Nothing" $ do
+    -- Case 5: noEmit produces an Edge whose output is [] (ε-edge).
+    it "case 5: noEmit yields output = []" $ do
       let tr = B.buildTransducer A emptyR (const False) do
                  B.from A do
                    B.onCmd inCtorTick $ \_d -> B.do
@@ -202,8 +205,8 @@ spec = do
                      B.goto B
       case edgesOut tr A of
         [e] -> case output e of
-          Nothing -> pure ()
-          Just _  -> expectationFailure "expected ε-edge but got Just (OutTerm)"
+          [] -> pure ()
+          _  -> expectationFailure "expected ε-edge but got non-empty output list"
         es  -> expectationFailure ("expected exactly 1 edge, got " <> show (length es))
 
     -- Case 6: goto V sets target = V.

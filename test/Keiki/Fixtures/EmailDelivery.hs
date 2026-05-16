@@ -207,12 +207,12 @@ emailDeliveryASTEdges = \case
               `combine`
             USet (#emailSentAt :: IndexN "emailSentAt" EmailRegs UTCTime)
                  (inpSendEmail #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorSendEmail
             wireEmailSent
             (OFCons (inpSendEmail #recipient)
               (OFCons (inpSendEmail #subject)
-                (OFCons (inpSendEmail #at) OFNil)))
+                (OFCons (inpSendEmail #at) OFNil))) ]
         , target = EmailSentVertex
         }
     ]

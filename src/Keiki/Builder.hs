@@ -164,8 +164,6 @@ module Keiki.Builder
   , requireGuard
     -- ** Termination
   , goto
-    -- ** Multi-event chains (EP-20 M5)
-  , chainTo
     -- ** Payload projection (OverloadedRecordDot)
   , PayloadProj
     -- * QualifiedDo bind/return exports
@@ -232,7 +230,12 @@ import Keiki.Internal.Slots
 data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
   { peGuard   :: HsPred rs ci
   , peUpdate  :: Update rs w ci
-  , peOutput  :: Maybe (OutTerm rs ci co)
+  , peOutput  :: [OutTerm rs ci co]
+    -- ^ Output terms accumulated by 'emit' / 'emitWith' calls in
+    -- declaration order (snoc-appended). The empty list is an ε-edge
+    -- (@output = []@ on the resulting 'Edge'); a single 'emit' yields
+    -- a length-1 list (today's letter behaviour); two or more 'emit's
+    -- in one body yield a multi-event edge (EP-19).
   , peTargets :: [v]
     -- ^ Reverse-order list of every 'goto' invocation in the body.
     -- Finalization requires exactly one element.
@@ -241,26 +244,7 @@ data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
     -- 2-argument 'emit' can recover it without the user repeating
     -- it. 'Nothing' inside an 'onEpsilon' body — 'emit' there must
     -- use 'emitWith' to supply the 'InCtor' explicitly.
-  , peChain   :: [ChainPrefix rs ci co v]
-    -- ^ Snoc-list of completed chain prefixes from 'chainTo'
-    -- invocations earlier in the body. Each prefix becomes one
-    -- letter edge in the synthesized chain. Empty for an ordinary
-    -- single-edge 'onCmd' / 'onEpsilon' body.
   }
-
-
--- | A completed chain segment: the captured @(guard, update, output,
--- target)@ at the moment a 'chainTo' was called. The existential @w@
--- on 'cpUpdate' closes here so different prefixes can carry
--- different slot-set indices on their updates.
-data ChainPrefix rs ci co v where
-  ChainPrefix
-    :: { cpGuard  :: HsPred rs ci
-       , cpUpdate :: Update rs w ci
-       , cpOutput :: Maybe (OutTerm rs ci co)
-       , cpTarget :: v
-       }
-    -> ChainPrefix rs ci co v
 
 
 -- | Existential wrapper hiding the @ifs@ slot list of an 'InCtor'.
@@ -387,78 +371,6 @@ goto v = EdgeBuilder $ \pe ->
   ((), pe { peTargets = v : peTargets pe })
 
 
--- * Multi-event chains (EP-20 M5) -----------------------------------------
-
--- | Chain through an intermediate vertex to model a multi-event
--- command as a sequence of letter edges. Within an 'onCmd' body,
--- @'chainTo' v ic@ closes the current segment with target @v@ and
--- starts a fresh segment whose guard is @'matchInCtor' ic@ and
--- whose update is 'UKeep'. The chain finishes at the body's
--- single 'goto'.
---
--- A common shape is one 'chainTo' between two 'emit' calls:
---
--- @
--- B.from PotentialCustomer Prelude.do
---   B.onCmd inCtorStart $ \\d -> B.do
---     -- writes flow into the first segment's update
---     B.slot @\"email\"     .= d.email
---     B.slot @\"confirmCode\" .= d.confirmCode
---     -- first edge: PotentialCustomer --[Start]--> Registering / RegistrationStarted
---     B.emit wireRegistrationStarted ...
---     B.chainTo Registering inCtorContinue
---     -- second edge: Registering --[Continue]--> RequiresConfirmation / ConfirmationEmailSent
---     B.emit wireConfirmationEmailSent ...
---     B.goto RequiresConfirmation
--- @
---
--- Compilation produces two letter edges: one from
--- @PotentialCustomer@ to @Registering@ emitting
--- @RegistrationStarted@, and one from @Registering@ to
--- @RequiresConfirmation@ emitting @ConfirmationEmailSent@. The
--- second edge's source vertex is registered automatically;
--- callers do not need a separate @from Registering …@ block.
---
--- == Slot-set index
---
--- The post-state slot-set index is @'[]@: writes via '(.=)' before
--- 'chainTo' land on the first edge's update; after 'chainTo' the
--- slot-tracking restarts so the user may write to the same slots
--- again on the second edge. Writes that follow 'chainTo' land on
--- the *next* segment's update (until the next 'chainTo' or the
--- body's end).
---
--- == Constraints on the advancement command
---
--- The advancement 'InCtor' has a payload of @\'[]@ (empty slot
--- list). This restricts 'chainTo' to commands with no payload
--- fields — the canonical example being a synthetic @Continue@
--- constructor in the user's @ci@ enum. Multi-payload internal
--- commands are out of scope; aggregates that need them author the
--- chain by hand with two 'from' blocks.
-chainTo
-  :: forall rs ci co v w.
-     v
-  -> InCtor ci '[]
-  -> EdgeBuilder rs ci co v w '[] ()
-chainTo target ic = EdgeBuilder $ \pe ->
-  let prefix = ChainPrefix
-        { cpGuard  = peGuard pe
-        , cpUpdate = peUpdate pe
-        , cpOutput = peOutput pe
-        , cpTarget = target
-        }
-      pe' = PartialEdge
-        { peGuard   = matchInCtor ic
-        , peUpdate  = UKeep
-        , peOutput  = Nothing
-        , peTargets = peTargets pe
-        , peInCtor  = Just (PeInCtor ic)
-        , peChain   = peChain pe ++ [prefix]
-        }
-  in ((), pe')
-
-
 -- * Outputs ---------------------------------------------------------------
 
 -- | Emit an event. Takes the wire-side 'WireCtor' and an output
@@ -469,6 +381,17 @@ chainTo target ic = EdgeBuilder $ \pe ->
 -- is recovered from the enclosing 'onCmd'; an 'emit' inside
 -- 'onEpsilon' (where no 'InCtor' is bound) raises a finalize-time
 -- error directing the user to 'emitWith'.
+--
+-- == Multi-event commands (EP-19)
+--
+-- Each 'emit' call snoc-appends one 'OutTerm' to the edge's output
+-- list. A single 'emit' in the body produces a letter edge
+-- (@output = [o]@); two or more 'emit's in the same body produce a
+-- multi-event edge (@output = [o1, o2, ...]@) whose semantics is
+-- documented at 'Keiki.Core.Edge'. The 'OutTerm's evaluate against
+-- the same pre-transition @(regs, ci)@ snapshot; register updates
+-- accumulated by '(.=)' apply once at the edge level, not per
+-- emitted event.
 emit
   :: forall co fs rs ci v w rec.
      ToOutFields rec rs ci fs
@@ -477,7 +400,7 @@ emit
   -> EdgeBuilder rs ci co v w w ()
 emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
   Just (PeInCtor ic) ->
-    ((), pe { peOutput = Just (pack ic wc (toOutFields rec)) })
+    ((), pe { peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)] })
   Nothing ->
     error "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
           \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
@@ -488,6 +411,8 @@ emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
 -- 'onEpsilon' bodies (which do not pin an 'InCtor') and for any
 -- caller that needs to override the one bound by the enclosing
 -- 'onCmd'. Inside 'onCmd' the InCtor-less 'emit' is preferred.
+-- Like 'emit', accumulates into the edge's output list — multiple
+-- calls produce a multi-event edge.
 emitWith
   :: forall co fs rs ci v w ifs rec.
      ToOutFields rec rs ci fs
@@ -496,12 +421,15 @@ emitWith
   -> rec
   -> EdgeBuilder rs ci co v w w ()
 emitWith ic wc rec = EdgeBuilder $ \pe ->
-  ((), pe { peOutput = Just (pack ic wc (toOutFields rec)) })
+  ((), pe { peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)] })
 
 
 -- | Mark the edge as ε-output (no event). Idempotent: an edge with
 -- no 'emit' or 'noEmit' call is also an ε-edge by default; 'noEmit'
--- exists only so the user can be explicit about intent.
+-- exists only so the user can be explicit about intent. Mixing
+-- 'noEmit' and 'emit' in the same body is allowed but the 'noEmit'
+-- is a documentation no-op (the 'emit's still produce a non-empty
+-- output list).
 noEmit :: EdgeBuilder rs ci co v w w ()
 noEmit = EdgeBuilder $ \pe -> ((), pe)
 
@@ -593,28 +521,14 @@ indexNToIndex (IS i)  = K.SIdx (indexNToIndex i)
 
 -- * Edge-list builder -----------------------------------------------------
 
--- | Accumulator state for an 'EdgeListBuilder' body.
---
--- 'elaMain' holds the edges originating from the @from@-scope's
--- vertex in declaration order (head-prepended; reversed in 'from'
--- before storage). 'elaChain' holds @(source, edge)@ pairs for
--- chained edges produced by 'chainTo' expansion — these have a
--- different source vertex than the @from@-scope.
-data EdgeListAcc rs ci co v = EdgeListAcc
-  { elaMain  :: [Edge (HsPred rs ci) rs ci co v]
-  , elaChain :: [(v, Edge (HsPred rs ci) rs ci co v)]
-  }
-
-
--- | Per-source-vertex builder. Accumulates two lists: ordinary
--- @from@-vertex edges, one per 'onCmd' / 'onEpsilon' call; and
--- chained-source edges produced by 'chainTo' expansion (each with
--- its own source vertex). Both lists flow up to 'from', which
--- assembles them into the 'VertexBuilder' lookup table.
+-- | Per-source-vertex builder. Accumulates the list of outgoing
+-- edges for the @from@-scope's vertex; each 'onCmd' / 'onEpsilon'
+-- call prepends one edge (the list is reversed in 'from' before
+-- storage so declaration order is preserved).
 newtype EdgeListBuilder rs ci co v a = EdgeListBuilder
   { runEdgeListBuilder :: v
-                       -> EdgeListAcc rs ci co v
-                       -> (a, EdgeListAcc rs ci co v) }
+                       -> [Edge (HsPred rs ci) rs ci co v]
+                       -> (a, [Edge (HsPred rs ci) rs ci co v]) }
 
 
 instance Functor (EdgeListBuilder rs ci co v) where
@@ -651,17 +565,14 @@ onCmd ic body = EdgeListBuilder $ \src acc ->
   let initial = PartialEdge
         { peGuard   = matchInCtor ic
         , peUpdate  = UKeep
-        , peOutput  = Nothing
+        , peOutput  = []
         , peTargets = []
         , peInCtor  = Just (PeInCtor ic)
-        , peChain   = []
         }
-      (_, finalPE)             = runEdgeBuilder (body (PayloadProj ic)) initial
-      edgeIx                   = length (elaMain acc)
-      (mainEdge, chainedEdges) = explodePartialEdge edgeIx src finalPE
-  in ((), acc { elaMain  = mainEdge : elaMain acc
-              , elaChain = elaChain acc Prelude.++ chainedEdges
-              })
+      (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
+      edgeIx       = length acc
+      edge         = finalizeEdge edgeIx src finalPE
+  in ((), edge : acc)
 
 
 -- | ε-edge entry: no input projection, no input-ctor match-guard.
@@ -679,83 +590,29 @@ onEpsilon body = EdgeListBuilder $ \src acc ->
   let initial = PartialEdge
         { peGuard   = PTop
         , peUpdate  = UKeep
-        , peOutput  = Nothing
+        , peOutput  = []
         , peTargets = []
         , peInCtor  = Nothing
-        , peChain   = []
         }
-      (_, finalPE)             = runEdgeBuilder body initial
-      edgeIx                   = length (elaMain acc)
-      (mainEdge, chainedEdges) = explodePartialEdge edgeIx src finalPE
-  in ((), acc { elaMain  = mainEdge : elaMain acc
-              , elaChain = elaChain acc Prelude.++ chainedEdges
-              })
+      (_, finalPE) = runEdgeBuilder body initial
+      edgeIx       = length acc
+      edge         = finalizeEdge edgeIx src finalPE
+  in ((), edge : acc)
 
 
--- | Close a 'PartialEdge' into an 'Edge' plus zero or more
--- chained-source edges produced by 'chainTo' expansion.
---
--- Without 'chainTo' (the common case), 'peChain' is empty: returns
--- @(finalizeEdge', [])@ — one edge from the @from@-scope vertex.
---
--- With N 'chainTo' invocations, the body declares N+1 letter edges
--- forming a chain. The first edge originates from @src@; each
--- subsequent edge originates from the previous prefix's target
--- vertex. Returns @(edge0, [(src1, edge1), …, (srcN, edgeN)])@,
--- where edge_i for i>=1 has its own source vertex.
-explodePartialEdge
-  :: Show v
-  => Int
-  -> v
-  -> PartialEdge rs ci co v w
-  -> ( Edge (HsPred rs ci) rs ci co v
-     , [(v, Edge (HsPred rs ci) rs ci co v)]
-     )
-explodePartialEdge n src pe = case peChain pe of
-  []       -> (finalizeEdge n src pe, [])
-  prefixes ->
-    -- The first segment's edge originates from 'src'.
-    -- Subsequent segments originate from the prior prefix's target.
-    -- The final segment's guard/update/output come from 'pe' itself.
-    let firstPrefix : restPrefixes = prefixes
-        firstEdge = mkEdgeFromPrefix firstPrefix
-        restEdges = walk restPrefixes (cpTarget firstPrefix) pe
-    in (firstEdge, restEdges)
-  where
-    -- 'walk remainingPrefixes lastTarget peFinal' produces the
-    -- chained-source edges for the remaining prefixes plus the final
-    -- segment edge (sourced at the last prefix's target).
-    walk [] lastTarget peFinal =
-      [ (lastTarget, finalizeFinalEdge n src peFinal) ]
-    walk (p : ps) lastTarget peFinal =
-      (lastTarget, mkEdgeFromPrefix p) : walk ps (cpTarget p) peFinal
-
-    mkEdgeFromPrefix (ChainPrefix g u o t) =
-      Edge { guard = g, update = u, output = o, target = t }
-
-
--- | Close the final segment of a chain (or a non-chained body) into
--- an 'Edge'. Validation: 'peTargets' must have exactly one entry;
--- missing or duplicated 'goto' calls raise a runtime 'error' naming
--- the source vertex and edge index.
+-- | Close a 'PartialEdge' into an 'Edge'. Validation: 'peTargets'
+-- must have exactly one entry; missing or duplicated 'goto' calls
+-- raise a runtime 'error' naming the source vertex and edge index.
+-- The 'peOutput' list (zero or more 'OutTerm's accumulated by
+-- 'emit' / 'emitWith' calls) flows directly into the resulting
+-- 'Edge.output' field.
 finalizeEdge
   :: Show v
   => Int
   -> v
   -> PartialEdge rs ci co v w
   -> Edge (HsPred rs ci) rs ci co v
-finalizeEdge = finalizeFinalEdge
-
-
--- | Finalize the final segment of a chain (or a single non-chained
--- edge). Validates 'peTargets' the same way as the v0 'finalizeEdge'.
-finalizeFinalEdge
-  :: Show v
-  => Int
-  -> v
-  -> PartialEdge rs ci co v w
-  -> Edge (HsPred rs ci) rs ci co v
-finalizeFinalEdge n src pe = case peTargets pe of
+finalizeEdge n src pe = case peTargets pe of
   [t]      -> Edge { guard  = peGuard pe
                    , update = peUpdate pe
                    , output = peOutput pe
@@ -803,44 +660,20 @@ instance Monad (VertexBuilder rs ci co v) where
 
 -- | Group edges by source vertex. The argument is an
 -- 'EdgeListBuilder' do-block of 'onCmd' / 'onEpsilon' calls; each
--- call adds one outgoing edge to the named vertex (plus zero or
--- more chained-source edges from any 'chainTo' invocations in the
--- body).
+-- call adds one outgoing edge to the named vertex.
 --
--- Chained-source edges produced by 'chainTo' expansion are appended
--- to the 'VertexBuilder''s lookup table under their declared
--- intermediate vertices. A vertex named in 'chainTo' need not be
--- the subject of an explicit @from@ block; if it is, both the
--- explicit and chained edges coexist and 'buildTransducer'
--- concatenates them in declaration order.
---
--- A vertex not mentioned in any 'from' block or 'chainTo' defaults
--- to @[]@ (terminal). To assert "this vertex is terminal"
--- explicitly, write @from V (Prelude.pure ())@.
+-- A vertex not mentioned in any 'from' block defaults to @[]@
+-- (terminal). To assert "this vertex is terminal" explicitly,
+-- write @from V (Prelude.pure ())@.
 from
   :: (Eq v, Show v)
   => v
   -> EdgeListBuilder rs ci co v ()
   -> VertexBuilder rs ci co v ()
 from v eb = VertexBuilder $ \vs ->
-  let acc0           = EdgeListAcc { elaMain = [], elaChain = [] }
-      (_, accFinal)  = runEdgeListBuilder eb v acc0
-      mainEntry      = (v, Prelude.reverse (elaMain accFinal))
-      chainedEntries = groupBySourceFirstSeen (elaChain accFinal)
-  in ((), mainEntry : chainedEntries Prelude.++ vs)
-
-
--- | Group @(source, edge)@ pairs by source vertex while preserving
--- declaration order both *between* groups (first appearance of each
--- source comes first) and *within* groups (edges from a single
--- source keep their declared order).
-groupBySourceFirstSeen :: Eq v => [(v, a)] -> [(v, [a])]
-groupBySourceFirstSeen []           = []
-groupBySourceFirstSeen ((v, x) : rest) =
-  let sameV (v', _) = v' == v
-      myXs          = x : Prelude.map snd (Prelude.filter sameV rest)
-      remaining     = Prelude.filter (\p -> not (sameV p)) rest
-  in (v, myXs) : groupBySourceFirstSeen remaining
+  let (_, accFinal) = runEdgeListBuilder eb v []
+      entry         = (v, Prelude.reverse accFinal)
+  in ((), entry : vs)
 
 
 -- | Top-level entry. Run the 'VertexBuilder' do-block to produce a
@@ -848,11 +681,10 @@ groupBySourceFirstSeen ((v, x) : rest) =
 -- from the initial vertex, initial register file, finality
 -- predicate, and a closure over the lookup table.
 --
--- Duplicate-vertex entries (which can arise when 'chainTo' and an
--- explicit 'from' both name the same intermediate vertex, or when
--- two 'from' blocks accidentally declare the same vertex) are
--- merged: 'edgesOut' returns the concatenation of every entry's
--- edges in declaration order.
+-- Duplicate-vertex entries (which can arise when two 'from' blocks
+-- accidentally declare the same vertex) are merged: 'edgesOut'
+-- returns the concatenation of every entry's edges in declaration
+-- order.
 --
 -- The @Bounded v@ / @Enum v@ constraints are not currently used by
 -- 'buildTransducer' itself but are recorded as reserved for a

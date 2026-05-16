@@ -338,7 +338,65 @@ current state of the work.
       these still require multiple disjoint-guarded edges per the existing
       pattern).
 
-- [ ] **Milestone 2 — Widen `Edge.output` and adapt the core operators.**
+- [x] **Milestone 2 — Widen `Edge.output` and adapt the core operators.**
+      (2026-05-16) Completed. Concrete changes:
+
+      - `src/Keiki/Core.hs`: `Edge.output` widened to
+        `[OutTerm rs ci co]` (existential `w` preserved in `update`).
+        `omega` returns `[co]`; `step` returns
+        `Maybe (s, RegFile rs, [co])`. `applyEvent` keeps letter-only
+        semantics for M2 (length-0/1; M3 widens with `InFlight`).
+        `checkHiddenInputs` walks the per-edge output list (per-`OPack`
+        for M2; M4 strengthens to union coverage).
+      - `src/Keiki/Composition.hs`: `composeEdge`, `productEdge`,
+        `liftEdgeL`, `liftEdgeR` all widened. Multi-event first-edges
+        fall through to head-only composition for M2 (M6 replaces with
+        library-side chain expansion).
+      - `src/Keiki/Decider.hs`: `toDecider`'s `decide` lifts directly
+        from `omega`; `toMultiDecider`'s `driveDecide` reverses the
+        evaluated event list per step. (`toMultiDecider`,
+        `DriverConfig` retained for M5 removal.)
+      - `src/Keiki/Profunctor.hs`: `identityTransducer` and
+        `arrTransducer` literal outputs widened to length-1 lists.
+        All `fmap` sites (`firstEdge`, `rewriteEdge`,
+        `rewriteEdgeMaybe`, `rewriteEdgeOut`) work unchanged on the
+        new list shape (list-fmap has identical syntax).
+      - `src/Keiki/Render/Mermaid.hs`: `edgeOutputName` implements the
+        length-based switchover per the Decision Log (length-1: `e1`;
+        length-2: `e1; e2`; length-3+: `e1<br/>e2<br/>...`).
+      - `src/Keiki/Builder.hs`: `peOutput :: [OutTerm rs ci co]`
+        (snoc-list). `emit` / `emitWith` append. `noEmit` no-ops.
+        **Deleted**: `chainTo`, `ChainPrefix`, `peChain`,
+        `EdgeListAcc`, `groupBySourceFirstSeen`,
+        `explodePartialEdge`, `finalizeFinalEdge`. `EdgeListBuilder`
+        reverts to a single `[Edge]` accumulator. The factoring
+        Decision Log entry committed M2 to deleting `chainTo` (and
+        its direct callers) here rather than deferring to M7.
+      - jitsurei aggregates: mechanical `Just o → [o]` /
+        `Nothing → []` cascade across `OrderCart` (12),
+        `LoanApplication` (11), `UserRegistration` (6),
+        `UserRegistrationV0` (6), `EmailDelivery` (1). **Deleted**:
+        `userRegChained` + `loanApplicationChained` (callers of
+        `chainTo`); their `*Chained` test specs
+        (`UserRegistrationChainedSpec`, `LoanApplicationChainedSpec`)
+        and their entries in `jitsurei/test/Spec.hs` /
+        `jitsurei/jitsurei.cabal`.
+      - Test fixtures: `test/Keiki/Fixtures/UserRegistration.hs` (6
+        AST sites + `userRegChained` deletion);
+        `test/Keiki/Fixtures/EmailDelivery.hs` (1 site).
+      - Test specs: cascade-fixed across ~20 files — `omega`
+        assertions (`shouldBe Just X` → `shouldBe [X]`,
+        `shouldBe Nothing` → `shouldBe []`), `step` patterns
+        (`Just (s, r, Just X)` → `Just (s, r, [X])`,
+        `Just (s, r, Nothing)` → `Just (s, r, [])`), helper sigs
+        (`showStep`, `show3`, `runOmega`, `fireFromInitial`,
+        `firstEdgeOutput`, `fireOutputsOnly`).
+
+      **Validation**: `cabal test all --test-show-details=direct`
+      reports **324 examples, 0 failures, 1 pending** across four
+      suites (keiki 186 + jitsurei 91 + codec-json 40 +
+      codec-json-test 7). The 13-example decrease from the 337
+      baseline is exactly the deleted `*Chained` specs.
       Edit `src/Keiki/Core.hs` (Edge GADT now at lines 455-461):
       - Change the `output` field's type from `Maybe (OutTerm rs ci co)` to
         `[OutTerm rs ci co]`. Preserve the existential `w` in the
@@ -970,6 +1028,43 @@ Record every decision made while working on the plan.
   **Implementation impact**: M2's Mermaid cascade implements
   the switchover; `test/Keiki/Render/MermaidSpec.hs` adds
   goldens for length-2 and length-3 edges.
+  **Date**: 2026-05-16
+
+- **Decision**: Factor the EP-20 surface deletion across M2/M5/M7 by
+  *dependency*, not by file.
+  - **M2** (AST widening): delete `chainTo`, `ChainPrefix`,
+    `EdgeListAcc`, and `peChain` from `Keiki.Builder`. Delete the
+    direct callers `userRegChained` (jitsurei UserRegistration) and
+    `loanAppChained` (jitsurei LoanApplication). Delete the
+    Chained-form test specs (`UserRegistrationChainedSpec`,
+    `LoanApplicationChainedSpec`).
+  - **M5** (Decider retirement): delete `toMultiDecider`,
+    `DriverConfig`, `chainAdvanceCommand`, plus
+    `userRegDriverConfig` (jitsurei UR) and `loanAppDriverConfig`
+    (jitsurei LA), plus the Multi-form test specs
+    (`DeciderMultiSpec`, `UserRegistrationMultiSpec`,
+    `LoanApplicationMultiSpec`).
+  - **M7** (jitsurei migration): collapse the surviving canonical
+    builder forms (`userReg`, `loanApp` etc.) to multi-`emit` and
+    drop the `Registering`/`Continue` enum constructors and other
+    state-refinement scaffolding.
+  **Rationale**: `chainTo` (a builder verb) and `toMultiDecider`
+  (a runtime façade) are *independent* parts of EP-20's surface;
+  the only thing tying them together is the user-declared
+  intermediate vertex. Deleting `chainTo` in M2 lets the AST
+  widening proceed cleanly (no Maybe-shaped output anywhere) while
+  preserving the `toMultiDecider`/`*DriverConfig` path intact for
+  M5 to remove on its own schedule. This avoids a circular M2↔M7
+  dependency (M2 cannot widen Builder's `peOutput` without either
+  removing chainTo or maintaining a parallel Maybe-shape inside
+  `ChainPrefix.cpOutput`; M7 cannot collapse jitsurei aggregates
+  without the multi-`emit` semantics M2 introduces).
+  **Implementation impact**: M2's commit footprint grows to ~10
+  files (Core, Builder, Composition, Profunctor, Mermaid,
+  jitsurei UR/LA AST sites and aggregates, two Chained specs,
+  test fixtures); M5's footprint shrinks to Decider + Multi-form
+  specs + driver-config declarations; M7's footprint shrinks to
+  vertex/command collapse + new GSM specs.
   **Date**: 2026-05-16
 
 - **Decision**: Tactical refresh of remaining plan sections

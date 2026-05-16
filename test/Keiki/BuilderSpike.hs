@@ -117,10 +117,10 @@ coffeeASTEdges = \case
               `combine`
             USet (#brewStartedAt :: IndexN "brewStartedAt" CoffeeRegs UTCTime)
                  (inpInsert #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorInsert
             wireBrewed
-            (OFCons (inpInsert #amount) OFNil)
+            (OFCons (inpInsert #amount) OFNil) ]
         , target = Brewing
         }
     ]
@@ -128,7 +128,7 @@ coffeeASTEdges = \case
     [ Edge
         { guard  = isContinue
         , update = UKeep
-        , output = Nothing
+        , output = []
         , target = Idle
         }
     ]
@@ -224,9 +224,9 @@ spec = do
     it "omega round-trips event through the AST and builder forms" $ do
       let cmd = Insert (InsertData 300 t100)
       omega coffeeAST    Idle emptyCoffeeRegs cmd
-        `shouldBe` Just (Brewed (BrewedData 300))
+        `shouldBe` [(Brewed (BrewedData 300))]
       omega coffeeBuilt Idle emptyCoffeeRegs cmd
-        `shouldBe` Just (Brewed (BrewedData 300))
+        `shouldBe` [(Brewed (BrewedData 300))]
 
   describe "EP-15 M2 spike: misuse error messages" $ do
 

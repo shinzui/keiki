@@ -43,7 +43,7 @@ spec = do
     it "step on LoanCreatedIn emits SyncToLegacyRequested" $
       case step coreBankingSync (initial coreBankingSync, initialRegs coreBankingSync)
                 happyPathInput of
-        Just (SyncRequested, _, Just (SyncToLegacyRequested d)) -> do
+        Just (SyncRequested, _, [SyncToLegacyRequested d]) -> do
           d.loanId      `shouldBe` "loan-001"
           d.applicantId `shouldBe` "alice"
           d.principal   `shouldBe` 250_000
@@ -55,7 +55,7 @@ spec = do
                  happyPathInput of
         Just (SyncRequested, regs') ->
           case step coreBankingSync (SyncRequested, regs') callbackInput of
-            Just (SyncSettled, _, Just (LegacyAssignmentCommanded d)) ->
+            Just (SyncSettled, _, [LegacyAssignmentCommanded d]) ->
               d.assignment `shouldBe`
                 AssignLegacyLoanId (AssignLegacyLoanIdData "loan-001" "LEG-42")
             Just _  -> expectationFailure "unexpected output payload at SyncRequested"

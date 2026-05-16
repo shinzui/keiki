@@ -60,7 +60,6 @@ module Jitsurei.LoanApplication
     -- * The transducer
   , loanApplication
   , loanApplicationAST
-  , loanApplicationChained
   , emptyLoanAppRegs
     -- * Multi-event driver configuration (EP-34 M3)
   , loanApplicationDriverConfig
@@ -623,13 +622,13 @@ loanApplicationASTEdges = \case
             USet (#appEmploymentVerified
                     :: IndexN "appEmploymentVerified" LoanAppRegs Bool)
                  (lit False)
-        , output = Just $ pack
+        , output = [ pack
             inCtorStart
             wireApplicationStarted
             (OFCons (inpStart #applicantId)
               (OFCons (inpStart #requestedAmount)
                 (OFCons (inpStart #purpose)
-                  (OFCons (inpStart #at) OFNil))))
+                  (OFCons (inpStart #at) OFNil)))) ]
         , target = CollectingDocuments
         }
     , Edge
@@ -640,12 +639,12 @@ loanApplicationASTEdges = \case
               `combine`
             USet (#appWithdrawnAt :: IndexN "appWithdrawnAt" LoanAppRegs UTCTime)
                  (inpWithdraw #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorWithdraw
             wireApplicationWithdrawn
             (OFCons (proj (#appApplicantId :: Index LoanAppRegs Text))
               (OFCons (inpWithdraw #reason)
-                (OFCons (inpWithdraw #at) OFNil)))
+                (OFCons (inpWithdraw #at) OFNil))) ]
         , target = Withdrawn
         }
     ]
@@ -657,11 +656,11 @@ loanApplicationASTEdges = \case
                           :: IndexN "appIncomeDocCount" LoanAppRegs Int)
                         (TApp1 (+ 1)
                            (proj (#appIncomeDocCount :: Index LoanAppRegs Int)))
-        , output = Just $ pack
+        , output = [ pack
             inCtorSubmitIncome
             wireIncomeDocumentReceived
             (OFCons (inpSubmitIncome #docRef)
-              (OFCons (inpSubmitIncome #at) OFNil))
+              (OFCons (inpSubmitIncome #at) OFNil)) ]
         , target = CollectingDocuments
         }
     , Edge
@@ -669,22 +668,22 @@ loanApplicationASTEdges = \case
         , update = USet (#appIdDocCount :: IndexN "appIdDocCount" LoanAppRegs Int)
                         (TApp1 (+ 1)
                            (proj (#appIdDocCount :: Index LoanAppRegs Int)))
-        , output = Just $ pack
+        , output = [ pack
             inCtorSubmitId
             wireIdDocumentReceived
             (OFCons (inpSubmitId #docRef)
-              (OFCons (inpSubmitId #at) OFNil))
+              (OFCons (inpSubmitId #at) OFNil)) ]
         , target = CollectingDocuments
         }
     , Edge
         { guard  = isRecordScore
         , update = USet (#appCreditScore :: IndexN "appCreditScore" LoanAppRegs Int)
                         (inpRecordScore #score)
-        , output = Just $ pack
+        , output = [ pack
             inCtorRecordScore
             wireCreditScoreRecorded
             (OFCons (inpRecordScore #score)
-              (OFCons (inpRecordScore #at) OFNil))
+              (OFCons (inpRecordScore #at) OFNil)) ]
         , target = CollectingDocuments
         }
     , Edge
@@ -692,23 +691,23 @@ loanApplicationASTEdges = \case
         , update = USet (#appEmploymentVerified
                           :: IndexN "appEmploymentVerified" LoanAppRegs Bool)
                         (inpRecordEmployment #verified)
-        , output = Just $ pack
+        , output = [ pack
             inCtorRecordEmployment
             wireEmploymentChecked
             (OFCons (inpRecordEmployment #verified)
-              (OFCons (inpRecordEmployment #at) OFNil))
+              (OFCons (inpRecordEmployment #at) OFNil)) ]
         , target = CollectingDocuments
         }
     , Edge
         { guard  = isWithdraw
         , update = USet (#appWithdrawnAt :: IndexN "appWithdrawnAt" LoanAppRegs UTCTime)
                         (inpWithdraw #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorWithdraw
             wireApplicationWithdrawn
             (OFCons (proj (#appApplicantId :: Index LoanAppRegs Text))
               (OFCons (inpWithdraw #reason)
-                (OFCons (inpWithdraw #at) OFNil)))
+                (OFCons (inpWithdraw #at) OFNil))) ]
         , target = Withdrawn
         }
       -- "ε-edge" — no public event — fired by Continue when the
@@ -716,7 +715,7 @@ loanApplicationASTEdges = \case
     , Edge
         { guard  = PAnd isContinue readyForReviewGuard
         , update = UKeep
-        , output = Nothing
+        , output = []
         , target = UnderReview
         }
     ]
@@ -726,14 +725,14 @@ loanApplicationASTEdges = \case
         { guard  = PAnd isContinue approvalGuard
         , update = USet (#appDecidedAt :: IndexN "appDecidedAt" LoanAppRegs UTCTime)
                         (lit (read "1970-01-01 00:00:00 UTC" :: UTCTime))
-        , output = Just $ pack
+        , output = [ pack
             inCtorContinue
             wireApplicationApproved
             (OFCons (proj (#appApplicantId :: Index LoanAppRegs Text))
               (OFCons (proj (#appRequestedAmount :: Index LoanAppRegs Money))
                 (OFCons (proj (#appCreditScore :: Index LoanAppRegs Int))
                   (OFCons (lit (read "1970-01-01 00:00:00 UTC" :: UTCTime))
-                    OFNil))))
+                    OFNil)))) ]
         , target = Approved
         }
     , Edge
@@ -743,25 +742,25 @@ loanApplicationASTEdges = \case
               `combine`
             USet (#appDeclineReason :: IndexN "appDeclineReason" LoanAppRegs Text)
                  (lit "Below threshold")
-        , output = Just $ pack
+        , output = [ pack
             inCtorContinue
             wireApplicationDeclined
             (OFCons (proj (#appApplicantId :: Index LoanAppRegs Text))
               (OFCons (proj (#appDeclineReason :: Index LoanAppRegs Text))
                 (OFCons (lit (read "1970-01-01 00:00:00 UTC" :: UTCTime))
-                  OFNil)))
+                  OFNil))) ]
         , target = Declined
         }
     , Edge
         { guard  = isWithdraw
         , update = USet (#appWithdrawnAt :: IndexN "appWithdrawnAt" LoanAppRegs UTCTime)
                         (inpWithdraw #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorWithdraw
             wireApplicationWithdrawn
             (OFCons (proj (#appApplicantId :: Index LoanAppRegs Text))
               (OFCons (inpWithdraw #reason)
-                (OFCons (inpWithdraw #at) OFNil)))
+                (OFCons (inpWithdraw #at) OFNil))) ]
         , target = Withdrawn
         }
     ]
@@ -769,150 +768,6 @@ loanApplicationASTEdges = \case
   Approved  -> []
   Declined  -> []
   Withdrawn -> []
-
-
--- * Chained-builder form (EP-34 M3) ---------------------------------------
-
--- | The same transducer authored with 'Keiki.Builder.chainTo'. The
--- silent @CollectingDocuments -> UnderReview@ advance is moved into
--- the @inCtorStart@ body via 'chainTo'; the explicit
--- @from CollectingDocuments do onCmd inCtorContinue@ block is
--- therefore omitted (the chained edge replaces it). Compiles to the
--- same letter-FST 'Edge' values as 'loanApplication'; the
--- 'Jitsurei.LoanApplicationChainedSpec' equivalence test asserts
--- identical 'reconstitute' behavior on the canonical evidence-
--- collection log.
---
--- NB: only the silent advance is chained. The Continue-driven
--- approval / decline edges out of 'UnderReview' are still authored
--- as a separate @from UnderReview@ block — chaining further would
--- pick a single branch, but both branches must remain available
--- because the runtime decision depends on dynamic register state.
-loanApplicationChained :: SymTransducer (HsPred LoanAppRegs LoanCmd)
-                                        LoanAppRegs
-                                        LoanAppVertex
-                                        LoanCmd
-                                        LoanEvent
-loanApplicationChained = B.buildTransducer Intake emptyLoanAppRegs
-                           isFinalLoanApp do
-
-  B.from Intake do
-    B.onCmd inCtorStart $ \d -> B.do
-      B.slot @"appApplicantId"        .= d.applicantId
-      B.slot @"appRequestedAmount"    .= d.requestedAmount
-      B.slot @"appPurpose"             .= d.purpose
-      B.slot @"appIncomeDocCount"      .= lit 0
-      B.slot @"appIdDocCount"          .= lit 0
-      B.slot @"appCreditScore"         .= lit 0
-      B.slot @"appEmploymentVerified"  .= lit False
-      B.emit wireApplicationStarted ApplicationStartedTermFields
-        { applicantId     = d.applicantId
-        , requestedAmount = d.requestedAmount
-        , purpose         = d.purpose
-        , at              = d.at
-        }
-      -- Inline the silent advance from CollectingDocuments to
-      -- UnderReview as a chained Continue-keyed edge. The
-      -- readyForReviewGuard determines whether this chain actually
-      -- fires at multi-decider drive time; at StartApplication
-      -- time the guards never hold (counters are zero), so the
-      -- chain is dormant immediately after start.
-      B.chainTo CollectingDocuments inCtorContinue
-      B.requireGuard readyForReviewGuard
-      B.noEmit
-      B.goto UnderReview
-
-    B.onCmd inCtorWithdraw $ \d -> B.do
-      B.slot @"appApplicantId" .= lit ""
-      B.slot @"appWithdrawnAt" .= d.at
-      B.emit wireApplicationWithdrawn ApplicationWithdrawnTermFields
-        { applicantId = #appApplicantId
-        , reason      = d.reason
-        , at          = d.at
-        }
-      B.goto Withdrawn
-
-  -- No explicit @from CollectingDocuments do onCmd inCtorContinue@
-  -- block — the chained edge from 'CollectingDocuments' to
-  -- 'UnderReview' was registered by the @chainTo@ above. The five
-  -- evidence-collection edges + the per-vertex withdraw remain.
-  B.from CollectingDocuments do
-    B.onCmd inCtorSubmitIncome $ \d -> B.do
-      B.slot @"appIncomeDocCount" .= TApp1 (+ 1) #appIncomeDocCount
-      B.emit wireIncomeDocumentReceived IncomeDocumentReceivedTermFields
-        { docRef = d.docRef
-        , at     = d.at
-        }
-      B.goto CollectingDocuments
-
-    B.onCmd inCtorSubmitId $ \d -> B.do
-      B.slot @"appIdDocCount" .= TApp1 (+ 1) #appIdDocCount
-      B.emit wireIdDocumentReceived IdDocumentReceivedTermFields
-        { docRef = d.docRef
-        , at     = d.at
-        }
-      B.goto CollectingDocuments
-
-    B.onCmd inCtorRecordScore $ \d -> B.do
-      B.slot @"appCreditScore" .= d.score
-      B.emit wireCreditScoreRecorded CreditScoreRecordedTermFields
-        { score = d.score
-        , at    = d.at
-        }
-      B.goto CollectingDocuments
-
-    B.onCmd inCtorRecordEmployment $ \d -> B.do
-      B.slot @"appEmploymentVerified" .= d.verified
-      B.emit wireEmploymentChecked EmploymentCheckedTermFields
-        { verified = d.verified
-        , at       = d.at
-        }
-      B.goto CollectingDocuments
-
-    B.onCmd inCtorWithdraw $ \d -> B.do
-      B.slot @"appWithdrawnAt" .= d.at
-      B.emit wireApplicationWithdrawn ApplicationWithdrawnTermFields
-        { applicantId = #appApplicantId
-        , reason      = d.reason
-        , at          = d.at
-        }
-      B.goto Withdrawn
-
-  B.from UnderReview do
-    B.onCmd inCtorContinue $ \_d -> B.do
-      B.requireGuard approvalGuard
-      B.slot @"appDecidedAt" .= continueAtChained
-      B.emit wireApplicationApproved ApplicationApprovedTermFields
-        { applicantId     = #appApplicantId
-        , requestedAmount = #appRequestedAmount
-        , creditScore     = #appCreditScore
-        , at              = continueAtChained
-        }
-      B.goto Approved
-
-    B.onCmd inCtorContinue $ \_d -> B.do
-      B.requireGuard (PNot approvalGuard)
-      B.slot @"appDecidedAt"     .= continueAtChained
-      B.slot @"appDeclineReason" .= lit "Below threshold"
-      B.emit wireApplicationDeclined ApplicationDeclinedTermFields
-        { applicantId = #appApplicantId
-        , reason      = #appDeclineReason
-        , at          = continueAtChained
-        }
-      B.goto Declined
-
-    B.onCmd inCtorWithdraw $ \d -> B.do
-      B.slot @"appWithdrawnAt" .= d.at
-      B.emit wireApplicationWithdrawn ApplicationWithdrawnTermFields
-        { applicantId = #appApplicantId
-        , reason      = d.reason
-        , at          = d.at
-        }
-      B.goto Withdrawn
-
-  where
-    continueAtChained =
-      lit (read "1970-01-01 00:00:00 UTC" :: UTCTime)
 
 
 -- * Multi-event driver configuration (EP-34 M3) ---------------------------

@@ -523,11 +523,25 @@ edgeInputName Edge { guard = g } = walk g
     walk (PEq _ _)  = Nothing
 
 
--- | Extract the output-constructor name from an edge's 'OPack', or
--- 'Nothing' for an ε-edge (an edge whose 'output' is 'Nothing').
+-- | Extract the output-constructor name(s) from an edge's output
+-- list. Returns 'Nothing' for an ε-edge (an edge whose 'output' is
+-- @[]@); 'Just' a length-1/2/N rendering otherwise.
+--
+-- Per EP-19's design note, the rendering uses a length-based
+-- switchover:
+--
+--   * length 1: @e1@                       — same as the letter case.
+--   * length 2: @e1; e2@                   — compact inline separator.
+--   * length 3+: @e1\<br/>e2\<br/>…\<br/>eN@ — Mermaid multi-line.
 edgeOutputName :: Edge (HsPred rs ci) rs ci co s -> Maybe Text
-edgeOutputName Edge { output = Nothing }                 = Nothing
-edgeOutputName Edge { output = Just (OPack _ wc _) }     = Just (T.pack (wcName wc))
+edgeOutputName Edge { output = outs } = case outs of
+  []     -> Nothing
+  [o]    -> Just (wcN o)
+  [a, b] -> Just (wcN a <> T.pack "; " <> wcN b)
+  many   -> Just (T.intercalate (T.pack "<br/>") (Prelude.map wcN many))
+  where
+    wcN :: OutTerm rs ci co -> Text
+    wcN (OPack _ wc _) = T.pack (wcName wc)
 
 
 -- | The Mermaid edge label for an edge: @<input ctor> / <output ctor>@.

@@ -131,12 +131,12 @@ alertEdges = \case
             USet (#alertAt :: IndexN "alertAt" AlertRegs UTCTime)
                  (inpTrigger #at)
           -- The output is EmailCmd — built from the trigger's payload.
-        , output = Just $ pack
+        , output = [ pack
             inCtorTrigger
             wireSendEmailEvent
             (OFCons (inpTrigger #recipient)
               (OFCons (inpTrigger #subject)
-                (OFCons (inpTrigger #at) OFNil)))
+                (OFCons (inpTrigger #at) OFNil))) ]
         , target = AlertEmitted
         }
     ]
@@ -193,7 +193,7 @@ spec = do
     describe "step (one external command in, one wire event out)" $ do
       it "produces EmailSent on TriggerAlert" $
         case step pipeline (initial pipeline, initialRegs pipeline) sampleTrigger of
-          Just (Composite av ev, _, Just co) -> do
+          Just (Composite av ev, _, [co]) -> do
             av `shouldBe` AlertEmitted
             ev `shouldBe` EmailSentVertex
             co `shouldBe` sampleEmailEvent
@@ -227,11 +227,11 @@ spec = do
     describe "omega (the wire event for one external command)" $ do
       it "produces sampleEmailEvent on TriggerAlert from initial state" $
         omega pipeline (initial pipeline) (initialRegs pipeline) sampleTrigger
-          `shouldBe` Just sampleEmailEvent
+          `shouldBe` [sampleEmailEvent]
   where
-    showStep :: Maybe (Composite AlertVertex EmailVertex, x, Maybe EmailEvent) -> String
+    showStep :: Maybe (Composite AlertVertex EmailVertex, x, [EmailEvent]) -> String
     showStep Nothing                = "Nothing"
-    showStep (Just (Composite a b, _, mco)) =
-      "Just (Composite " <> show a <> " " <> show b <> ", _, " <> show mco <> ")"
+    showStep (Just (Composite a b, _, cos_)) =
+      "Just (Composite " <> show a <> " " <> show b <> ", _, " <> show cos_ <> ")"
 
 

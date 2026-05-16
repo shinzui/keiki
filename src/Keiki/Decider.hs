@@ -121,9 +121,7 @@ toDecider
   => SymTransducer phi rs s ci co
   -> Decider ci co (s, RegFile rs)
 toDecider t = Decider
-  { decide = \cmd (s, regs) -> case omega t s regs cmd of
-      Just co -> [co]
-      Nothing -> []
+  { decide = \cmd (s, regs) -> omega t s regs cmd
   , evolve = \(s, regs) ev -> case applyEvent t s regs ev of
       Just (s', regs') -> (s', regs')
       Nothing          -> (s, regs)
@@ -208,10 +206,8 @@ driveDecide t cfg ci0 (s0, regs0) = go ci0 (s0, regs0) []
   where
     go ci (s, regs) acc = case step t (s, regs) ci of
       Nothing -> reverse acc
-      Just (s', regs', mco) ->
-        let acc' = case mco of
-              Just co -> co : acc
-              Nothing -> acc
+      Just (s', regs', cos_) ->
+        let acc' = reverse cos_ ++ acc
         in case isInternal cfg s' of
              Just ciNext -> go ciNext (s', regs') acc'
              Nothing     -> reverse acc'

@@ -51,7 +51,6 @@ test-suite jitsurei-test
                         Jitsurei.EmailDeliveryBuilderSpec
                         Jitsurei.EmailDeliveryViewSpec
                         Jitsurei.LoanApplicationBuilderSpec
-                        Jitsurei.LoanApplicationChainedSpec
                         Jitsurei.LoanApplicationMultiSpec
                         Jitsurei.LoanApplicationSpec
                         Jitsurei.LoanApplicationSymbolicSpec
@@ -62,7 +61,6 @@ test-suite jitsurei-test
                         Jitsurei.Render.MermaidLoanSpec
                         Jitsurei.OrderCartSpec
                         Jitsurei.UserRegistrationBuilderSpec
-                        Jitsurei.UserRegistrationChainedSpec
                         Jitsurei.UserRegistrationMultiSpec
                         Jitsurei.UserRegistrationSpec
                         Jitsurei.UserRegistrationSymbolicSpec

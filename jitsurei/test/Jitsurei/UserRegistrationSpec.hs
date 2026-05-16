@@ -107,7 +107,7 @@ spec = do
     stepEvent s regs co =
       case [ (target e, applyEdgeUpdate e regs ci)
            | e <- edgesOut userReg s
-           , Just o  <- [output e]
+           , o : _   <- [output e]
            , Just ci <- [solveOutput o regs co]
            , models (guard e) (regs, ci)
            ] of

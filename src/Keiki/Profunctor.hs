@@ -314,7 +314,7 @@ identityTransducer = SymTransducer
   { edgesOut    = \IdVertex ->
       [ Edge { guard  = PInCtor identityInCtor
              , update = UKeep
-             , output = Just identityOutTerm
+             , output = [identityOutTerm]
              , target = IdVertex
              }
       ]
@@ -717,7 +717,7 @@ arrTransducer f = SymTransducer
   { edgesOut    = \IdVertex ->
       [ Edge { guard  = PInCtor identityInCtor
              , update = UKeep
-             , output = Just arrOut
+             , output = [arrOut]
              , target = IdVertex
              }
       ]

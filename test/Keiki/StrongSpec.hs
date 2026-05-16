@@ -79,7 +79,7 @@ spec = do
       case routed of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (sampleSendEmail, requestId)
-            `shouldBe` Just (sampleEmailEvent, requestId)
+            `shouldBe` [(sampleEmailEvent, requestId)]
         SomeSymIdentity ->
           expectationFailure
             "first' (someSymTransducer emailDelivery) unexpectedly returned \
@@ -102,7 +102,7 @@ spec = do
       case routed of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (requestId, sampleSendEmail)
-            `shouldBe` Just (requestId, sampleEmailEvent)
+            `shouldBe` [(requestId, sampleEmailEvent)]
         SomeSymIdentity ->
           expectationFailure
             "second' (someSymTransducer emailDelivery) unexpectedly returned \

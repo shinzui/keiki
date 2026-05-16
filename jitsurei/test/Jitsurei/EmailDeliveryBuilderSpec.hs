@@ -55,9 +55,9 @@ spec = do
 
     it "omega emits the canonical EmailSent event from both forms" $ do
       omega emailDeliveryAST EmailPending emptyEmailRegs canonicalCmd
-        `shouldBe` Just canonicalEvent
+        `shouldBe` [canonicalEvent]
       omega emailDelivery     EmailPending emptyEmailRegs canonicalCmd
-        `shouldBe` Just canonicalEvent
+        `shouldBe` [canonicalEvent]
 
     it "reconstitute returns the same state for both forms" $ do
       let logEvents = [canonicalEvent]

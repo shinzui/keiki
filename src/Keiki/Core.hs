@@ -442,7 +442,11 @@ instance BoolAlg (HsPred rs ci) (RegFile rs, ci) where
 
 -- * Edges and the transducer -----------------------------------------------
 
--- | A single transition. 'Nothing' on 'output' is the ε-edge.
+-- | A single transition. The 'output' is a list of 'OutTerm's:
+-- @[]@ is the ε-edge (no observable emission), @[o]@ is the letter
+-- edge (one event, identical to today's @'Just' o@), @[o1, o2, ...]@
+-- is the multi-event edge — one transition emits N events in
+-- declaration order. See @docs/research/gsm-widening-design.md@.
 --
 -- The @(w :: [Symbol])@ index on 'update' (the slot-name set the
 -- update writes) is *existentially* quantified at the 'Edge' record
@@ -456,7 +460,7 @@ data Edge phi rs ci co s where
   Edge
     :: { guard  :: phi
        , update :: Update rs w ci
-       , output :: Maybe (OutTerm rs ci co)
+       , output :: [OutTerm rs ci co]
        , target :: s
        }
     -> Edge phi rs ci co s
@@ -618,34 +622,37 @@ delta t s regs ci =
     _        -> Nothing
 
 
--- | Single-step output. Returns 'Just co' for the unique active edge
--- whose 'output' is non-ε; 'Nothing' otherwise (including the case where
--- the unique active edge is an ε-edge).
+-- | Single-step output. Returns the list of events emitted by the
+-- unique active edge: @[]@ for an ε-edge, @[o]@ for a letter edge,
+-- @[o1, o2, ...]@ for a multi-event edge. Returns @[]@ if no edge
+-- (or more than one edge) is active — the caller cannot distinguish
+-- "no active edge" from "active ε-edge" from this function alone;
+-- use 'step' or 'delta' if that distinction matters.
 omega
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
-  -> s -> RegFile rs -> ci -> Maybe co
+  -> s -> RegFile rs -> ci -> [co]
 omega t s regs ci =
-  case [ evalOut o regs ci
+  case [ [ evalOut o regs ci | o <- output e ]
        | e <- edgesOut t s
        , models (guard e) (regs, ci)
-       , Just o <- [output e]
        ] of
-    [o] -> Just o
-    _   -> Nothing
+    [evaluatedOuts] -> evaluatedOuts
+    _               -> []
 
 
 -- * Pure-layer entry points ------------------------------------------------
 
 -- | One full step of the transducer combining 'delta' and 'omega'.
 -- Returns 'Nothing' if no edge from the current vertex has a satisfied
--- guard. The inner 'Maybe co' is 'Nothing' for an ε-edge.
+-- guard. The inner @[co]@ is @[]@ for an ε-edge, @[o]@ for a letter
+-- edge, @[o1, o2, ...]@ for a multi-event edge.
 step
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
   -> (s, RegFile rs)
   -> ci
-  -> Maybe (s, RegFile rs, Maybe co)
+  -> Maybe (s, RegFile rs, [co])
 step t (s, regs) ci = case delta t s regs ci of
   Nothing          -> Nothing
   Just (s', regs') -> Just (s', regs', omega t s regs ci)
@@ -657,6 +664,19 @@ step t (s, regs) ci = case delta t s regs ci of
 -- Used by 'reconstitute' for full-log replay and exposed so that
 -- single-event façades (notably 'Keiki.Decider.toDecider') can
 -- implement an @evolve :: s -> e -> s@ step on top of it.
+--
+-- == Letter-only semantics
+--
+-- This function handles ε-edges (@output = []@; skipped because they
+-- emit nothing observable) and letter edges (@output = [o]@;
+-- inverted via 'solveOutput'). Multi-event edges (@output =
+-- [o1, ..., oN]@ with N >= 2) are *not* handled here — they require
+-- the 'InFlight' wrapper added in EP-19 M3 so that mid-chain replay
+-- can express the "I just observed event 1, expecting event 2 next"
+-- intermediate state. For now (M2), this function treats a length-N
+-- edge as if only its head element is observable, which preserves
+-- existing letter-only callers' behaviour. M3 replaces this function
+-- with one taking @'InFlight' s co@ on input and output.
 applyEvent
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
@@ -664,7 +684,7 @@ applyEvent
 applyEvent t s regs co =
   case [ (target e, applyEdgeUpdate e regs ci)
        | e <- edgesOut t s
-       , Just o  <- [output e]
+       , o : _   <- [output e]
        , Just ci <- [solveOutput o regs co]
        , models (guard e) (regs, ci)
        ] of
@@ -770,13 +790,20 @@ data HiddenInputWarning = HiddenInputWarning
 -- | For every edge in the transducer, check whether the @output@ can
 -- mechanically recover the input on replay. Specifically:
 --
---   * If @output@ is @Nothing@ (an ε-edge), and @update@ reads the
---     input symbol, that contribution is silent on the wire and
+--   * If @output@ is @[]@ (an ε-edge), and @update@ reads the input
+--     symbol, that contribution is silent on the wire and
 --     unrecoverable.
---   * If @output@ is 'OPack' whose 'OutFields' walk does not visit
---     every slot of the OPack's named 'InCtor', the structural
---     inverse cannot reconstruct the input; the warning names the
---     'InCtor' and the missing slot.
+--   * If @output@ is non-empty, every 'OPack' in the list is walked;
+--     for each whose 'OutFields' walk does not visit every slot of
+--     its 'InCtor', the warning names the 'InCtor' and the missing
+--     slot.
+--
+-- For multi-event edges (output length >= 2) the M2 check fires
+-- per-OutTerm independently. EP-19 M4 strengthens this to compute
+-- *union* coverage across every 'OPack' in the list that references
+-- the same 'InCtor', so an 'InCtor' read by 'update' that is
+-- *jointly* recovered by the list (no single 'OPack' covers all
+-- slots, but their union does) does not fire the warning.
 --
 -- The check is intentionally conservative: it flags candidates for
 -- the author to inspect, not theorems.
@@ -797,19 +824,23 @@ checkHiddenInputs t =
   where
     edgeReasons :: Int -> Edge phi rs ci co s -> [String]
     edgeReasons n e = case output e of
-      Nothing
+      []
         | edgeReadsInput e ->
             [ "edge #" <> show n <> ": ε-edge with input read in update" ]
         | otherwise -> []
-      Just (OPack ic _ fields)
-        | Just (MissingInCtorFields icN missing) <- detectMissingInCtorFields ic fields
-            -> [ "edge #" <> show n
-                 <> ": OPack walk for InCtor \"" <> icN
-                 <> "\" leaves field"
-                 <> (if length missing == 1 then " " else "s ")
-                 <> "{" <> showMissing missing <> "} unrecovered"
-               ]
-        | otherwise -> []
+      outs -> concatMap (perOutTerm n) outs
+
+    perOutTerm :: Int -> OutTerm rs ci co -> [String]
+    perOutTerm n (OPack ic _ fields)
+      | Just (MissingInCtorFields icN missing) <- detectMissingInCtorFields ic fields
+          = [ "edge #" <> show n
+              <> ": OPack walk for InCtor \"" <> icN
+              <> "\" leaves field"
+              <> (if length missing == 1 then " " else "s ")
+              <> "{" <> showMissing missing <> "} unrecovered"
+            ]
+      | otherwise = []
+
     showMissing :: [String] -> String
     showMissing []     = ""
     showMissing [x]    = "\"" <> x <> "\""

@@ -73,7 +73,7 @@ spec = do
       case routedLeft of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Left sampleSendEmail)
-            `shouldBe` Just (Left sampleEmailEvent)
+            `shouldBe` [(Left sampleEmailEvent)]
         SomeSymIdentity ->
           expectationFailure
             "left' (someSymTransducer emailDelivery) unexpectedly returned \
@@ -85,7 +85,7 @@ spec = do
       case routedLeft of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Right (42 :: Int))
-            `shouldBe` Just (Right 42)
+            `shouldBe` [(Right 42)]
         SomeSymIdentity ->
           expectationFailure
             "left' (someSymTransducer emailDelivery) unexpectedly returned \
@@ -107,7 +107,7 @@ spec = do
       case routedRight of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Right sampleSendEmail)
-            `shouldBe` Just (Right sampleEmailEvent)
+            `shouldBe` [(Right sampleEmailEvent)]
         SomeSymIdentity ->
           expectationFailure
             "right' (someSymTransducer emailDelivery) unexpectedly returned \
@@ -119,7 +119,7 @@ spec = do
       case routedRight of
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Left (7 :: Int))
-            `shouldBe` Just (Left 7)
+            `shouldBe` [(Left 7)]
         SomeSymIdentity ->
           expectationFailure
             "right' (someSymTransducer emailDelivery) unexpectedly returned \

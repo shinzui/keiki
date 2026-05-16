@@ -85,10 +85,10 @@ adaptedEmail = someSymTransducer (lmapCi eventToCmd emailDelivery)
 --
 -- The 'SomeSymIdentity' sentinel returns its input verbatim — by
 -- definition, that is what 'Cat.id' means.
-runOmega :: SomeSymTransducer ci co -> ci -> Maybe co
+runOmega :: SomeSymTransducer ci co -> ci -> [co]
 runOmega (SomeSymTransducer t) ci =
   omega t (initial t) (initialRegs t) ci
-runOmega SomeSymIdentity ci = Just ci
+runOmega SomeSymIdentity ci = [ci]
 
 
 -- * Specs -------------------------------------------------------------------
@@ -102,13 +102,13 @@ spec = do
       let identityAtCmd :: SomeSymTransducer EmailCmd EmailCmd
           identityAtCmd = id
       runOmega identityAtCmd sampleSendEmail
-        `shouldBe` Just sampleSendEmail
+        `shouldBe` [sampleSendEmail]
 
     it "round-trips an EmailEvent through its EmailEvent identity" $ do
       let identityAtEvent :: SomeSymTransducer EmailEvent EmailEvent
           identityAtEvent = id
       runOmega identityAtEvent sampleEmailEvent
-        `shouldBe` Just sampleEmailEvent
+        `shouldBe` [sampleEmailEvent]
 
   describe "Category laws (behavioural, up to state-isomorphism)" $ do
 
@@ -131,7 +131,7 @@ spec = do
 
     it "L1 with concrete output: id . someEmail still emits the wire EmailEvent" $
       runOmega (id . someEmail) sampleSendEmail
-        `shouldBe` Just sampleEmailEvent
+        `shouldBe` [sampleEmailEvent]
 
   describe "CategoryOverlapError on slot-name collision" $ do
 
@@ -154,8 +154,8 @@ spec = do
       -- runtime check finds no overlap.
       let composedL = id . someEmail
           composedR = someEmail . id
-      runOmega composedL sampleSendEmail `shouldBe` Just sampleEmailEvent
-      runOmega composedR sampleSendEmail `shouldBe` Just sampleEmailEvent
+      runOmega composedL sampleSendEmail `shouldBe` [sampleEmailEvent]
+      runOmega composedR sampleSendEmail `shouldBe` [sampleEmailEvent]
 
   describe "isSingleValuedSym survives id . t" $ do
 

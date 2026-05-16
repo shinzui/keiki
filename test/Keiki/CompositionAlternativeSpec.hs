@@ -117,10 +117,10 @@ pingerEdges = \case
         , update =
             USet (#pingNonce :: IndexN "pingNonce" PingRegs Text)
                  (inpPing #nonce)
-        , output = Just $ pack
+        , output = [ pack
             inCtorPing
             wirePong
-            (OFCons (inpPing #nonce) OFNil)
+            (OFCons (inpPing #nonce) OFNil) ]
         , target = PingDone
         }
     ]
@@ -189,7 +189,7 @@ spec = do
       it "Left input advances the EmailDelivery arm and emits Left output" $
         case step siblings (initial siblings, initialRegs siblings)
                   (Left sampleSendEmail) of
-          Just (Composite ev pv, _, Just (Left co)) -> do
+          Just (Composite ev pv, _, [Left co]) -> do
             ev `shouldBe` EmailSentVertex
             pv `shouldBe` PingIdle           -- Pinger arm unchanged
             co `shouldBe` sampleEmailEvent
@@ -200,7 +200,7 @@ spec = do
       it "Right input advances the Pinger arm and emits Right output" $
         case step siblings (initial siblings, initialRegs siblings)
                   (Right samplePing) of
-          Just (Composite ev pv, _, Just (Right co)) -> do
+          Just (Composite ev pv, _, [Right co]) -> do
             ev `shouldBe` EmailPending       -- EmailDelivery arm unchanged
             pv `shouldBe` PingDone
             co `shouldBe` samplePingEvent
@@ -213,7 +213,7 @@ spec = do
                   (Left sampleSendEmail) of
           Just (s1, regs1, _) ->
             case step siblings (s1, regs1) (Right samplePing) of
-              Just (Composite ev pv, _, Just (Right co)) -> do
+              Just (Composite ev pv, _, [Right co]) -> do
                 ev `shouldBe` EmailSentVertex   -- preserved from step 1
                 pv `shouldBe` PingDone
                 co `shouldBe` samplePingEvent
@@ -251,18 +251,18 @@ spec = do
       it "produces Left sampleEmailEvent on Left sampleSendEmail" $
         omega siblings (initial siblings) (initialRegs siblings)
               (Left sampleSendEmail)
-          `shouldBe` Just (Left sampleEmailEvent)
+          `shouldBe` [(Left sampleEmailEvent)]
 
       it "produces Right samplePingEvent on Right samplePing" $
         omega siblings (initial siblings) (initialRegs siblings)
               (Right samplePing)
-          `shouldBe` Just (Right samplePingEvent)
+          `shouldBe` [(Right samplePingEvent)]
 
   where
     showStep
       :: Maybe ( Composite EmailVertex PingVertex, x
-               , Maybe (Either EmailEvent PingEvent) )
+               , [Either EmailEvent PingEvent] )
       -> String
     showStep Nothing                  = "Nothing"
-    showStep (Just (cs, _, mco))      =
-      "Just (" <> show cs <> ", _, " <> show mco <> ")"
+    showStep (Just (cs, _, cos_))     =
+      "Just (" <> show cs <> ", _, " <> show cos_ <> ")"

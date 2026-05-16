@@ -508,13 +508,13 @@ orderCartASTEdges = \case
         { guard  = isAddItem
         , update = USet (#itemCount :: IndexN "itemCount" OrderCartRegs ItemCount)
                         (lit (1 :: ItemCount))
-        , output = Just $ pack
+        , output = [ pack
             inCtorAddItem
             wireItemAdded
             (OFCons (inpAddItem #sku)
               (OFCons (inpAddItem #quantity)
                 (OFCons (inpAddItem #price)
-                  (OFCons (inpAddItem #at) OFNil))))
+                  (OFCons (inpAddItem #at) OFNil)))) ]
         , target = OpenWithItems
         }
     ]
@@ -524,13 +524,13 @@ orderCartASTEdges = \case
         { guard  = isAddItem
         , update = USet (#itemCount :: IndexN "itemCount" OrderCartRegs ItemCount)
                         (TApp1 (+ 1) (proj (#itemCount :: Index OrderCartRegs ItemCount)))
-        , output = Just $ pack
+        , output = [ pack
             inCtorAddItem
             wireItemAdded
             (OFCons (inpAddItem #sku)
               (OFCons (inpAddItem #quantity)
                 (OFCons (inpAddItem #price)
-                  (OFCons (inpAddItem #at) OFNil))))
+                  (OFCons (inpAddItem #at) OFNil)))) ]
         , target = OpenWithItems
         }
     , Edge
@@ -538,45 +538,45 @@ orderCartASTEdges = \case
         , update = USet (#itemCount :: IndexN "itemCount" OrderCartRegs ItemCount)
                         (TApp1 (subtract 1)
                                (proj (#itemCount :: Index OrderCartRegs ItemCount)))
-        , output = Just $ pack
+        , output = [ pack
             inCtorRemoveItem
             wireItemRemoved
             (OFCons (inpRemoveItem #sku)
-              (OFCons (inpRemoveItem #at) OFNil))
+              (OFCons (inpRemoveItem #at) OFNil)) ]
         , target = OpenWithItems
         }
     , Edge
         { guard  = isApplyDiscount
         , update = USet (#discountBp :: IndexN "discountBp" OrderCartRegs DiscountBp)
                         (inpApplyDiscount #percentBp)
-        , output = Just $ pack
+        , output = [ pack
             inCtorApplyDiscount
             wireDiscountApplied
             (OFCons (inpApplyDiscount #code)
               (OFCons (inpApplyDiscount #percentBp)
-                (OFCons (inpApplyDiscount #at) OFNil)))
+                (OFCons (inpApplyDiscount #at) OFNil))) ]
         , target = OpenWithItems
         }
     , Edge
         { guard  = isReserve
         , update = USet (#reservationId :: IndexN "reservationId" OrderCartRegs Text)
                         (inpReserve #reservationId)
-        , output = Just $ pack
+        , output = [ pack
             inCtorReserve
             wireOrderReserved
             (OFCons (inpReserve #reservationId)
-              (OFCons (inpReserve #at) OFNil))
+              (OFCons (inpReserve #at) OFNil)) ]
         , target = Reserved
         }
     , Edge
         { guard  = isCancel
         , update = USet (#cancelledAt :: IndexN "cancelledAt" OrderCartRegs UTCTime)
                         (inpCancel #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorCancel
             wireOrderCancelled
             (OFCons (inpCancel #reason)
-              (OFCons (inpCancel #at) OFNil))
+              (OFCons (inpCancel #at) OFNil)) ]
         , target = Cancelled
         }
     ]
@@ -590,23 +590,23 @@ orderCartASTEdges = \case
               `combine`
             USet (#amountPaid :: IndexN "amountPaid" OrderCartRegs Money)
                  (inpConfirmPayment #amountPaid)
-        , output = Just $ pack
+        , output = [ pack
             inCtorConfirmPayment
             wirePaymentConfirmed
             (OFCons (inpConfirmPayment #paymentRef)
               (OFCons (inpConfirmPayment #amountPaid)
-                (OFCons (inpConfirmPayment #at) OFNil)))
+                (OFCons (inpConfirmPayment #at) OFNil))) ]
         , target = Paid
         }
     , Edge
         { guard  = isCancel
         , update = USet (#cancelledAt :: IndexN "cancelledAt" OrderCartRegs UTCTime)
                         (inpCancel #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorCancel
             wireOrderCancelled
             (OFCons (inpCancel #reason)
-              (OFCons (inpCancel #at) OFNil))
+              (OFCons (inpCancel #at) OFNil)) ]
         , target = Cancelled
         }
     ]
@@ -623,34 +623,34 @@ orderCartASTEdges = \case
               `combine`
             USet (#shippedAt :: IndexN "shippedAt" OrderCartRegs UTCTime)
                  (inpShip #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorShip
             wireOrderShipped
             (OFCons (inpShip #carrier)
               (OFCons (inpShip #trackingId)
-                (OFCons (inpShip #at) OFNil)))
+                (OFCons (inpShip #at) OFNil))) ]
         , target = Shipped
         }
     , Edge
         { guard  = isRequestRefund
         , update = UKeep
-        , output = Just $ pack
+        , output = [ pack
             inCtorRequestRefund
             wireRefundRequested
             (OFCons (inpRequestRefund #reason)
-              (OFCons (inpRequestRefund #at) OFNil))
+              (OFCons (inpRequestRefund #at) OFNil)) ]
         , target = Paid
         }
     , Edge
         { guard  = isProcessRefund
         , update = USet (#refundedAt :: IndexN "refundedAt" OrderCartRegs UTCTime)
                         (inpProcessRefund #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorProcessRefund
             wireOrderRefunded
             (OFCons (inpProcessRefund #refundRef)
               (OFCons (inpProcessRefund #amountRefunded)
-                (OFCons (inpProcessRefund #at) OFNil)))
+                (OFCons (inpProcessRefund #at) OFNil))) ]
         , target = Refunded
         }
     ]
@@ -660,10 +660,10 @@ orderCartASTEdges = \case
         { guard  = isDeliver
         , update = USet (#deliveredAt :: IndexN "deliveredAt" OrderCartRegs UTCTime)
                         (inpDeliver #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorDeliver
             wireOrderDelivered
-            (OFCons (inpDeliver #at) OFNil)
+            (OFCons (inpDeliver #at) OFNil) ]
         , target = Delivered
         }
     ]

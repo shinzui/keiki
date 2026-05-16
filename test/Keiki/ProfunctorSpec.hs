@@ -64,21 +64,21 @@ sampleAt = UTCTime (fromGregorian 2026 5 3) (secondsToDiffTime 0)
 fireFromInitial
   :: SymTransducer (HsPred rs ci) rs s ci co
   -> ci
-  -> [(s, Maybe co)]
+  -> [(s, [co])]
 fireFromInitial t ci =
-  [ (target e, fmap (\o -> evalOut o (initialRegs t) ci) (output e))
+  [ (target e, map (\o -> evalOut o (initialRegs t) ci) (output e))
   | e <- edgesOut t (initial t)
   , evalPred (guard e) (initialRegs t) ci
   ]
 
 
--- | Pull a single edge's structural OPack output (if present) for
+-- | Pull a single edge's structural OPack output list for
 -- assertions about the rewriter's effect on the AST itself.
 firstEdgeOutput
   :: SymTransducer (HsPred rs ci) rs s ci co
-  -> Maybe (OutTerm rs ci co)
+  -> [OutTerm rs ci co]
 firstEdgeOutput t = case edgesOut t (initial t) of
-  []      -> Nothing
+  []      -> []
   (e : _) -> output e
 
 
@@ -89,7 +89,7 @@ firstEdgeOutput t = case edgesOut t (initial t) of
 fireOutputsOnly
   :: SymTransducer (HsPred rs ci) rs s ci co
   -> ci
-  -> [Maybe co]
+  -> [[co]]
 fireOutputsOnly t ci = map snd (fireFromInitial t ci)
 
 
@@ -110,8 +110,8 @@ spec = do
     it "raises a poisoned-icBuild error when solveOutput is forced on lmapped edges" $ do
       let lmapped = lmapCi unwrapCmd emailDelivery
       case firstEdgeOutput lmapped of
-        Nothing -> expectationFailure "lmapped EmailDelivery should have a non-eps edge output"
-        Just o  -> do
+        []      -> expectationFailure "lmapped EmailDelivery should have a non-eps edge output"
+        (o : _) -> do
           -- The structural inverse returns 'Just (icBuild …)' — the
           -- 'Just' is in WHNF but the inner thunk only fires when
           -- forced. lmapCi's contract: if you try to recover a 'ci'
@@ -142,20 +142,21 @@ spec = do
           fromRmapped = fireFromInitial rmapped sampleEmailCmd
           expected =
             [ ( EmailSentVertex
-              , Just (WrappedEvent
-                       (EmailSent EmailSentData
-                         { recipient = "alice@example.com"
-                         , subject   = "hello"
-                         , at        = sampleAt
-                         })) )
+              , [WrappedEvent
+                  (EmailSent EmailSentData
+                    { recipient = "alice@example.com"
+                    , subject   = "hello"
+                    , at        = sampleAt
+                    })]
+              )
             ]
       fromRmapped `shouldBe` expected
 
     it "returns Nothing from solveOutput on rmapped edges" $ do
       let rmapped = rmapCo WrappedEvent emailDelivery
       case firstEdgeOutput rmapped of
-        Nothing -> expectationFailure "rmapped EmailDelivery should have a non-eps edge output"
-        Just o  -> do
+        []      -> expectationFailure "rmapped EmailDelivery should have a non-eps edge output"
+        (o : _) -> do
           let wrappedEvent = WrappedEvent
                 ( EmailSent EmailSentData
                     { recipient = "alice@example.com"
@@ -205,12 +206,12 @@ spec = do
     it "fmap on the wrapper post-composes the output" $ do
       let mapped = fmap WrappedEvent (someSymTransducer emailDelivery)
           expected =
-            [ Just (WrappedEvent
-                     (EmailSent EmailSentData
-                       { recipient = "alice@example.com"
-                       , subject   = "hello"
-                       , at        = sampleAt
-                       }))
+            [ [WrappedEvent
+                 (EmailSent EmailSentData
+                   { recipient = "alice@example.com"
+                   , subject   = "hello"
+                   , at        = sampleAt
+                   })]
             ]
       case mapped of
         SomeSymTransducer t ->

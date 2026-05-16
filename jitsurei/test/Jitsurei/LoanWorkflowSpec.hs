@@ -88,7 +88,7 @@ spec = do
       case loanEventToSyncInput appApproved of
         Just inp ->
           case step coreBankingSync (initial coreBankingSync, initialRegs coreBankingSync) inp of
-            Just (SyncRequested, _, Just (SyncToLegacyRequested d)) -> do
+            Just (SyncRequested, _, [SyncToLegacyRequested d]) -> do
               d.loanId      `shouldBe` "loan-alice"
               d.applicantId `shouldBe` "alice"
               d.principal   `shouldBe` 250_000
@@ -138,7 +138,7 @@ spec = do
       -- CoreBankingSync emits LegacyAssignmentCommanded.
       let callback = LegacyCallbackReceivedIn
             (LegacyCallbackReceivedInData "loan-alice" "LEG-42")
-      Just (sync2State, _, Just sync2Out) <-
+      Just (sync2State, _, [sync2Out]) <-
         pure (step coreBankingSync (sync1State, sync1Regs) callback)
       sync2State `shouldBe` SyncSettled
 
@@ -150,14 +150,14 @@ spec = do
       Just loanCmd' <- pure (syncOutputToLoanCmd sync2Out)
 
       let createCmd = CreateLoan (CreateLoanData "loan-alice" "alice" 250_000)
-      Just (loan1State, loan1Regs, Just (LoanCreated _)) <-
+      Just (loan1State, loan1Regs, [LoanCreated _]) <-
         pure (step loan (initial loan, initialRegs loan) createCmd)
       loan1State `shouldBe` LoanAwaiting
 
       -- Final: the AssignLegacyLoanId from CoreBankingSync drives
       -- Loan to LoanLinked and emits LegacyLoanIdAssigned.
       case step loan (loan1State, loan1Regs) loanCmd' of
-        Just (LoanLinked, _, Just (LegacyLoanIdAssigned d)) -> do
+        Just (LoanLinked, _, [LegacyLoanIdAssigned d]) -> do
           d.loanId       `shouldBe` "loan-alice"
           d.legacyLoanId `shouldBe` "LEG-42"
         Just _  -> expectationFailure

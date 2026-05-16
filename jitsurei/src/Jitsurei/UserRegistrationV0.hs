@@ -154,12 +154,12 @@ userRegV0Edges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpStart #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorStart
             wireRegistrationStartedV0
             (OFCons (inpStart #email)
               (OFCons (inpStart #confirmCode)
-                (OFCons (inpStart #at) OFNil)))
+                (OFCons (inpStart #at) OFNil))) ]
         , target = Registering
         }
     ]
@@ -168,10 +168,10 @@ userRegV0Edges = \case
     [ Edge
         { guard  = isContinue
         , update = UKeep
-        , output = Just $ pack
+        , output = [ pack
             inCtorContinue
             wireConfirmationEmailSentV0
-            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil)
+            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil) ]
         , target = RequiresConfirmation
         }
     ]
@@ -189,11 +189,11 @@ userRegV0Edges = \case
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
         , update = USet (#confirmedAt :: IndexN "confirmedAt" UserRegRegs UTCTime)
                         (inpConfirm #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorConfirm
             wireAccountConfirmedV0
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpConfirm #at) OFNil))
+              (OFCons (inpConfirm #at) OFNil)) ]
         , target = Confirmed
         }
     , Edge
@@ -204,19 +204,19 @@ userRegV0Edges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpResend #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorResend
             wireConfirmationResentV0
             (OFCons (proj (#email :: Index UserRegRegs Email))
               (OFCons (inpResend #code)
-                (OFCons (inpResend #at) OFNil)))
+                (OFCons (inpResend #at) OFNil))) ]
         , target = RequiresConfirmation
         }
     , Edge
         { guard  = isGdpr
         , update = USet (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
                         (inpGdpr #at)
-        , output = Nothing
+        , output = []
         , target = Deleted
         }
     ]
@@ -226,11 +226,11 @@ userRegV0Edges = \case
         { guard  = isGdpr
         , update = USet (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
                         (inpGdpr #at)
-        , output = Just $ pack
+        , output = [ pack
             inCtorGdpr
             wireAccountDeletedV0
             (OFCons (proj (#email :: Index UserRegRegs Email))
-              (OFCons (inpGdpr #at) OFNil))
+              (OFCons (inpGdpr #at) OFNil)) ]
         , target = Deleted
         }
     ]

@@ -199,12 +199,12 @@ synth2Mutex = SymTransducer
       False ->
         [ Edge { guard  = SymPred (PInCtor inCtorTinyFoo)
                , update = UKeep
-               , output = Nothing
+               , output = []
                , target = True
                }
         , Edge { guard  = SymPred (PInCtor inCtorTinyBar)
                , update = UKeep
-               , output = Nothing
+               , output = []
                , target = True
                }
         ]
@@ -223,12 +223,12 @@ synth2Overlap = SymTransducer
       False ->
         [ Edge { guard = SymPred PTop
                , update = UKeep
-               , output = Nothing
+               , output = []
                , target = True
                }
         , Edge { guard = SymPred PTop
                , update = UKeep
-               , output = Nothing
+               , output = []
                , target = True
                }
         ]
