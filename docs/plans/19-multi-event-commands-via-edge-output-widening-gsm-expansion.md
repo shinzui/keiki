@@ -604,7 +604,31 @@ current state of the work.
       malformed event sequence (e.g. `RegistrationStarted` followed by an
       out-of-order event) returns `Nothing`.
 
-- [ ] **Milestone 4 — Strengthen `checkHiddenInputs`.** Edit
+- [x] **Milestone 4 — Strengthen `checkHiddenInputs`.** (2026-05-16)
+      Completed. Replaced the per-`OPack` independent check with a
+      **union-coverage** check: for each edge with a non-empty output
+      list, group OPacks by `InCtor` name (via `icName`), union the
+      slots visited by every `OPack` in each group, and flag any
+      `InCtor` whose slot list is not fully covered by its union.
+      Length-1 (letter) edges behave identically to the legacy check.
+      Length-2+ edges no longer trip on a single OPack's partial
+      coverage when a sibling OPack on the same edge supplies the
+      missing slots — the joint coverage is what matters.
+
+      Added `test/Keiki/CoreHiddenInputsGSMSpec.hs` (3 tests):
+      - `goodUnion`: length-2 edge with OPacks visiting {a,b} and
+        {b,c} respectively — union is {a,b,c} = full coverage. No
+        warning fires.
+      - `badUnion`: length-2 edge with OPacks visiting {a,b} and {a} —
+        union is {a,b}, leaving slot @c@ unrecovered. Warning fires
+        naming "Begin" and "c".
+      - `badSingle`: length-1 edge that visits only slot @a@ from
+        `Begin`. Confirms the legacy single-OPack check still fires
+        (missing slots b and c) — union is a strict generalisation.
+
+      **Validation**: `cabal test all` reports **337 examples, 0
+      failures, 1 pending** (199 + 91 + 40 + 7); previous 334 +
+      3 new M4 specs.
       `src/Keiki/Core.hs:701-770`. The current check fires per-edge with
       one `OutTerm` (the `Just o` arm) or fires on ε-edges that read
       input. Update to:

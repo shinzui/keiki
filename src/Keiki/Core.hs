@@ -886,17 +886,18 @@ data HiddenInputWarning = HiddenInputWarning
 --   * If @output@ is @[]@ (an ε-edge), and @update@ reads the input
 --     symbol, that contribution is silent on the wire and
 --     unrecoverable.
---   * If @output@ is non-empty, every 'OPack' in the list is walked;
---     for each whose 'OutFields' walk does not visit every slot of
---     its 'InCtor', the warning names the 'InCtor' and the missing
---     slot.
+--   * If @output@ is non-empty, the per-edge check groups the
+--     'OPack's by 'InCtor' name (via 'icName') and computes the
+--     *union* of slots visited across every 'OPack' naming the same
+--     'InCtor'. If the union still leaves any of the 'InCtor''s
+--     slots unvisited, the warning names the 'InCtor' and the
+--     missing slot(s).
 --
--- For multi-event edges (output length >= 2) the M2 check fires
--- per-OutTerm independently. EP-19 M4 strengthens this to compute
--- *union* coverage across every 'OPack' in the list that references
--- the same 'InCtor', so an 'InCtor' read by 'update' that is
--- *jointly* recovered by the list (no single 'OPack' covers all
--- slots, but their union does) does not fire the warning.
+-- For length-1 edges this matches the legacy per-'OPack' check
+-- (there is only one 'OPack' so the union is trivial). For length-2+
+-- edges the union strengthening means an 'InCtor' jointly recovered
+-- by multiple 'OPack's in the same edge — none of which covers all
+-- slots alone, but together they do — does *not* fire the warning.
 --
 -- The check is intentionally conservative: it flags candidates for
 -- the author to inspect, not theorems.
@@ -921,18 +922,73 @@ checkHiddenInputs t =
         | edgeReadsInput e ->
             [ "edge #" <> show n <> ": ε-edge with input read in update" ]
         | otherwise -> []
-      outs -> concatMap (perOutTerm n) outs
+      outs -> unionMisses n outs
 
-    perOutTerm :: Int -> OutTerm rs ci co -> [String]
-    perOutTerm n (OPack ic _ fields)
-      | Just (MissingInCtorFields icN missing) <- detectMissingInCtorFields ic fields
-          = [ "edge #" <> show n
-              <> ": OPack walk for InCtor \"" <> icN
-              <> "\" leaves field"
-              <> (if length missing == 1 then " " else "s ")
-              <> "{" <> showMissing missing <> "} unrecovered"
-            ]
-      | otherwise = []
+    -- | For an edge's non-empty output list, group OPacks by InCtor
+    -- name; for each group, compute the union of visited slots; flag
+    -- any InCtor whose slot list is not fully covered by the union.
+    -- The grouping preserves first-seen order so warning messages
+    -- are deterministic.
+    unionMisses :: Int -> [OutTerm rs ci co] -> [String]
+    unionMisses n outs =
+      let groups = groupByInCtorName outs
+      in [ formatMiss n icN missing
+         | (icN, allSlots, visitedUnion) <- groups
+         , let missing = allSlots \\ nub visitedUnion
+         , not (null missing)
+         ]
+
+    -- | Walk the output list, accumulating per-InCtor (slot list,
+    -- visited slots). First seen wins on the slot list; subsequent
+    -- OPacks with the same InCtor name extend the visited list.
+    groupByInCtorName
+      :: [OutTerm rs ci co] -> [(String, [String], [String])]
+    groupByInCtorName = foldl add []
+      where
+        add acc (OPack ic _ fields) =
+          let icN     = icName ic
+              allSl   = slotNamesOf ic
+              visited = visitedSlotsOf ic fields
+          in extend acc icN allSl visited
+
+        extend [] icN allSl visited = [(icN, allSl, visited)]
+        extend ((n, sl, v) : rest) icN allSl visited
+          | n == icN  = (n, sl, v ++ visited) : rest
+          | otherwise = (n, sl, v) : extend rest icN allSl visited
+
+    -- | Slots of an OPack's named 'InCtor' that the supplied
+    -- 'OutFields' walk visits via 'TInpCtorField'.
+    visitedSlotsOf
+      :: forall ifs fs.
+         InCtor ci ifs -> OutFields rs ci fs -> [String]
+    visitedSlotsOf ic@InCtor{} fields = goFields fields
+      where
+        allSlots = slotNamesOf ic
+
+        goFields :: forall fs'. OutFields rs ci fs' -> [String]
+        goFields OFNil           = []
+        goFields (OFCons tt rest) = goTerm tt ++ goFields rest
+
+        goTerm :: forall r. Term rs ci r -> [String]
+        goTerm (TInpCtorField ic2 ix)
+          | icName ic2 == icName ic =
+              [allSlots !! indexPos ix]
+          | otherwise = []
+        goTerm (TApp1 _ tt')  = goTerm tt'
+        goTerm (TApp2 _ a b)  = goTerm a ++ goTerm b
+        goTerm _              = []
+
+        indexPos :: forall rs' r. Index rs' r -> Int
+        indexPos ZIdx     = 0
+        indexPos (SIdx i) = 1 + indexPos i
+
+    formatMiss :: Int -> String -> [String] -> String
+    formatMiss n icN missing =
+      "edge #" <> show n
+        <> ": OPack walk for InCtor \"" <> icN
+        <> "\" leaves field"
+        <> (if length missing == 1 then " " else "s ")
+        <> "{" <> showMissing missing <> "} unrecovered"
 
     showMissing :: [String] -> String
     showMissing []     = ""
