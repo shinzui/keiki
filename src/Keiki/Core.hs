@@ -76,7 +76,10 @@ module Keiki.Core
   , step
   , reconstitute
   , applyEvent
+  , applyEventStreaming
   , applyEvents
+    -- * Streaming-replay state wrapper (EP-19 M3)
+  , InFlight (..)
     -- * Build-time analyses
   , solveOutput
   , HiddenInputWarning (..)
@@ -669,14 +672,14 @@ step t (s, regs) ci = case delta t s regs ci of
 --
 -- This function handles ε-edges (@output = []@; skipped because they
 -- emit nothing observable) and letter edges (@output = [o]@;
--- inverted via 'solveOutput'). Multi-event edges (@output =
--- [o1, ..., oN]@ with N >= 2) are *not* handled here — they require
--- the 'InFlight' wrapper added in EP-19 M3 so that mid-chain replay
--- can express the "I just observed event 1, expecting event 2 next"
--- intermediate state. For now (M2), this function treats a length-N
--- edge as if only its head element is observable, which preserves
--- existing letter-only callers' behaviour. M3 replaces this function
--- with one taking @'InFlight' s co@ on input and output.
+-- inverted via 'solveOutput'). For multi-event edges (@output =
+-- [o1, ..., oN]@ with N >= 2), this letter-flavoured 'applyEvent'
+-- only inverts against the *head* of the output list, returning the
+-- target vertex on a successful match. It is suitable when the
+-- caller knows it is replaying letter-only events; for true
+-- streaming replay across multi-event edges (where intermediate
+-- events in the chain must be matched against the expected tail of
+-- a prior edge's output list) use 'applyEventStreaming'.
 applyEvent
   :: BoolAlg phi (RegFile rs, ci)
   => SymTransducer phi rs s ci co
@@ -692,49 +695,139 @@ applyEvent t s regs co =
     _        -> Nothing
 
 
+-- | Streaming-replay state wrapper. Used by 'applyEventStreaming'
+-- (the InFlight-aware replay) and exposed as the carrier of the
+-- 'Keiki.Decider.evolveStreaming' field added in EP-19 M5.
+--
+-- @'Settled' s@ is the state at a stable vertex — the next event
+-- must be the first emission of /some/ outgoing edge of @s@.
+--
+-- @'InFlight' s [e2, ..., eN]@ is the mid-chain state at vertex
+-- @s@ (the *target* of the in-flight chain's edge; register updates
+-- have already been applied at the transition into 'InFlight'). The
+-- queue holds the *evaluated* expected events in order; the next
+-- observed event must equal the head, popping it; when the queue
+-- empties, the wrapper transitions to @'Settled' s@.
+--
+-- See @docs/research/gsm-widening-design.md@ §4 for the formal
+-- treatment and a worked example on the @StartRegistration@ chain.
+data InFlight s co
+  = Settled  !s
+  | InFlight !s ![co]
+  deriving (Eq, Show)
+
+
+-- | Apply one observed output to a streaming-replay state. Two arms:
+--
+--   1. @'Settled' s@ — walk outgoing edges of @s@; find the unique
+--      edge whose @output@'s *head* inverts to a valid @ci@ via
+--      'solveOutput' satisfying the guard. Commit to that edge, run
+--      its update, evaluate the *tail* of the output list against
+--      the recovered @(regs, ci)@ snapshot. If the tail is empty
+--      (letter edge), return @('Settled' (target e), regs')@. If the
+--      tail is non-empty (multi-event edge), return @('InFlight'
+--      (target e) tail, regs')@.
+--
+--   2. @'InFlight' s (q1 : rest) regs@ — equality-check @q1@
+--      against the observed event. On match, advance the queue
+--      (returning @'Settled' s@ when @rest == []@, otherwise
+--      @'InFlight' s rest@). No register update — registers were
+--      updated at the @Settled → InFlight@ transition. On mismatch
+--      (out-of-order replay) return 'Nothing'.
+--
+-- The 'Eq' constraint on @co@ supports the queue equality check.
+-- Most aggregate event types derive 'Eq' (a documented expectation
+-- of the foundations).
+applyEventStreaming
+  :: (BoolAlg phi (RegFile rs, ci), Eq co)
+  => SymTransducer phi rs s ci co
+  -> InFlight s co -> RegFile rs -> co
+  -> Maybe (InFlight s co, RegFile rs)
+applyEventStreaming t (Settled s) regs co =
+  case [ (e, ci) | e <- edgesOut t s
+                 , o : _   <- [output e]
+                 , Just ci <- [solveOutput o regs co]
+                 , models (guard e) (regs, ci)
+       ] of
+    [(e, ci)] ->
+      let regs'         = applyEdgeUpdate e regs ci
+          evaluatedTail = [ evalOut o regs ci | o <- drop 1 (output e) ]
+          wrapped       = case evaluatedTail of
+            [] -> Settled (target e)
+            xs -> InFlight (target e) xs
+      in Just (wrapped, regs')
+    _ -> Nothing
+applyEventStreaming _ (InFlight s queue) regs co = case queue of
+  []          -> Nothing
+  [q1]
+    | q1 == co -> Just (Settled s, regs)
+    | otherwise -> Nothing
+  (q1 : rest)
+    | q1 == co -> Just (InFlight s rest, regs)
+    | otherwise -> Nothing
+
+
 -- | Reconstitute @(state, registers)@ from a log of outputs by
--- replaying each event through 'applyEvent', which inverts the
--- producing edge's @output@ via 'solveOutput'.
+-- replaying each event through the InFlight-aware
+-- 'applyEventStreaming', which threads mid-chain state through
+-- multi-event edges invisibly and unwraps to 'Settled' at the log's
+-- end.
+--
+-- For letter-only transducers (every edge has @output@ of length 0
+-- or 1) the streaming wrapper is always 'Settled' and the result is
+-- identical to the pre-EP-19 letter-fold. A log that ends mid-chain
+-- through a multi-event edge returns 'Nothing' — there is no valid
+-- @(s, regs)@ to surface from an 'InFlight' final state.
 reconstitute
-  :: BoolAlg phi (RegFile rs, ci)
+  :: (BoolAlg phi (RegFile rs, ci), Eq co)
   => SymTransducer phi rs s ci co
   -> [co]
   -> Maybe (s, RegFile rs)
-reconstitute t = go (initial t, initialRegs t)
-  where
-    go acc []         = Just acc
-    go (s, regs) (co : rest) = do
-      next <- applyEvent t s regs co
-      go next rest
+reconstitute t = applyEvents t (initial t, initialRegs t)
 
 
--- | Replay a chunk of events through 'applyEvent' from a
--- caller-supplied @(state, registers)@ start. Structurally identical
--- to 'reconstitute' except that the start state is an argument
--- rather than the transducer's initial state, so a runtime adapter
--- can chunk-replay the events corresponding to one logical command
--- from any current state.
+-- | Replay a chunk of events from a caller-supplied
+-- @(state, registers)@ start. Structurally similar to 'reconstitute'
+-- except that the start state is an argument rather than the
+-- transducer's initial state, so a runtime adapter can chunk-replay
+-- the events corresponding to one logical command from any current
+-- state.
 --
 -- Useful when the runtime preserves command boundaries (event store
 -- with command-id tags, transactional batches, deterministic test
 -- fixtures): replay one command's events as one atomic step and
--- consume the unwrapped final state. For event-by-event streaming
--- replay without command boundaries, callers iterate 'applyEvent'
--- directly.
+-- consume the unwrapped final state.
+--
+-- == Multi-event edges (EP-19 M3)
+--
+-- Internally, the implementation lifts the start state to 'Settled'
+-- and folds 'applyEventStreaming' over the chunk; the wrapper
+-- transitions through 'InFlight' for multi-event edges and unwraps
+-- back to 'Settled' when the chunk completes. A chunk that ends
+-- mid-flight (the queue is non-empty at the end of the input list)
+-- returns 'Nothing'; this signals a truncated chunk relative to the
+-- edge's static output length.
+--
+-- For length-0/1 edges the behaviour is identical to the legacy
+-- letter-fold; for length-2+ edges the chunk must contain the full
+-- expected sequence of evaluated events in order.
 --
 -- Returns 'Nothing' if any event in the chunk fails to replay (e.g.
--- a malformed log or an event that does not match any active edge's
--- output at the current vertex).
+-- a malformed log, an event that does not match any active edge's
+-- output at the current vertex, or a chunk that ends mid-flight).
 applyEvents
-  :: BoolAlg phi (RegFile rs, ci)
+  :: (BoolAlg phi (RegFile rs, ci), Eq co)
   => SymTransducer phi rs s ci co
   -> (s, RegFile rs)
   -> [co]
   -> Maybe (s, RegFile rs)
-applyEvents _ acc []                    = Just acc
-applyEvents t (s, regs) (co : rest)     = do
-  next <- applyEvent t s regs co
-  applyEvents t next rest
+applyEvents t (s0, regs0) cos_ = go (Settled s0) regs0 cos_
+  where
+    go (Settled s) regs []     = Just (s, regs)
+    go (InFlight _ _) _    []  = Nothing  -- chunk ended mid-flight
+    go inFlight regs (co : rest) = do
+      (inFlight', regs') <- applyEventStreaming t inFlight regs co
+      go inFlight' regs' rest
 
 
 -- * Build-time analyses ----------------------------------------------------

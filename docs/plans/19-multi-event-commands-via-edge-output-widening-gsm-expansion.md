@@ -510,8 +510,48 @@ current state of the work.
       Tests should still pass with single-emit blocks behaving
       identically (length-1 list = today's `[Just o]` semantics).
 
-- [ ] **Milestone 3 — `InFlight` and `applyEvents`.** Add to
-      `src/Keiki/Core.hs`:
+- [x] **Milestone 3 — `InFlight` and `applyEvents`.** (2026-05-16)
+      Completed. Concrete changes:
+
+      - Added `data InFlight s co = Settled !s | InFlight !s ![co]`
+        to `Keiki.Core` (exported via the new
+        "Streaming-replay state wrapper" section in the export list).
+      - Added `applyEventStreaming :: ... -> InFlight s co -> RegFile
+        rs -> co -> Maybe (InFlight s co, RegFile rs)` with the two
+        arms specified in the design note §4:
+          - `Settled s`: find the unique edge whose output's head
+            inverts via `solveOutput`; commit; evaluate the tail
+            against the recovered `(regs, ci)`; wrap into `InFlight`
+            if tail is non-empty, otherwise `Settled (target e)`.
+          - `InFlight s (q : rest)`: equality-check against the head
+            of the queue; pop on match; transition to `Settled` when
+            the queue empties; return `Nothing` on mismatch or empty
+            queue.
+        Carries an `Eq co` constraint for the queue check.
+      - **`applyEvent` retained letter-only** per the Decision Log
+        entry ("M3 keeps the existing applyEvent letter-only
+        signature"). This avoids forcing `Keiki.Acceptor`,
+        `Decider.toDecider.evolve`, and `bench/Bench.hs` to wrap
+        every state in `Settled`.
+      - **Widened `applyEvents`'s implementation** to use streaming
+        internally: lifts the start state to `Settled`, folds
+        `applyEventStreaming`, unwraps a final `Settled` (chunks
+        that end mid-flight return `Nothing`). Signature unchanged
+        from EP-20 M2's letter version. New constraint: `Eq co`.
+      - **Refactored `reconstitute`** to delegate to `applyEvents`
+        from the transducer's initial state. Acquires `Eq co`.
+      - Added `test/Keiki/CoreInFlightSpec.hs` (10 tests) with a
+        minimal synthetic 2-vertex transducer whose one edge has
+        `output = [Started n, Echoed n]` (length-2). Asserts:
+        omega returns the full list; step's third component is the
+        list; chunked `applyEvents` round-trips; truncated chunks
+        reject; out-of-order chunks reject; `applyEventStreaming`
+        threads `Settled → InFlight → Settled` correctly; streaming
+        and chunked agree on final state.
+
+      **Validation**: `cabal test all --test-show-details=direct`
+      reports **334 examples, 0 failures, 1 pending** (196 + 91 + 40
+      + 7); previous 324 baseline + 10 new InFlight specs.
 
           data InFlight s co = Settled !s | InFlight !s ![co]
             deriving (Eq, Show)
@@ -1028,6 +1068,29 @@ Record every decision made while working on the plan.
   **Implementation impact**: M2's Mermaid cascade implements
   the switchover; `test/Keiki/Render/MermaidSpec.hs` adds
   goldens for length-2 and length-3 edges.
+  **Date**: 2026-05-16
+
+- **Decision**: M3 keeps the existing `applyEvent :: ... -> s ->
+  RegFile rs -> co -> Maybe (s, RegFile rs)` letter-only signature
+  and adds a new `applyEventStreaming :: ... -> InFlight s co ->
+  RegFile rs -> co -> Maybe (InFlight s co, RegFile rs)` for the
+  multi-event streaming case. The plan's Interfaces section
+  originally specified replacing `applyEvent`'s signature; this
+  refinement keeps existing callers (`Keiki.Acceptor.outputAcceptor`,
+  `Keiki.Decider.toDecider.evolve`, `bench/Bench.hs`, tests) source-
+  compatible while still exposing the InFlight-aware replay path
+  needed for length-2+ edges.
+  **Rationale**: the letter-only callers genuinely don't need
+  `InFlight` — they handle length-0/1 edges only. Widening the public
+  signature would force every caller to wrap/unwrap `Settled` even
+  when they cannot encounter `InFlight` (Acceptor's state carrier
+  doesn't have a sensible interpretation for mid-chain replay; the
+  Decider's `evolve :: s -> e -> s` was already letter-only by
+  design — M5's added `evolveStreaming` is the InFlight surface).
+  **Implementation impact**: M3 adds `InFlight`, `applyEventStreaming`,
+  and widens `applyEvents`'s implementation to use streaming
+  internally; `applyEvent`'s signature is unchanged. M5's
+  `Decider.evolveStreaming` calls `applyEventStreaming` directly.
   **Date**: 2026-05-16
 
 - **Decision**: Factor the EP-20 surface deletion across M2/M5/M7 by
