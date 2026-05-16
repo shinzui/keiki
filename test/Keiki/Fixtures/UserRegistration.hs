@@ -51,7 +51,6 @@ module Keiki.Fixtures.UserRegistration
   , userRegAST
   , emptyRegs
     -- * Multi-event driver configuration (EP-20 M4)
-  , userRegDriverConfig
     -- * Wire constructors (exported for testing)
   , wireRegistrationStarted
   , wireConfirmationEmailSent
@@ -80,7 +79,6 @@ import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
 import Keiki.Builder ((.=))
-import Keiki.Decider (DriverConfig (..))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -469,29 +467,3 @@ userRegASTEdges = \case
     ]
 
   Deleted -> []
-
-
--- * Multi-event driver configuration (EP-20 M4) ----------------------------
-
--- | Driver configuration for the multi-event façade. Marks
--- 'Registering' as an internal vertex advanced by 'Continue'; all
--- other vertices are public. Pair with 'Keiki.Decider.toMultiDecider'
--- to drive the @StartRegistration@ chain end-to-end:
---
--- @
--- let mdec = 'Keiki.Decider.toMultiDecider' 'userReg' 'userRegDriverConfig'
--- in 'Keiki.Decider.decide' mdec (StartRegistration sd)
---      (PotentialCustomer, emptyRegs)
--- -- ⇒ [RegistrationStarted ..., ConfirmationEmailSent ...]
--- @
---
--- The underlying letter-FST behavior is unchanged: a plain
--- 'Keiki.Decider.toDecider' over the same transducer still returns
--- a single event from @StartRegistration@ and lands at the
--- intermediate 'Registering' vertex.
-userRegDriverConfig :: DriverConfig Vertex UserCmd
-userRegDriverConfig = DriverConfig
-  { isInternal = \v -> case v of
-      Registering -> Just Continue
-      _           -> Nothing
-  }

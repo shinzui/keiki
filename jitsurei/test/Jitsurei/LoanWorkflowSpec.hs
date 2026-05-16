@@ -23,7 +23,6 @@ import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Test.Hspec
 
 import Keiki.Core
-import Keiki.Decider (Decider (..), toMultiDecider)
 
 import Jitsurei.CoreBankingSync
 import Jitsurei.Loan
@@ -35,32 +34,19 @@ t :: Integer -> UTCTime
 t s = UTCTime (fromGregorian 2026 5 3) (secondsToDiffTime s)
 
 
--- | A 5-event log that drives 'loanApplication' through evidence
--- collection so the registers sit at 'CollectingDocuments' with
--- every threshold *except* employment satisfied. Used as the pre-
--- state for the threshold-tipping 'RecordEmploymentCheck' command.
-preApprovalLog :: [LoanEvent]
-preApprovalLog =
-  [ ApplicationStarted     (ApplicationStartedData     "alice" 250_000 "home" (t 0))
-  , IncomeDocumentReceived (IncomeDocumentReceivedData "i1" (t 10))
-  , IncomeDocumentReceived (IncomeDocumentReceivedData "i2" (t 20))
-  , IdDocumentReceived     (IdDocumentReceivedData     "id1" (t 30))
-  , CreditScoreRecorded    (CreditScoreRecordedData    720 (t 40))
-  ]
-
-
--- | Drive 'loanApplication's multi-decider with the threshold-
--- tipping 'RecordEmploymentCheck' command and observe the 2-event
--- chain @[EmploymentChecked, ApplicationApproved]@.
+-- | The 2-event chain that the original (pre-EP-19) multi-decider
+-- produced for the threshold-tipping 'RecordEmploymentCheck' command:
+-- @[EmploymentChecked, ApplicationApproved]@. After EP-19's GSM
+-- widening this chain is expressed as a single multi-event edge on
+-- @loanApplication@'s canonical builder form (M7); for the
+-- workflow integration test the events themselves are what matter,
+-- so they are inlined here.
 recordEmploymentTipsApproval :: [LoanEvent]
 recordEmploymentTipsApproval =
-  let mdec   = toMultiDecider loanApplication loanApplicationDriverConfig
-      preSt  = case reconstitute loanApplication preApprovalLog of
-                 Just s  -> s
-                 Nothing -> error "preApprovalLog reconstitute failed"
-      cmd    = RecordEmploymentCheck
-                 (RecordEmploymentCheckData True (t 50))
-  in decide mdec cmd preSt
+  [ EmploymentChecked    (EmploymentCheckedData True (t 50))
+  , ApplicationApproved
+      (ApplicationApprovedData "alice" 250_000 720 (t 50))
+  ]
 
 
 spec :: Spec

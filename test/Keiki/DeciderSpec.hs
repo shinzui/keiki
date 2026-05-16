@@ -54,10 +54,12 @@ expectedSnapshot =
 
 
 -- | Run one decide/evolve round on the (s, regs) pair: the façade
--- emits zero or one event, and 'evolve' folds the (zero or one) event
--- back into the state.
+-- emits zero or one event (on the state-refinement form), and
+-- 'evolve' folds the (zero or one) event back into the state.
 runRound
-  :: Decider UserCmd UserEvent (Vertex, RegFile UserRegRegs)
+  :: Decider UserCmd UserEvent
+       (Vertex, RegFile UserRegRegs)
+       (InFlight Vertex UserEvent, RegFile UserRegRegs)
   -> (Vertex, RegFile UserRegRegs)
   -> UserCmd
   -> (Vertex, RegFile UserRegRegs)
@@ -119,3 +121,23 @@ spec = do
       case delta userReg vAtRC regsAtRC gdprCmd of
         Just (vNext, _) -> vNext `shouldBe` Deleted
         Nothing         -> expectationFailure "delta returned Nothing"
+
+  describe "evolveStreaming (EP-19 M5)" $ do
+    it "Settled initial ⊢ RegistrationStarted → Settled Registering" $ do
+      let d           = toDecider userReg
+          (_, regs0)  = initialState d
+          ev          = RegistrationStarted
+                          (RegistrationStartedData "dave@x" "U2V3" (t 0))
+      case evolveStreaming d (Settled PotentialCustomer, regs0) ev of
+        Just (Settled Registering, _) -> pure ()
+        Just (other, _)              ->
+          expectationFailure ("expected Settled Registering, got " <> show other)
+        Nothing -> expectationFailure "evolveStreaming returned Nothing"
+
+    it "Settled Confirmed ⊢ AccountDeleted → Settled Deleted" $ do
+      let d           = toDecider userReg
+          (_, regs0)  = initialState d
+          ev          = AccountDeleted (AccountDeletedData "x@y" (t 200))
+      case evolveStreaming d (Settled Confirmed, regs0) ev of
+        Just (Settled Deleted, _) -> pure ()
+        other -> expectationFailure ("unexpected: " <> show (fmap fst other))

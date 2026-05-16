@@ -650,8 +650,49 @@ current state of the work.
       `confirmCode` but neither `OutTerm` in the list visits it — and
       asserts `checkHiddenInputs` flags it with a precise reason.
 
-- [ ] **Milestone 5 — Adapt `Keiki.Decider` and retire/coexist with
-      `toMultiDecider`.** Edit `src/Keiki/Decider.hs`:
+- [x] **Milestone 5 — Adapt `Keiki.Decider` and retire `toMultiDecider`.**
+      (2026-05-16) Completed. Concrete changes:
+
+      - `src/Keiki/Decider.hs`: **deleted** `toMultiDecider`,
+        `DriverConfig`, `driveDecide` (and the chain-replay path).
+        Restructured docstring to retire the "at most one event per
+        command" caveat — with EP-19 widening, `decide` returns the
+        full event list directly via `omega`.
+      - Added `evolveStreaming :: s_streaming -> e -> Maybe
+        s_streaming` field to the `Decider` record, threaded through
+        the new `s_streaming` type parameter (instantiated to
+        `(InFlight s co, RegFile rs)` by `toDecider`).
+      - `toDecider`: `decide` lifts `omega` directly; `evolve`
+        retains letter-only semantics with defensive fallback;
+        `evolveStreaming` calls `applyEventStreaming` directly.
+        Acquired `Eq co` constraint.
+      - **Deleted** `userRegDriverConfig` from
+        `jitsurei/src/Jitsurei/UserRegistration.hs` and
+        `test/Keiki/Fixtures/UserRegistration.hs`.
+      - **Deleted** `loanApplicationDriverConfig` from
+        `jitsurei/src/Jitsurei/LoanApplication.hs`.
+      - **Deleted** EP-20-aligned spec files:
+        `test/Keiki/DeciderMultiSpec.hs`,
+        `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`,
+        `jitsurei/test/Jitsurei/LoanApplicationMultiSpec.hs`.
+        Removed from `keiki.cabal`/`jitsurei/jitsurei.cabal` and
+        from `test/Spec.hs`/`jitsurei/test/Spec.hs`.
+      - `jitsurei/test/Jitsurei/LoanWorkflowSpec.hs`: dropped the
+        `toMultiDecider` import and inlined the 2-event chain
+        `[EmploymentChecked, ApplicationApproved]` directly in
+        `recordEmploymentTipsApproval`. (The integration test
+        cares about the *events*, not how they're produced.)
+      - `test/Keiki/DeciderSpec.hs`: added the new `s_streaming`
+        parameter to the `runRound` type annotation; added two
+        `evolveStreaming` tests (Settled initial → Settled
+        Registering on `RegistrationStarted`; Settled Confirmed →
+        Settled Deleted on `AccountDeleted`).
+
+      **Validation**: `cabal test all` reports **331 examples, 0
+      failures, 1 pending** (198 + 86 + 40 + 7). Compared with M4
+      (337), the net delta is `-6` from deleted *Multi specs and
+      `+0` net inside DeciderSpec (2 new tests, but the multi-
+      spec contributed ~5).
 
       - Update the docstring to retire the "at most one event per
         command" caveat (currently lines 26-45 mention

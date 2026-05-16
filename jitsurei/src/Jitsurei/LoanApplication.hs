@@ -61,8 +61,6 @@ module Jitsurei.LoanApplication
   , loanApplication
   , loanApplicationAST
   , emptyLoanAppRegs
-    -- * Multi-event driver configuration (EP-34 M3)
-  , loanApplicationDriverConfig
     -- * Wire constructors (exported for testing / composition)
   , wireApplicationStarted
   , wireIncomeDocumentReceived
@@ -104,7 +102,6 @@ import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
 import Keiki.Builder ((.=))
-import Keiki.Decider (DriverConfig (..))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -770,29 +767,3 @@ loanApplicationASTEdges = \case
   Withdrawn -> []
 
 
--- * Multi-event driver configuration (EP-34 M3) ---------------------------
-
--- | Driver configuration for 'Keiki.Decider.toMultiDecider'. Both
--- 'CollectingDocuments' and 'UnderReview' are marked internal: at
--- those vertices the multi-decider issues 'Continue' to attempt the
--- silent advance / approval-decline transition. The guard on each
--- chained edge gates whether the advance actually fires; if the
--- guard fails (e.g. thresholds not yet met), 'step' returns
--- 'Nothing' and the driver loop terminates at the current vertex.
---
--- Pair with 'toMultiDecider' to drive a 'StartApplication' or a
--- threshold-tipping evidence command end-to-end:
---
--- @
--- let mdec = 'Keiki.Decider.toMultiDecider' 'loanApplication'
---                                           'loanApplicationDriverConfig'
--- in 'Keiki.Decider.decide' mdec (RecordEmploymentCheck …) regsAtThreshold
--- -- ⇒ [EmploymentChecked …, ApplicationApproved …]
--- @
-loanApplicationDriverConfig :: DriverConfig LoanAppVertex LoanCmd
-loanApplicationDriverConfig = DriverConfig
-  { isInternal = \v -> case v of
-      CollectingDocuments -> Just Continue
-      UnderReview         -> Just Continue
-      _                   -> Nothing
-  }

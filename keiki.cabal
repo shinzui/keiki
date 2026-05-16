@@ -95,7 +95,6 @@ test-suite keiki-test
                         Keiki.CoreHiddenInputsGSMSpec
                         Keiki.CoreInFlightSpec
                         Keiki.CoreSpec
-                        Keiki.DeciderMultiSpec
                         Keiki.DeciderSpec
                         Keiki.Fixtures.EmailDelivery
                         Keiki.Fixtures.UserRegistration
