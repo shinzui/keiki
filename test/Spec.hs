@@ -10,6 +10,7 @@ import qualified Keiki.ChoiceSpec
 import qualified Keiki.CompositionSpec
 import qualified Keiki.CompositionAlternativeSpec
 import qualified Keiki.CompositionFeedback1Spec
+import qualified Keiki.CompositionMultiEventSpec
 import qualified Keiki.CoreApplyEventsSpec
 import qualified Keiki.CoreHiddenInputsGSMSpec
 import qualified Keiki.CoreInFlightSpec
@@ -33,6 +34,7 @@ main = hspec $ do
   describe "Keiki.Composition"                            Keiki.CompositionSpec.spec
   describe "Keiki.Composition (alternative, EP-25)"       Keiki.CompositionAlternativeSpec.spec
   describe "Keiki.Composition (feedback1, EP-26)"         Keiki.CompositionFeedback1Spec.spec
+  describe "Keiki.Composition (multi-event, EP-19 M6)"    Keiki.CompositionMultiEventSpec.spec
   describe "Keiki.Core"                                   Keiki.CoreSpec.spec
   describe "Keiki.Core.applyEvents (EP-20 M2)"            Keiki.CoreApplyEventsSpec.spec
   describe "Keiki.Core.InFlight / streaming (EP-19 M3)"   Keiki.CoreInFlightSpec.spec

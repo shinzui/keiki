@@ -751,8 +751,53 @@ current state of the work.
       returns the full `[e]` list of length 2. Update or remove
       `test/Keiki/DeciderMultiSpec.hs` per the retirement choice.
 
-- [ ] **Milestone 6 — Adapt `Keiki.Composition` (resolves MasterPlan
-      dimension-4 critique).** Edit `src/Keiki/Composition.hs`
+- [x] **Milestone 6 — Adapt `Keiki.Composition`: library-side chain
+      expansion.** (2026-05-16) Completed. Concrete changes to
+      `src/Keiki/Composition.hs`:
+
+      - Added `data PartialPath rs1 rs2 ci1 co s2 = forall w.
+        PartialPath ...` to carry the accumulating composite-edge
+        state through the chain expansion. The existential `w`
+        closes over the chained `Update`'s slot-set index as
+        `UCombine` extends it per step.
+      - `composeEdge` now handles three cases:
+          - `[]` → ε-edge (unchanged from M2).
+          - `[o1]` → letter `productEdge` (unchanged from M2).
+          - `mids` (length-N) → run `expandPaths mids (initialPath
+            e1 s2)`; convert each completed path to a composite
+            edge via `finalizePath`. The cartesian product over t2
+            edges per intermediate state produces multiple
+            composite edges; unsatisfiable substituted guards
+            (`substPred (PInCtor X) Y ≡ PBot` for mismatched
+            ctors) ensure only the "live" path actually fires at
+            `omega`/`delta`/`step` time.
+      - Helpers `initialPath`, `expandPaths`, `stepPath`,
+        `finalizePath` are local to `compose`'s `where` block.
+        `stepPath` pattern-matches on the t2 edge's update to
+        bring its existential `w2` into scope; the chained
+        `UCombine`'s `w` is re-existentially closed when wrapping
+        back into `PartialPath`.
+      - The `liftLOutAlt`/`liftROutAlt` alternative-composition
+        arms already use list-fmap (added in M2) and produce
+        length-preserving outputs; no further M6 changes needed
+        for `alternative` itself — its arms are letter-shaped
+        because `alternative`'s composite outputs one Left/Right-
+        wrapped event per input arm.
+
+      Added `test/Keiki/CompositionMultiEventSpec.hs` (3 tests):
+      - synthetic t1 = one vertex, one length-2 edge emitting
+        `[MidA n, MidB n]` from `T1Trigger n`.
+      - synthetic t2 = one vertex, two edges (one per MidA/MidB),
+        each emitting one Echo.
+      - asserts: the composite produces 4 edges (2×2 cartesian
+        product); every edge has output of length 2; `omega` on
+        `T1Trigger 42` yields `[EchoA 42, EchoB 42]` (the unique
+        live path); `applyEvents` round-trips the 2-event chunk
+        to the initial composite vertex.
+
+      **Validation**: `cabal test all` reports **334 examples, 0
+      failures, 1 pending** (201 + 86 + 40 + 7); previous 331 + 3
+      new composition specs.
       (`composeEdge` is now around lines 700-870 with the new
       alternative / liftLOutAlt / liftROutAlt cases shipped by
       EP-29 et al.). The MasterPlan #7's Tradeoff Analysis

@@ -651,6 +651,26 @@ liftROutAlt (OPack ic wc fs) =
         (liftROutFieldsAlt @rs @ci1 @ci2 fs)
 
 
+-- * Multi-event composition (EP-19 M6) -----------------------------------
+
+-- | An in-progress t2-edge path through a multi-event 'compose'
+-- expansion. Carries the accumulated guard (the lifted @e1@-guard
+-- conjoined with each consumed t2-edge's substituted guard), the
+-- chained update, the concatenation of t2-edge outputs (each
+-- substituted against the corresponding mid-symbol), and the t2-
+-- state after consuming all mid-symbols processed so far.
+--
+-- The existential @w@ closes over the chained 'Update''s slot-set
+-- index — each step extends the chain via 'UCombine', so the
+-- effective @w@ grows but is hidden from the surrounding code.
+data PartialPath rs1 rs2 ci1 co s2 = forall w.
+  PartialPath
+    !(HsPred (Append rs1 rs2) ci1)         -- accumulated guard
+    !(Update (Append rs1 rs2) w ci1)       -- chained update (existential w)
+    ![OutTerm (Append rs1 rs2) ci1 co]     -- accumulated outputs in order
+    !s2                                    -- t2-state after consuming so far
+
+
 -- * compose ----------------------------------------------------------------
 
 -- | Sequential composition of two 'SymTransducer's. The composite
@@ -714,14 +734,13 @@ compose t1 t2 = SymTransducer
     composeEdge _s1Source s2 e1 = case output e1 of
       []     -> [epsilonEdge e1 s2]
       [o1]   -> map (productEdge e1 o1) (edgesOut t2 s2)
-      (o1:_) ->
-        -- M2 temporary semantics for multi-event first-edges:
-        -- compose against the head only, preserving letter-FST
-        -- behaviour for length-1 callers. M6 replaces this with
-        -- library-side chain expansion that threads T2's state
-        -- across each mid-symbol and re-collapses into a length-N
-        -- composite edge. See docs/research/gsm-widening-design.md §5.
-        map (productEdge e1 o1) (edgesOut t2 s2)
+      mids   ->
+        -- EP-19 M6 library-side chain expansion: walk t2 through the
+        -- N mid-symbols of e1's output list, gathering all paths
+        -- (cartesian product of t2 edges per intermediate state).
+        -- Each completed path becomes one length-N composite edge.
+        -- See docs/research/gsm-widening-design.md §5.
+        map (finalizePath e1) (expandPaths mids (initialPath e1 s2))
 
     epsilonEdge
       :: Edge (HsPred rs1 ci1) rs1 ci1 mid s1 -> s2
@@ -764,6 +783,76 @@ compose t1 t2 = SymTransducer
         , output = map (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2)
         , target = Composite (target e1) (target e2)
         }
+
+    -- | The starting point for EP-19 M6's chain expansion. Carries
+    -- t1's edge contribution (lifted guard, lifted update) into the
+    -- accumulator; the recursion threads through it without re-
+    -- referencing t1.
+    initialPath
+      :: Edge (HsPred rs1 ci1) rs1 ci1 mid s1 -> s2
+      -> PartialPath rs1 rs2 ci1 co s2
+    initialPath e1 s2 = case e1 of
+      Edge { update = u1 } ->
+        PartialPath
+          (weakenLPred   @rs1 @rs2 (guard e1))
+          (weakenLUpdate @rs1 @rs2 u1)
+          []
+          s2
+
+    -- | Enumerate all t2-edge paths that consume the supplied
+    -- mid-symbol list in order, starting from the path's current
+    -- t2-state. Each completed path's @ppEnd@ is the t2-state after
+    -- the final mid-symbol; its @ppOutputs@ is the concatenation of
+    -- t2-edge outputs (each substituted against the corresponding
+    -- mid-symbol of t1's edge), in declaration order.
+    --
+    -- The base case (empty mid-symbol list) returns the path as-is —
+    -- the recursion has consumed every mid-symbol.
+    expandPaths
+      :: [OutTerm rs1 ci1 mid]
+      -> PartialPath rs1 rs2 ci1 co s2
+      -> [PartialPath rs1 rs2 ci1 co s2]
+    expandPaths []         path = [path]
+    expandPaths (o : rest) path =
+      case path of
+        PartialPath g u outs s2 ->
+          concatMap (\e2 -> expandPaths rest (stepPath g u outs o s2 e2))
+                    (edgesOut t2 s2)
+
+    -- | Extend a path by one t2-edge consuming one mid-symbol.
+    -- Pattern-matching @e2@ brings the edge's existential @w2@ into
+    -- scope so the @UCombine@ can chain into the accumulator. The
+    -- accumulator's existential @w@ comes from 'PartialPath'.
+    stepPath
+      :: forall w.
+         HsPred (Append rs1 rs2) ci1
+      -> Update (Append rs1 rs2) w ci1
+      -> [OutTerm (Append rs1 rs2) ci1 co]
+      -> OutTerm rs1 ci1 mid
+      -> s2
+      -> Edge (HsPred rs2 mid) rs2 mid co s2
+      -> PartialPath rs1 rs2 ci1 co s2
+    stepPath g u outs o _s2 e2 = case e2 of
+      Edge { update = u2 } ->
+        PartialPath
+          (PAnd g (substPred   @rs1 @rs2 (guard e2) o))
+          (UCombine u (substUpdate @rs1 @rs2 u2 o))
+          (outs ++ map (\o2 -> substOut @rs1 @rs2 o2 o) (output e2))
+          (target e2)
+
+    -- | Convert a fully-expanded path to a composite edge by
+    -- borrowing t1's @target@ for the composite's target.
+    finalizePath
+      :: Edge (HsPred rs1 ci1) rs1 ci1 mid s1
+      -> PartialPath rs1 rs2 ci1 co s2
+      -> Edge (HsPred (Append rs1 rs2) ci1)
+              (Append rs1 rs2) ci1 co (Composite s1 s2)
+    finalizePath e1 (PartialPath g u outs s2End) = Edge
+      { guard  = g
+      , update = u
+      , output = outs
+      , target = Composite (target e1) s2End
+      }
 
 
 -- * alternative -----------------------------------------------------------
