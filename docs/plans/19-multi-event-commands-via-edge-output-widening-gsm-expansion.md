@@ -14,6 +14,71 @@ This ExecPlan is a living document. The sections Progress, Surprises & Discoveri
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
 
 
+## Status (2026-05-16) — Reopened under reconsideration
+
+This plan was marked **Cancelled** on 2026-05-02 in
+`docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md`'s
+Exec-Plan Registry when the user selected EP-20 (state-refinement
+ergonomics) for implementation. EP-20 shipped end-to-end on 2026-05-02
+with `Keiki.Core.applyEvents` (letter-fold), `Keiki.Decider.toMultiDecider`
++ `DriverConfig`, `Keiki.Builder.chainTo`, and `userRegDriverConfig` /
+`userRegChained` examples; test baseline grew 149 → 166 at that point.
+
+Since then the surface that builds on top of `Keiki.Core.Edge` has
+grown substantially:
+
+- `src/Keiki/Profunctor.hs` shipped (EP-29, 2026-05-14): heavy
+  `Maybe (OutTerm ...)` fmap pattern across `Arrow`/`Strong`/`Choice`
+  instances, `firstEdge`, `rewriteEdge`, `rewriteEdgeMaybe`,
+  `rewriteEdgeOut`.
+- `src/Keiki/Render/Mermaid.hs` shipped: diagram-generation now real —
+  the MasterPlan's dimension-2 ("diagrams prefer letter FST") is
+  concrete instead of hypothetical.
+- The example aggregates moved out of `src/Keiki/Examples/` into a
+  sibling package `jitsurei/` (~8 aggregates: `UserRegistration`,
+  `UserRegistrationV0`, `EmailDelivery`, `Loan`, `LoanApplication`,
+  `LoanWorkflow`, `OrderCart`, `CoreBankingSync`). Several use
+  `chainTo`-based multi-event commands today (`UserRegistration`,
+  `LoanApplication`).
+- Two new sibling packages exist (`keiki-codec-json`,
+  `keiki-codec-json-test`). They operate on `RegFile`, not `Edge`;
+  insulated from this widening.
+- Test baseline: 110 → **337** examples across four test suites
+  (keiki 186 + jitsurei 104 + codec-json 40 + codec-json-test 7),
+  0 failures, 1 pending.
+- Total `output = Just|Nothing` / `Maybe (OutTerm ...)` / `Just (OPack ...)`
+  call sites: **~69** (was estimated ~24 at plan-draft time).
+- The `Edge` declaration itself has shifted to GADT syntax with an
+  existential type variable in `Update rs w ci`
+  (`src/Keiki/Core.hs:455-461`, not 411-419 as the original plan text
+  cited). The widening must preserve the existential.
+
+The user's stated reasoning for reconsideration (2026-05-16): "It
+looks like this is more relevant than I thought and it might be
+better to implement now than later since it affects the packages
+that are built on top of keiki ... it's not only about
+`toMultiDecider`, it's first-class support for emitting multiple
+events."
+
+This reverses the MasterPlan's 2026-05-02 selection. Implications:
+
+- The MasterPlan's Exec-Plan Registry must be updated (EP-19 →
+  In Progress; EP-20 → Superseded by EP-19).
+- EP-20's shipped surface needs an explicit retirement (or
+  coexistence) strategy — see new Decision Log entries below.
+- M6 (composition) must commit to a concrete strategy for
+  multi-event composition; the MasterPlan's dimension-4 critique
+  (multi-event composition is fundamentally non-local) is real
+  and must be addressed in M1's design note rather than waved at
+  with "concatenate output lists."
+- M7's scope expands from "UserRegistration" to "jitsurei-wide
+  migration" plus the Profunctor + Mermaid cascades inside
+  `src/Keiki/`.
+
+All milestones (M0–M8) are reopened. The Progress checkboxes
+remain unchecked.
+
+
 ## Purpose / Big Picture
 
 The keiki library today models its core formalism as a *letter Finite State
@@ -110,40 +175,159 @@ documented here, even if it requires splitting a partially completed task into
 two ("done" vs. "remaining"). This section must always reflect the actual
 current state of the work.
 
-- [ ] **Milestone 0 — Verify prerequisites.** Run `cabal build all` and
-      `nix-shell -p z3 --run "cabal test all"`. Record the test count
-      (master grew after Plan 15's specs landed; re-record at plan
-      start) and GHC version. Inventory every site that pattern-matches
-      `Maybe (OutTerm ...)` or constructs `Just (OPack ...)` / `Nothing`
-      for an edge `output` field via `git grep`. Record the count in the
-      Progress section so M2 can verify completeness.
+- [x] **Milestone 0 — Verify prerequisites and inventory the cascade.** (2026-05-16)
+      Ran `cabal build all` (OK) and `cabal test all --test-show-details=direct`
+      (z3 was not required — none of the running specs invoked the SBV-backed
+      symbolic backend in this run). Baseline confirmed exactly at expectation:
+      **337 examples**, 0 failures, 1 pending across four test suites:
 
-      Plan 15 (`docs/plans/15-edge-builder-monadic-dsl-for-authoring-symtransducer-edges.md`)
-      shipped on 2026-05-02 with all milestones complete; this adds
-      `src/Keiki/Builder.hs` (683 lines on master) to the inventory.
-      The builder's internal `PartialEdge rs ci co v (w :: [Symbol])`
-      (declared at `src/Keiki/Builder.hs:235-260`) holds a single
-      optional `OutTerm`, mirroring today's AST. M2 must widen this
-      accumulator alongside the AST and adapt `emit`/`noEmit`
-      semantics so multiple `emit` calls in one `onCmd` block
-      append rather than fail or replace. Re-grep specifically:
+          Test suite keiki-test:               186 examples, 0 failures
+          Test suite jitsurei-test:            104 examples, 0 failures, 1 pending
+          Test suite keiki-codec-json-test:     40 examples, 0 failures
+          Test suite keiki-codec-json-test-test: 7 examples, 0 failures
 
-          git grep -n 'PartialEdge\|peOutput\|emit ::\|noEmit\|Maybe.*OutTerm' \
-            -- src/Keiki/Builder.hs test/Keiki/Builder*.hs
+      Inventory results (against master 2026-05-16):
 
-      Both example aggregates have been migrated to builder form
-      (`emailDelivery`, `userReg` are now built via
-      `B.buildTransducer`; the AST forms are preserved as
-      `emailDeliveryAST`, `userRegAST` for cross-form equivalence
-      tested by `test/Keiki/Examples/EmailDeliveryBuilderSpec.hs`
-      and `test/Keiki/Examples/UserRegistrationBuilderSpec.hs`).
-      M7's UserRegistration migration must edit both forms
-      (`userReg` builder block and `userRegAST` literal) and re-run
-      both the per-form behavior specs and the cross-form
-      equivalence spec.
+          $ git grep -nE '(Maybe \(OutTerm|output = (Just|Nothing)|Just \(OPack)' \
+              -- src jitsurei keiki-codec-json keiki-codec-json-test test | wc -l
+          69          # matches plan expectation exactly
 
-- [ ] **Milestone 1 — Design note.** Write `docs/research/gsm-widening-design.md`
-      (~200 lines). Cover: the formal mapping from letter FST to GSM (cite
+          $ git grep -nE 'toMultiDecider|DriverConfig|chainTo|userRegDriverConfig|userRegChained|loanAppChained|peChain|EdgeListAcc|chainAdvanceCommand' \
+              -- src jitsurei test | wc -l
+          112         # EP-20 surface to retire
+
+          $ git grep -nE 'firstEdge|rewriteEdge|identityOutTerm|arrOut|edgeOutputName|wcName' \
+              -- src/Keiki/Profunctor.hs src/Keiki/Render | wc -l
+          35          # Profunctor + Mermaid cascade
+
+      Per-file breakdown of Edge.output call sites (matches plan ±):
+
+          12 jitsurei/src/Jitsurei/OrderCart.hs
+          11 jitsurei/src/Jitsurei/LoanApplication.hs
+           6 test/Keiki/Fixtures/UserRegistration.hs
+           6 jitsurei/src/Jitsurei/UserRegistrationV0.hs
+           6 jitsurei/src/Jitsurei/UserRegistration.hs
+           4 test/Keiki/SymbolicSpec.hs
+           3 test/Keiki/CompositionFeedback1Spec.hs
+           2 test/Keiki/BuilderSpike.hs
+           2 src/Keiki/Render/Mermaid.hs
+           2 src/Keiki/Profunctor.hs
+           2 src/Keiki/Core.hs
+           2 src/Keiki/Builder.hs
+           1 test/Keiki/Render/MermaidSpec.hs
+           1 test/Keiki/ProfunctorSpec.hs
+           1 test/Keiki/Fixtures/EmailDelivery.hs
+           1 test/Keiki/CoreSpec.hs
+           1 test/Keiki/CompositionSpec.hs
+           1 test/Keiki/CompositionAlternativeSpec.hs
+           1 test/Keiki/BuilderSpec.hs
+           1 src/Keiki/Decider.hs
+           1 src/Keiki/Composition.hs
+           1 jitsurei/test/Jitsurei/LoanApplicationMultiSpec.hs
+           1 jitsurei/src/Jitsurei/EmailDelivery.hs
+
+      GHC version: 9.12.2 (per flake.nix). Edge GADT confirmed at
+      `src/Keiki/Core.hs:455-462`; `applyEvents` at
+      `src/Keiki/Core.hs:708-717`.
+
+      Record the actual counts at plan-start time and the GHC version
+      (currently pinned to 9.12.2 per `flake.nix`).
+
+      Inventory every site touching `Edge.output` via `git grep`.
+      Expected count is **~69 sites** as of 2026-05-16 (was ~24 at
+      original plan-draft time; the growth is from `jitsurei/`,
+      `Keiki.Profunctor`, and `Keiki.Render.Mermaid`):
+
+          git grep -nE 'output = (Just|Nothing)|Maybe \(OutTerm|Just \(OPack' \
+            -- src jitsurei keiki-codec-json keiki-codec-json-test test \
+            | tee /tmp/gsm-call-sites.txt
+          wc -l /tmp/gsm-call-sites.txt
+
+      Then re-grep specifically for the EP-20 surface that this
+      plan must retire or coexist with (decision flagged in
+      Decision Log, item "EP-20 surface retirement strategy"):
+
+          git grep -nE 'toMultiDecider|DriverConfig|chainTo|userRegDriverConfig|userRegChained' \
+            -- src jitsurei test
+
+      And the Profunctor/Mermaid cascades that are new since the
+      plan's first draft:
+
+          git grep -nE 'firstEdge|rewriteEdge|identityOutTerm|arrOut|edgeOutputName|wcName' \
+            -- src/Keiki/Profunctor.hs src/Keiki/Render
+
+      Specific call-site clusters expected:
+
+      | File | Sites |
+      |---|---|
+      | `jitsurei/src/Jitsurei/OrderCart.hs` | 12 |
+      | `jitsurei/src/Jitsurei/LoanApplication.hs` | 11 |
+      | `jitsurei/src/Jitsurei/UserRegistration.hs` | 6 |
+      | `jitsurei/src/Jitsurei/UserRegistrationV0.hs` | 6 |
+      | `test/Keiki/Fixtures/UserRegistration.hs` | 6 |
+      | `test/Keiki/SymbolicSpec.hs` | 4 |
+      | `test/Keiki/CompositionFeedback1Spec.hs` | 3 |
+      | `src/Keiki/Profunctor.hs` | 2 (+ heavy fmap/rewrite) |
+      | `src/Keiki/Builder.hs` | 2 |
+      | `src/Keiki/Core.hs` | 2 |
+      | `src/Keiki/Render/Mermaid.hs` | 2 |
+      | `test/Keiki/BuilderSpike.hs` | 2 |
+      | Other (single-site each) | ~11 |
+
+      Record the actual count and per-file breakdown in the Progress
+      section so M2 can verify completeness after the cascade.
+
+      **EP-20 surface inventory.** Today's master ships the
+      following EP-20 artefacts that this plan must explicitly
+      address:
+
+      - `Keiki.Core.applyEvents` at `src/Keiki/Core.hs:708-717`
+        (letter-fold over `applyEvent`). EP-19 keeps the name and
+        widens the implementation (M3); type signature stays
+        compatible, semantics generalize.
+      - `Keiki.Decider.toMultiDecider` at `src/Keiki/Decider.hs:188`
+        plus `DriverConfig` and chain-replay helpers. EP-19's
+        replacement is `decide` returning a real `[e]` directly;
+        retirement strategy pending.
+      - `Keiki.Builder.chainTo` at `src/Keiki/Builder.hs:439-444`
+        plus `peChain` snoc-list machinery (lines 245-260) and
+        `EdgeListAcc { elaMain, elaChain }`. EP-19's replacement
+        is multiple `emit` calls in one `onCmd` block; retirement
+        strategy pending.
+      - `jitsurei/src/Jitsurei/UserRegistration.hs:284-470`:
+        `userReg` (builder), `userRegAST` (AST), `userRegChained`
+        (builder + `chainTo`), `userRegDriverConfig`.
+      - `jitsurei/src/Jitsurei/LoanApplication.hs:776-820`:
+        `loanAppChained` (builder + `chainTo`), driver config.
+      - `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`,
+        `UserRegistrationChainedSpec.hs`,
+        `LoanApplicationMultiSpec.hs`,
+        `LoanApplicationChainedSpec.hs`,
+        `test/Keiki/DeciderMultiSpec.hs`,
+        `test/Keiki/CoreApplyEventsSpec.hs` — all assert against
+        the letter-chain-driven-by-driver-config behaviour.
+
+      **Edge declaration shape.** Note that `Edge` has moved to
+      GADT syntax with an existential `w` in the `Update`:
+
+          -- src/Keiki/Core.hs:455-461
+          data Edge phi rs ci co s where
+            Edge
+              :: { guard  :: phi
+                 , update :: Update rs w ci   -- existential w
+                 , output :: Maybe (OutTerm rs ci co)
+                 , target :: s
+                 }
+
+      M2's widening must preserve the existential. The new field
+      type is `output :: [OutTerm rs ci co]`; the GADT envelope
+      stays.
+
+- [x] **Milestone 1 — Design note.** (2026-05-16) Wrote
+      `docs/research/gsm-widening-design.md` (420 lines, vs.
+      target ~200-250). Covers all 10 sections from Plan of Work
+      M1 plus a worked example on the `StartRegistration` chain
+      and an explicit references section. Cover: the formal mapping from letter FST to GSM (cite
       Approach 2 in `docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`);
       the `InFlight s co` wrapper for single-event-streaming replay; what's
       preserved (per-`OutTerm` `solveOutput` invertibility, per-edge guard
@@ -155,19 +339,26 @@ current state of the work.
       pattern).
 
 - [ ] **Milestone 2 — Widen `Edge.output` and adapt the core operators.**
-      Edit `src/Keiki/Core.hs`:
+      Edit `src/Keiki/Core.hs` (Edge GADT now at lines 455-461):
       - Change the `output` field's type from `Maybe (OutTerm rs ci co)` to
-        `[OutTerm rs ci co]`.
+        `[OutTerm rs ci co]`. Preserve the existential `w` in the
+        `update :: Update rs w ci` field.
       - Adapt `omega :: ... -> Maybe co` to `omega :: ... -> [co]`. The body
         evaluates each `OutTerm` in the edge's list and returns the
         concatenation.
       - Adapt `step :: ... -> Maybe (s, RegFile rs, Maybe co)` to
         `step :: ... -> Maybe (s, RegFile rs, [co])` returning the list.
       - Adapt every internal pattern-match on the old `Maybe`. Notably:
-        `applyEvent` (line 564 today) must change semantics — see M3.
-        `checkHiddenInputs`'s `edgeReasons` (line 714) must walk the list.
-      - The `pack` helper at line 449 stays unchanged (it constructs one
-        `OutTerm`); a new helper `silent :: [OutTerm rs ci co] = []` may be
+        `applyEvent` (current line ~564) must change semantics — see M3.
+        `checkHiddenInputs`'s `edgeReasons` must walk the list.
+      - `applyEvents` already exists at `src/Keiki/Core.hs:708-717` as a
+        letter-fold (EP-20's M2 shipped it). The signature stays
+        `:: SymTransducer phi rs s ci co -> (s, RegFile rs) -> [co] ->
+        Maybe (s, RegFile rs)`; M3 widens the implementation so it
+        properly handles length-2+ chunks rather than folding individual
+        events.
+      - The `pack` helper stays unchanged (it constructs one `OutTerm`).
+        A new helper `silent :: [OutTerm rs ci co]; silent = []` may be
         added to express ε-edges in DSL surface, replacing today's
         `Nothing`.
 
@@ -175,6 +366,42 @@ current state of the work.
       `output = Just o` with `output = [o]` and `output = Nothing` with
       `output = []`. Run `cabal build all`; expect compile errors at every
       remaining site, fix them, until `cabal build all` succeeds.
+
+      **Profunctor cascade (new since plan first draft).** Edit
+      `src/Keiki/Profunctor.hs`. This module shipped after the plan was
+      drafted (EP-29, 2026-05-14) and has heavy `fmap`/`Maybe`-shaped
+      patterns over the old `output` field:
+
+      - `rewriteEdge`, `rewriteEdgeMaybe`, `rewriteEdgeOut` (lines 921,
+        933, 945) — `fmap (...) mo` over `Maybe (OutTerm ...)`. Widen
+        to `fmap (...)` over `[OutTerm ...]` (list-fmap, same syntax,
+        different semantics).
+      - `firstEdge` (line 621) — `fmap firstOutTerm mo`. Same change.
+      - Two literal constructions of `output = Just identityOutTerm`
+        (line 317) and `output = Just arrOut` (line 720) — change to
+        `output = [identityOutTerm]` / `output = [arrOut]`.
+      - The `Arrow`/`Strong`/`Choice`/`Category` instance laws
+        (proven by `test/Keiki/{Arrow,Strong,Choice,Category}Spec.hs`)
+        must still hold under the widened type. Re-run all four specs
+        after the edit.
+
+      **Mermaid renderer cascade (new since plan first draft).** Edit
+      `src/Keiki/Render/Mermaid.hs` (lines 529-530):
+
+      - `edgeOutputName Edge { output = Nothing }` and
+        `edgeOutputName Edge { output = Just (OPack _ wc _) }` need
+        a new third arm or to be replaced with list-walking logic.
+      - Multi-event edges need a label-rendering decision. Three
+        candidate strategies:
+        (a) Join wire-constructor names with `; ` separator in the
+            edge label: `cmd / e1; e2`.
+        (b) Multi-line label using Mermaid's `<br/>` syntax.
+        (c) Synthesise anonymous intermediate nodes in the diagram
+            and keep one wire-name per arrow (matches the AST but
+            diverges from the user's vertex enum, which the
+            MasterPlan flagged as dimension-2 concern).
+        M1's design note must commit to one. Reflect the choice in
+        `test/Keiki/Render/MermaidSpec.hs`.
 
       **Builder cascade.** Edit `src/Keiki/Builder.hs`:
       - `PartialEdge`'s output accumulator (currently a single optional
@@ -194,6 +421,29 @@ current state of the work.
         Mixing `noEmit` with `emit` in the same block is rejected at
         finalize time (or compile time via the type-level state if
         feasible).
+      - **`chainTo` and `peChain` retirement decision (pending).**
+        The shipped builder has `chainTo` (lines 168, 439-444) and
+        the `peChain` snoc-list machinery (lines 245-260) plus
+        `EdgeListAcc { elaMain, elaChain }`. With multi-`emit` now
+        legal, `chainTo`'s motivating use case (compress chain
+        authoring through an intermediate vertex) collapses into
+        "use two `emit`s in one block." Three options for the
+        verb:
+        (i)  **Remove `chainTo`, `peChain`, and `EdgeListAcc`.**
+             Cleanest end state. All current `chainTo` callers in
+             jitsurei migrate to multi-`emit`. Builder simplifies
+             back to its pre-EP-20-M5 shape with multi-`emit`
+             added.
+        (ii) **Keep `chainTo` as legacy** for the "true internal
+             control vertex" case — a vertex that exists for
+             modelling reasons (e.g., a `UnderReview` state with
+             approve/decline branches) not as a multi-event
+             scaffold. The line is blurry in practice; this
+             carries documentation cost.
+        (iii) **Keep `chainTo`, deprecate, schedule removal in a
+             follow-up plan.** Smoothest migration; deferred
+             cleanup.
+        See Decision Log "Builder verb retirement strategy."
       - Update `Keiki.Builder`'s haddock and the spike module
         `test/Keiki/BuilderSpike.hs` to reflect the new semantics.
       - Update `test/Keiki/BuilderSpec.hs` to add tests for two
@@ -278,11 +528,13 @@ current state of the work.
       `confirmCode` but neither `OutTerm` in the list visits it — and
       asserts `checkHiddenInputs` flags it with a precise reason.
 
-- [ ] **Milestone 5 — Adapt `Keiki.Decider`.** Edit
-      `src/Keiki/Decider.hs`:
+- [ ] **Milestone 5 — Adapt `Keiki.Decider` and retire/coexist with
+      `toMultiDecider`.** Edit `src/Keiki/Decider.hs`:
 
       - Update the docstring to retire the "at most one event per
-        command" caveat (currently lines 30-39).
+        command" caveat (currently lines 26-45 mention
+        `toMultiDecider` drives chains; with widened `Edge.output`
+        the chain happens inside one edge).
       - The `decide` field's signature is unchanged (`c -> s -> [e]`),
         but its lift now wraps `omega t s regs ci :: [co]` directly
         rather than `Just co → [co], Nothing → []`. The body becomes
@@ -305,44 +557,138 @@ current state of the work.
         `evolveStreaming` as a separate field on `Decider` and keeping
         the old `evolve` working for length-0/1 commands only.
 
+      - **`toMultiDecider` + `DriverConfig` retirement (pending).**
+        These are shipped by EP-20 (`src/Keiki/Decider.hs:51,
+        138, 168, 183-188`). With first-class multi-event edges,
+        `decide` directly returns the full event list and
+        `toMultiDecider` has no remaining job *for the multi-event
+        case*. But `toMultiDecider` was also marketed as the
+        "drive through any user-declared internal vertex" façade,
+        which is a slightly larger feature than just multi-event
+        bundling. Three options:
+        (i)  **Remove** `toMultiDecider`, `DriverConfig`,
+             `chainAdvanceCommand`, and the `Decider.evolve`
+             chain-replay path. Update `test/Keiki/DeciderMultiSpec.hs`
+             to assert against the widened `decide` instead, or
+             delete it entirely. Cleanest end state.
+        (ii) **Keep deprecated** for one release; schedule removal
+             in a follow-up plan. Smoothest migration.
+        (iii) **Repurpose** `toMultiDecider` as the "user-declared
+             internal vertex" façade only — distinct from the
+             multi-event case. This requires documenting the
+             distinction clearly and updating `userRegDriverConfig`
+             usage (which currently models a multi-event command
+             via state refinement). Most honest but most prose
+             cost.
+        See Decision Log "EP-20 decider façade retirement."
+
       Acceptance: existing
       `test/Keiki/DeciderSpec.hs` continues to pass after rebuild. Add
       one new test asserting that `decide` over a multi-event edge
-      returns the full `[e]` list of length 2.
+      returns the full `[e]` list of length 2. Update or remove
+      `test/Keiki/DeciderMultiSpec.hs` per the retirement choice.
 
-- [ ] **Milestone 6 — Adapt `Keiki.Composition`.** Edit
-      `src/Keiki/Composition.hs:401-447`. The current `composeEdge`
-      pattern-matches on `output e1`'s `Just (OPack ...)`; with the
-      widened `output :: [OutTerm rs1 ci1 mid]`, sequential composition
-      must:
+- [ ] **Milestone 6 — Adapt `Keiki.Composition` (resolves MasterPlan
+      dimension-4 critique).** Edit `src/Keiki/Composition.hs`
+      (`composeEdge` is now around lines 700-870 with the new
+      alternative / liftLOutAlt / liftROutAlt cases shipped by
+      EP-29 et al.). The MasterPlan #7's Tradeoff Analysis
+      dimension 4 (lines 282-333) flagged the original plan's
+      framing — "concatenate output lists with `substOut` applied
+      to each" — as understating a real difficulty:
 
-      - For each `OutTerm` in `output e1`, find the corresponding edge in
-        the second transducer whose guard accepts that mid-symbol, and
-        compose: substitute `e1`'s `OutTerm` for the second edge's input
-        reads using the existing `substOut` machinery.
-      - Concatenate the resulting list of `OutTerm`s for the composed
-        edge's `output`.
+      > A length-2 first-edge produces two mid-symbols `[o1a,
+      > o1b]`; the second transducer steps on `o1a` from state
+      > `s2`, transitions to some `s2'`, then must step on `o1b`
+      > from `s2'`. A single composed edge from `(s1, s2)`
+      > cannot express this — its output list reflects T2's
+      > behaviour from `s2` for both events, but T2's state
+      > changes between events.
 
-      For length-1 `output e1`, behavior is identical to today's. For
-      length-0 (ε-edge in the first transducer), the composed edge has
-      `output = []`. For length-2+ (a multi-event edge in the first
-      transducer), the composition fans out across the second
-      transducer's edges per mid-symbol.
+      Two viable strategies; the plan must commit to one in M1's
+      design note:
 
-      Acceptance: `test/Keiki/CompositionSpec.hs` continues to pass. Add
-      one new test composing a two-aggregate pipeline where the first
-      aggregate has a multi-event edge; assert the composed edge
-      produces the expected concatenated event list.
+      - **Strategy A — library-side chain expansion during
+        composition.** `composeEdge` internally expands a length-N
+        first-edge into N letter edges connected through synthetic
+        composite-state intermediates `(s1, s2)` → `(s1, s2')` →
+        ... → `(target e1, s2_final)` for the duration of
+        composition, then re-collapses the resulting chain into
+        one length-N composite edge if the user composes
+        further. The synthetic intermediates are not visible in
+        the composite's `Vertex` type; they live inside
+        composite-state `s2_i` values that the existing `Composite`
+        machinery (in `Keiki.Composition`) already manages. This
+        is "state-refinement under the hood" — invisible to
+        users authoring multi-event edges, but it is the
+        library's job to keep the composition closed.
+      - **Strategy B — restrict the composable class.** A
+        multi-event edge composes only when every mid-symbol in
+        its output list triggers the same downstream edge in T2
+        from any intermediate composite state. This invariant is
+        type-system-checkable in narrow cases (e.g., when T2 is
+        a single-vertex transducer) but generally requires a
+        run-time check at composition. Less expressive; surfaces
+        the difficulty to the user.
+
+      Recommended in this plan: Strategy A. Rationale: keeps the
+      user model clean (`compose` always succeeds when the
+      mid-symbol algebra matches); the library absorbs the
+      state-refinement-on-composition cost; the composite's
+      edges remain length-N edges and the GSM property is
+      preserved end-to-end. The implementation cost is modest —
+      `Composite`'s state machinery already encodes pair-of-state
+      pairs.
+
+      Implementation steps (under Strategy A):
+
+      - For each `OutTerm` in `output e1`, find the corresponding
+        edge in the second transducer whose guard accepts that
+        mid-symbol, and compose: substitute `e1`'s `OutTerm` for
+        the second edge's input reads using the existing
+        `substOut` machinery.
+      - For length-1 `output e1`, the behavior is identical to
+        today's letter composition.
+      - For length-0 (ε-edge in the first transducer), the
+        composed edge has `output = []`.
+      - For length-2+ (a multi-event edge), expand internally
+        as described above, threading T2's state through
+        intermediate symbols, then re-collapse into a length-N
+        composite edge in the result.
+
+      Audit also the new alternative-composition arms
+      (`liftLOutAlt`, `liftROutAlt` at lines 846, 864) — these
+      ship after the original plan was drafted and need the
+      same widening treatment.
+
+      Acceptance: `test/Keiki/CompositionSpec.hs`,
+      `test/Keiki/CompositionAlternativeSpec.hs`, and
+      `test/Keiki/CompositionFeedback1Spec.hs` continue to pass.
+      Add one new test composing a two-aggregate pipeline where
+      the first aggregate has a multi-event edge; assert the
+      composed edge produces the expected concatenated event
+      list and that the composite's reconstitute round-trips a
+      log of length N + M correctly. Add a stress test where
+      both transducers in the pipeline have multi-event edges to
+      exercise the chain-expansion path.
 
 - [ ] **Milestone 7 — Worked example: collapse UserRegistration's
-      `Registering`.** Edit `src/Keiki/Examples/UserRegistration.hs`.
-      The file declares the transducer twice on master:
-      - `userReg` (lines 284-360) — built via
-        `B.buildTransducer PotentialCustomer emptyRegs (...)`. This
-        is the canonical form used by all consumer specs.
-      - `userRegAST` (lines 361-470) — preserved AST form for
+      `Registering` (plus full `jitsurei` cascade).** Edit
+      `jitsurei/src/Jitsurei/UserRegistration.hs` (note the
+      package moved from `src/Keiki/Examples/` to `jitsurei/` after
+      the original plan was drafted). The file now declares the
+      transducer **three** times on master:
+      - `userReg` (lines 284-359) — canonical builder form via
+        `B.buildTransducer PotentialCustomer emptyRegs (...)`.
+        Two `from` blocks chained through `Registering` with a
+        synthetic `Continue` command.
+      - `userRegChained` (lines 360-400) — builder form using
+        `B.chainTo` to express the same chain in one `onCmd`
+        block.
+      - `userRegAST` (lines 400-470) — preserved AST form for
         cross-form equivalence testing
-        (`test/Keiki/Examples/UserRegistrationBuilderSpec.hs`).
+        (`jitsurei/test/Jitsurei/UserRegistrationBuilderSpec.hs`,
+        `UserRegistrationChainedSpec.hs`).
 
       Both must be edited:
 
@@ -382,16 +728,43 @@ current state of the work.
         entry. The `SUserVertex`/`UserView`/`userView` triple loses one
         constructor.
 
-      Cascade-fix `test/Keiki/Examples/UserRegistrationSpec.hs`,
-      `test/Keiki/Examples/UserRegistrationViewSpec.hs`, and
-      `test/Keiki/Examples/UserRegistrationBuilderSpec.hs` if they
-      reference `Registering` or `Continue` directly. The
-      cross-form equivalence spec must continue to pass — both
-      forms now describe the same length-2 edge. Most behavior
-      assertions should be unaffected because the user-observable
-      event sequence is identical.
+      Cascade-fix the jitsurei test suite:
+      `jitsurei/test/Jitsurei/UserRegistrationSpec.hs`,
+      `UserRegistrationViewSpec.hs`,
+      `UserRegistrationBuilderSpec.hs`,
+      `UserRegistrationSymbolicSpec.hs`,
+      `UserRegistrationMultiSpec.hs` (EP-20-aligned; refactor or
+      delete per Decision Log "EP-20 spec retirement"),
+      `UserRegistrationChainedSpec.hs` (depends on `chainTo`
+      retention), `UserRegistrationV0Spec.hs`. The
+      cross-form equivalence specs (Builder/Chained) must
+      continue to pass if the corresponding form is kept; both
+      forms now describe the same length-2 edge.
 
-      Add `test/Keiki/Examples/UserRegistrationGSMSpec.hs`:
+      **Cascade across other jitsurei aggregates.** Even
+      aggregates that do not collapse intermediates today are
+      affected by the AST widening:
+
+      | Aggregate file | Touch type |
+      |---|---|
+      | `jitsurei/src/Jitsurei/UserRegistrationV0.hs` | 6 AST sites; replace `Just`/`Nothing` |
+      | `jitsurei/src/Jitsurei/EmailDelivery.hs` | 1 AST site (builder dominant); replace |
+      | `jitsurei/src/Jitsurei/Loan.hs` | builder-only; affected via builder cascade |
+      | `jitsurei/src/Jitsurei/LoanApplication.hs` | 11 AST sites + `chainTo` callers; cascade-fix + retire-or-keep chained variant |
+      | `jitsurei/src/Jitsurei/LoanWorkflow.hs` | composition surface; re-test post-M6 |
+      | `jitsurei/src/Jitsurei/OrderCart.hs` | 12 AST sites; replace `Just`/`Nothing` |
+      | `jitsurei/src/Jitsurei/CoreBankingSync.hs` | builder-only; affected via builder cascade |
+
+      `LoanApplication` has its own `chainTo`-based multi-event
+      command (`loanAppChained`, lines 776-820); the same
+      collapse-into-length-N-edge treatment applies as for
+      UserRegistration. Decide per aggregate whether to also
+      collapse other multi-event commands (e.g.
+      `LoanApplication.UnderReview` approve/decline branches —
+      these are *not* multi-event commands per se; they are
+      genuine branching, so they stay as separate edges).
+
+      Add `jitsurei/test/Jitsurei/UserRegistrationGSMSpec.hs`:
 
       - One test asserts `decide` on `StartRegistration` returns a
         2-element event list `[RegistrationStarted ..,
@@ -401,11 +774,24 @@ current state of the work.
       - One test asserts the chunked `applyEvents` and the streaming
         `applyEvent` over `InFlight` produce identical final states.
 
-      Wire the new spec into `test/Spec.hs` and `keiki.cabal`.
+      Wire the new spec into `jitsurei/test/Spec.hs` and
+      `jitsurei/jitsurei.cabal`. Also add a parallel
+      `LoanApplicationGSMSpec.hs` for the collapsed `loanAppChained`.
 
-      Acceptance: full test suite passes; line count of
-      `src/Keiki/Examples/UserRegistration.hs` drops by ~30 lines (one
-      vertex, one command, one edge block removed).
+      **Sibling-package sanity check.** `keiki-codec-json` and
+      `keiki-codec-json-test` operate on `RegFile`, not `Edge`;
+      a `git grep -E 'Edge\b|OutTerm|applyEvent|InFlight'` over
+      their source/test trees shows zero hits, so they are
+      insulated. Re-run `cabal test all` to confirm post-cascade.
+
+      Acceptance: full test suite passes (target: 337 baseline
+      minus N (EP-20 specs retired) plus M (new GSM specs); see
+      Validation section). Line counts: `Jitsurei.UserRegistration`
+      drops by ~80-100 lines (one builder block, one AST edge,
+      one builder-chained variant, one vertex constructor, one
+      command constructor, two TH spec entries, plus
+      `userRegDriverConfig` if retired). `Jitsurei.LoanApplication`
+      similarly drops where multi-event commands are collapsed.
 
 - [ ] **Milestone 8 — Documentation update + commit.** Edit:
 
@@ -488,6 +874,115 @@ Record every decision made while working on the plan.
   express multi-event edges, which would defeat the purpose of EP-19.
   **Date**: 2026-05-02
 
+- **Decision**: Plan reopened under reconsideration after being
+  marked Cancelled (2026-05-02). EP-20 (state-refinement
+  ergonomics) shipped end-to-end and is currently the canonical
+  multi-event path on master; this plan now proposes to replace it
+  with the GSM-widening path.
+  **Rationale**: The user reports (2026-05-16) that the downstream
+  surface built on top of `Keiki.Core` (the `jitsurei` sibling
+  package's ~8 aggregates, `Keiki.Profunctor`'s Arrow/Strong/Choice
+  instances, `Keiki.Render.Mermaid`'s diagram generation, future
+  consumer packages) has grown to the point where a façade
+  (`toMultiDecider`) is no longer sufficient — first-class
+  multi-event support is needed at the AST level so every
+  consumer interprets multi-event commands the same way without
+  per-consumer wiring. The MasterPlan #7's retrospective
+  Tradeoff Analysis (2026-05-02) already acknowledged EP-19's
+  wins on authoring (dimension 1), cognitive count (dimension 2),
+  and state-space economy (dimension 3); the EP-20 selection
+  rested mainly on composition (dimension 4) and migration
+  optionality (dimension 5). Dimension 5's "EP-20 → EP-19 is
+  recoverable" claim is being exercised now while the surface
+  is still small enough to migrate; dimension 4's concern is
+  addressed by M6's commitment to Strategy A (library-side
+  chain expansion during composition).
+  **Implication**: MasterPlan #7 must be updated — EP-19's
+  status flips from Cancelled to In Progress; EP-20's status
+  flips from Complete to Superseded by EP-19 (with the shipped
+  surface retired per the next Decision Log entry).
+  **Date**: 2026-05-16
+
+- **Decision**: EP-20 surface — **full removal in the same change**.
+  Drop `toMultiDecider`, `DriverConfig`, `chainAdvanceCommand`,
+  the chain-replay path in `Keiki.Decider.evolve`, `chainTo`,
+  `peChain`, `EdgeListAcc { elaMain, elaChain }` and revert to a
+  single `[Edge]` accumulator in `Keiki.Builder`,
+  `userRegDriverConfig`, `userRegChained`, `loanAppChained`, and
+  the EP-20-aligned specs (`test/Keiki/DeciderMultiSpec.hs`,
+  `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`,
+  `UserRegistrationChainedSpec.hs`,
+  `LoanApplicationMultiSpec.hs`,
+  `LoanApplicationChainedSpec.hs`).
+  **Rationale**: cleanest end state; the GSM-widened core
+  expresses multi-event behaviour directly, leaving no
+  motivating use case for the façade or the `chainTo` verb.
+  Keeping deprecated surface would impose a second
+  multi-event idiom on every downstream package; folding
+  retirement into the same PR means jitsurei's aggregates
+  end up in their final canonical shape with no later
+  cleanup cycle.
+  **Implementation impact**: M5 removes the façade
+  unconditionally; M2's Builder cascade removes
+  `chainTo`/`peChain`/`EdgeListAcc`; M7 removes the
+  driver-config / chained-variant declarations from each
+  jitsurei aggregate and deletes the EP-20-aligned specs.
+  **Date**: 2026-05-16
+
+- **Decision**: Multi-event composition (M6) — **library-side
+  chain expansion**. `composeEdge` internally expands length-N
+  first-edges into N letter edges through synthetic
+  composite-state intermediates `(s1, s2)` → `(s1, s2')` → … ,
+  threading T2's state across each mid-symbol, then re-collapses
+  the resulting chain into one length-N composite edge in the
+  result.
+  **Rationale**: keeps `compose` total — the user never sees a
+  composition failure mode tied to multi-event-edge shape — and
+  preserves the GSM property end-to-end at the composite level.
+  Resolves the MasterPlan #7 dimension-4 critique
+  (multi-event composition is fundamentally non-local) without
+  surfacing the difficulty to authors. The `Composite` state
+  machinery already encodes pair-of-state pairs, so the
+  implementation cost is modest.
+  **Implementation impact**: M6 implements the chain-expansion
+  helper inside `Keiki.Composition` and recurses on the
+  expanded chain for each mid-symbol. The composite's edges
+  remain length-N edges (no synthetic vertices leak into the
+  composite's `Vertex` type).
+  **Date**: 2026-05-16
+
+- **Decision**: Mermaid label rendering for length-N edges —
+  **separator for length-2, multi-line for length-3+**. The
+  `edgeOutputName`/label-formatting function inspects the
+  output list length:
+  - length-0: no label suffix beyond `cmd /` (ε-edge today).
+  - length-1: `cmd / e1` (today's letter behaviour).
+  - length-2: `cmd / e1; e2` (compact, readable inline).
+  - length-3+: `cmd / e1<br/>e2<br/>e3<br/>…` (Mermaid's
+    `<br/>` syntax keeps the diagram readable as event
+    counts grow).
+  **Rationale**: keeps the common case (length-1/2) compact
+  without exploding the diagram on rare length-3+ commands;
+  deterministic switchover so renders are reproducible;
+  avoids the anonymous-intermediate-node strategy that
+  would diverge from the user's `Vertex` enum (MasterPlan
+  #7 dimension-2 concern).
+  **Implementation impact**: M2's Mermaid cascade implements
+  the switchover; `test/Keiki/Render/MermaidSpec.hs` adds
+  goldens for length-2 and length-3 edges.
+  **Date**: 2026-05-16
+
+- **Decision**: Tactical refresh of remaining plan sections
+  (Plan of Work, Concrete Steps, Context and Orientation,
+  Interfaces and Dependencies) is performed immediately in
+  the same revision pass.
+  **Rationale**: user requested the plan be ready to implement
+  end-to-end before M0 begins, so all sections are aligned
+  with the post-2026-05-02 master and the four strategic
+  decisions committed above.
+  **Date**: 2026-05-16
+
+
 
 ## Outcomes & Retrospective
 
@@ -506,20 +1001,23 @@ transducer formalism specified in
 This plan modifies the AST and several derived operators; the reader needs to
 understand the AST shape and the surrounding analyses before editing.
 
-**The current AST.** `src/Keiki/Core.hs:411-419` defines the `Edge` record:
+**The current AST.** `src/Keiki/Core.hs:455-461` defines the `Edge`
+record as a GADT with an existential `w` in the `update` field
+(the existential was introduced after this plan's original draft):
 
-    data Edge phi rs ci co s = Edge
-      { guard  :: phi
-      , update :: Update rs ci
-      , output :: Maybe (OutTerm rs ci co)
-      , target :: s
-      }
+    data Edge phi rs ci co s where
+      Edge
+        :: { guard  :: phi
+           , update :: Update rs w ci   -- existential w
+           , output :: Maybe (OutTerm rs ci co)
+           , target :: s
+           }
 
 `output = Nothing` is an ε-edge (transition with no observable event);
 `output = Just o` produces exactly one event by evaluating `o`. The plan
 widens `output` to `[OutTerm rs ci co]` so length-0 reproduces ε, length-1
 reproduces today's letter behavior, and length-2+ admits multi-event
-commands.
+commands. The existential `w` is preserved unchanged.
 
 **The operators built on `output`.** Three key operators consume the
 field:
@@ -543,31 +1041,52 @@ field:
    wider `output`, the check accumulates coverage across the edge's
    output list and flags any `InCtor` whose slots are not all visited.
 
-**Existing call sites that touch `output`.** As of master at plan-draft
-time (note: the example modules' call-site lines moved when Plan 15
-migrated them to builder form; the AST-form `*ASTEdges` functions now
-contain the call sites):
+**Existing call sites that touch `output`.** As of master 2026-05-16,
+~69 sites span four packages. The example modules moved out of
+`src/Keiki/Examples/` into the sibling package `jitsurei/` after
+the plan's original draft; the AST-form `*ASTEdges` functions and
+several new builder + AST aggregates now live there. M0 re-runs
+`git grep` to confirm this enumeration before M2 begins:
 
-    src/Keiki/Core.hs:411           (declaration)
-    src/Keiki/Core.hs:564,569       (omega)
-    src/Keiki/Core.hs:586-611       (applyEvent)
-    src/Keiki/Core.hs:711-720       (checkHiddenInputs / detectMissingInCtorFields)
-    src/Keiki/Composition.hs:411-447 (composeEdge)
-    src/Keiki/Decider.hs:36-39      (docstring caveat about "at most one event")
-    src/Keiki/Builder.hs:235-260    (PartialEdge accumulator — Plan 15)
-    src/Keiki/Builder.hs (emit/noEmit/finalize sites — Plan 15)
-    src/Keiki/Examples/UserRegistration.hs (userRegASTEdges — AST form)
-    src/Keiki/Examples/UserRegistrationV0.hs (still AST-form)
-    src/Keiki/Examples/EmailDelivery.hs (emailDeliveryASTEdges — AST form)
-    test/Keiki/CoreSpec.hs:64
-    test/Keiki/CompositionSpec.hs:130
-    test/Keiki/SymbolicSpec.hs:202,207,226,231
+    # keiki core
+    src/Keiki/Core.hs:455-461       (Edge GADT declaration)
+    src/Keiki/Core.hs (omega, step, applyEvent, applyEvents, checkHiddenInputs)
+    src/Keiki/Composition.hs:726,756,846,864 (composeEdge + alternative arms)
+    src/Keiki/Decider.hs:26-188     (docstring + toMultiDecider façade — retired in M5)
+    src/Keiki/Builder.hs:235-260    (PartialEdge accumulator)
+    src/Keiki/Builder.hs:168,439-444 (chainTo verb — retired in M2 Builder cascade)
+    src/Keiki/Profunctor.hs:317,621,720,921,933,945 (firstEdge, rewriteEdge*, instance bodies — new since draft)
+    src/Keiki/Render/Mermaid.hs:529-530 (edgeOutputName, label rendering — new since draft)
 
-M0's first task is to re-run `git grep` to confirm this enumeration is
-current after Plan 15's migration. The builder-form transducers
-(`userReg`, `emailDelivery`) construct edges via `B.buildTransducer`
-and don't use the `output = Just/Nothing` syntax directly; they're
-affected only insofar as `Keiki.Builder`'s own internals widen.
+    # jitsurei sibling package
+    jitsurei/src/Jitsurei/UserRegistration.hs (6 AST sites + userRegChained + userRegDriverConfig)
+    jitsurei/src/Jitsurei/UserRegistrationV0.hs (6 AST sites)
+    jitsurei/src/Jitsurei/LoanApplication.hs (11 AST sites + loanAppChained)
+    jitsurei/src/Jitsurei/OrderCart.hs (12 AST sites)
+    jitsurei/src/Jitsurei/EmailDelivery.hs (1 AST site; builder dominant)
+    jitsurei/src/Jitsurei/Loan.hs (builder-only)
+    jitsurei/src/Jitsurei/LoanWorkflow.hs (composition surface)
+    jitsurei/src/Jitsurei/CoreBankingSync.hs (builder-only)
+
+    # tests
+    test/Keiki/Fixtures/{UserRegistration,EmailDelivery}.hs
+    test/Keiki/{CoreSpec, CompositionSpec, CompositionAlternativeSpec,
+              CompositionFeedback1Spec, SymbolicSpec, BuilderSpec,
+              BuilderSpike, ProfunctorSpec, Render/MermaidSpec}.hs
+    jitsurei/test/Jitsurei/{UserRegistration,LoanApplication,OrderCart,...}{Spec,BuilderSpec,...}.hs
+    # EP-20-aligned specs (deleted by M5/M7):
+    test/Keiki/DeciderMultiSpec.hs
+    jitsurei/test/Jitsurei/{UserRegistration,LoanApplication}{Multi,Chained}Spec.hs
+
+    # sibling packages — insulated, no edits required
+    keiki-codec-json/{src,test} — zero hits on Edge/OutTerm/applyEvent
+    keiki-codec-json-test/{src,test} — zero hits
+
+The builder-form transducers (`userReg`, `emailDelivery`,
+`loanApp`, etc.) construct edges via `B.buildTransducer` and
+don't use the `output = Just/Nothing` syntax directly; they're
+affected by the Builder cascade in M2 (multiple `emit` accumulates;
+`chainTo` is deleted).
 
 **Why an `InFlight` wrapper is needed.** `applyEvent` is invoked in two
 different runtimes:
@@ -588,12 +1107,13 @@ different runtimes:
 Both runtimes are first-class supported.
 
 **The example aggregate this plan modifies.**
-`src/Keiki/Examples/UserRegistration.hs` (471 lines as of
-post-Plan-15 master) declares the transducer twice: once as
+`jitsurei/src/Jitsurei/UserRegistration.hs` (~570 lines as of
+2026-05-16) declares the transducer **three** times: once as
 `userReg` via `B.buildTransducer` (the canonical form, lines
-284-360) and once as `userRegAST` (lines 361-470, preserved AST
-form for cross-form equivalence). The AST form's two edges of
-interest are now in `userRegASTEdges`:
+284-359), once as `userRegChained` using `B.chainTo` (lines
+360-400 — retired in M7), and once as `userRegAST` (lines
+400-470, preserved AST form for cross-form equivalence). The
+AST form's two edges of interest are in `userRegASTEdges`:
 
     PotentialCustomer ->
       [ Edge { guard = isStart, update = ..., 
@@ -622,9 +1142,11 @@ RequiresConfirmation`.
 The `Registering` constructor is removed from `Vertex`; the `Continue`
 constructor is removed from `UserCmd`. The associated TH-derived
 `inCtorContinue`, `isContinue` declarations are removed from the
-`deriveAggregateCtors` spec. The cross-form equivalence spec
-(`test/Keiki/Examples/UserRegistrationBuilderSpec.hs`) re-greens
-because both forms now express the same length-2 edge.
+`deriveAggregateCtors` spec. `userRegChained` and `userRegDriverConfig`
+are deleted. The cross-form equivalence spec
+(`jitsurei/test/Jitsurei/UserRegistrationBuilderSpec.hs`) re-greens
+because both surviving forms (`userReg` builder and `userRegAST`
+AST) now express the same length-2 edge.
 
 Note that the second `pack` re-uses `inCtorStart` (not a separate
 `InCtor`): both events are emitted by the same input command, so they
@@ -641,210 +1163,461 @@ must cover the input constructor's slots. M4 generalizes the walk
 accordingly.
 
 **The composition operator today.**
-`Keiki.Composition.composeEdge` (line 401) takes a single edge `e1`
-from the first transducer and either drops it (ε-edge — `output e1 ==
-Nothing`) producing an ε-edge in the composite, or composes with each
-edge `e2` of the second transducer that the produced mid-symbol can
-reach. With multi-event edges, the composition becomes per-`OutTerm`:
-each `OutTerm` in `output e1`'s list is composed against the second
-transducer's edges, and the resulting `[OutTerm]` list is concatenated
-in order. M6 handles this.
+`Keiki.Composition.composeEdge` (now around lines 700-870 with
+the alternative arms `liftLOutAlt`/`liftROutAlt` at lines 846,
+864 — shipped after the original plan draft) takes a single edge
+`e1` from the first transducer and either drops it (ε-edge —
+`output e1 == Nothing`) producing an ε-edge in the composite, or
+composes with each edge `e2` of the second transducer that the
+produced mid-symbol can reach.
 
-**Test infrastructure.** Tests live under `test/`. The entry point
-`test/Spec.hs` imports each spec module and registers it under hspec's
-`describe`. New specs added by this plan must be wired in there and
-listed in `keiki.cabal`'s `keiki-test:other-modules`. The full suite is
-run via `nix-shell -p z3 --run "cabal test all"` because the SBV-backed
-symbolic specs require z3 in PATH.
+With multi-event edges, naïve per-`OutTerm` composition is unsound
+because T2's state changes between mid-symbols of a length-N
+first-edge. M6 resolves this via **library-side chain expansion**
+(per Decision Log "Multi-event composition (M6)"): `composeEdge`
+internally expands a length-N first-edge into N letter edges
+threaded through synthetic composite-state intermediates, then
+re-collapses into a length-N composite edge with output list
+`[substituted o1, ..., substituted oN]`. The composite's `Vertex`
+type is unchanged — no synthetic vertices leak. See
+`docs/research/gsm-widening-design.md` §5 for the formal
+treatment.
+
+**Test infrastructure.** Tests live under `test/` (keiki),
+`jitsurei/test/` (jitsurei), `keiki-codec-json/test/`, and
+`keiki-codec-json-test/test/`. Each package's entry point
+imports its spec modules and registers them under hspec's
+`describe`. New specs added by this plan must be wired in the
+appropriate `Spec.hs` and listed in the package's
+`other-modules` field. The full suite is run via
+`nix-shell -p z3 --run "cabal test all"` because the SBV-backed
+symbolic specs require z3 in PATH. The 1 currently-pending test
+lives in `jitsurei-test`.
 
 **MasterPlan parent.** This plan is one of two alternatives under
 `docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md`.
-The MasterPlan's Decision Log records the recommendation toward
-EP-2 (state-refinement ergonomics) over this plan; selecting EP-1 for
-implementation reverses that recommendation. Selecting EP-2 retires
-this plan as Cancelled.
+The MasterPlan's Decision Log recorded a 2026-05-02 selection of
+EP-20 (state-refinement ergonomics) over this plan; EP-20
+shipped end-to-end and this plan was marked Cancelled.
+The 2026-05-16 reconsideration (see Status section at the top of
+this plan) reverses that selection: EP-19 ships, EP-20's surface
+is removed in the same change. The MasterPlan's registry,
+Progress, Decision Log, and Outcomes & Retrospective sections
+are updated in M8.
 
 
 ## Plan of Work
 
-Eight milestones. Effort estimate: 12–20 hours total. The widening edit
-(M2) is mechanical but cascade-heavy; the replay machinery (M3) and the
-hidden-input strengthening (M4) carry the design work. M5–M7 are
-mechanical adaptations.
+Eight milestones plus the MasterPlan registry update. Effort
+estimate (revised 2026-05-16): **24–40 hours total** — roughly
+double the original 12–20 hour estimate because the cascade now
+spans four packages, the EP-20 surface must be fully removed
+rather than left in place, and M6 implements library-side chain
+expansion rather than the original naïve concatenation. The
+widening edit (M2) is mechanical but cascade-heavy; the replay
+machinery (M3) and the composition expansion (M6) carry the
+design work. M5 and M7 are mechanical but volume-heavy because
+they delete the EP-20 surface and migrate every jitsurei
+aggregate.
 
-**Milestone 0 — Baseline.** Confirm the working tree builds and the
-test suite passes:
+**Milestone 0 — Baseline and inventory.** Confirm the working tree
+builds and the test suite passes:
 
     cd /Users/shinzui/Keikaku/bokuno/keiki
     cabal build all
-    nix-shell -p z3 --run "cabal test all" 2>&1 | tail -3
+    nix-shell -p z3 --run "cabal test all" 2>&1 | tail -10
 
-Expected: `110 examples, 0 failures` (per master at plan-draft time).
-Inventory call sites:
+Expected baseline as of 2026-05-16: **337 examples**, 0 failures,
+1 pending, across four suites (keiki 186 + jitsurei 104 +
+codec-json 40 + codec-json-test 7).
 
-    git grep -n 'Maybe (OutTerm\|output = Just\|output = Nothing\|Just (OPack' -- src test
+Inventory the cascade (expected ~69 sites + the EP-20 retirement
+surface + Profunctor/Mermaid cascade — see Progress / M0 for the
+full per-file breakdown):
 
-Expected: ~24 hits across `src/Keiki/Core.hs`, `src/Keiki/Composition.hs`,
-`src/Keiki/Decider.hs`, the three example modules, and the four test
-specs. Record the actual count in Progress so M2 can verify
-completeness.
+    git grep -nE '(Maybe \(OutTerm|output = (Just|Nothing)|Just \(OPack)' \
+      -- src jitsurei keiki-codec-json keiki-codec-json-test test \
+      | tee /tmp/gsm-call-sites.txt
+    wc -l /tmp/gsm-call-sites.txt
+
+    git grep -nE 'toMultiDecider|DriverConfig|chainTo|userRegDriverConfig|userRegChained|loanAppChained' \
+      -- src jitsurei test \
+      | tee /tmp/gsm-ep20-surface.txt
+
+    git grep -nE 'firstEdge|rewriteEdge|identityOutTerm|arrOut|edgeOutputName' \
+      -- src/Keiki/Profunctor.hs src/Keiki/Render \
+      | tee /tmp/gsm-prof-mermaid.txt
+
+Record actual per-file counts in the Progress section so M2 / M5 /
+M7 can verify completeness.
 
 **Milestone 1 — Design note.** Create
-`docs/research/gsm-widening-design.md`. Sections:
+`docs/research/gsm-widening-design.md` (~250 lines). Sections:
 
-1. *Problem statement.* Letter FST today; multi-event commands forced
-   into state-refinement form. Cite UserRegistration's `Registering` +
-   `Continue` as the canonical workaround.
+1. *Problem statement.* Letter FST today; multi-event commands
+   forced into state-refinement form. Cite the original
+   `Registering` + `Continue` workaround pattern (preserved in
+   `jitsurei/src/Jitsurei/UserRegistrationV0.hs` as the V0
+   compatibility form, retired from V1 by this plan).
 
-2. *Formal mapping.* Letter FST `omega : S × C → E ∪ {ε}` widens to GSM
-   `omega : S × C → E*`. Reference Approach 2 in
+2. *Formal mapping.* Letter FST `omega : S × C → E ∪ {ε}` widens
+   to GSM `omega : S × C → E*`. Reference Approach 2 in
    `docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`.
 
-3. *AST change.* `output :: Maybe (OutTerm rs ci co)` becomes `output ::
-   [OutTerm rs ci co]`. Length-0 = ε, length-1 = today's letter,
-   length-2+ = multi.
+3. *AST change.* `output :: Maybe (OutTerm rs ci co)` becomes
+   `output :: [OutTerm rs ci co]`. Length-0 = ε, length-1 =
+   today's letter, length-2+ = multi. Preserve the existential
+   `w` in the `update :: Update rs w ci` field of the GADT.
 
-4. *`InFlight` wrapper.* Streaming replay through a length-2+ edge
-   passes through wrapped intermediate state. Show the type and the
-   replay step semantics with a worked example on the
-   `StartRegistration` chain.
+4. *`InFlight` wrapper.* Streaming replay through a length-2+
+   edge passes through wrapped intermediate state. Show the
+   type and the replay step semantics with a worked example on
+   the `StartRegistration` chain.
 
-5. *What's preserved.* Per-`OutTerm` `solveOutput`; per-edge guard
-   evaluation; `(Bounded, Enum)` on the user's vertex enum; vertex
-   enumeration in `checkHiddenInputs`.
+5. *Composition under library-side chain expansion.* Explain why
+   naïve concatenation is unsound (T2's state changes between
+   mid-symbols), and how `composeEdge` recursively expands
+   length-N first-edges through synthetic composite-state
+   intermediates and re-collapses. Cite MasterPlan #7's
+   dimension-4 critique as the motivation; this section is the
+   formal resolution.
 
-6. *What changes.* `omega` returns `[co]`. `checkHiddenInputs` walks
-   the per-edge output list as a whole, computing union coverage of
-   `InCtor` slots. Composition concatenates per-edge output lists with
-   the existing `substOut` substitution.
+6. *Mermaid label rendering.* Document the length-based
+   switchover (length-1: today; length-2: `cmd / e1; e2`;
+   length-3+: multi-line via `<br/>`).
 
-7. *What's deferred.* Conditional output lists (list shape depends on
-   input). The recommended pattern stays multiple disjoint-guarded
-   edges, one per condition, each with a static `[OutTerm]`.
+7. *What's preserved.* Per-`OutTerm` `solveOutput`; per-edge
+   guard evaluation; `(Bounded, Enum)` on the user's vertex
+   enum; vertex enumeration in `checkHiddenInputs`; the
+   `Composite` machinery in `Keiki.Composition`.
 
-Acceptance: file exists, ~200 lines, covers all sections.
+8. *What's retired.* `Keiki.Decider.toMultiDecider`, `DriverConfig`,
+   `chainAdvanceCommand`; `Keiki.Builder.chainTo`, `peChain`,
+   `EdgeListAcc`; all jitsurei `*DriverConfig` and `*Chained`
+   variants; the EP-20-aligned test specs. The two retirement
+   sections (Decider + Builder) reference each other.
 
-**Milestone 2 — Widen `Edge.output`.** Edit `src/Keiki/Core.hs:411-419`
-changing the field type. Cascade-fix every call site listed in M0's
-inventory, **including** the builder cascade in
-`src/Keiki/Builder.hs` (widen `PartialEdge`'s output accumulator;
-adapt `emit`/`noEmit` semantics; allow multiple `emit` calls per
-block). Run `cabal build all` repeatedly until green.
+9. *What changes.* `omega` returns `[co]`. `checkHiddenInputs`
+   walks the per-edge output list as a whole, computing union
+   coverage of `InCtor` slots. Composition expands and
+   re-collapses multi-event edges internally.
 
-After M2, behavior on length-0/1 outputs is identical to before; tests
-should pass. The builder's existing tests (`test/Keiki/BuilderSpec.hs`,
-`test/Keiki/BuilderSpike.hs`, the two cross-form equivalence specs)
-must re-green. Record in Progress: any unexpected call site discovered
-beyond M0's inventory.
+10. *What's deferred.* Conditional output lists (list shape
+    depends on input). The recommended pattern stays multiple
+    disjoint-guarded edges, one per condition, each with a
+    static `[OutTerm]`.
 
-**Milestone 3 — `InFlight` and `applyEvents`.** Add `InFlight s co` to
-`Keiki.Core`. Refactor `applyEvent` to operate on `InFlight`; add
-`applyEvents` for chunk replay. Update `reconstitute`. Add test spec
-`test/Keiki/Examples/UserRegistrationGSMSpec.hs` (initially containing
-only the `applyEvents` round-trip test; the other tests added in M7).
+Acceptance: file exists, ~250 lines, covers all sections.
 
-Acceptance: `cabal test all` passes, including the new
-`UserRegistrationGSMSpec`.
+**Milestone 2 — Widen `Edge.output` and cascade-fix.** Edit
+`src/Keiki/Core.hs` (Edge GADT at lines 455-461) changing the
+field type from `Maybe (OutTerm rs ci co)` to `[OutTerm rs ci co]`
+while preserving the existential `w`. Cascade-fix every call site
+listed in M0's inventory:
 
-**Milestone 4 — Strengthen `checkHiddenInputs`.** Edit the per-edge
-walk to accumulate coverage across the output list; flag any `InCtor`
-referenced by any `OPack` in the list whose slots are not all visited.
-Add `test/Keiki/CoreHiddenInputsGSMSpec.hs` with a deliberately
+- **Core.hs** (~2 sites): omega, step, applyEvent — adapt
+  signatures per M3.
+- **Composition.hs** (~5 sites including the new alternative
+  arms): defer per-edge cascade to M6 which rewrites the
+  function.
+- **Profunctor.hs** (~10 sites): `firstEdge`, `rewriteEdge`,
+  `rewriteEdgeMaybe`, `rewriteEdgeOut`, the literal `Just
+  identityOutTerm` and `Just arrOut`, plus `Arrow`/`Strong`/
+  `Choice`/`Category` instance bodies.
+- **Render/Mermaid.hs** (~2 sites): `edgeOutputName` plus the
+  label-rendering function — implement the length-based
+  switchover (length-1: today; length-2: `; ` separator;
+  length-3+: `<br/>` separator).
+- **Builder.hs**: widen `peOutput :: [OutTerm rs ci co]`
+  (snoc-list); `emit` appends; `noEmit` produces an empty list;
+  remove the type-level "at most one emit" rule. **Also delete**
+  `chainTo`, `peChain`, and `EdgeListAcc`; revert to a single
+  `[Edge]` accumulator (per the EP-20 surface retirement
+  decision).
+- **Decider.hs**: deferred to M5 (which removes the EP-20
+  façade and lifts `omega`'s new shape into `decide`).
+- **jitsurei aggregates** (~32 sites across OrderCart,
+  LoanApplication, UserRegistration, UserRegistrationV0,
+  EmailDelivery): replace `output = Just o` → `output = [o]`
+  and `output = Nothing` → `output = []`. Defer the multi-event
+  collapse to M7.
+- **test fixtures and specs** (~22 sites): same mechanical
+  replacement.
+
+Run `cabal build all` repeatedly until green; expect compile
+errors at every remaining site. After M2, behavior on
+length-0/1 outputs is identical to before; tests should pass
+modulo the EP-20-aligned specs that fail in M5/M7.
+
+**Milestone 3 — `InFlight` and `applyEvents` (widened).** Add
+`InFlight s co` to `Keiki.Core`. Refactor `applyEvent` to operate
+on `InFlight`. **Widen** the implementation of `applyEvents`
+(currently a letter-fold at `src/Keiki/Core.hs:708-717`) to
+properly handle length-2+ chunks per the InFlight semantics:
+lift the start state to `Settled`, fold `applyEvent` over the
+events, expect `Settled` on completion. Signature is unchanged
+so existing callers (including the new `CoreApplyEventsSpec` and
+fixture specs) are source-compatible at length-0/1 and stricter
+at length-2+. Update `reconstitute`. Add test spec
+`jitsurei/test/Jitsurei/UserRegistrationGSMSpec.hs` (initially
+containing only the `applyEvents` round-trip test; the other
+tests added in M7).
+
+Acceptance: `cabal test all` passes (modulo EP-20-aligned specs
+still in flight at this point), including the new
+`UserRegistrationGSMSpec`. The existing
+`test/Keiki/CoreApplyEventsSpec.hs` continues to pass — its
+length-0/1 assertions remain valid under the widened
+implementation.
+
+**Milestone 4 — Strengthen `checkHiddenInputs`.** Edit the
+per-edge walk in `src/Keiki/Core.hs` to accumulate coverage across
+the output list; flag any `InCtor` referenced by any `OPack` in
+the list whose slots are not all visited. Add
+`test/Keiki/CoreHiddenInputsGSMSpec.hs` with a deliberately
 ill-formed multi-event edge.
 
 Acceptance: the new spec asserts the warning fires with a precise
 message naming the offending `InCtor` and the missing slot(s).
 
-**Milestone 5 — `Keiki.Decider`.** Update docstring. Lift `omega`
-returning `[co]` directly into the `decide` field. Add
-`evolveStreaming` field to `Decider` carrying the wrapped-state replay.
+**Milestone 5 — `Keiki.Decider` retirement and widening.** Edit
+`src/Keiki/Decider.hs`:
 
-Acceptance: `test/Keiki/DeciderSpec.hs` passes; new test asserts
-`decide` over a multi-event edge returns the full event list.
+- Remove `toMultiDecider`, `DriverConfig`,
+  `chainAdvanceCommand`, and the chain-replay path inside
+  `Decider.evolve`.
+- Update the docstring (currently lines 26-45) to describe the
+  new direct-`decide` semantics.
+- Lift `omega`'s new `[co]` return shape into the `decide`
+  field: `decide = \cmd (s, regs) -> omega t s regs ci`.
+- Add `evolveStreaming` field (or expose `applyEvent` over
+  `InFlight` directly) for multi-event chunked replay.
+- Update `test/Keiki/DeciderSpec.hs` to assert `decide` over a
+  multi-event edge returns the full event list.
+- **Delete** `test/Keiki/DeciderMultiSpec.hs` (its purpose
+  folded into the widened `DeciderSpec`).
 
-**Milestone 6 — `Keiki.Composition`.** Refactor `composeEdge` to
-concatenate output lists per-`OutTerm` substitution. Add a multi-event
-composition test in `test/Keiki/CompositionSpec.hs`.
+Acceptance: `cabal build all` succeeds with the EP-20 façade
+removed; `test/Keiki/DeciderSpec.hs` passes with the new
+multi-event assertion.
 
-Acceptance: existing composition tests pass; new test asserts the
-composed edge produces a concatenated event list.
+**Milestone 6 — `Keiki.Composition` library-side chain
+expansion.** Refactor `composeEdge` (and `productEdge`, and the
+new alternative arms `liftLOutAlt`/`liftROutAlt` at lines 846,
+864) per the **library-side chain expansion** strategy:
 
-**Milestone 7 — UserRegistration migration.** Drop `Registering` and
-`Continue`; collapse the two edges into one length-2 edge in **both**
-the builder form (`userReg`) and the AST form (`userRegAST`). Update
-TH-derived spec lists. Cascade-fix `UserRegistrationSpec`,
-`UserRegistrationViewSpec`, `UserRegistrationBuilderSpec` (the
-cross-form equivalence). Add the multi-event-specific tests to
-`UserRegistrationGSMSpec` (decide returns 2-element list; streaming
-and chunked replay agree).
+- For each `OutTerm` in `output e1`, find the corresponding edge
+  in T2 whose guard accepts that mid-symbol; thread T2's state
+  across mid-symbols by recursing into the next mid-symbol from
+  T2's transitioned state; substitute via `substOut`.
+- The resulting composite edge from `(s1, s2)` has
+  `target = (target e1, s2_final)` and `output =
+  [substituted o1, ..., substituted oN]`.
+- Length-0/1 composition behaves identically to today.
+- The composite's `Vertex` type is unchanged — no synthetic
+  vertices leak. The state-refinement is internal to
+  `composeEdge`'s recursion.
 
-Acceptance: full test suite passes including cross-form
-equivalence; UserRegistration line count drops by ~50–60 lines
-(removing one builder block, one AST edge, one vertex constructor,
-one command constructor, two TH spec entries); vertex enum and
-command enum each have 4 constructors (down from 5).
+Add a multi-event composition test in
+`test/Keiki/CompositionSpec.hs`:
 
-**Milestone 8 — Docs + commit.** Update synthesis note line 974;
-update multi-event note's Recommendation. Stage and commit per the
-Concrete Steps section below.
+- Two-aggregate pipeline where the first aggregate has a
+  multi-event edge; assert the composed edge produces the
+  expected concatenated event list.
+- Stress test where both transducers have multi-event edges;
+  assert correct event ordering and target state.
+
+Acceptance: existing composition tests
+(`test/Keiki/CompositionSpec.hs`,
+`test/Keiki/CompositionAlternativeSpec.hs`,
+`test/Keiki/CompositionFeedback1Spec.hs`) continue to pass; new
+tests assert the multi-event composition correctness.
+
+**Milestone 7 — jitsurei migration (UserRegistration +
+LoanApplication collapse, EP-20 surface deletion).** Edit each
+jitsurei aggregate:
+
+- `jitsurei/src/Jitsurei/UserRegistration.hs`:
+  - Remove the `Registering` constructor from `Vertex` (5→4
+    constructors).
+  - Remove the `Continue` constructor from `UserCmd` (5→4
+    constructors).
+  - Remove the `Continue` entry from `deriveAggregateCtors` and
+    `deriveWireCtors` invocations.
+  - Collapse the two builder-form `from` blocks (`userReg`,
+    lines 284-359) into one block with two consecutive `emit`
+    calls and `goto RequiresConfirmation`.
+  - **Delete** `userRegChained` (the builder-form variant using
+    `chainTo`) and `userRegDriverConfig`.
+  - Collapse `userRegAST`'s two AST edges into one length-2
+    edge.
+  - Update `deriveView` to drop the `Registering` entry.
+- `jitsurei/src/Jitsurei/LoanApplication.hs`:
+  - Same treatment for the multi-event command authored via
+    `chainTo` (`loanAppChained` at lines 776-820): collapse to
+    a single multi-`emit` block; remove the chained variant
+    and its driver config.
+  - Other commands (e.g., `UnderReview` approve/decline
+    branches) stay as separate edges — these are not
+    multi-event but genuine branching.
+- `jitsurei/src/Jitsurei/UserRegistrationV0.hs`,
+  `jitsurei/src/Jitsurei/EmailDelivery.hs`,
+  `jitsurei/src/Jitsurei/Loan.hs`,
+  `jitsurei/src/Jitsurei/LoanWorkflow.hs`,
+  `jitsurei/src/Jitsurei/OrderCart.hs`,
+  `jitsurei/src/Jitsurei/CoreBankingSync.hs`:
+  - Replace `output = Just o` / `output = Nothing` with
+    `output = [o]` / `output = []` (already done in M2's
+    mechanical pass; this milestone verifies and re-greens
+    each aggregate's behaviour specs).
+- Cascade-fix the jitsurei specs:
+  - **Delete** `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`,
+    `UserRegistrationChainedSpec.hs`,
+    `LoanApplicationMultiSpec.hs`,
+    `LoanApplicationChainedSpec.hs` (their purpose folds into
+    the widened `decide` semantics).
+  - Re-green `UserRegistrationSpec`, `UserRegistrationViewSpec`,
+    `UserRegistrationBuilderSpec`, `UserRegistrationSymbolicSpec`,
+    `UserRegistrationV0Spec`, `LoanApplicationSpec`,
+    `LoanApplicationBuilderSpec`, `LoanApplicationViewSpec`,
+    `LoanApplicationSymbolicSpec`,
+    `OrderCartSpec`/`OrderCartBuilderSpec`, `EmailDelivery*`,
+    `LoanSpec`, `LoanWorkflowSpec`, `CoreBankingSyncSpec`.
+  - Add `jitsurei/test/Jitsurei/UserRegistrationGSMSpec.hs` and
+    `LoanApplicationGSMSpec.hs` with: `decide` returns N-element
+    list; `applyEvents` round-trips canonical log; streaming
+    `applyEvent` over `InFlight` agrees with chunked
+    `applyEvents`.
+  - Wire new specs into `jitsurei/test/Spec.hs` and
+    `jitsurei/jitsurei.cabal`.
+
+**Sibling-package sanity check.** Confirm `keiki-codec-json` and
+`keiki-codec-json-test` need zero code changes (a fresh `git
+grep -E 'Edge|OutTerm|applyEvent|InFlight'` over both trees
+shows zero hits as of 2026-05-16). Re-run `cabal test all` to
+verify no transitive breakage.
+
+Acceptance: full test suite passes; `Jitsurei.UserRegistration`
+line count drops by ~80-100 lines; `Jitsurei.LoanApplication`
+drops analogously; vertex/command enums shrink as enumerated;
+net test count ≈ baseline 337 ± small delta (see Validation
+section).
+
+**Milestone 8 — Docs, MasterPlan registry update, commit.**
+
+- Update
+  `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`
+  line 974 (or current equivalent) to reflect GSM as the
+  canonical path.
+- Update
+  `docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`'s
+  Recommendation section to "Approach 2 (GSM with library
+  expansion) is the canonical path."
+- Update
+  `docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md`:
+  - Exec-Plan Registry: EP-19 → Complete; EP-20 → Superseded by
+    EP-19.
+  - Progress section: flip the EP-19 / EP-20 status blocks.
+  - Decision Log: add a new entry recording the reversal and
+    the EP-20 surface deletion.
+  - Outcomes & Retrospective: append a "2026-05-16 reversal
+    closure" sub-section.
+- Stage and commit per the Concrete Steps section below.
 
 
 ## Concrete Steps
 
 All commands run from `/Users/shinzui/Keikaku/bokuno/keiki/`.
 
+Recommended commit granularity: one commit per milestone (or one
+per file-cluster within heavy milestones M2/M7) so that partial
+progress can be rolled back if a deep issue surfaces and so the
+PR is reviewable.
+
 **M0:**
 
     cabal build all
-    nix-shell -p z3 --run "cabal test all" 2>&1 | tail -3
-    git grep -nE '(Maybe \(OutTerm|output = (Just|Nothing)|Just \(OPack)' -- src test \
+    nix-shell -p z3 --run "cabal test all" 2>&1 | tail -10
+    # expect: 337 examples (186 + 104 + 40 + 7), 0 failures, 1 pending
+
+    git grep -nE '(Maybe \(OutTerm|output = (Just|Nothing)|Just \(OPack)' \
+      -- src jitsurei keiki-codec-json keiki-codec-json-test test \
       | tee /tmp/gsm-call-sites.txt
     wc -l /tmp/gsm-call-sites.txt
+    # expect: ~69 lines
+
+    git grep -nE 'toMultiDecider|DriverConfig|chainTo|userRegDriverConfig|userRegChained|loanAppChained|peChain|EdgeListAcc|chainAdvanceCommand' \
+      -- src jitsurei test | tee /tmp/gsm-ep20-surface.txt
+    wc -l /tmp/gsm-ep20-surface.txt
+    # expect: ~50-80 lines covering the surface to delete
+
+    git grep -nE 'firstEdge|rewriteEdge|identityOutTerm|arrOut|edgeOutputName|wcName' \
+      -- src/Keiki/Profunctor.hs src/Keiki/Render | tee /tmp/gsm-prof-mermaid.txt
+    wc -l /tmp/gsm-prof-mermaid.txt
+    # expect: ~10-20 lines (Profunctor + Mermaid call sites)
 
 **M1:** Create the design note. Use the section structure above.
 
-**M2:** Edit `src/Keiki/Core.hs:411-419` as described. Then iterate:
+    $EDITOR docs/research/gsm-widening-design.md
+    git add docs/research/gsm-widening-design.md
+    git commit -m "$(cat <<'EOF'
+    docs(research): EP-19 M1 — GSM widening design note
 
-    cabal build 2>&1 | head -20    # examine first error
-    # fix the cited call site
+    ExecPlan: docs/plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md
+    EOF
+    )"
+
+**M2:** Edit `src/Keiki/Core.hs:455-461` to widen `Edge.output`
+to `[OutTerm rs ci co]` (preserving the existential `w` in
+`update`). Then iterate the cascade:
+
+    cabal build all 2>&1 | head -40    # examine first error cluster
+    # fix the cited call sites — work file-by-file
+    # commit per file-cluster (Core, Profunctor, Mermaid, Builder,
+    # then each jitsurei aggregate, then test fixtures)
     # repeat until clean
 
-After every successful build, re-run tests:
+After every successful build, re-run tests for the affected
+package:
 
-    nix-shell -p z3 --run "cabal test all" 2>&1 | tail -3
+    nix-shell -p z3 --run "cabal test keiki:test:keiki-test" 2>&1 | tail -5
+    nix-shell -p z3 --run "cabal test jitsurei:test:jitsurei-test" 2>&1 | tail -5
 
-**M3:** Add `InFlight` and `applyEvents`. Run tests after each step.
+**M3:** Add `InFlight` and widen `applyEvents`. Update
+`reconstitute`. Add `jitsurei/test/Jitsurei/UserRegistrationGSMSpec.hs`.
 
-**M4:** Edit `checkHiddenInputs`. Add the test spec; run it.
+**M4:** Edit `checkHiddenInputs`. Add `test/Keiki/CoreHiddenInputsGSMSpec.hs`.
 
-**M5:** Edit `Keiki.Decider`. Run tests.
+**M5:** Edit `src/Keiki/Decider.hs` — delete `toMultiDecider`,
+`DriverConfig`, `chainAdvanceCommand`; widen `decide`. Delete
+`test/Keiki/DeciderMultiSpec.hs`. Run tests.
 
-**M6:** Edit `Keiki.Composition`. Run tests.
+**M6:** Edit `src/Keiki/Composition.hs` — implement library-side
+chain expansion in `composeEdge` / alternative arms. Add
+multi-event composition tests. Run tests.
 
-**M7:** Edit `Keiki.Examples.UserRegistration`. Cascade-fix dependent
-tests. Run full suite.
+**M7:** Edit jitsurei aggregates per the M7 milestone in Plan of
+Work. Delete EP-20-aligned specs. Add `UserRegistrationGSMSpec`
+and `LoanApplicationGSMSpec`. Run full suite.
 
-**M8:** Edit docs. Commit:
+**M8:** Edit docs. Update MasterPlan #7 registry/progress/decision
+log/outcomes. Commit (one final summary commit, after the
+per-milestone commits above):
 
-    git add src/Keiki/Core.hs src/Keiki/Composition.hs src/Keiki/Decider.hs \
-            src/Keiki/Examples/UserRegistration.hs \
-            test/Keiki/Examples/UserRegistrationGSMSpec.hs \
-            test/Keiki/CoreHiddenInputsGSMSpec.hs \
-            test/Spec.hs keiki.cabal \
-            docs/research/gsm-widening-design.md \
-            docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md \
+    git add docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md \
             docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md \
             docs/plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md \
             docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md
 
     git commit -m "$(cat <<'EOF'
-    feat(core): EP-19 — widen Edge.output to [OutTerm rs ci co] for multi-event commands
+    docs: EP-19 M8 — close GSM widening; update MasterPlan #7
 
     Multi-event commands are first-class via the widened Edge.output and
-    InFlight replay wrapper. State refinement is no longer the canonical
-    path; aggregates declare multi-event edges directly. UserRegistration
-    drops the Registering intermediate vertex and the Continue internal
-    command.
+    InFlight replay wrapper. EP-20's state-refinement ergonomics surface
+    (toMultiDecider, DriverConfig, chainTo, peChain, EdgeListAcc,
+    *DriverConfig, *Chained variants) is removed. UserRegistration drops
+    the Registering intermediate vertex and the Continue internal command;
+    LoanApplication drops its chained-variant analogues.
 
     MasterPlan: docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md
     ExecPlan: docs/plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md
@@ -857,23 +1630,62 @@ tests. Run full suite.
 
 After all eight milestones:
 
-- `cabal build all` succeeds with no warnings.
-- `nix-shell -p z3 --run "cabal test all"` reports 110 + ≥4 examples
-  (10+ if M3, M4, M6, M7 each add multiple tests), 0 failures.
+- `cabal build all` succeeds with no warnings across all four
+  packages (`keiki`, `jitsurei`, `keiki-codec-json`,
+  `keiki-codec-json-test`).
+- `nix-shell -p z3 --run "cabal test all"` reports the expected
+  post-cascade count, 0 failures. The expected count is the
+  baseline of **337 examples** (as of 2026-05-16), adjusted as
+  follows:
+  - **Subtract** the EP-20-aligned specs whose purpose is folded
+    into core (decided per "EP-20 surface retirement strategy"):
+    `test/Keiki/DeciderMultiSpec.hs`,
+    `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`,
+    `UserRegistrationChainedSpec.hs`,
+    `LoanApplicationMultiSpec.hs`,
+    `LoanApplicationChainedSpec.hs`. Total ≈ 15-25 examples
+    depending on retirement scope.
+  - **Add** the new GSM specs: `UserRegistrationGSMSpec` (3+),
+    `LoanApplicationGSMSpec` (3+),
+    `test/Keiki/CoreHiddenInputsGSMSpec.hs` (2+), the
+    multi-event-aware composition test in
+    `test/Keiki/CompositionSpec.hs` (2+), the multi-event
+    `decide` test in `test/Keiki/DeciderSpec.hs` (1+), the
+    builder multi-`emit` test in `test/Keiki/BuilderSpec.hs`
+    (2+). Total ≈ 13-15 new examples.
+  - **Net**: roughly flat, plausibly slight decrease.
 - `docs/research/gsm-widening-design.md` exists and documents the
-  widening.
-- `Keiki.Core.Edge`'s `output` field has type `[OutTerm rs ci co]`.
+  widening (including the M6 composition strategy commitment and
+  the M7 Mermaid rendering decision).
+- `Keiki.Core.Edge`'s `output` field has type `[OutTerm rs ci co]`
+  (preserving the existential `w` in the `update` field).
 - `Keiki.Core.applyEvent`'s signature carries `InFlight s co` on input
   and output.
 - `Keiki.Core.applyEvents :: SymTransducer phi rs s ci co -> (s, RegFile rs)
-  -> [co] -> Maybe (s, RegFile rs)` is exported.
+  -> [co] -> Maybe (s, RegFile rs)` is exported (signature unchanged
+  from the EP-20 letter version; implementation widened).
 - `Keiki.Core.checkHiddenInputs`'s implementation walks edge output
   lists as a whole.
-- `Keiki.Examples.UserRegistration.Vertex` has four constructors
+- `Keiki.Decider`: `decide` returns the full `[e]` directly;
+  `toMultiDecider`, `DriverConfig`, etc. retired per chosen
+  strategy.
+- `Keiki.Builder`: `emit` accumulates a list; `chainTo`/`peChain`
+  retired per chosen strategy.
+- `Keiki.Profunctor`: `firstEdge`, `rewriteEdge*`, `Arrow`/`Strong`/
+  `Choice`/`Category` instances adapted to list-shaped output.
+- `Keiki.Render.Mermaid`: `edgeOutputName` and label rendering
+  handle length-0/1/N edges per chosen strategy.
+- `Jitsurei.UserRegistration.Vertex` has four constructors
   (`PotentialCustomer`, `RequiresConfirmation`, `Confirmed`, `Deleted`);
   `UserCmd` has four constructors (drops `Continue`).
+- `Jitsurei.LoanApplication`: multi-event commands collapsed
+  analogously where present.
 - `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`
-  line 974 is updated.
+  line 974 (or current equivalent) is updated to reflect
+  GSM as the canonical path.
+- `docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md`'s
+  Exec-Plan Registry, Progress, and Decision Log reflect the
+  reversal (EP-19 Complete, EP-20 Superseded).
 
 Behavioral acceptance (the load-bearing tests):
 
@@ -958,12 +1770,13 @@ Recovery from cascade pain in M2 spread across many files:
 New types and functions:
 
     -- src/Keiki/Core.hs (modifies and adds)
-    data Edge phi rs ci co s = Edge
-      { guard  :: phi
-      , update :: Update rs ci
-      , output :: [OutTerm rs ci co]   -- changed from Maybe
-      , target :: s
-      }
+    data Edge phi rs ci co s where
+      Edge
+        :: { guard  :: phi
+           , update :: Update rs w ci             -- existential w preserved
+           , output :: [OutTerm rs ci co]         -- changed from Maybe
+           , target :: s
+           }
 
     data InFlight s co = Settled !s | InFlight !s ![co]
       deriving (Eq, Show)
@@ -978,13 +1791,14 @@ New types and functions:
       -> InFlight s co -> RegFile rs -> co
       -> Maybe (InFlight s co, RegFile rs)   -- wrapped state in/out
 
-    applyEvents
+    applyEvents     -- signature unchanged from EP-20 letter version;
+                    -- implementation widened in M3 to handle length-2+
       :: BoolAlg phi (RegFile rs, ci)
       => SymTransducer phi rs s ci co
       -> (s, RegFile rs) -> [co]
       -> Maybe (s, RegFile rs)
 
-    -- src/Keiki/Decider.hs (extends)
+    -- src/Keiki/Decider.hs (modified — EP-20 façade removed)
     data Decider c e s s_streaming = Decider
       { decide          :: c -> s -> [e]                            -- now actually returns ≥0
       , evolve          :: s -> e -> s                              -- letter case (single-event edges)
@@ -997,40 +1811,89 @@ New types and functions:
 
 Modified modules:
 
-- `Keiki.Core` (modified) — `Edge.output` widened; `omega`, `applyEvent`,
-  `applyEvents`, `step`, `reconstitute`, `checkHiddenInputs` adapted.
-- `Keiki.Composition` (modified) — `composeEdge` concatenates output
-  lists.
-- `Keiki.Decider` (modified) — adds `evolveStreaming` field, lifts
-  `decide` over the new `omega` shape.
-- `Keiki.Builder` (modified) — `PartialEdge` accumulator widens to a
-  list; `emit` appends rather than sets; multiple `emit` calls per
-  block produce a multi-event edge.
-- `Keiki.Examples.UserRegistration` (modified) — drops `Registering` and
-  `Continue`; collapses two edges into one multi-event edge in both
-  builder (`userReg`) and AST (`userRegAST`) forms.
-- `Keiki.Examples.UserRegistrationGSMSpec` (new) — multi-event-specific
+- `Keiki.Core` (modified) — `Edge.output` widened; `omega`,
+  `applyEvent`, `applyEvents`, `step`, `reconstitute`,
+  `checkHiddenInputs` adapted; `InFlight` added.
+- `Keiki.Composition` (modified) — `composeEdge` and the new
+  alternative arms (`liftLOutAlt`, `liftROutAlt`) implement
+  library-side chain expansion for multi-event first-edges.
+- `Keiki.Decider` (modified, surface deleted) — `decide` directly
+  returns `omega`'s `[co]`; `evolveStreaming` field added;
+  `toMultiDecider`, `DriverConfig`, `chainAdvanceCommand`
+  **removed**.
+- `Keiki.Builder` (modified, surface deleted) — `peOutput`
+  accumulator widens to a list; `emit` appends rather than sets;
+  multiple `emit` calls per block produce a multi-event edge;
+  `chainTo`, `peChain`, `EdgeListAcc { elaMain, elaChain }`
+  **removed**; reverts to a single `[Edge]` accumulator.
+- `Keiki.Profunctor` (modified — new since plan's original
+  draft) — `firstEdge`, `rewriteEdge`, `rewriteEdgeMaybe`,
+  `rewriteEdgeOut` adapted from `Maybe`-fmap to list-fmap;
+  literal `output = Just identityOutTerm` / `output = Just
+  arrOut` changed to length-1 list literals; `Arrow`/`Strong`/
+  `Choice`/`Category` instance bodies adapted.
+- `Keiki.Render.Mermaid` (modified — new since plan's original
+  draft) — `edgeOutputName` and label-formatting handle the
+  length-based switchover (length-1: today; length-2: `; `
+  separator; length-3+: `<br/>` separator).
+- `Jitsurei.UserRegistration` (modified) — drops `Registering`
+  and `Continue`; collapses two edges into one multi-event edge
+  in both builder (`userReg`) and AST (`userRegAST`) forms;
+  `userRegChained` and `userRegDriverConfig` removed.
+- `Jitsurei.LoanApplication` (modified) — `loanAppChained` and
+  driver config removed; multi-event command(s) collapsed to
+  multi-`emit` blocks.
+- `Jitsurei.{UserRegistrationV0, EmailDelivery, Loan,
+  LoanWorkflow, OrderCart, CoreBankingSync}` (modified) — `Just`/
+  `Nothing` mechanically replaced with `[o]`/`[]`; no semantic
+  change beyond the widening.
+
+New test specs:
+
+- `test/Keiki/CoreHiddenInputsGSMSpec.hs` — strengthened-check
   assertions.
-- `Keiki.CoreHiddenInputsGSMSpec` (new) — strengthened-check
-  assertions.
+- `jitsurei/test/Jitsurei/UserRegistrationGSMSpec.hs` —
+  multi-event-specific assertions.
+- `jitsurei/test/Jitsurei/LoanApplicationGSMSpec.hs` — same.
+
+Deleted test specs (EP-20 surface retirement):
+
+- `test/Keiki/DeciderMultiSpec.hs`
+- `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`
+- `jitsurei/test/Jitsurei/UserRegistrationChainedSpec.hs`
+- `jitsurei/test/Jitsurei/LoanApplicationMultiSpec.hs`
+- `jitsurei/test/Jitsurei/LoanApplicationChainedSpec.hs`
 
 Existing functions consumed:
 
 - `Keiki.Core.solveOutput` (unchanged) — walks one `OutTerm`. The new
   `applyEvent` calls it once per `OutTerm` in the edge's output list.
-- `Keiki.Composition.substOut` (unchanged) — substitutes one `OutTerm`.
-  The new `composeEdge` calls it once per `OutTerm` in the inner edge's
-  output list.
+- `Keiki.Composition.substOut` (unchanged) — substitutes one
+  `OutTerm`. The new `composeEdge` calls it once per `OutTerm` in
+  the chain-expansion recursion.
+- `Keiki.Composition`'s `Composite` machinery (unchanged) — used
+  internally by the chain-expansion recursion to thread T2's
+  state across mid-symbols.
 
 No new external dependencies. The existing `template-haskell`, `sbv`,
 `text`, `time` are sufficient.
 
+Insulated sibling packages (no edits required):
+
+- `keiki-codec-json` and `keiki-codec-json-test` operate on
+  `RegFile`, not `Edge`. A 2026-05-16 `git grep` confirms zero
+  references to `Edge`, `OutTerm`, `applyEvent`, or `InFlight`
+  in either package's source or tests. M7 re-runs `cabal test
+  all` to confirm no transitive breakage.
+
 The MasterPlan parent
 (`docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md`)
-documents this plan's relationship to its alternative
-`docs/plans/20-multi-event-commands-via-state-refinement-ergonomics.md`.
-The two plans are mutually exclusive: selecting EP-19 cancels EP-20 and
-vice versa. The MasterPlan recommends EP-20.
+recorded the 2026-05-02 selection of EP-20 (state-refinement
+ergonomics) and EP-20 shipped. The 2026-05-16 reconsideration
+reverses that selection. M8 updates the MasterPlan's Exec-Plan
+Registry (EP-19 → Complete; EP-20 → Superseded by EP-19),
+Progress section, Decision Log, and Outcomes & Retrospective
+section.
 
 
 ## Revision Notes
@@ -1066,3 +1929,84 @@ vice versa. The MasterPlan recommends EP-20.
     impact.
   - **Interfaces and Dependencies**: added `Keiki.Builder` to the
     modified-modules list.
+
+- **2026-05-16 (reopened under reconsideration)**: The plan was
+  marked Cancelled (2026-05-02) when the user selected EP-20 for
+  implementation; EP-20 shipped end-to-end (`Keiki.Core.applyEvents`
+  letter-fold, `Keiki.Decider.toMultiDecider` + `DriverConfig`,
+  `Keiki.Builder.chainTo`, `userRegDriverConfig`, `userRegChained`,
+  `loanAppChained`). The user is now reconsidering EP-19 because
+  the downstream surface that depends on `Keiki.Core.Edge` has
+  grown substantially (new sibling package `jitsurei/` with ~8
+  aggregates; new `Keiki.Profunctor` module; new
+  `Keiki.Render.Mermaid` module; total `output = Just|Nothing`
+  call sites ~69, up from the original plan's estimated ~24)
+  and a façade no longer suffices — first-class multi-event
+  support at the AST level is needed. Updated:
+  - **Status (new section near top)**: added "Reopened under
+    reconsideration (2026-05-16)" summarising the reversal
+    context, current code state, and implications for the
+    MasterPlan.
+  - **Progress / M0**: refreshed inventory expectations to
+    reflect the ~69-site cascade, the four-suite 337-example
+    baseline, the GADT shape of `Edge` (with existential `w`
+    in `update :: Update rs w ci`), and the EP-20 surface
+    that must be retired or coexisted with.
+  - **Progress / M2**: added Profunctor cascade (firstEdge,
+    rewriteEdge*, Arrow/Strong/Choice/Category instances) and
+    Mermaid renderer cascade (edgeOutputName, label rendering
+    strategy options); added `chainTo` / `peChain` /
+    `EdgeListAcc` retirement question to the Builder cascade
+    sub-section.
+  - **Progress / M3**: noted that `applyEvents` (letter version)
+    already exists at `Keiki.Core.hs:708-717` (shipped by EP-20
+    M2); EP-19 keeps the name and widens the implementation.
+  - **Progress / M5**: added the `toMultiDecider` /
+    `DriverConfig` retirement question with three options
+    (full removal / deprecate / repurpose).
+  - **Progress / M6**: rewrote to address the MasterPlan
+    dimension-4 critique (multi-event composition is
+    fundamentally non-local) with two strategies (library-side
+    chain expansion vs class restriction); recommended
+    Strategy A.
+  - **Progress / M7**: expanded from "UserRegistration" to
+    "jitsurei-wide migration" — now includes UserRegistration,
+    UserRegistrationV0, EmailDelivery, Loan, LoanApplication,
+    LoanWorkflow, OrderCart, CoreBankingSync; spec retirement
+    list expanded; sibling-package sanity check added.
+  - **Decision Log**: added the reversal entry (2026-05-16);
+    added four "Decision (pending)" entries flagging open
+    strategic questions (EP-20 surface retirement, multi-event
+    composition strategy, Mermaid label strategy, builder
+    verb retirement).
+  - **Validation and Acceptance**: refreshed expected test
+    count to 337 baseline with subtraction/addition estimates;
+    added explicit acceptance criteria for Profunctor and
+    Mermaid; added MasterPlan registry update acceptance
+    criterion.
+
+  Not yet refreshed in the body but flagged for follow-up
+  passes (these are tactical line-number and prose updates
+  that can wait until the strategic decisions above are
+  confirmed):
+  - **Plan of Work / Concrete Steps**: still references
+    `src/Keiki/Examples/UserRegistration.hs` line numbers and
+    the original ~24-site cascade. To be refreshed once the
+    EP-20 retirement / composition strategy / Mermaid
+    decisions are committed.
+  - **Context and Orientation**: same — needs path refresh
+    from `src/Keiki/Examples/` to `jitsurei/src/Jitsurei/`,
+    and current line-number citations.
+  - **Interfaces and Dependencies**: needs `Keiki.Profunctor`
+    and `Keiki.Render.Mermaid` added to the modified-modules
+    list, and the EP-20 surface (`toMultiDecider`,
+    `DriverConfig`, `chainTo`, `peChain`, `EdgeListAcc`)
+    enumerated as retired (or repurposed) modules.
+
+  Required follow-up edit outside this file:
+  `docs/masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md`'s
+  Exec-Plan Registry, Progress, Decision Log, and Outcomes &
+  Retrospective sections must be updated to reflect the
+  reversal (EP-19: Cancelled → In Progress; EP-20: Complete →
+  Superseded by EP-19). Not edited in this pass — flagged for
+  the implementer when M0 begins.
