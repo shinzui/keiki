@@ -24,10 +24,10 @@ After this plan is implemented, maintainers will have a checked-in alpha DSL rev
 
 - [x] M0 (2026-05-17): Reconfirmed repository metadata with `mori show --full`, `mori registry list`, `mori registry show shinzui/keiro --full`, and `mori registry docs shinzui/keiro`; inventoried keiki and keiro DSL call sites with `rg`; read the source and example files named in Concrete Steps.
 - [x] M1 (2026-05-17): Added `docs/research/dsl-alpha-review.md` with keep, rename-before-alpha, document-for-alpha, and defer-post-alpha recommendations grounded in current source, examples, and docs.
-- [ ] M2: Discuss the review and record final alpha decisions in this plan's Decision Log. Current proposed alpha changes are `EventStream.streamName` -> `resolveStreamName`, `StateCodec.schemaVersion` -> `stateCodecVersion`, and friendlier aliases for profunctor variance helpers.
-- [ ] M3: Implement accepted alpha-blocking DSL changes in keiki, including source exports, examples, user guide, and tests.
-- [ ] M4: Implement accepted alpha-blocking keiro facade changes in `/Users/shinzui/Keikaku/bokuno/keiro`, including docs and examples.
-- [ ] M5: Run validation for both repositories and update the review memo plus Outcomes & Retrospective with the final alpha DSL surface.
+- [x] M2 (2026-05-17): Maintainer accepted the keiro field renames `EventStream.streamName` -> `resolveStreamName` and `StateCodec.schemaVersion` -> `stateCodecVersion`; maintainer deferred the profunctor alias proposal because `lmapCi` / `rmapCo` / `dimapTransducer` / `lmapMaybeCi` follow Haskell conventions.
+- [x] M3 (2026-05-17): No keiki source/API change is accepted for alpha in this pass. Updated `docs/research/dsl-alpha-review.md` to keep the current profunctor names for alpha and revisit aliases later.
+- [x] M4 (2026-05-17): Implemented accepted keiro facade renames in `/Users/shinzui/Keikaku/bokuno/keiro`: `EventStream.streamName` is now `resolveStreamName`, and `StateCodec.schemaVersion` is now `stateCodecVersion`; updated keiro source, tests, jitsurei examples, and user docs.
+- [x] M5 (2026-05-17): Validated the documentation artifact and keiro implementation. `cabal build all` passed in keiro. `cabal test keiro-test` passed 33 examples, 0 failures. `cabal test jitsurei-test` passed 7 examples, 0 failures. `cabal test all` ran relevant keiro/jitsurei suites successfully but exited 1 because dependency test `codd-test` failed to build; recorded as unrelated residual risk.
 
 
 ## Surprises & Discoveries
@@ -43,6 +43,9 @@ After this plan is implemented, maintainers will have a checked-in alpha DSL rev
 
 - Discovery: `StateCodec.schemaVersion` shares a field name with event `Codec.schemaVersion`, even though the snapshot database and research docs call the field `state_codec_version`.
   Evidence: `/Users/shinzui/Keikaku/bokuno/keiro/src/Keiro/EventStream.hs` declares `schemaVersion` on `StateCodec`; `/Users/shinzui/Keikaku/bokuno/keiro/src/Keiro/Snapshot.hs` reads that field for snapshot lookup; `/Users/shinzui/Keikaku/bokuno/keiro/docs/research/09-snapshot-strategy.md` uses the operational `state_codec_version` name.
+
+- Discovery: `cabal test all` in keiro is broader than the keiro package validation and can fail on dependency test suites.
+  Evidence: On 2026-05-17, `cabal test all` built and passed `keiro-test` (33 examples, 0 failures) and `jitsurei-test` (7 examples, 0 failures), but the overall command exited 1 with `Failed to build test:codd-test from codd-0.1.8`. Running `cabal test keiro-test` and `cabal test jitsurei-test` separately both passed.
 
 
 ## Decision Log
@@ -69,15 +72,31 @@ Record every decision made while working on the plan.
   Rationale: The plan's M2 decision gate requires maintainer confirmation before alpha-blocking renames are implemented. The recommended renames touch every downstream `EventStream` or snapshot codec literal, so they should be accepted explicitly before M3/M4 edits.
   Date: 2026-05-17
 
+- Decision: Accept `EventStream.streamName` -> `resolveStreamName` for alpha.
+  Rationale: The maintainer agreed with recommendation 1. The new field name separates the `EventStream` resolver field from `Keiro.Stream.streamName`, eliminating tautological examples such as `streamName = Stream.streamName`.
+  Date: 2026-05-17
+
+- Decision: Accept `StateCodec.schemaVersion` -> `stateCodecVersion` for alpha.
+  Rationale: The maintainer agreed with recommendation 2. The new field name matches the snapshot storage term `state_codec_version` and avoids confusion with event `Codec.schemaVersion`.
+  Date: 2026-05-17
+
+- Decision: Defer friendlier profunctor variance aliases.
+  Rationale: The maintainer noted that the existing `lmapCi`, `rmapCo`, `dimapTransducer`, and `lmapMaybeCi` names follow Haskell conventions and should be revisited later rather than changed before alpha.
+  Date: 2026-05-17
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-M0 and M1 produced the checked-in review artifact at `docs/research/dsl-alpha-review.md`. The memo recommends keeping keiki's builder names, documenting `onEpsilon` / `noEmit` / `feedback1`, deferring saga compensation and higher-level facades, and considering three alpha changes before shipping: rename keiro `EventStream.streamName` to `resolveStreamName`, rename keiro `StateCodec.schemaVersion` to `stateCodecVersion`, and add friendlier keiki aliases for profunctor variance helpers.
+M0 and M1 produced the checked-in review artifact at `docs/research/dsl-alpha-review.md`. The memo recommends keeping keiki's builder names, documenting `onEpsilon` / `noEmit` / `feedback1`, deferring saga compensation and higher-level facades, and implementing two keiro alpha renames: `EventStream.streamName` to `resolveStreamName`, and `StateCodec.schemaVersion` to `stateCodecVersion`.
 
-Implementation is paused at M2 because the plan requires a decision gate before code renames.
+M2 accepted those two keiro renames and explicitly deferred the profunctor alias proposal. M3 required no keiki source changes beyond updating the review memo and this plan.
+
+M4 implemented the two accepted keiro renames across the library, tests, jitsurei examples, and user docs. The final alpha surface now uses `resolveStreamName` for the `EventStream` resolver field and `stateCodecVersion` for snapshot codecs, while event `Codec.schemaVersion` remains unchanged.
+
+Validation passed for `cabal build all`, `cabal test keiro-test`, and `cabal test jitsurei-test` in `/Users/shinzui/Keikaku/bokuno/keiro`. The broad `cabal test all` command is not clean in this environment because `codd-test` fails to build; no failure was observed in the keiro or jitsurei test suites.
 
 
 ## Context and Orientation

@@ -186,7 +186,7 @@ lookupSnapshot foundStreamId (codec ^. #stateCodecVersion) (codec ^. #shapeHash)
 
 Expected migration effort: small field rename. This is alpha-worthy because snapshot compatibility errors are operationally sensitive.
 
-#### R3: Add friendlier aliases for profunctor variance helpers
+#### R3: Add friendlier aliases for profunctor variance helpers later
 
 Current spelling:
 
@@ -197,7 +197,7 @@ dimapTransducer
 lmapMaybeCi
 ```
 
-Proposed alpha surface:
+Possible future surface:
 
 ```haskell
 contramapInput
@@ -206,7 +206,7 @@ dimapIO
 filterMapInput
 ```
 
-Keep the existing names as aliases for now only if the maintainer wants continuity for current examples and plans. Prefer using the friendlier names in guides.
+Decision for alpha: defer. The current names follow Haskell profunctor conventions and are acceptable for alpha. Revisit friendlier aliases after the alpha release, preferably with examples showing whether users who are not already profunctor-literate benefit enough to justify another spelling.
 
 Affected files:
 
@@ -231,7 +231,7 @@ contramapInput wrap commandTransducer
 mapOutput unwrap eventTransducer
 ```
 
-Expected migration effort: low. These helpers are advanced, but they are public and documented; alpha is the right point to introduce the names users should learn.
+Expected migration effort if revisited later: low. These helpers are advanced, and aliases can be added without breaking current users.
 
 ### Document for alpha
 
@@ -271,16 +271,14 @@ Reason: the names are a little literal, but they describe the escape hatch: run 
 
 ## Accepted alpha surface
 
-Pending maintainer decision.
-
-Proposed accepted surface:
+Decision recorded on 2026-05-17:
 
 - keiki builder keeps its current core names.
 - keiki TH helpers keep their current names.
 - keiki composition keeps `compose`, `alternative`, and `feedback1`.
 - keiro renames `EventStream.streamName` to `resolveStreamName`.
 - keiro renames `StateCodec.schemaVersion` to `stateCodecVersion`.
-- keiki adds friendlier aliases for `lmapCi`, `rmapCo`, `dimapTransducer`, and `lmapMaybeCi`, and docs prefer the aliases.
+- keiki keeps `lmapCi`, `rmapCo`, `dimapTransducer`, and `lmapMaybeCi` for alpha; friendlier aliases are deferred for later discussion because the current names follow Haskell profunctor conventions.
 
 ## Post-alpha follow-ups
 
