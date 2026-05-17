@@ -71,9 +71,12 @@ spec = do
     -- Sanity-check each event in isolation. If anything breaks, the
     -- end-to-end test above fails opaquely; the per-step assertions
     -- below identify the offending step.
-    it "step 1: PotentialCustomer + RegistrationStarted -> Registering" $
-      case applyOne PotentialCustomer emptyRegs (head canonicalLog) of
-        Just (s, _) -> s `shouldBe` Registering
+    it "step 1: PotentialCustomer + [RegistrationStarted, ConfirmationEmailSent] -> RequiresConfirmation" $
+      -- EP-19 M7: the entrance is one length-2 multi-event edge. The
+      -- streaming-chunk replay (applyEvents) advances both events
+      -- atomically to RequiresConfirmation.
+      case applyEvents userReg (PotentialCustomer, emptyRegs) (take 2 canonicalLog) of
+        Just (s, _) -> s `shouldBe` RequiresConfirmation
         Nothing     -> expectationFailure "step 1 returned Nothing"
 
     it "step 5: Confirmed + AccountDeleted -> Deleted" $ do
@@ -88,28 +91,6 @@ spec = do
         Just (s, _) -> s `shouldBe` Deleted
         Nothing     -> expectationFailure "step 5 returned Nothing"
   where
-    applyOne s regs co =
-      reconstituteFrom (s, regs) [co]
+    applyOne s regs co = applyEvents userReg (s, regs) [co]
 
-    foldlEvents = reconstituteFrom
-
-    -- A 'reconstitute'-from-arbitrary-state helper. The library's
-    -- 'reconstitute' is rooted at 'initial t'; this uses 'go' over
-    -- 'applyEvent' but with our own starting state. To keep the
-    -- spec self-contained we reproduce the fold here.
-    reconstituteFrom acc []         = Just acc
-    reconstituteFrom (s, regs) (co : rest) = do
-      next <- stepEvent s regs co
-      reconstituteFrom next rest
-
-    -- Re-implement applyEvent locally, since the library does not
-    -- export its internal helper.
-    stepEvent s regs co =
-      case [ (target e, applyEdgeUpdate e regs ci)
-           | e <- edgesOut userReg s
-           , o : _   <- [output e]
-           , Just ci <- [solveOutput o regs co]
-           , models (guard e) (regs, ci)
-           ] of
-        [single] -> Just single
-        _        -> Nothing
+    foldlEvents = applyEvents userReg

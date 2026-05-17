@@ -30,10 +30,12 @@ snapshot regs =
 -- 'Keiki.Fixtures.UserRegistrationSpec.canonicalLog'. The reconstitute
 -- spec fixes the events; this fixture records the inputs that produce
 -- them on the User Registration edge graph.
+-- EP-19 M7: the entrance now drives PotentialCustomer →
+-- RequiresConfirmation in one transition emitting two events, so
+-- there is no separate Continue command in the sequence.
 canonicalCmds :: [UserCmd]
 canonicalCmds =
   [ StartRegistration  (StartRegistrationData  "alice@x" "Z9F4" (t 0))
-  , Continue
   , ResendConfirmation (ResendConfirmationData          "K2P7" (t 100))
   , ConfirmAccount     (ConfirmAccountData              "K2P7" (t 200))
   , FulfillGDPRRequest (FulfillGDPRRequestData                  (t 300))
@@ -79,24 +81,31 @@ spec = do
           end = foldl (runRound d) (initialState d) canonicalCmds
       isTerminal d end `shouldBe` True
 
-    it "decide on the very first command emits exactly one event" $ do
+    it "decide on the very first command emits the multi-event chain [RegistrationStarted, ConfirmationEmailSent]" $ do
+      -- EP-19 M7: the entrance is now a length-2 multi-event edge,
+      -- so decide returns both events from StartRegistration in
+      -- declaration order.
       let d   = toDecider userReg
           evs = decide d (head canonicalCmds) (initialState d)
-      length evs `shouldBe` 1
+      length evs `shouldBe` 2
+      case evs of
+        [RegistrationStarted _, ConfirmationEmailSent _] -> pure ()
+        _ -> expectationFailure ("unexpected event sequence: " <> show evs)
 
     it "ε-edge limitation: GDPR from RequiresConfirmation yields [] from decide" $ do
-      -- Drive the aggregate as far as RequiresConfirmation by replaying
-      -- StartRegistration and Continue, then attempt the silent ε-edge
-      -- (FulfillGDPRRequest before the user has confirmed).
+      -- Drive the aggregate to RequiresConfirmation by chunk-replaying
+      -- StartRegistration's two-event chain, then attempt the silent
+      -- ε-edge (FulfillGDPRRequest before the user has confirmed).
       let d         = toDecider userReg
-          preGdpr   = foldl (runRound d) (initialState d)
-                        [ StartRegistration
-                            (StartRegistrationData "bob@x" "S0E1" (t 0))
-                        , Continue
-                        ]
+          startCmd  = StartRegistration (StartRegistrationData "bob@x" "S0E1" (t 0))
+          startEvs  = decide d startCmd (initialState d)
+          preGdpr   = case applyEvents userReg (initialState d) startEvs of
+                        Just sR -> sR
+                        Nothing -> error "applyEvents on the 2-event chain failed"
           gdprCmd   = FulfillGDPRRequest (FulfillGDPRRequestData (t 999))
           evs       = decide d gdprCmd preGdpr
           afterGdpr = foldl (evolve d) preGdpr evs
+      length startEvs    `shouldBe` 2
       fst preGdpr        `shouldBe` RequiresConfirmation
       evs                `shouldBe` []
       -- The ε-edge limitation: with no event, evolve is a no-op, so
@@ -110,11 +119,11 @@ spec = do
       -- is that the limitation lives at the façade boundary, not in
       -- the underlying transducer.
       let d         = toDecider userReg
-          preGdpr   = foldl (runRound d) (initialState d)
-                        [ StartRegistration
-                            (StartRegistrationData "carol@x" "T1V2" (t 0))
-                        , Continue
-                        ]
+          startCmd  = StartRegistration (StartRegistrationData "carol@x" "T1V2" (t 0))
+          startEvs  = decide d startCmd (initialState d)
+          preGdpr   = case applyEvents userReg (initialState d) startEvs of
+                        Just sR -> sR
+                        Nothing -> error "applyEvents on the 2-event chain failed"
           (vAtRC, regsAtRC) = preGdpr
           gdprCmd   = FulfillGDPRRequest (FulfillGDPRRequestData (t 999))
       vAtRC `shouldBe` RequiresConfirmation
@@ -123,15 +132,19 @@ spec = do
         Nothing         -> expectationFailure "delta returned Nothing"
 
   describe "evolveStreaming (EP-19 M5)" $ do
-    it "Settled initial ⊢ RegistrationStarted → Settled Registering" $ do
+    it "Settled PotentialCustomer ⊢ RegistrationStarted → InFlight RequiresConfirmation [ConfirmationEmailSent]" $ do
+      -- After EP-19 M7 collapsed the entrance into a length-2
+      -- multi-event edge, streaming replay through its head event
+      -- transitions to the mid-chain wrapper carrying the expected
+      -- tail event. The second event then unwraps to Settled.
       let d           = toDecider userReg
           (_, regs0)  = initialState d
           ev          = RegistrationStarted
                           (RegistrationStartedData "dave@x" "U2V3" (t 0))
       case evolveStreaming d (Settled PotentialCustomer, regs0) ev of
-        Just (Settled Registering, _) -> pure ()
+        Just (InFlight RequiresConfirmation [ConfirmationEmailSent _], _) -> pure ()
         Just (other, _)              ->
-          expectationFailure ("expected Settled Registering, got " <> show other)
+          expectationFailure ("expected InFlight RequiresConfirmation [...], got " <> show other)
         Nothing -> expectationFailure "evolveStreaming returned Nothing"
 
     it "Settled Confirmed ⊢ AccountDeleted → Settled Deleted" $ do

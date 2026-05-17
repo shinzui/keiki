@@ -62,7 +62,6 @@ module Keiki.Fixtures.UserRegistration
   , inCtorConfirm
   , inCtorResend
   , inCtorGdpr
-  , inCtorContinue
   , inpStart
   , inpConfirm
   , inpResend
@@ -119,7 +118,6 @@ data UserCmd
   | ConfirmAccount     ConfirmAccountData
   | ResendConfirmation ResendConfirmationData
   | FulfillGDPRRequest FulfillGDPRRequestData
-  | Continue
   deriving (Eq, Show, Generic)
 
 
@@ -174,7 +172,6 @@ type UserRegRegs =
 
 data Vertex
   = PotentialCustomer
-  | Registering
   | RequiresConfirmation
   | Confirmed
   | Deleted
@@ -213,7 +210,6 @@ $(deriveAggregateCtors ''UserCmd ''UserRegRegs
     , ("ConfirmAccount",     "Confirm")
     , ("ResendConfirmation", "Resend")
     , ("FulfillGDPRRequest", "Gdpr")
-    , ("Continue",           "Continue")
     ])
 
 
@@ -228,7 +224,6 @@ instance KnownInCtors UserCmd where
     , SomeInCtor inCtorConfirm
     , SomeInCtor inCtorResend
     , SomeInCtor inCtorGdpr
-    , SomeInCtor inCtorContinue
     ]
 
 
@@ -266,7 +261,6 @@ $(deriveWireCtors ''UserEvent
 $(deriveView ''Vertex ''UserRegRegs
     "SUserVertex" "UserView" "userView"
     [ ("PotentialCustomer",    [])
-    , ("Registering",          [])
     , ("RequiresConfirmation", ["email", "confirmCode"])
     , ("Confirmed",            ["email", "confirmedAt"])
     , ("Deleted",              ["email", "deletedAt"])
@@ -288,6 +282,7 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
             (\case Deleted -> True; _ -> False) do
 
   B.from PotentialCustomer do
+    -- EP-19 M7: collapsed entrance — two emits in one transition.
     B.onCmd inCtorStart $ \d -> B.do
       B.slot @"email"        .= d.email
       B.slot @"confirmCode"  .= d.confirmCode
@@ -297,13 +292,8 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
         , confirmCode = d.confirmCode
         , at          = d.at
         }
-      B.goto Registering
-
-  B.from Registering do
-    -- Internal Continue command emits ConfirmationEmailSent.
-    B.onCmd inCtorContinue $ \_d -> B.do
       B.emit wireConfirmationEmailSent
-        ConfirmationEmailSentTermFields { email = #email }
+        ConfirmationEmailSentTermFields { email = d.email }
       B.goto RequiresConfirmation
 
   B.from RequiresConfirmation do
@@ -374,6 +364,7 @@ userRegASTEdges
   -> [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEvent Vertex]
 userRegASTEdges = \case
 
+  -- EP-19 M7: collapsed to one length-2 multi-event edge.
   PotentialCustomer ->
     [ Edge
         { guard  = isStart
@@ -385,28 +376,18 @@ userRegASTEdges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpStart #at)
-        , output = [ pack
-            inCtorStart
-            wireRegistrationStarted
-            (OFCons (inpStart #email)
-              (OFCons (inpStart #confirmCode)
-                (OFCons (inpStart #at) OFNil))) ]
-        , target = Registering
-        }
-    ]
-
-  -- Internal Continue command emits ConfirmationEmailSent.
-  Registering ->
-    [ Edge
-        { guard  = isContinue
-        , update = UKeep
-        , output = [ pack
-            inCtorContinue
-            wireConfirmationEmailSent
-            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil) ]
+        , output =
+            [ pack inCtorStart wireRegistrationStarted
+                (OFCons (inpStart #email)
+                  (OFCons (inpStart #confirmCode)
+                    (OFCons (inpStart #at) OFNil)))
+            , pack inCtorStart wireConfirmationEmailSent
+                (OFCons (inpStart #email) OFNil)
+            ]
         , target = RequiresConfirmation
         }
     ]
+
 
   RequiresConfirmation ->
     [ -- Right code: confirm. The 'isConfirm' conjunct short-circuits the

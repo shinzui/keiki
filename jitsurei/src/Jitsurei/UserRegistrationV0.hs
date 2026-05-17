@@ -54,7 +54,6 @@ import Jitsurei.UserRegistration
   , inCtorConfirm
   , inCtorResend
   , inCtorGdpr
-  , inCtorContinue
   , inpStart
   , inpConfirm
   , inpResend
@@ -90,12 +89,11 @@ emptyRegsV0 = emptyRegFile
 -- 'matchInCtor' alongside the V5 aggregate so the SBV-backed
 -- 'BoolAlg' instance recognizes constructor mutex on the V0 form
 -- too. The 'evalPred' semantics is preserved.
-isStart, isConfirm, isResend, isGdpr, isContinue :: HsPred UserRegRegs UserCmd
+isStart, isConfirm, isResend, isGdpr :: HsPred UserRegRegs UserCmd
 isStart    = matchInCtor inCtorStart
 isConfirm  = matchInCtor inCtorConfirm
 isResend   = matchInCtor inCtorResend
 isGdpr     = matchInCtor inCtorGdpr
-isContinue = matchInCtor inCtorContinue
 
 
 -- * V0 wire constructors ---------------------------------------------------
@@ -143,6 +141,9 @@ userRegV0Edges
   :: Vertex
   -> [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEventV0 Vertex]
 userRegV0Edges = \case
+  -- EP-19 M7: collapsed entrance into one length-2 multi-event edge,
+  -- matching V5. V0's hidden-input bug is on the Confirm edge below,
+  -- not the entrance chain, so the collapse preserves the demo.
   PotentialCustomer ->
     [ Edge
         { guard  = isStart
@@ -154,24 +155,14 @@ userRegV0Edges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpStart #at)
-        , output = [ pack
-            inCtorStart
-            wireRegistrationStartedV0
-            (OFCons (inpStart #email)
-              (OFCons (inpStart #confirmCode)
-                (OFCons (inpStart #at) OFNil))) ]
-        , target = Registering
-        }
-    ]
-
-  Registering ->
-    [ Edge
-        { guard  = isContinue
-        , update = UKeep
-        , output = [ pack
-            inCtorContinue
-            wireConfirmationEmailSentV0
-            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil) ]
+        , output =
+            [ pack inCtorStart wireRegistrationStartedV0
+                (OFCons (inpStart #email)
+                  (OFCons (inpStart #confirmCode)
+                    (OFCons (inpStart #at) OFNil)))
+            , pack inCtorStart wireConfirmationEmailSentV0
+                (OFCons (inpStart #email) OFNil)
+            ]
         , target = RequiresConfirmation
         }
     ]

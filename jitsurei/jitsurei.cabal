@@ -60,6 +60,7 @@ test-suite jitsurei-test
                         Jitsurei.Render.MermaidLoanSpec
                         Jitsurei.OrderCartSpec
                         Jitsurei.UserRegistrationBuilderSpec
+                        Jitsurei.UserRegistrationGSMSpec
                         Jitsurei.UserRegistrationSpec
                         Jitsurei.UserRegistrationSymbolicSpec
                         Jitsurei.UserRegistrationV0Spec

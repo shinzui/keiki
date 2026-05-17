@@ -71,10 +71,7 @@ spec = do
               :: HsPred UserRegRegs UserCmd
       isNothing (symSatExt p) `shouldBe` True
 
-    -- Singleton ctor case: a satisfiable PInCtor on Continue
-    -- reconstructs the no-payload constructor.
-    it "PInCtor inCtorContinue rebuilds Continue" $ do
-      let p = PInCtor inCtorContinue :: HsPred UserRegRegs UserCmd
-      case symSatExt p of
-        Nothing -> expectationFailure "PInCtor Continue reported unsat"
-        Just (_regs, cmd) -> cmd `shouldBe` Continue
+    -- (EP-19 M7 retired the no-payload 'Continue' constructor that
+    -- previously demonstrated the singleton-InCtor witness path; the
+    -- ConfirmAccount edge above already exercises the symbolic
+    -- witness extractor on a payload-bearing constructor.)

@@ -64,7 +64,6 @@ module Jitsurei.UserRegistration
   , inCtorConfirm
   , inCtorResend
   , inCtorGdpr
-  , inCtorContinue
   , inpStart
   , inpConfirm
   , inpResend
@@ -121,7 +120,6 @@ data UserCmd
   | ConfirmAccount     ConfirmAccountData
   | ResendConfirmation ResendConfirmationData
   | FulfillGDPRRequest FulfillGDPRRequestData
-  | Continue
   deriving (Eq, Show, Generic)
 
 
@@ -176,7 +174,6 @@ type UserRegRegs =
 
 data Vertex
   = PotentialCustomer
-  | Registering
   | RequiresConfirmation
   | Confirmed
   | Deleted
@@ -215,7 +212,6 @@ $(deriveAggregateCtors ''UserCmd ''UserRegRegs
     , ("ConfirmAccount",     "Confirm")
     , ("ResendConfirmation", "Resend")
     , ("FulfillGDPRRequest", "Gdpr")
-    , ("Continue",           "Continue")
     ])
 
 
@@ -230,7 +226,6 @@ instance KnownInCtors UserCmd where
     , SomeInCtor inCtorConfirm
     , SomeInCtor inCtorResend
     , SomeInCtor inCtorGdpr
-    , SomeInCtor inCtorContinue
     ]
 
 
@@ -268,7 +263,6 @@ $(deriveWireCtors ''UserEvent
 $(deriveView ''Vertex ''UserRegRegs
     "SUserVertex" "UserView" "userView"
     [ ("PotentialCustomer",    [])
-    , ("Registering",          [])
     , ("RequiresConfirmation", ["email", "confirmCode"])
     , ("Confirmed",            ["email", "confirmedAt"])
     , ("Deleted",              ["email", "deletedAt"])
@@ -290,6 +284,12 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
             (\case Deleted -> True; _ -> False) do
 
   B.from PotentialCustomer do
+    -- EP-19 collapsed entrance: StartRegistration emits two events
+    -- in one transition. Under the widened Edge.output the second
+    -- emit appends to the same edge's output list; both events
+    -- evaluate against the same pre-transition (regs, ci) snapshot,
+    -- so 'd.email' (input projection) is the right read for both —
+    -- the register write applies once at the edge level.
     B.onCmd inCtorStart $ \d -> B.do
       B.slot @"email"        .= d.email
       B.slot @"confirmCode"  .= d.confirmCode
@@ -299,13 +299,8 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
         , confirmCode = d.confirmCode
         , at          = d.at
         }
-      B.goto Registering
-
-  B.from Registering do
-    -- Internal Continue command emits ConfirmationEmailSent.
-    B.onCmd inCtorContinue $ \_d -> B.do
       B.emit wireConfirmationEmailSent
-        ConfirmationEmailSentTermFields { email = #email }
+        ConfirmationEmailSentTermFields { email = d.email }
       B.goto RequiresConfirmation
 
   B.from RequiresConfirmation do
@@ -376,6 +371,11 @@ userRegASTEdges
   -> [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEvent Vertex]
 userRegASTEdges = \case
 
+  -- EP-19 M7: collapsed two letter edges into one length-2 multi-event
+  -- edge. Both events evaluate against the same (regs, ci) snapshot —
+  -- ConfirmationEmailSent reads inpStart #email rather than proj
+  -- #email, since the register write applies once at the edge level
+  -- and the output is evaluated pre-update.
   PotentialCustomer ->
     [ Edge
         { guard  = isStart
@@ -387,25 +387,14 @@ userRegASTEdges = \case
               `combine`
             USet (#registeredAt :: IndexN "registeredAt" UserRegRegs UTCTime)
                  (inpStart #at)
-        , output = [ pack
-            inCtorStart
-            wireRegistrationStarted
-            (OFCons (inpStart #email)
-              (OFCons (inpStart #confirmCode)
-                (OFCons (inpStart #at) OFNil))) ]
-        , target = Registering
-        }
-    ]
-
-  -- Internal Continue command emits ConfirmationEmailSent.
-  Registering ->
-    [ Edge
-        { guard  = isContinue
-        , update = UKeep
-        , output = [ pack
-            inCtorContinue
-            wireConfirmationEmailSent
-            (OFCons (proj (#email :: Index UserRegRegs Email)) OFNil) ]
+        , output =
+            [ pack inCtorStart wireRegistrationStarted
+                (OFCons (inpStart #email)
+                  (OFCons (inpStart #confirmCode)
+                    (OFCons (inpStart #at) OFNil)))
+            , pack inCtorStart wireConfirmationEmailSent
+                (OFCons (inpStart #email) OFNil)
+            ]
         , target = RequiresConfirmation
         }
     ]

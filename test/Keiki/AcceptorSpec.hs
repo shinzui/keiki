@@ -38,10 +38,13 @@ t s = UTCTime (fromGregorian 2026 5 1) (secondsToDiffTime s)
 --
 -- The 'ConfirmAccount' code matches the code stored at registration,
 -- so the @PEq@ guard on the confirmation edge is satisfied.
+-- EP-19 M7: 'Continue' retired with the collapsed entrance.
+-- StartRegistration alone now drives PotentialCustomer →
+-- RequiresConfirmation as one transition emitting both
+-- RegistrationStarted and ConfirmationEmailSent.
 canonicalUserCmds :: [UserCmd]
 canonicalUserCmds =
   [ StartRegistration  (StartRegistrationData  "alice@x" "Z9F4" (t 0))
-  , Continue
   , ConfirmAccount     (ConfirmAccountData     "Z9F4"           (t 100))
   , FulfillGDPRRequest (FulfillGDPRRequestData                  (t 200))
   ]

@@ -40,9 +40,6 @@ spec = describe "UserView projection" $ do
   it "projects PotentialCustomer to the empty PotentialCustomerV" $
     userView SPotentialCustomer regs `shouldBe` PotentialCustomerV
 
-  it "projects Registering to the empty RegisteringV" $
-    userView SRegistering regs `shouldBe` RegisteringV
-
   it "projects RequiresConfirmation to RCV with email + confirmCode" $
     userView SRequiresConfirmation regs
       `shouldBe` RequiresConfirmationV

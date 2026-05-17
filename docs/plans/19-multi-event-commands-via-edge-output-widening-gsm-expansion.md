@@ -880,8 +880,92 @@ current state of the work.
       both transducers in the pipeline have multi-event edges to
       exercise the chain-expansion path.
 
-- [ ] **Milestone 7 — Worked example: collapse UserRegistration's
-      `Registering` (plus full `jitsurei` cascade).** Edit
+- [x] **Milestone 7 — Worked example: collapse UserRegistration's
+      `Registering`.** (2026-05-16) Completed. Concrete changes:
+
+      - `jitsurei/src/Jitsurei/UserRegistration.hs`:
+        - **Dropped** `Continue` from `UserCmd` (4 ctors remain).
+        - **Dropped** `Registering` from `Vertex` (4 ctors: 5 → 4).
+        - Removed the `("Continue", "Continue")` entry from
+          `deriveAggregateCtors`, the corresponding `inCtorContinue`
+          from `allInCtors`, and `Registering` from `deriveView`.
+        - Removed the `inCtorContinue` export-list entry; removed
+          the import of `Keiki.Decider (DriverConfig (..))`.
+        - **Collapsed** the entrance: the `B.from PotentialCustomer`
+          block now has a single `onCmd inCtorStart` body with two
+          consecutive `emit` calls (RegistrationStarted + then
+          ConfirmationEmailSent) and one `goto RequiresConfirmation`;
+          the separate `B.from Registering` block is gone.
+        - **Collapsed** `userRegASTEdges`: the `PotentialCustomer`
+          case now produces one length-2 `Edge` with `output =
+          [RegistrationStarted ..., ConfirmationEmailSent ...]`;
+          the `Registering` case is gone.
+      - `jitsurei/src/Jitsurei/UserRegistrationV0.hs`: same collapse
+        on the V0 form. `inCtorContinue` and `isContinue` removed;
+        the entrance is one length-2 edge. The V0 hidden-input bug
+        on the Confirm edge is unchanged (the demo's pedagogical
+        purpose is preserved).
+      - `test/Keiki/Fixtures/UserRegistration.hs`: mirrored the same
+        collapse on the fixture (4 ctors on `UserCmd`, 4 ctors on
+        `Vertex`, one length-2 entrance edge in both builder and
+        AST forms).
+
+      Cascade-fixed:
+      - `test/Keiki/AcceptorSpec.hs`: dropped `Continue` from
+        `canonicalUserCmds`.
+      - `test/Keiki/DeciderSpec.hs`: dropped `Continue` from
+        `canonicalCmds`; updated the "decide returns N events"
+        test to expect 2; updated the ε-edge limitation tests to
+        use `applyEvents` for the entrance chunk; updated the
+        `evolveStreaming` test to expect `InFlight
+        RequiresConfirmation [ConfirmationEmailSent]` after one
+        event (which is the correct streaming-mid-chain wrapper).
+      - `test/Keiki/Render/MermaidSpec.hs`: updated the
+        `userRegCanonical` block to the post-collapse layout —
+        one edge from `PotentialCustomer` to `RequiresConfirmation`
+        with the M2 length-based label `StartRegistration /
+        RegistrationStarted; ConfirmationEmailSent`.
+      - `jitsurei/test/Jitsurei/UserRegistrationBuilderSpec.hs`:
+        switched `foldlReplay` to use `applyEvents` (so it threads
+        through the multi-event entrance); replaced the per-step
+        step-2 letter-replay test with a chunked agreement test.
+        Updated the `vs` lists to the 4-vertex enum.
+      - `jitsurei/test/Jitsurei/UserRegistrationSpec.hs`: switched
+        the per-step replay helpers to `applyEvents`; rewrote
+        step-1 to assert the 2-event chunk lands at
+        `RequiresConfirmation`.
+      - `jitsurei/test/Jitsurei/UserRegistrationViewSpec.hs`:
+        dropped the `SRegistering → RegisteringV` projection test.
+      - `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs`:
+        retired the `PInCtor inCtorContinue` witness test (no
+        such constructor exists anymore); the ConfirmAccount
+        edge already exercises the symbolic witness path on a
+        payload-bearing constructor.
+
+      Added `jitsurei/test/Jitsurei/UserRegistrationGSMSpec.hs`
+      (4 tests):
+      - `decide` on `StartRegistration` returns a 2-element list
+        in the canonical order.
+      - `applyEvents` round-trips the 2-event chunk to
+        `RequiresConfirmation` with the expected register state.
+      - chunked `applyEvents` and streaming `applyEventStreaming`
+        (through `InFlight`) agree on the final state.
+      - an out-of-order chunk is rejected.
+
+      **LoanApplication note**: the canonical `loanApplication`
+      form uses an explicit `Continue` synthetic command for two
+      legitimate branching cases (`CollectingDocuments → UnderReview`
+      and `UnderReview → Approved | Declined`); these are *genuine
+      branching*, not multi-event commands. Per the Decision Log
+      entry on conditional output lists, they stay as separate
+      letter edges and are not collapsed in M7. The
+      `loanApplicationChained` builder variant and the multi-event
+      driver path were both deleted earlier (M2 + M5).
+
+      **Validation**: `cabal test all` reports **336 examples, 0
+      failures, 1 pending** (201 + 88 + 40 + 7); previous 334 +
+      4 new `UserRegistrationGSMSpec` tests − 2 retired tests
+      (View `Registering`, Symbolic `inCtorContinue`).
       `jitsurei/src/Jitsurei/UserRegistration.hs` (note the
       package moved from `src/Keiki/Examples/` to `jitsurei/` after
       the original plan was drafted). The file now declares the

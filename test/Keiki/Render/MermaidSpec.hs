@@ -103,10 +103,12 @@ spec = do
 -- requires touching this file alongside the producer change.
 userRegCanonical :: Text
 userRegCanonical = unlinesNoTrail
+  -- EP-19 M7: the entrance is now a single length-2 multi-event edge;
+  -- the renderer's length-based switchover formats it with a "; "
+  -- separator (per the design note's Mermaid section).
   [ "stateDiagram-v2"
   , "    [*] --> PotentialCustomer"
-  , "    PotentialCustomer --> Registering : StartRegistration / RegistrationStarted"
-  , "    Registering --> RequiresConfirmation : Continue / ConfirmationEmailSent"
+  , "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent"
   , "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed"
   , "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent"
   , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5"

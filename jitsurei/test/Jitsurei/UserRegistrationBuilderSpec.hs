@@ -59,11 +59,11 @@ spec = do
                              <> show (fmap fst a) <> " vs " <> show (fmap fst b))
 
     it "isFinal predicate matches across all five vertices" $ do
-      let vs = [PotentialCustomer, Registering, RequiresConfirmation, Confirmed, Deleted]
+      let vs = [PotentialCustomer, RequiresConfirmation, Confirmed, Deleted]
       [ isFinal userRegAST v | v <- vs ] `shouldBe` [ isFinal userReg v | v <- vs ]
 
     it "edge counts per vertex match between forms" $ do
-      let vs = [PotentialCustomer, Registering, RequiresConfirmation, Confirmed, Deleted]
+      let vs = [PotentialCustomer, RequiresConfirmation, Confirmed, Deleted]
       [ length (edgesOut userRegAST v) | v <- vs ]
         `shouldBe` [ length (edgesOut userReg v) | v <- vs ]
 
@@ -72,9 +72,17 @@ spec = do
     it "step 1 (PotentialCustomer + RegistrationStarted) — both forms agree" $ do
       stepAgreement PotentialCustomer emptyRegs (head canonicalLog)
 
-    it "step 2 (Registering + ConfirmationEmailSent) — both forms agree" $ do
-      Just (s1, r1) <- pure (replayOne userRegAST PotentialCustomer emptyRegs (head canonicalLog))
-      stepAgreement s1 r1 (canonicalLog !! 1)
+    it "applyEvents on the 2-event entrance chunk — both forms agree on landing vertex" $ do
+      -- EP-19 M7: the entrance is now a single length-2 multi-event
+      -- edge. Streaming/chunked replay handles both events
+      -- atomically; the result vertex must agree between forms.
+      -- Snapshot equality is exercised by the end-to-end
+      -- 'reconstitute' agreement test above (all slots are set by
+      -- the canonical log's end).
+      let chunk = take 2 canonicalLog
+          astR  = applyEvents userRegAST (PotentialCustomer, emptyRegs) chunk
+          bldR  = applyEvents userReg    (PotentialCustomer, emptyRegs) chunk
+      fmap fst astR `shouldBe` fmap fst bldR
 
     it "step 3 (RequiresConfirmation + ConfirmationResent) — both forms agree" $ do
       let log' = take 2 canonicalLog
@@ -116,12 +124,13 @@ replayOne :: SymTransducer (HsPred UserRegRegs UserCmd) UserRegRegs Vertex
 replayOne = applyEvent
 
 
--- | Fold of 'applyEvent' over a partial event list.
+-- | Chunked replay of a partial event list. EP-19 M7: the entrance
+-- to UserRegistration is now a length-2 multi-event edge, so the
+-- letter-only 'applyEvent' fold no longer walks the canonical log
+-- correctly. 'applyEvents' threads the streaming InFlight wrapper
+-- through the multi-event edge invisibly.
 foldlReplay :: SymTransducer (HsPred UserRegRegs UserCmd) UserRegRegs Vertex
                              UserCmd UserEvent
             -> (Vertex, RegFile UserRegRegs) -> [UserEvent]
             -> Maybe (Vertex, RegFile UserRegRegs)
-foldlReplay _ acc []       = Just acc
-foldlReplay tr (s, regs) (ev : rest) = do
-  next <- applyEvent tr s regs ev
-  foldlReplay tr next rest
+foldlReplay = applyEvents
