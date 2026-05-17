@@ -46,8 +46,11 @@ Read these when you hit the topic, not in order.
 
 - **`multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`**
   When one command needs to produce multiple events, how to model
-  it. Three approaches with trade-offs; the chosen one
-  (state refinement + `toMultiDecider`) is what `Keiki.Decider` ships.
+  it. Three approaches with trade-offs; the canonical one
+  (Approach 2 — GSM widening at the AST level) is what `Keiki.Core`
+  ships as of EP-19. The design note for the implementation is
+  `gsm-widening-design.md`; the user-facing guide is
+  `docs/guide/multi-event-commands.md`.
 
 - **`schema-evolution.md`**
   How to evolve event and register-file schemas across versions

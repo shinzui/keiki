@@ -20,7 +20,6 @@ stale:
 | Vertex | Live slots in `userReg` |
 |---|---|
 | `PotentialCustomer` | none |
-| `Registering` | none |
 | `RequiresConfirmation` | `email`, `confirmCode` |
 | `Confirmed` | `email`, `confirmedAt` |
 | `Deleted` | `email`, `deletedAt` |
@@ -33,12 +32,11 @@ that vertex-specific shape.
 `deriveView` emits three things:
 
 - A **singletons GADT** indexed by the vertex enum
-  (`SUserVertex` → `SPotentialCustomer`, `SRegistering`, …).
+  (`SUserVertex` → `SPotentialCustomer`, `SRequiresConfirmation`, …).
 - A **per-vertex View GADT** with one constructor per vertex
   carrying the live slots as record fields
   (`UserView` →
    `PotentialCustomerV`,
-   `RegisteringV`,
    `RequiresConfirmationV { rcEmail, rcConfirmCode }`,
    `ConfirmedV { cEmail, cConfirmedAt }`,
    `DeletedV { dEmail, dDeletedAt }`).
@@ -75,7 +73,6 @@ The spec is a list of `(vertexCtorName, [liveSlotName])` pairs:
 $(deriveView ''Vertex ''UserRegRegs
     "SUserVertex" "UserView" "userView"
     [ ("PotentialCustomer",    [])
-    , ("Registering",          [])
     , ("RequiresConfirmation", ["email", "confirmCode"])
     , ("Confirmed",            ["email", "confirmedAt"])
     , ("Deleted",              ["email", "deletedAt"])

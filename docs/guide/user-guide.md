@@ -183,8 +183,8 @@ vertex's outgoing list.
 
 ```haskell
 B.from PotentialCustomer do
-  B.onCmd inCtorStart $ \d -> B.do … 
-  B.onCmd inCtorContinue $ \_ -> B.do … 
+  B.onCmd inCtorStart  $ \d -> B.do … 
+  B.onCmd inCtorCancel $ \d -> B.do … 
 ```
 
 ### 3.3 `onCmd` and `onEpsilon`
@@ -400,14 +400,18 @@ data Decider c e s = Decider
   }
 ```
 
-Two semantic gaps documented at `toDecider`'s haddock:
+One semantic gap documented at `toDecider`'s haddock:
 
-1. **ε-edges**. `decide` returns `[]` for an input that fires an
-   ε-edge, so `evolve` is a no-op and the state doesn't transition
-   through the façade. Use `delta` directly when ε matters.
-2. **Singleton lift**. `omega` is single-event; `decide` is always
-   `[]` or a singleton. Multi-event commands need a future
-   `MultiDecider`.
+- **ε-edges**. `decide` returns `[]` for an input that fires an
+  ε-edge, so `evolve` is a no-op and the state doesn't transition
+  through the façade. Use `delta` directly when ε matters.
+
+`decide` returns the full event list from `omega`, including the
+length-2+ chain produced by a multi-event edge — see
+[multi-event-commands.md](multi-event-commands.md) for the
+authoring guide. For streaming event-by-event replay through a
+multi-event edge, use the `evolveStreaming` field, which threads
+the `Keiki.Core.InFlight` wrapper through the chain.
 
 ### 5.2 The Acceptor façade
 
@@ -807,7 +811,35 @@ names carry information once you know where they came from.
 
 ---
 
-## 11. Where to go from here
+<a id="ep-19-migration"></a>
+## 11. EP-19 migration: from the EP-20 façade to the GSM AST
+
+If you previously used the EP-20 surface (`toMultiDecider`,
+`DriverConfig`, `chainTo`, `Continue` synthetic commands), here is
+the one-line-per-row mapping to the EP-19 (GSM widening) surface.
+
+| EP-20 (retired)                       | EP-19 (current)                       |
+|---|---|
+| `toMultiDecider t cfg`                | `toDecider t` — `decide` returns the full event list directly via `omega`. |
+| `DriverConfig` + `isInternal`         | Deleted. The aggregate's vertex enum no longer needs internal-vs-public markers. |
+| `chainTo intermediate inCtor`         | Drop the verb. Put two `B.emit` calls in one `onCmd` body. Drop the intermediate vertex from the `Vertex` enum and the advancement `Continue` constructor from the command enum (for *fixed-shape* multi-event commands only — see below). |
+| `Continue` synthetic command (for fixed-shape chains) | Delete the constructor. Collapse `from PotentialCustomer` + `from Registering` into one block with two `emit`s. |
+| `Continue` synthetic command (for branching at `UnderReview`) | **Keep**. This is genuine branching, not a multi-event chain — the post-`Continue` edge fires approve *or* decline based on a guard. See `Jitsurei.LoanApplication`. |
+| `*DriverConfig` per-aggregate declarations | Delete. |
+| `Jitsurei.LoanApplicationChained`, `userRegChained` | Deleted; the canonical builder form now expresses the same thing via multi-`emit`. |
+| `applyEvents :: ... -> [co] -> Maybe (s, RegFile rs)` | Signature unchanged. Implementation now handles length-2+ chunks internally via the `InFlight` wrapper. |
+| `applyEvent :: ... -> s -> ... -> Maybe (s, RegFile rs)` | Signature unchanged (letter-only). For streaming replay through a length-2+ edge, use the new `applyEventStreaming :: ... -> InFlight s co -> ... -> Maybe (InFlight s co, RegFile rs)`. |
+| `Decider c e s`                       | `Decider c e s s_streaming` — gained the `evolveStreaming` field threaded through a new type parameter. Letter-only callers can ignore it. |
+
+For the why-this-changed background, see the MasterPlan's Decision
+Log entry "Reverse the 2026-05-02 selection" at
+[`docs/masterplans/7-*.md`](../masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md);
+for the new authoring guide, see
+[`multi-event-commands.md`](multi-event-commands.md).
+
+---
+
+## 12. Where to go from here
 
 Each of the four topics below has its own dedicated guide in
 this folder. Read those when you hit the topic; they cover the
@@ -841,10 +873,16 @@ guide already established.
   function). Consumed from serialisers, UI, or read-side
   projections. Design rationale in
   `docs/research/genview-th-splice-design.md`.
+- **Multi-event commands.** `multi-event-commands.md`. How to
+  write a command that emits multiple events from one transition,
+  the single-snapshot evaluation rule, when to use multi-`emit`
+  vs. multiple disjoint-guarded edges, and the two replay regimes
+  (chunked via `applyEvents`; streaming via `applyEventStreaming`
+  + `Keiki.Core.InFlight`).
 - **Worked multi-aggregate workflow.** `loan-application-tutorial.md`.
   Walks an extended loan-underwriting example end-to-end:
   multi-field threshold guards, ε-edges, per-vertex View
-  variance, `MultiDecider` chains, and a three-aggregate
+  variance, branching commands via `Continue`, and a three-aggregate
   composition mirroring a production Aggregate → Process →
   Aggregate pattern. Read after the per-feature guides above to
   see how they fit together in one domain.

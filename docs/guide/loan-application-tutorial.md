@@ -15,7 +15,9 @@ you will have authored an aggregate that
   progress that does not need a public event",
 - exposes a per-vertex View whose live slots genuinely differ
   between control states,
-- emits multi-event chains via `MultiDecider`, and
+- uses a `Continue` synthetic command for genuinely-branching
+  internal advance (the approve-vs-decline decision at
+  `UnderReview`), and
 - composes with two more aggregates (a downstream Loan record and a
   CoreBankingSync Process) into one workflow via
   `Keiki.Composition.compose` plus two `lmapMaybeCi` adapters.
@@ -94,8 +96,10 @@ data LoanCmd
 ```
 
 The `Continue` constructor is the convention for an internal
-advancer. The runtime issues it after every user command to drive
-multi-event chains; we wire it in §6.
+advancer. The runtime issues it as a tick to let the aggregate
+evaluate `readyForReviewGuard` (silent advance from
+`CollectingDocuments`) and `approvalGuard` (branching at
+`UnderReview`); we wire it in §7.
 
 The vertex enum:
 
@@ -324,42 +328,49 @@ projection for `aAppPurpose` from an `Approved` vertex.
 
 ---
 
-## 7. Multi-event commands via `MultiDecider`
+## 7. The `Continue` synthetic command
 
 The application has internal vertices (`CollectingDocuments`,
-`UnderReview`) where the runtime should drain Continue-driven
-chains rather than surface intermediate states. The
-`MultiDecider` façade (see
-[user-guide.md §6](user-guide.md)) handles that:
+`UnderReview`) where the runtime advances by issuing `Continue` —
+not a user-issued command but a runtime tick that lets the
+aggregate evaluate its guards and react. Two distinct cases:
+
+- **`CollectingDocuments → UnderReview`** — a silent ε-edge: when
+  `readyForReviewGuard` holds (all four thresholds met), `Continue`
+  advances the vertex without emitting an event.
+- **`UnderReview → Approved | Declined`** — genuine branching:
+  `Continue` at `UnderReview` evaluates `approvalGuard`. If it
+  holds, the approve edge fires and emits `ApplicationApproved`;
+  otherwise the decline edge fires and emits `ApplicationDeclined`.
+  Both edges are letter-shaped (one event each).
+
+**Why not collapse this into a multi-event edge?** The EP-19 GSM
+widening (see [multi-event-commands.md](multi-event-commands.md))
+lets one transition emit multiple events. But the LoanApplication
+case is *branching*, not a fixed-shape multi-event chain: the
+event count and choice of event depend on `approvalGuard`'s value.
+Multi-event edges require a *static* output list. Conditional
+emission stays expressed as multiple disjoint-guarded edges, one
+per branch — exactly what `loanApplication` does today.
+
+The runtime drives this by calling `decide` with `Continue` when
+the aggregate's vertex is internal:
 
 ```haskell
-loanApplicationDriverConfig :: DriverConfig LoanAppVertex LoanCmd
-loanApplicationDriverConfig = DriverConfig
-  { isInternal = \v -> case v of
-      CollectingDocuments -> Just Continue
-      UnderReview         -> Just Continue
-      _                   -> Nothing
-  }
+let dec = toDecider loanApplication
+-- After enough evidence has been collected:
+decide dec Continue preApprovalState
+-- ⇒ [] (silent advance to UnderReview)
+-- Then a second tick:
+decide dec Continue underReviewState
+-- ⇒ [ApplicationApproved …]   or   [ApplicationDeclined …]
 ```
 
-With this configuration, a single `RecordEmploymentCheck` command on
-threshold-poised registers produces a 2-event chain:
-
-```haskell
-let mdec = toMultiDecider loanApplication loanApplicationDriverConfig
-    cmd  = RecordEmploymentCheck (RecordEmploymentCheckData True (t 50))
-decide mdec cmd preApprovalState
--- ⇒ [EmploymentChecked …, ApplicationApproved …]
-```
-
-The first event is the `RecordEmploymentCheck` itself; the second is
-the result of `Continue`-Continue chaining through `CollectingDocuments`
-(silent advance, no event) and `UnderReview` (approval edge fires,
-emits `ApplicationApproved`). The silent edge contributes no event
-to the chunk, only a vertex transition.
-
-`Jitsurei.LoanApplicationChained` shows the `chainTo` syntax for the
-same shape; it produces an edge-equivalent transducer.
+The runtime adapter that decides when to tick is application-level
+plumbing; the aggregate exposes no internal-vertex registry.
+(EP-20's `toMultiDecider` and `DriverConfig` previously automated
+this tick loop; both were retired in EP-19. See
+[user-guide.md §EP-19 migration](user-guide.md#ep-19-migration).)
 
 ---
 

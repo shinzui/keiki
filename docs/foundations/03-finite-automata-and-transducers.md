@@ -183,10 +183,16 @@ why that matters.
 The FST above maps each (state, command) to **at most one event**.
 Real aggregates often produce multiple events from one command (the
 "register an account" command in `02` produces both
-`RegistrationStarted` AND `ConfirmationEmailSent`). The library handles
-this with a small extension; see
-`docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`.
-For the foundations, the one-event-per-transition FST is enough.
+`RegistrationStarted` AND `ConfirmationEmailSent`). keiki widens the
+output function from one-event-per-transition to a *word* of events
+per transition — formally a Generalized Sequential Machine (GSM)
+rather than a Mealy / letter FST. The widening is documented in
+`docs/research/gsm-widening-design.md`; the user-facing guide is
+`docs/guide/multi-event-commands.md`. The parent research note
+`docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`
+covers the alternatives that were considered. For the foundations,
+the one-event-per-transition FST gives the cleanest intuition; the
+GSM extension is mechanically derivable from it.
 
 ## Vocabulary recap
 

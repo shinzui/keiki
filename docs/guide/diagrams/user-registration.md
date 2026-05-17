@@ -12,8 +12,7 @@ Rendered by `Keiki.Render.Mermaid.toMermaid` over
 ```mermaid
 stateDiagram-v2
     [*] --> PotentialCustomer
-    PotentialCustomer --> Registering : StartRegistration / RegistrationStarted
-    Registering --> RequiresConfirmation : Continue / ConfirmationEmailSent
+    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent
     RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed
     RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent
     RequiresConfirmation --> Deleted : FulfillGDPRRequest / ε
@@ -21,7 +20,17 @@ stateDiagram-v2
     Deleted --> [*]
 ```
 
+The `PotentialCustomer --> RequiresConfirmation` edge labelled
+`StartRegistration / RegistrationStarted; ConfirmationEmailSent` is a
+**multi-event edge**: one transition emits two events in declaration
+order. Under the EP-19 GSM widening this is expressed as a single edge
+with `output :: [OutTerm rs ci co]` of length 2. The `; ` separator in
+the label is the Mermaid renderer's length-2 convention (length-3+
+edges use Mermaid's `<br/>` multi-line label). See
+[`multi-event-commands.md`](../multi-event-commands.md) for the
+authoring guide.
+
 The `RequiresConfirmation --> Deleted` edge labelled `FulfillGDPRRequest /
 ε` is an ε-edge (no event emitted) — a GDPR delete request received before
-confirmation tears the account down silently. Every other edge produces a
-wire event named after the slash's right-hand side.
+confirmation tears the account down silently. Every other edge produces
+one or more wire events named after the slash's right-hand side.

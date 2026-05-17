@@ -21,14 +21,26 @@ symbolic-register transducer formalism described in
 
 - `Keiki.Core` — the foundational `RegFile rs` register file, the
   `SymTransducer` GADT, and the slot / predicate / command / event /
-  output algebra.
+  output algebra. Edges carry a *list-shaped* output
+  (`output :: [OutTerm rs ci co]`) so one transition can emit
+  zero, one, or N events in declaration order — a Generalized
+  Sequential Machine, not a letter FST. The `InFlight s co`
+  wrapper exposes the streaming-replay state for event-by-event
+  replay through length-N edges; `applyEvent` (letter-only) and
+  `applyEventStreaming` (InFlight-aware) cover the two regimes,
+  while `applyEvents` does atomic chunk replay over command
+  boundaries.
 - `Keiki.Acceptor` — input- and output-side acceptor projections.
 - `Keiki.Builder` — the monadic edge-authoring DSL.
 - `Keiki.Composition` — sequential, alternative, and single-step
   feedback combinators on `SymTransducer`s.
 - `Keiki.Decider` — the Chassaing-shape `Decider` facade
-  (`decide` / `evolve` / `initialState` / `isTerminal`) derived
-  mechanically from a `SymTransducer`.
+  (`decide` / `evolve` / `evolveStreaming` / `initialState` /
+  `isTerminal`) derived mechanically from a `SymTransducer`.
+  `decide` returns the full event list directly, including
+  length-2+ chains from multi-event edges; `evolveStreaming`
+  threads the `Keiki.Core.InFlight` wrapper through length-N
+  edges for event-by-event streaming replay.
 - `Keiki.Generics` — `RegFieldsOf`, `GRecord`, `mkInCtor` /
   `mkInCtorVia`, `mkWireCtor` / `mkWireCtorVia`, plus `EmptyRegFile`.
 - `Keiki.Generics.TH` — `deriveAggregateCtors`, `deriveWireCtors`,
@@ -60,5 +72,10 @@ symbolic-register transducer formalism described in
 
 - GHC 9.12.2 on macOS aarch64 and Linux x86_64 (CI matrix; see
   `.github/workflows/ci.yml`).
-- 186 hspec assertions in the in-tree test suite, including 11
-  `Keiki.ShapeSpec` golden assertions for the shape hash.
+- 201 hspec assertions in the in-tree test suite, including 11
+  `Keiki.ShapeSpec` golden assertions for the shape hash, 10
+  `Keiki.CoreInFlightSpec` assertions for the GSM streaming
+  replay path, and 3 `Keiki.CompositionMultiEventSpec`
+  assertions for multi-event composition. The downstream
+  `jitsurei` package adds 88 more assertions exercising eight
+  worked-example aggregates against the public surface.
