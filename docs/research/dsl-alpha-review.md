@@ -253,21 +253,45 @@ Reason: `EventStream` is accurate in keiro's design, but it can be confused with
 
 ### Defer post-alpha
 
-Do not rename `SymTransducer` before alpha.
+#### D1: Do not rename `SymTransducer` before alpha
 
 Reason: names such as `Machine`, `Workflow`, or `AggregateMachine` would hide the formalism that distinguishes keiki from a generic event-sourcing library. `SymTransducer` is technical, but keiro guides can shield most runtime users from it.
 
-Do not replace `QualifiedDo` or `B.do` before alpha.
+The strongest argument for a rename is onboarding: `SymTransducer` is not ordinary event-sourcing vocabulary, and a newcomer may not know what "symbolic-register transducer" means. That concern is real, but a rename before alpha would be too broad. The name appears in the central type, keiro's `EventStream` contract, composition/profunctor docs, symbolic checks, and research history. A friendlier synonym such as `AggregateMachine` would also be less precise: keiki models aggregate command handlers, workflow/process-manager cores, acceptors, composition pipelines, and feedback composites with the same formal object.
+
+Deferral makes sense if alpha documentation teaches the term once and then lets keiro hide most of it from runtime users. A post-alpha additive facade can still expose a narrower `Aggregate` or `WorkflowMachine` newtype for ordinary users without renaming the formal core.
+
+#### D2: Do not replace `QualifiedDo` or `B.do` before alpha
 
 Reason: `B.do` is the cost of the indexed edge builder and gives precise duplicate-slot errors. The alternatives require either `RebindableSyntax` or worse type inference.
 
-Do not add a saga/compensation direction before alpha.
+The tempting alternative is to make builder blocks look like ordinary Haskell `do`. That requires `RebindableSyntax`, which would rebind `do` notation module-wide and make mixed aggregate/test/IO modules awkward, or it requires dropping the indexed monad that tracks slots written so far. The current surface is slightly unusual, but the unusual part is localized: only the edge body is `B.do`; the outer `buildTransducer` and `from` blocks remain normal `do`.
+
+Deferral makes sense because the current design buys a concrete safety property: duplicate `slot @"name" .= ...` writes fail at the offending line. If future GHC inference or a small wrapper can make `#slot .= ...` and ordinary `do` work without losing that property, it can be introduced as additive sugar.
+
+#### D3: Do not add a saga/compensation direction before alpha
 
 Reason: keiro's workflow roadmap already treats that as a v2 question. It should not block the alpha DSL.
 
-Do not redesign `runCommandWithSql` and `runCommandWithSqlEvents` before alpha unless another review finds a concrete transactional bug.
+A first-class compensation direction would mean extending the transducer model with a second, inverse-like output path such as "given a failed step, emit compensating commands." That is attractive for saga vocabulary, but it is not just a name. It would affect `SymTransducer`, the builder, `compose`, `alternative`, `feedback1`, `solveOutput`, symbolic single-valuedness checks, replay semantics, and keiro process-manager execution. The current model already represents compensation as ordinary transitions: a process manager or saga aggregate stores which compensations are outstanding in its register file, observes failure events, and emits compensating commands on explicit edges. `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md` uses that shape: compensation is "just more transitions."
+
+Deferral makes sense because the alpha story is already expressive enough for v1 sagas: model them as process managers or stateful transducers, and let keiro run them durably. A dedicated compensation direction should be justified by a future verification need, such as proving every successful side effect has a corresponding compensating edge, rather than by naming alone.
+
+#### D4: Do not add an unbounded workflow loop or durable-execution DSL before alpha
+
+Reason: `feedback1` is intentionally one round, and keiro v1 already owns the durable runtime boundary with process managers and timers. A higher-level workflow DSL with `step`, `sleep`, child workflows, awakeables, or retry semantics would be a runtime feature, not a keiki builder rename.
+
+The current composition tools cover finite, statically bounded shapes. `feedback1` handles one event -> policy command -> second event cascade. Nested `feedback1` handles a known small number of rounds. Long-running workflows that wait on timers, external effects, retries, or human input should remain keiro process-manager state machines in alpha. That keeps keiki pure and keeps effects at the keiro boundary.
+
+Deferral makes sense because a durable workflow DSL must answer persistence, idempotency, named-step versioning, timer wake-up, and operational visibility questions. Shipping a thin alpha spelling now would likely commit the wrong abstraction before the runtime semantics are settled.
+
+#### D5: Do not redesign `runCommandWithSql` and `runCommandWithSqlEvents` before alpha unless another review finds a concrete transactional bug
 
 Reason: the names are a little literal, but they describe the escape hatch: run the command and a user SQL transaction after append. A larger naming pass around transactional outbox semantics can wait until the next runtime milestone.
+
+The possible concern is aesthetic: `runCommandWithSqlEvents` is long and exposes implementation vocabulary. The counterargument is stronger for alpha: the function is an advanced transactional escape hatch, not the main path. Its name tells the caller exactly what extra capability it gets over `runCommand`: access to emitted events and the append result inside user SQL. Shorter names such as `runCommandTx` would obscure whether the callback sees events, the append result, or both.
+
+Deferral makes sense because the core command path is already `runCommand`, and any future outbox/process-manager API can wrap this lower-level primitive without breaking it.
 
 ## Accepted alpha surface
 

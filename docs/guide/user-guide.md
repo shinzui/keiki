@@ -201,6 +201,15 @@ Two flavours of edge:
   The guard starts as `PTop` and any `requireEq` / `requireGuard`
   conjuncts narrow it.
 
+For ordinary command-cycle aggregates, prefer `onCmd` even when
+the transition emits no public event. A silent but command-triggered
+transition should usually be written as `B.onCmd inCtorContinue`
+with `B.noEmit`: the command constructor still selects the edge,
+the symbolic checks can see that selector, and replay remains tied
+to a real input. Reach for `onEpsilon` only when the transition is
+truly internal: it should be able to advance from the current vertex
+without reading a command payload at all.
+
 ```haskell
 B.onCmd inCtorStart $ \d -> B.do            -- d :: PayloadProj rs ci ifs
   B.slot @"email" .= d.email                -- input field projection
@@ -228,6 +237,14 @@ Inside `B.do { … }`, the available operations:
 The order doesn't matter for correctness — the builder folds them
 into one `Edge` value at finalize time — but the conventional
 reading order is `requireEq` → register writes → `emit` → `goto`.
+
+Use `B.noEmit` when the lack of an event is part of the domain
+decision. It is idempotent and does not change the edge compared
+with omitting `emit`, but it gives reviewers and future maintainers
+a visible marker that the edge is intentionally silent. This is
+especially useful for `onCmd`-keyed state advances such as
+"Continue when ready" or "delete before confirmation without a
+public event."
 
 #### Slot writes
 
@@ -278,6 +295,12 @@ B.emit wireEmailSent (d.recipient *: d.subject *: d.at *: B.oNil)
 
 Inside `onEpsilon` (no `InCtor` is bound), `emit` raises a
 finalize-time error directing you to `emitWith ic wc rec`.
+
+Most `onEpsilon` edges should be silent and therefore use either
+`B.noEmit` or no emit call at all. If an internal edge really does
+need to emit a public event, use `emitWith` so the output remains
+invertible: `emitWith` supplies the `InCtor` witness that ordinary
+`emit` recovers from `onCmd`.
 
 #### `goto` and termination
 

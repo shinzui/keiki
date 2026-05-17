@@ -28,6 +28,7 @@ After this plan is implemented, maintainers will have a checked-in alpha DSL rev
 - [x] M3 (2026-05-17): No keiki source/API change is accepted for alpha in this pass. Updated `docs/research/dsl-alpha-review.md` to keep the current profunctor names for alpha and revisit aliases later.
 - [x] M4 (2026-05-17): Implemented accepted keiro facade renames in `/Users/shinzui/Keikaku/bokuno/keiro`: `EventStream.streamName` is now `resolveStreamName`, and `StateCodec.schemaVersion` is now `stateCodecVersion`; updated keiro source, tests, jitsurei examples, and user docs.
 - [x] M5 (2026-05-17): Validated the documentation artifact and keiro implementation. `cabal build all` passed in keiro. `cabal test keiro-test` passed 33 examples, 0 failures. `cabal test jitsurei-test` passed 7 examples, 0 failures. `cabal test all` ran relevant keiro/jitsurei suites successfully but exited 1 because dependency test `codd-test` failed to build; recorded as unrelated residual risk.
+- [x] Follow-up (2026-05-17): Expanded deferred-item rationale in `docs/research/dsl-alpha-review.md` and documented alpha behavior for `B.onEpsilon`, `B.noEmit`, and `feedback1` in `docs/guide/user-guide.md` and `docs/guide/composition.md`.
 
 
 ## Surprises & Discoveries
@@ -84,6 +85,10 @@ Record every decision made while working on the plan.
   Rationale: The maintainer noted that the existing `lmapCi`, `rmapCo`, `dimapTransducer`, and `lmapMaybeCi` names follow Haskell conventions and should be revisited later rather than changed before alpha.
   Date: 2026-05-17
 
+- Decision: Keep saga/compensation and durable workflow DSLs deferred, but document the rationale before alpha.
+  Rationale: A first-class compensation direction or unbounded workflow DSL would affect the core transducer type, builder, composition, symbolic checks, replay, and keiro runtime semantics. Alpha can already model compensation as ordinary process-manager transitions, while durable workflows need runtime design beyond DSL naming.
+  Date: 2026-05-17
+
 
 ## Outcomes & Retrospective
 
@@ -97,6 +102,8 @@ M2 accepted those two keiro renames and explicitly deferred the profunctor alias
 M4 implemented the two accepted keiro renames across the library, tests, jitsurei examples, and user docs. The final alpha surface now uses `resolveStreamName` for the `EventStream` resolver field and `stateCodecVersion` for snapshot codecs, while event `Codec.schemaVersion` remains unchanged.
 
 Validation passed for `cabal build all`, `cabal test keiro-test`, and `cabal test jitsurei-test` in `/Users/shinzui/Keikaku/bokuno/keiro`. The broad `cabal test all` command is not clean in this environment because `codd-test` fails to build; no failure was observed in the keiro or jitsurei test suites.
+
+After the main implementation, the deferred section was expanded to make the post-alpha calls auditable. The user guide now states that command-triggered silent transitions should normally be `onCmd ... noEmit`, while `onEpsilon` is for truly internal transitions. The composition guide now emphasizes that `feedback1` is exactly one feedback round and not a durable workflow loop.
 
 
 ## Context and Orientation

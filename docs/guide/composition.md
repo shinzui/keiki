@@ -10,6 +10,11 @@ combinators. Three are exported today:
 - **`feedback1`** — single-step aggregate ↔ stateless-policy
   cascade (one round of reaction per external command).
 
+The `1` is part of the contract: this is exactly one feedback
+round, not "run until no policy reacts." If a workflow can react an
+unknown number of times, model that as a saga/process-manager
+transducer or a keiro workflow concern rather than as `feedback1`.
+
 This guide assumes you've read the main `user-guide.md` and have at
 least one working aggregate. For the formal semantics, the
 substitution algorithm, and the proof sketches see
@@ -440,7 +445,9 @@ this — outer `t` state, then `(policy state, inner t state)`.
 ### 9.2 When to use it in event sourcing
 
 `feedback1` models the **aggregate ↔ stateless-policy** loop
-that's common in process-manager and saga shapes. Use it when:
+that's common in small process-manager and saga sub-shapes. The
+policy should be a pure routing/checking transducer, not a durable
+orchestrator. Use it when:
 
 - exactly one round of reaction belongs in the same logical step
   as the triggering command, and
@@ -519,6 +526,10 @@ Real-world shapes where this fits cleanly:
   glued by `compose` (or a saga aggregate), not `feedback1`.
   `feedback1`'s shape is "the same aggregate reacts to its own
   event via a policy".
+- *Durable workflow execution.* `feedback1` has no opinion about
+  sleeping, retrying external effects, human approval, child
+  workflows, or named-step checkpoints. Those are runtime concerns
+  for keiro process managers and future workflow APIs.
 
 ### 9.3 The stateless-aggregate restriction
 
