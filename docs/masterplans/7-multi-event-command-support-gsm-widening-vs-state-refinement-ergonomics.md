@@ -507,15 +507,21 @@ coherent:
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Multi-event commands via Edge.output widening (GSM expansion) | docs/plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md | None | None (Plan 15 shipped 2026-05-02; cascade now lives inside EP-19's M2/M7) | Cancelled (2026-05-02 — user selected EP-20) |
-| 2 | Multi-event commands via state-refinement ergonomics | docs/plans/20-multi-event-commands-via-state-refinement-ergonomics.md | None | None (Plan 15's soft-dep is satisfied; M5 is unconditional) | Complete (2026-05-02) |
+| 1 | Multi-event commands via Edge.output widening (GSM expansion) | docs/plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md | None | None | Complete (2026-05-16) |
+| 2 | Multi-event commands via state-refinement ergonomics | docs/plans/20-multi-event-commands-via-state-refinement-ergonomics.md | None | None | Superseded by EP-19 (2026-05-16) |
 
-Status values: Not Started, In Progress, Complete, Cancelled.
+Status values: Not Started, In Progress, Complete, Cancelled, Superseded.
 
-Note: this MasterPlan is decision-shaped. Only one child plan will be
-implemented; the other moves to Cancelled once the user chooses. The
-"Recommended" annotation on EP-2 indicates the MasterPlan's verdict;
-the user retains the choice.
+Note: this MasterPlan was decision-shaped. The 2026-05-02 selection
+of EP-20 (state-refinement ergonomics) shipped end-to-end on the
+same day; on 2026-05-16 the user reconsidered and reversed the
+selection in favour of EP-19 (GSM widening). EP-19 was reopened
+and completed; EP-20's shipped surface was retired in the same
+change (Decider façade `toMultiDecider`/`DriverConfig`, builder
+verb `chainTo`/`peChain`/`EdgeListAcc`, the `*DriverConfig`
+declarations in jitsurei, and the `*Multi`/`*Chained` test specs
+are all gone). See the Decision Log entry "2026-05-16 reversal"
+and the EP-19 plan file for the implementation record.
 
 
 ## Dependency Graph
@@ -672,33 +678,51 @@ rationale even after the alternative is Cancelled.
 ## Progress
 
 Track milestone-level progress across all child plans. This section
-provides an at-a-glance view of the entire initiative. Once a child
-plan is selected for implementation, the corresponding milestones
-become live; the unselected plan's milestones are marked Cancelled.
+provides an at-a-glance view of the entire initiative.
 
-EP-19 (GSM widening — Path A): **Cancelled** on 2026-05-02 when the
-user selected EP-20.
+EP-20 (state-refinement ergonomics — Path B): **Superseded by
+EP-19** on 2026-05-16. Shipped end-to-end on 2026-05-02; surface
+retired in the same change as EP-19's implementation.
 
-- [-] EP-19 / M0–M8: not pursued.
+- [x] EP-20 / M0–M7: shipped 2026-05-02.
+- [x] EP-20 surface retirement: deleted as part of EP-19 (M2/M5/M7).
+  Specifically: `toMultiDecider`, `DriverConfig`,
+  `chainAdvanceCommand`, `chainTo`, `peChain`, `EdgeListAcc`,
+  `*DriverConfig` declarations, `*Multi`/`*Chained` test specs.
 
-EP-20 (state-refinement ergonomics — Path B, recommended): **Complete**
-on 2026-05-02.
+EP-19 (GSM widening — Path A): **Complete** on 2026-05-16.
 
-- [x] EP-20 / M0: Verify prerequisites; baseline 149 examples,
-      0 failures.
-- [x] EP-20 / M1: Design note shipped at
-      `docs/research/multi-decider-via-state-refinement.md` (335
-      lines).
-- [x] EP-20 / M2: `applyEvents` added to `Keiki.Core`; +3 specs.
-- [x] EP-20 / M3: `DriverConfig` + `toMultiDecider` added to
-      `Keiki.Decider`; +3 specs.
-- [x] EP-20 / M4: `userRegDriverConfig` added to
-      `Keiki.Examples.UserRegistration`; +3 specs.
-- [x] EP-20 / M5: `chainTo` builder verb shipped, `userRegChained`
-      authored; +8 specs (cross-form equivalence).
-- [x] EP-20 / M6: synthesis note line 974 + multi-event note
-      Recommendation section updated.
-- [x] EP-20 / M7: commit (in progress at this writing).
+- [x] EP-19 / M0: Baseline (337 examples) + cascade inventory (69
+      sites + 112 EP-20-surface refs + 35 Profunctor/Mermaid refs).
+- [x] EP-19 / M1: Design note at
+      `docs/research/gsm-widening-design.md` (420 lines).
+- [x] EP-19 / M2: Widened `Edge.output` to a list; cascade-fixed
+      ~36 files; deleted `chainTo`/`peChain`/`EdgeListAcc` and
+      direct callers (`userRegChained`, `loanApplicationChained`).
+- [x] EP-19 / M3: Added `InFlight s co` wrapper +
+      `applyEventStreaming`; widened `applyEvents` implementation
+      to use streaming internally; refactored `reconstitute`. New
+      `CoreInFlightSpec` (10 tests).
+- [x] EP-19 / M4: Strengthened `checkHiddenInputs` to union
+      coverage across an edge's output list. New
+      `CoreHiddenInputsGSMSpec` (3 tests).
+- [x] EP-19 / M5: Retired `toMultiDecider`/`DriverConfig`/
+      `driveDecide`; added `evolveStreaming` field to `Decider`;
+      deleted EP-20 spec files and `*DriverConfig` declarations.
+- [x] EP-19 / M6: Library-side chain expansion in
+      `Keiki.Composition.compose`; new `CompositionMultiEventSpec`
+      (3 tests). Resolves the dimension-4 concern recorded in the
+      Tradeoff Analysis below.
+- [x] EP-19 / M7: Collapsed UserRegistration's `Registering`
+      vertex and `Continue` command into a single length-2
+      multi-event edge in both builder and AST forms (mirrored on
+      `UserRegistrationV0`). Updated all cascade-affected specs.
+      New `UserRegistrationGSMSpec` (4 tests).
+- [x] EP-19 / M8: Updated this MasterPlan, the synthesis note,
+      and the multi-event research note. Final commit.
+
+Final test count: **336 examples**, 0 failures, 1 pending
+(201 keiki + 88 jitsurei + 40 codec-json + 7 codec-json-test).
 
 
 ## Surprises & Discoveries
@@ -825,6 +849,40 @@ working on the master plan.
   acknowledged.
   **Date**: 2026-05-02
 
+- **Decision**: **Reverse the 2026-05-02 selection.** EP-20's
+  shipped surface (state-refinement ergonomics) is replaced by
+  EP-19 (GSM widening). EP-19 ships; EP-20's surface is deleted
+  in the same change.
+  **Rationale**: the downstream code that builds on
+  `Keiki.Core.Edge` has grown substantially since 2026-05-02 —
+  jitsurei now hosts ~8 aggregates; `Keiki.Profunctor` ships
+  Arrow/Strong/Choice/Category instances over `Edge`-shaped
+  values; `Keiki.Render.Mermaid` materialises diagrams from the
+  AST; `keiki-codec-json` + `keiki-codec-json-test` ship as
+  separate packages. A façade-based multi-event story
+  (`toMultiDecider`) is insufficient at this surface area: every
+  consumer that wants multi-event support has to learn the
+  façade, and the *AST* shape (letter FST) keeps every consumer
+  internally letter-shaped. Widening the AST itself makes
+  multi-event commands first-class across every consumer
+  uniformly. The 2026-05-02 Tradeoff Analysis recorded EP-19's
+  wins on dimensions 1 (authoring), 2 (cognitive count),
+  3 (state-space economy); the EP-20 selection rested on
+  dimensions 4 (composition) and 5 (migration optionality).
+  Dimension 5's "EP-20 → EP-19 is recoverable" claim is being
+  exercised now while the surface is still small enough to
+  migrate cleanly. Dimension 4's concern is addressed by EP-19
+  M6's commitment to library-side chain expansion (the
+  composition recursion threads T2's state across each
+  mid-symbol of a length-N first-edge and re-collapses into a
+  length-N composite edge, with no synthetic vertices leaking
+  into the composite's `Vertex` type).
+  **Implementation**: EP-19 was reopened on 2026-05-16 and ran
+  to completion across M0–M8. EP-20's shipped surface was
+  retired in the same change. See the EP-19 plan file for the
+  milestone-level implementation record.
+  **Date**: 2026-05-16
+
 
 ## Outcomes & Retrospective
 
@@ -884,6 +942,86 @@ informed by both child plans being fully fleshed out, the
 MasterPlan's recommendation in Vision & Scope, and the standing
 synthesis-foundation argument. The shipped path matched the
 recommendation; no rework was needed.
+
+
+### 2026-05-16 reversal closure
+
+The user reconsidered the selection on 2026-05-16. EP-19 (GSM
+widening) was reopened and shipped end-to-end across M0–M8; EP-20's
+shipped surface was retired in the same change. The rationale and
+implementation summary are recorded in the Decision Log entry
+"Reverse the 2026-05-02 selection" (2026-05-16).
+
+What changed at the user-visible level:
+
+- `Keiki.Core.Edge.output` widened from `Maybe (OutTerm rs ci co)`
+  to `[OutTerm rs ci co]`. Length 0 = ε-edge; length 1 = today's
+  letter; length 2+ = multi-event edge emitting N events in
+  declaration order.
+- `Keiki.Core.InFlight s co` exposes the mid-chain wrapper for
+  event-by-event streaming through length-N edges.
+- `Keiki.Core.applyEvents` / `applyEventStreaming` thread the
+  wrapper through chunk replay / streaming replay.
+- `Keiki.Decider`'s `decide` returns the full event list directly;
+  the new `evolveStreaming` field exposes streaming replay.
+- `Keiki.Composition.compose` is total under multi-event
+  first-edges via library-side chain expansion (no synthetic
+  vertices leak; the composite's `Vertex` type is unchanged).
+- `Keiki.Builder.onCmd` accepts multiple `emit` calls in one body;
+  the verb `chainTo` is gone.
+- `Keiki.Render.Mermaid` renders length-N edges with a length-
+  based switchover (length-1: today's label; length-2:
+  `cmd / e1; e2`; length-3+: Mermaid `<br/>` multi-line).
+- `Jitsurei.UserRegistration`: the `Registering` intermediate
+  vertex and the `Continue` synthetic command are gone; the
+  entrance is one length-2 multi-event edge.
+- `Jitsurei.LoanApplication`: unchanged at the AST level. Its
+  `CollectingDocuments`/`UnderReview` chain is genuine branching
+  (approve vs. decline depends on `approvalGuard`), not a
+  multi-event command, and stays as separate letter edges. Only
+  the EP-20 façade (`loanApplicationChained`,
+  `loanApplicationDriverConfig`, the `*Chained`/`*Multi` specs)
+  was removed.
+
+What was retired:
+
+- `Keiki.Decider.toMultiDecider`, `DriverConfig`,
+  `chainAdvanceCommand`, the chain-replay path in
+  `Decider.evolve`.
+- `Keiki.Builder.chainTo`, `peChain`, `EdgeListAcc`,
+  `ChainPrefix`. The builder reverts to a single `[Edge]`
+  accumulator with multi-`emit` semantics.
+- `userRegChained`, `userRegDriverConfig`,
+  `loanApplicationChained`, `loanApplicationDriverConfig` from
+  jitsurei.
+- `test/Keiki/DeciderMultiSpec.hs`,
+  `jitsurei/test/Jitsurei/UserRegistrationMultiSpec.hs`,
+  `jitsurei/test/Jitsurei/UserRegistrationChainedSpec.hs`,
+  `jitsurei/test/Jitsurei/LoanApplicationMultiSpec.hs`,
+  `jitsurei/test/Jitsurei/LoanApplicationChainedSpec.hs`.
+
+Test count progression: 337 (M0 baseline) → 324 (M2: −13
+deleted *Chained specs) → 334 (M3: +10 new InFlight specs) →
+337 (M4: +3 new union-check specs) → 331 (M5: −6 net deleted
+*Multi specs + new evolveStreaming) → 334 (M6: +3 new multi-
+event composition specs) → 336 (M7: +2 net: +4 new
+UserRegistrationGSMSpec, −2 retired). Zero failures
+throughout.
+
+The Tradeoff Analysis's dimension-5 "EP-20 → EP-19 is
+recoverable" claim was exercised cleanly: the 14-day
+intervening period was enough for the downstream surface
+(jitsurei aggregates, Profunctor instances, Mermaid renderer,
+codec packages) to demonstrate the need but small enough for
+the migration to remain mechanical. The EP-19 implementation
+ran without surprises against the cascade plan documented in
+M0; the only judgment-call deviations are recorded in the
+EP-19 plan's Decision Log entries dated 2026-05-16.
+
+The decision-shaped MasterPlan format remained useful through
+the reversal: both child plans being fully fleshed out at
+2026-05-02 meant EP-19 could be picked up on 2026-05-16
+without re-deriving its design.
 
 
 ## Revision Notes

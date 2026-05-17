@@ -461,50 +461,67 @@ Ergonomics          ★★☆                     ★☆☆                     
 
 ### Recommendation
 
-**Approach 1 (state refinement) is the canonical path.** MasterPlan 7
-selected it over Approach 2 (GSM expansion) and explicitly excluded
-Approach 3 (hand-written apply) as theoretically incompatible with
-the symbolic-register foundation — the foundation rests on
-mechanically-derived `apply`, which Approach 3 surrenders by
-definition.
+**Approach 2 (GSM with library expansion) is the canonical path** as
+of 2026-05-16. MasterPlan 7 initially (2026-05-02) selected
+Approach 1 (state refinement) and shipped EP-20's ergonomic
+support; the 2026-05-16 reversal selected EP-19 (GSM widening) for
+implementation because the downstream surface that depends on
+`Keiki.Core.Edge` has grown to where a façade is no longer
+sufficient — first-class AST-level multi-event support is needed
+so every consumer (jitsurei's ~8 aggregates, `Keiki.Profunctor`'s
+Arrow/Strong/Choice instances, `Keiki.Render.Mermaid`, the json
+codec) interprets multi-event commands the same way without
+per-consumer wiring.
 
-EP-20 ships ergonomic support so the cost of authoring intermediate
-vertices is one declared constructor and one declared command per
-multi-event command, hidden from callers:
+EP-19 ships:
 
-- **`Keiki.Core.applyEvents`** — chunk replay for runtimes that
-  preserve command boundaries. Folds `applyEvent` over a list of
-  events from a caller-supplied `(state, registers)` start.
-- **`Keiki.Decider.DriverConfig` + `Keiki.Decider.toMultiDecider`** —
-  a façade `Decider` whose `decide` drives multi-event letter chains
-  end-to-end through user-declared internal vertices, returning the
-  full event list of length ≥ 2 transparently. The underlying letter
-  FST is unchanged; the existing `toDecider` is preserved.
-- **`Keiki.Builder.chainTo`** — a builder DSL verb that compiles a
-  multi-`emit` block into a chain of letter edges through a
-  user-named intermediate vertex. The intermediate vertex's edge is
-  registered automatically; the user does not need a separate
-  `from Intermediate …` block.
+- **`Keiki.Core.Edge.output :: [OutTerm rs ci co]`** — the AST
+  widening. `[]` is the ε-edge (today's `Nothing` behaviour);
+  `[o]` is a letter edge (today's `Just o` behaviour); `[o₁, …,
+  oₙ]` is a multi-event edge emitting N events in declaration
+  order from one transition.
+- **`Keiki.Core.InFlight s co = Settled !s | InFlight !s ![co]`** —
+  the streaming-replay wrapper that exposes the mid-chain "I just
+  observed event 1 of N; expecting events 2..N next" state.
+- **`Keiki.Core.applyEventStreaming`** and **`Keiki.Core.applyEvents`**
+  — the InFlight-aware event-by-event replay and the chunked
+  replay that lifts to `Settled` and unwraps at the chunk's end.
+- **`Keiki.Composition.compose`'s library-side chain expansion** —
+  `composeEdge` threads T2's state through each mid-symbol of a
+  length-N first-edge and re-collapses into a length-N composite
+  edge, keeping `compose` total and the composite's `Vertex` type
+  unchanged.
+- **Multi-`emit` in `Keiki.Builder.onCmd`** — multiple `emit`
+  calls in one body snoc-append to the edge's output list. The
+  user writes the multi-event command as one `onCmd` block; no
+  intermediate vertex or synthetic internal command is needed.
 
-Approach 2 (GSM expansion) is documented above and was deliberately
-not selected. The reasoning is in MasterPlan 7's Vision & Scope:
-widening `Edge.output` from `Maybe (OutTerm rs ci co)` to
-`[OutTerm rs ci co]` weakens the per-edge `checkHiddenInputs` to a
-union check across the list, complicates diagram generation
-(multi-event edges become noisy multi-line labels), and frustrates
-a future move toward dependent typing where edges are indexed by
-the event constructor they emit.
+EP-20's surface (`toMultiDecider`, `DriverConfig`,
+`chainTo`/`peChain`/`EdgeListAcc`, `*DriverConfig` instances,
+`*Chained` / `*Multi` test specs) was retired in the same change
+as a clean break — the GSM-widened core expresses multi-event
+behaviour directly, leaving no motivating use case for the
+façade.
 
-Approach 3 (direct MultiDecider with hand-written apply) is rejected
-as theoretically incompatible: the synthesis foundation note's §1
-names mechanical `apply` derivation as "the decisive technical win"
-of the symbolic-register formalism. Approach 3 surrenders this
-property; the library cannot certify the
+Approach 1 (state refinement) remains available *as a user-side
+pattern* for aggregates that legitimately have intermediate
+vertices (e.g. `LoanApplication`'s `CollectingDocuments` /
+`UnderReview`, which are genuine control vertices where branching
+on guards happens). The library no longer treats it as the
+canonical multi-event path; it is just one shape an aggregate
+author may use.
+
+Approach 3 (direct MultiDecider with hand-written apply) is
+rejected as theoretically incompatible: the synthesis foundation
+note's §1 names mechanical `apply` derivation as "the decisive
+technical win" of the symbolic-register formalism. Approach 3
+surrenders this property; the library cannot certify the
 reconstitution-event-determinism contract at build time.
 
-All three approaches produce identical event streams and support
-correct reconstitution. The choice between them is about *where the
-semantic complexity lives*: in the user's domain state type (1 and
-3) or in library-synthesized wrapper types (2). EP-20 puts the
-complexity in user-declared intermediate vertices and adds library
-ergonomics to keep the cost low; this is the canonical path.
+All three approaches produce identical event streams. The choice
+is about *where the semantic complexity lives*: in the user's
+domain state type (Approach 1) or in the AST itself (Approach 2).
+EP-19 puts the complexity in the AST with library-managed
+streaming/chunked replay; this is the canonical path. See the
+design note at `docs/research/gsm-widening-design.md` for the
+formal treatment.

@@ -1085,7 +1085,8 @@ current state of the work.
       `userRegDriverConfig` if retired). `Jitsurei.LoanApplication`
       similarly drops where multi-event commands are collapsed.
 
-- [ ] **Milestone 8 — Documentation update + commit.** Edit:
+- [x] **Milestone 8 — Documentation update + final commit.**
+      (2026-05-16) Completed. Edited:
 
       - `docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`
         line 974 ("the multi-event document's three approaches still
@@ -1338,10 +1339,115 @@ Record every decision made while working on the plan.
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at
-completion. Compare the result against the original purpose.
+**Plan completed on 2026-05-16.** All eight milestones (M0–M8)
+shipped against the canonical 337-example baseline; final test
+count is **336 examples**, 0 failures, 1 pending. Compared with
+the plan's original purpose:
 
-(To be filled during and after implementation.)
+- ✅ `Keiki.Core.Edge.output :: [OutTerm rs ci co]` (widened from
+  `Maybe`). Existential `w` in the `update` field is preserved.
+- ✅ `Keiki.Core.InFlight s co = Settled !s | InFlight !s ![co]`
+  exposes the streaming-replay mid-chain wrapper.
+- ✅ `Keiki.Core.applyEventStreaming` operates on `InFlight`.
+  `Keiki.Core.applyEvents` widened internally to use streaming;
+  signature unchanged from EP-20 M2's letter version.
+  `Keiki.Core.applyEvent` retained letter-only for backward
+  compatibility (`Keiki.Acceptor`, `bench/Bench.hs`).
+- ✅ `Keiki.Core.checkHiddenInputs` walks an edge's output list as
+  a union per `InCtor`. Multi-OPack edges that jointly recover an
+  `InCtor`'s slots no longer fire spurious warnings.
+- ✅ `Keiki.Composition.compose` total under multi-event first-
+  edges via library-side chain expansion; the composite's
+  `Vertex` type is unchanged.
+- ✅ `Keiki.Decider.decide` returns the full event list directly.
+  `Decider`'s `evolveStreaming` field surfaces the InFlight-aware
+  streaming. `toMultiDecider`, `DriverConfig`, `chainAdvanceCommand`
+  retired.
+- ✅ `Keiki.Builder.onCmd` accepts multiple `emit` calls per
+  body. `chainTo`, `peChain`, `EdgeListAcc` retired; builder
+  reverts to a single `[Edge]` accumulator.
+- ✅ `Keiki.Render.Mermaid` length-based label switchover.
+- ✅ `Jitsurei.UserRegistration`'s `Registering` vertex and
+  `Continue` command retired; the entrance is one length-2
+  multi-event edge in both builder and AST forms.
+
+The user-visible win materialised:
+
+    > decide (toDecider userReg)
+    >   (StartRegistration (StartRegistrationData "alice@x" "Z9F4" t0))
+    >   (PotentialCustomer, emptyRegs)
+    [ RegistrationStarted (RegistrationStartedData "alice@x" "Z9F4" t0)
+    , ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")
+    ]
+
+A single command produces a 2-element event list, with no
+intermediate vertex in the user's enum.
+
+**LoanApplication kept its state-refinement form** intentionally:
+its `Continue`-driven branching at `CollectingDocuments` and
+`UnderReview` is *genuine* branching (the post-`Continue` edge
+selects approve vs. decline by `approvalGuard`), not a multi-event
+command. The plan's Decision Log entry on conditional output lists
+explicitly defers these to multiple disjoint-guarded letter edges.
+
+### Deviations from the plan as originally drafted
+
+1. **Hybrid `applyEvent` signature** (Decision Log entry dated
+   2026-05-16). The original Interfaces section specified
+   replacing `applyEvent :: s -> RegFile rs -> co -> Maybe (s,
+   RegFile rs)` with the wrapped `InFlight` variant. M3
+   instead added a new `applyEventStreaming` function and
+   retained `applyEvent`'s letter-only signature. Existing
+   callers (Acceptor, Decider's letter-only evolve, the
+   benchmark) needed zero adaptation.
+
+2. **EP-20 surface factored across M2/M5/M7 by dependency, not
+   file** (Decision Log entry dated 2026-05-16). The plan's
+   original M5 / M7 sections grouped surface deletion by file
+   (Decider in M5, Builder in M2, jitsurei in M7). The
+   implemented factoring groups by *dependency*: M2 deletes the
+   builder verb `chainTo` (and its direct callers
+   `userRegChained`/`loanApplicationChained`); M5 deletes the
+   Decider façade (`toMultiDecider`/`DriverConfig`) and the
+   driver-config declarations; M7 collapses the vertex/command
+   enums. This avoided a circular M2↔M7 dependency.
+
+3. **M7 scope reduced to UserRegistration only.** The plan's
+   original M7 included LoanApplication's multi-event collapse.
+   The implemented M7 leaves LoanApplication's
+   `CollectingDocuments`/`UnderReview` chain as-is — those are
+   genuine branching vertices, not multi-event scaffolding.
+   `loanApplicationChained` and `loanApplicationDriverConfig`
+   were deleted in M2/M5 respectively; the canonical
+   `loanApplication` form is unchanged at the AST level.
+
+### Lessons
+
+- The 2026-05-02 → 2026-05-16 reversal exercised the MasterPlan
+  Tradeoff Analysis's dimension-5 claim ("EP-20 → EP-19 is
+  recoverable") cleanly. The 14-day window was long enough for
+  the downstream surface to demonstrate the need (jitsurei
+  growth + Profunctor instances + Mermaid renderer) but short
+  enough for the migration to remain mechanical.
+
+- The library-side chain expansion in M6 was the only milestone
+  with non-trivial design work; the existential `w` in
+  `PartialPath` required careful pattern-matching to thread the
+  chained `Update`'s slot-set index through the recursion. The
+  alternative-composition arms (`liftLOutAlt`/`liftROutAlt`)
+  needed no further work post-M2 — `alternative`'s composite
+  outputs are letter-shaped by construction.
+
+- The 69-site Edge.output cascade in M2 was almost entirely
+  mechanical (`Just o → [o]`, `Nothing → []`, helper-signature
+  adaptation). The Python-driven bulk replacement handled
+  ~55 sites in one shot; the remaining ~14 required manual
+  intervention (per-test type annotations on `showStep`,
+  `runOmega`, `firstEdgeOutput`, etc.).
+
+- The plan's milestone factoring was sound. Each milestone
+  produced a self-contained commit with passing tests at every
+  intermediate state; no work needed to be rolled back.
 
 
 ## Context and Orientation

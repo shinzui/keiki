@@ -969,14 +969,17 @@ The runtime architecture (event store + queue + subscriptions, per
 The headline of this plan is that **none of the existing research notes
 need to be rewritten**. The `Transducer` they describe becomes the
 `SymTransducer` with `rs = '[]`, every `Update` `Keep`, every guard a
-single-input-equality. State refinement is the canonical multi-event
-model (see EP-20 / MasterPlan 7): the AST stays a strict letter FST,
-and the library ships ergonomic support — `Keiki.Core.applyEvents` for
-chunk replay, `Keiki.Decider.toMultiDecider` (with `DriverConfig`) for
-transparent driver chains through user-declared internal vertices, and
-`Keiki.Builder.chainTo` for syntactic compression of multi-event
-authoring — so callers can drive multi-event chains end-to-end without
-observing the intermediate vertices. The workflow runtime document's
-runtime loop is unchanged. What changes is that data flow becomes a
-first-class part of the formalism, not a graft, and `apply` returns to
-being derivable.
+single-input-equality. Multi-event commands are first-class via the
+widened `Edge.output :: [OutTerm rs ci co]` and the `InFlight` replay
+wrapper (see EP-19 / MasterPlan 7): a single edge emits zero
+(`[]` = ε), one (`[o]` = today's letter), or N (`[o₁, …, oₙ]`)
+events in declaration order. The library ships `applyEvents` for
+chunk replay, `applyEventStreaming` (with `InFlight s co`) for
+event-by-event streaming replay through length-N edges, and
+multi-`emit` in `Keiki.Builder.onCmd` for authoring without
+intermediate vertices or synthetic internal commands. State
+refinement is no longer the canonical path; aggregates declare
+multi-event edges directly. The workflow runtime document's loop
+is unchanged. What changes is that data flow becomes a first-class
+part of the formalism, not a graft, and `apply` returns to being
+derivable directly from the GSM `omega`.
