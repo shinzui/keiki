@@ -30,6 +30,7 @@ module Keiki.Core
   , HasIndex (..)
     -- * Term language
   , Term (..)
+  , NumOp (..)
     -- * Input-side structural constructor (v2)
   , InCtor (..)
   , AssembleRegFile
@@ -64,6 +65,9 @@ module Keiki.Core
   , proj
   , inpCtor
   , lit
+  , tadd
+  , tsub
+  , tmul
   , (.==)
   , pack
     -- * Evaluators
@@ -191,6 +195,15 @@ instance forall s rs ci r.
 
 -- * Term language ----------------------------------------------------------
 
+-- | A numeric operation carried by 'TArith'. @OpAdd@\/@OpSub@\/@OpMul@
+-- are @+@\/@-@\/@*@ respectively. Kept as a single tag (rather than
+-- three 'Term' constructors) so each total 'Term' walker switches on
+-- one value; the three directions are recovered by the smart
+-- constructors 'tadd'\/'tsub'\/'tmul'.
+data NumOp = OpAdd | OpSub | OpMul
+  deriving stock (Eq, Show)
+
+
 -- | A pure expression over the register file and the input symbol,
 -- yielding a value of type @r@.
 data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
@@ -209,6 +222,18 @@ data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
   TApp2     :: (a -> b -> r)
             -> Term rs ci a
             -> Term rs ci b
+            -> Term rs ci r
+  -- | Structural arithmetic over a numeric operand type. Unlike the
+  -- opaque 'TApp1'\/'TApp2' escape hatches, the SBV translator reads
+  -- 'TArith' for real (on a 'Keiki.Symbolic.discoverSymNum' hit), so a
+  -- guard over a /computed/ value — a weighted sum, a derived cap — is
+  -- visible to the solver. The 'Num' constraint prevents constructing
+  -- arithmetic at non-numeric operand types; 'Typeable' lets the SBV
+  -- translator dispatch on @r@. Build with 'tadd'\/'tsub'\/'tmul'.
+  TArith    :: (Num r, Typeable r)
+            => NumOp
+            -> Term rs ci r
+            -> Term rs ci r
             -> Term rs ci r
 
 
@@ -545,6 +570,19 @@ lit :: r -> Term rs ci r
 lit = TLit
 
 
+-- | Structural arithmetic smart constructors. @tadd@\/@tsub@\/@tmul@
+-- build a 'TArith' over @+@\/@-@\/@*@. The operand type must be numeric
+-- ('Num') and 'Typeable'; the SBV translator reads them structurally
+-- (see 'Keiki.Symbolic.discoverSymNum'), unlike the opaque 'TApp'
+-- escape hatches.
+tadd, tsub, tmul
+  :: (Num r, Typeable r)
+  => Term rs ci r -> Term rs ci r -> Term rs ci r
+tadd = TArith OpAdd
+tsub = TArith OpSub
+tmul = TArith OpMul
+
+
 -- | Equality predicate sugar.
 (.==) :: (Eq r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
 (.==) = PEq
@@ -575,6 +613,16 @@ evalTerm (TInpCtorField ic ix) _    ci = case icMatch ic ci of
   Nothing -> error ("evalTerm: TInpCtorField guard violation: " ++ icName ic)
 evalTerm (TApp1 f t)           regs ci = f (evalTerm t regs ci)
 evalTerm (TApp2 f a b)         regs ci = f (evalTerm a regs ci) (evalTerm b regs ci)
+evalTerm (TArith op a b)       regs ci =
+  applyNumOp op (evalTerm a regs ci) (evalTerm b regs ci)
+
+
+-- | Interpret a 'NumOp' tag as the corresponding numeric operation.
+-- The 'Num' evidence is supplied by matching the 'TArith' constructor.
+applyNumOp :: Num r => NumOp -> r -> r -> r
+applyNumOp OpAdd = (+)
+applyNumOp OpSub = (-)
+applyNumOp OpMul = (*)
 
 
 -- | Evaluate an 'OutTerm' against a register file and an input symbol.
@@ -900,6 +948,7 @@ gatherInpEntries (OFCons t rest) (v, fs)   ic  = do
       | otherwise                = Nothing
     stepOne (TApp1 _ _)               _val _   = Nothing
     stepOne (TApp2 _ _ _)             _val _   = Nothing
+    stepOne (TArith _ _ _)            _val _   = Nothing
 
 
 -- | A diagnostic produced by 'checkHiddenInputs'.
@@ -1007,6 +1056,7 @@ checkHiddenInputs t =
           | otherwise = []
         goTerm (TApp1 _ tt')  = goTerm tt'
         goTerm (TApp2 _ a b)  = goTerm a ++ goTerm b
+        goTerm (TArith _ a b) = goTerm a ++ goTerm b
         goTerm _              = []
 
         indexPos :: forall rs' r. Index rs' r -> Int
@@ -1041,6 +1091,7 @@ termReadsInput (TReg _)              = False
 termReadsInput (TInpCtorField _ _)   = True
 termReadsInput (TApp1 _ t)           = termReadsInput t
 termReadsInput (TApp2 _ a b)         = termReadsInput a || termReadsInput b
+termReadsInput (TArith _ a b)        = termReadsInput a || termReadsInput b
 
 
 -- | Do the 'OutFields' contain a 'TInpCtorField' read anywhere?
@@ -1055,6 +1106,7 @@ outFieldsHaveInpCtorField (OFCons t rest) =
     termHasInpCtorField (TInpCtorField _ _)   = True
     termHasInpCtorField (TApp1 _ t')          = termHasInpCtorField t'
     termHasInpCtorField (TApp2 _ a b)         = termHasInpCtorField a || termHasInpCtorField b
+    termHasInpCtorField (TArith _ a b)        = termHasInpCtorField a || termHasInpCtorField b
 
 
 -- | The result of 'detectMissingInCtorFields': the offending 'InCtor'
@@ -1096,6 +1148,7 @@ detectMissingInCtorFields ic@InCtor{} fields =
       | otherwise = []
     goTerm (TApp1 _ t')   = goTerm t'
     goTerm (TApp2 _ a b)  = goTerm a ++ goTerm b
+    goTerm (TArith _ a b) = goTerm a ++ goTerm b
     goTerm _              = []
 
     indexPos :: forall rs' r. Index rs' r -> Int

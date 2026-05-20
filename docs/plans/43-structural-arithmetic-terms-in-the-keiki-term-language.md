@@ -55,15 +55,22 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
 
 ## Progress
 
-- [ ] M0 — Baseline: confirm `z3 --version`, run `cabal build all` and `cabal test all`,
-      record example/pending counts. Enumerate every total `Term` walker (the grep in
-      Context); confirm the list against `-Wincomplete-patterns` once M1 starts.
-- [ ] M1 — `Term` arithmetic constructor + evalTerm + every total Term walker: add
-      `data NumOp` and `TArith` to `Keiki.Core`, the `evalTerm` arm, smart constructors
-      `tadd`/`tsub`/`tmul`, and a `TArith` arm to every total `Term` walker across
-      `Keiki.Core`, `Keiki.Composition`, `Keiki.Profunctor`, and `Keiki.Symbolic`
-      (placeholder/opaque arm in `Symbolic` for now). Build green under
-      `-Wincomplete-patterns`; full suite green (purely additive, no behavior change).
+- [x] M0 — Baseline (2026-05-20): z3 4.15.8; build/test green at the EP-42-close baseline
+      (keiki-test 222/0, jitsurei-test 94/0/1-pending, json 40/0 + 7/0). Walker grep
+      reproduced the Context list exactly (14 sites: `evalTerm`, `stepOne`, two `goTerm`s,
+      `termReadsInput`, `termHasInpCtorField` in Core; `weakenLTerm`, `weakenRTerm`,
+      `substTerm`, `liftLTermAlt`, `liftRTermAlt` in Composition; two `go`s in Profunctor;
+      `translateTermSym` in Symbolic). `-Wincomplete-patterns` confirmed completeness at M1.
+- [x] M1 — `Term` arithmetic + evalTerm + every walker (2026-05-20): added `data NumOp`
+      and `TArith` to `Keiki.Core`, the `evalTerm` arm (+ `applyNumOp` helper), smart
+      constructors `tadd`/`tsub`/`tmul`, exports `NumOp(..)`/`tadd`/`tsub`/`tmul`, and a
+      `TArith` arm to all 14 walkers (placeholder `SBV.free "arith"` in `Symbolic`). Build
+      warning-clean under `-Wincomplete-patterns` (the two pre-existing `Jitsurei/Loan.hs`
+      + `CoreBankingSync.hs` unused-bind warnings are unrelated); full suite green with M0
+      counts unchanged — purely additive, no behavior change. The two `goTerm` walkers in
+      Core carry a `_ = []` wildcard, so the explicit `TArith` arms there are for
+      correctness (hidden-input detection through arithmetic operands), not to satisfy the
+      checker.
 - [ ] M2 — SBV translation + keiki-side proofs: add `SymNumDict` + `discoverSymNum` and
       the real `TArith` arm of `translateTermSym` in `Keiki.Symbolic`; add a "structural
       arithmetic (EP-43)" block to `Keiki.SymbolicSpec` (constant contradiction is
@@ -85,8 +92,15 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
 
 ## Surprises & Discoveries
 
-(None yet. Record the exact set of `Term` walkers `-Wincomplete-patterns` flags during
-M1 — it is the authoritative list — and any SBV `Num`-on-`SInteger` surprises during M2.)
+- 2026-05-20 (M1). The authoritative `Term`-walker set matched the plan's Context list
+  exactly — no walker beyond the 14 enumerated, and `-Wincomplete-patterns` raised nothing
+  after the additions. The two `goTerm` walkers in `Keiki.Core`
+  (`checkHiddenInputs`/`detectMissingInCtorFields`) end in a `goTerm _ = []` wildcard, so
+  they would *not* have warned about a missing `TArith` arm; the explicit recursing arms
+  added there are a correctness fix (a `TInpCtorField` nested inside a `TArith` operand in
+  an output term must still be discovered by hidden-input detection), not a checker
+  requirement. `applyNumOp :: Num r => NumOp -> r -> r -> r` is a top-level helper; the
+  `Num r` evidence in `evalTerm`'s `TArith` arm comes from matching the GADT constructor.
 
 
 ## Decision Log

@@ -160,6 +160,8 @@ weakenLTerm (TLit r)              = TLit r
 weakenLTerm (TReg ix)             = TReg (weakenL @rs1 @rs2 ix)
 weakenLTerm (TInpCtorField ic ix) = TInpCtorField ic ix
 weakenLTerm (TApp1 f t)           = TApp1 f (weakenLTerm @rs1 @rs2 t)
+weakenLTerm (TArith op a b)       =
+  TArith op (weakenLTerm @rs1 @rs2 a) (weakenLTerm @rs1 @rs2 b)
 weakenLTerm (TApp2 f a b)         = TApp2 f (weakenLTerm @rs1 @rs2 a)
                                               (weakenLTerm @rs1 @rs2 b)
 
@@ -217,6 +219,8 @@ weakenRTerm (TLit r)              = TLit r
 weakenRTerm (TReg ix)             = TReg (weakenR @rs1 ix)
 weakenRTerm (TInpCtorField ic ix) = TInpCtorField ic ix
 weakenRTerm (TApp1 f t)           = TApp1 f (weakenRTerm @rs1 @rs2 t)
+weakenRTerm (TArith op a b)       =
+  TArith op (weakenRTerm @rs1 @rs2 a) (weakenRTerm @rs1 @rs2 b)
 weakenRTerm (TApp2 f a b)         = TApp2 f (weakenRTerm @rs1 @rs2 a)
                                               (weakenRTerm @rs1 @rs2 b)
 
@@ -369,6 +373,8 @@ substTerm (TInpCtorField ic2 ix2) o1 =
               \ substitution should make the edge unsatisfiable\
               \ before evaluation reaches this term.")
 substTerm (TApp1 f t) o1 = TApp1 f (substTerm @rs1 @rs2 t o1)
+substTerm (TArith op a b) o1 =
+  TArith op (substTerm @rs1 @rs2 a o1) (substTerm @rs1 @rs2 b o1)
 substTerm (TApp2 f a b) o1 = TApp2 f (substTerm @rs1 @rs2 a o1)
                                        (substTerm @rs1 @rs2 b o1)
 
@@ -534,6 +540,8 @@ liftLTermAlt (TLit r)              = TLit r
 liftLTermAlt (TReg ix)             = TReg ix
 liftLTermAlt (TInpCtorField ic ix) = TInpCtorField (leftInCtor ic) ix
 liftLTermAlt (TApp1 f t)           = TApp1 f (liftLTermAlt @rs @ci1 @ci2 t)
+liftLTermAlt (TArith op a b)       =
+  TArith op (liftLTermAlt @rs @ci1 @ci2 a) (liftLTermAlt @rs @ci1 @ci2 b)
 liftLTermAlt (TApp2 f a b)         =
   TApp2 f (liftLTermAlt @rs @ci1 @ci2 a) (liftLTermAlt @rs @ci1 @ci2 b)
 
@@ -547,6 +555,8 @@ liftRTermAlt (TLit r)              = TLit r
 liftRTermAlt (TReg ix)             = TReg ix
 liftRTermAlt (TInpCtorField ic ix) = TInpCtorField (rightInCtor ic) ix
 liftRTermAlt (TApp1 f t)           = TApp1 f (liftRTermAlt @rs @ci1 @ci2 t)
+liftRTermAlt (TArith op a b)       =
+  TArith op (liftRTermAlt @rs @ci1 @ci2 a) (liftRTermAlt @rs @ci1 @ci2 b)
 liftRTermAlt (TApp2 f a b)         =
   TApp2 f (liftRTermAlt @rs @ci1 @ci2 a) (liftRTermAlt @rs @ci1 @ci2 b)
 

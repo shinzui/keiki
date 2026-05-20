@@ -395,6 +395,9 @@ translateTermSym env   (TInpCtorField ic ix) =
   memoFree env ("inp/" <> icName ic <> "/" <> indexName ix)
 translateTermSym _env  (TApp1 _f _t)         = SBV.free "app1"
 translateTermSym _env  (TApp2 _f _a _b)      = SBV.free "app2"
+-- EP-43 M1 placeholder: opaque until M2 wires the structural arm via
+-- 'discoverSymNum'. Each occurrence is a fresh variable (no precision).
+translateTermSym _env  (TArith _op _a _b)    = SBV.free "arith"
 
 
 -- | Memoized symbolic-variable allocator (EP-42). Looks @name@ up in

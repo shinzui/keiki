@@ -107,7 +107,7 @@ registry, the prose below, and the child plans' cross-references all use one num
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | Complete |
-| 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | Not Started |
+| 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | In Progress |
 | 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.

@@ -820,6 +820,7 @@ contraTerm f = go
     go (TInpCtorField ic ix) = TInpCtorField (contraInCtor f ic) ix
     go (TApp1 h a)           = TApp1 h (go a)
     go (TApp2 h a b)         = TApp2 h (go a) (go b)
+    go (TArith op a b)       = TArith op (go a) (go b)
 
 
 contraMaybeTerm :: forall ci ci' rs r. (ci' -> Maybe ci) -> Term rs ci r -> Term rs ci' r
@@ -831,6 +832,7 @@ contraMaybeTerm f = go
     go (TInpCtorField ic ix) = TInpCtorField (contraMaybeInCtor f ic) ix
     go (TApp1 h a)           = TApp1 h (go a)
     go (TApp2 h a b)         = TApp2 h (go a) (go b)
+    go (TArith op a b)       = TArith op (go a) (go b)
 
 
 -- ** HsPred -------------------------------------------------------------
