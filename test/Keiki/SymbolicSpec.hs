@@ -460,6 +460,41 @@ spec = do
                    :: Maybe (RegFile '[], ())
       isJust result `shouldBe` False
 
+  describe "real BoolAlg.sat witness (EP-44)" $ do
+    -- Before EP-44 'sat' on 'SymPred' returned a placeholder whose
+    -- components crash when forced, so 'models' on the returned witness
+    -- threw. These tests force the witness (via 'models', or by pattern-
+    -- matching it), so each crashes before M1 and passes after.
+    let pAmt  = PEq (proj amountIdx) (lit (7 :: Word64))
+                :: HsPred AmountRegs AmtCmd
+        pCtor = PInCtor inCtorAmtTick
+                :: HsPred AmountRegs AmtCmd
+
+    it "sat's witness is forceable and satisfies models (register guard)" $
+      case sat (SymPred pAmt) of
+        Nothing -> expectationFailure "expected pAmt satisfiable"
+        Just w  -> models (SymPred pAmt) w `shouldBe` True
+
+    it "sat's witness reconstructs the command and satisfies models (PInCtor)" $
+      case sat (SymPred pCtor) of
+        Nothing -> expectationFailure "expected pCtor satisfiable"
+        Just w  -> models (SymPred pCtor) w `shouldBe` True
+
+    it "sat on an unsatisfiable predicate is Nothing" $
+      isNothing (sat (bot :: SymPred AmountRegs AmtCmd)) `shouldBe` True
+
+    it "sat agrees with symSatExt on satisfiability" $ do
+      isJust (sat (SymPred pAmt))  `shouldBe` isJust (symSatExt pAmt)
+      isJust (sat (SymPred pCtor)) `shouldBe` isJust (symSatExt pCtor)
+
+    it "sat over SymPred '[] () yields a real () witness (not a crashing placeholder)" $
+      -- No 'PInCtor' pins the constructor; the EP-44 'seInputCtor' domain
+      -- constraint + 'KnownInCtors ()' still reconstruct a real '()'.
+      -- Forcing @c@ would have thrown the placeholder error before M1.
+      case sat (top :: SymPred '[] ()) of
+        Nothing     -> expectationFailure "expected top satisfiable"
+        Just (_, c) -> c `shouldBe` ()
+
   describe "isSingleValuedSym (M6)" $ do
     it "synthetic 2-edge with constructor-mutex guards is single-valued" $
       isSingleValuedSym synth2Mutex `shouldBe` True

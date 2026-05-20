@@ -72,10 +72,14 @@ M1 is retained in the Decision Log / Surprises as history.
       all` green (keiki-test 229/0, jitsurei-test 94/0/0-pending, json 40/0 + 7/0). One
       test-site edit: `SymbolicSpec`'s lone `symSat` caller (an EP-42 unsat check) moved to
       `symSatExt`.
-- [ ] M2 — Proofs: add a "real BoolAlg.sat witness (EP-44)" block to `Keiki.SymbolicSpec`
-      proving the witness is forceable and satisfies `models`; strengthen
-      `Jitsurei.UserRegistrationSymbolicSpec`'s `isJust (sat ...)` checks to also confirm
-      `models` on the returned witness.
+- [x] M2 — Proofs (2026-05-20): added a `describe "real BoolAlg.sat witness (EP-44)"` block
+      to `Keiki.SymbolicSpec` (5 tests: witness forceable + satisfies `models` for a register
+      guard and a `PInCtor` guard; `sat bot == Nothing`; `sat`/`symSatExt` agree on
+      satisfiability; `sat (top :: SymPred '[] ())` yields a real `()` witness). Strengthened
+      `Jitsurei.UserRegistrationSymbolicSpec`'s two satisfiable `sat` smoke checks to force
+      the witness through `models` (constructor-pinned so `evalPred` is total). keiki-test
+      229 → 234, jitsurei-test 94/0 — all green. Each new assertion crashes before M1
+      (forcing the placeholder) and passes after.
 - [ ] M3 — Docs + close: update `docs/research/sbv-boolalg-design.md` (the "Sat witness
       extraction" decision is superseded — `BoolAlg.sat` no longer carries the placeholder;
       `sat` lives in a separate `Sat` class whose `SymPred` instance returns real witnesses)

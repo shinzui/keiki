@@ -23,14 +23,25 @@ spec = do
       isSingleValuedSym (withSymPred userReg) `shouldBe` True
 
   describe "sat over the User Registration aggregate" $ do
-    it "satisfiable: PInCtor inCtorConfirm" $ do
+    -- Since EP-44 'sat' returns a real witness; each satisfiable case
+    -- forces it through 'models' (before EP-44 the placeholder witness
+    -- crashed when 'models' inspected it). The predicates pin the input
+    -- constructor so 'evalPred' on the reconstructed command is total.
+    it "satisfiable: PInCtor inCtorConfirm (witness satisfies models)" $ do
       let p = PInCtor inCtorConfirm :: HsPred UserRegRegs UserCmd
       isJust (sat (SymPred p)) `shouldBe` True
+      case sat (SymPred p) of
+        Nothing -> expectationFailure "expected satisfiable"
+        Just w  -> models (SymPred p) w `shouldBe` True
 
-    it "satisfiable: PEq (inpConfirm #confirmCode) (lit \"abc123\")" $ do
-      let p = (inpConfirm #confirmCode) .== lit "abc123"
+    it "satisfiable: isConfirm AND confirmCode == \"abc123\" (witness satisfies models)" $ do
+      let p = PAnd (PInCtor inCtorConfirm)
+                   ((inpConfirm #confirmCode) .== lit "abc123")
               :: HsPred UserRegRegs UserCmd
       isJust (sat (SymPred p)) `shouldBe` True
+      case sat (SymPred p) of
+        Nothing -> expectationFailure "expected satisfiable"
+        Just w  -> models (SymPred p) w `shouldBe` True
 
     it "unsatisfiable: PInCtor inCtorConfirm AND PInCtor inCtorResend" $ do
       let p = PAnd (PInCtor inCtorConfirm) (PInCtor inCtorResend)
