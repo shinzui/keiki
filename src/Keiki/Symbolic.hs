@@ -42,6 +42,8 @@ module Keiki.Symbolic
   , symLit
   , symFree
   , discoverSym
+  , SymOrdDict (..)
+  , discoverSymOrd
     -- * Translation
   , SymEnv (..)
   , mkSymEnv
@@ -235,6 +237,39 @@ discoverSym
   | otherwise                                                = Nothing
 
 
+-- | Reify both a 'Sym' instance for @r@ and evidence that its
+-- 'SymRep' is symbolically orderable (an 'SBV.OrdSymbolic' instance on
+-- @'SBV.SBV' ('SymRep' r)@). This is exactly what 'PCmp' translation
+-- needs: 'Sym' to push the operands into SBV, 'OrdSymbolic' to emit a
+-- real @.<@ \/ @.<=@ \/ @.>@ \/ @.>=@ comparison.
+data SymOrdDict r where
+  SymOrdDict :: (Sym r, SBV.OrdSymbolic (SBV.SBV (SymRep r))) => SymOrdDict r
+
+
+-- | Try to discover ordering evidence for @r@ at runtime, companion to
+-- 'discoverSym'. Returns @Just SymOrdDict@ for the numeric and time
+-- types whose 'SymRep' is an 'SBV.OrdSymbolic' 'Integer' ('Int',
+-- 'Integer', the fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32'
+-- \/ 'Word64' \/ 'Int32' \/ 'Int64', and 'UTCTime' encoded as epoch
+-- seconds); 'Nothing' otherwise. 'Bool' and 'Text' are deliberately
+-- omitted: ordering a 'Bool' guard is not meaningful, and 'SString'
+-- ordering is out of scope here. A 'Nothing' makes the 'PCmp'
+-- translator fall back to a fresh opaque 'SBool', exactly as 'goEq'
+-- does for non-'Sym' operands — sound, just imprecise.
+discoverSymOrd :: forall r. Typeable r => Maybe (SymOrdDict r)
+discoverSymOrd
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int)     = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64)  = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32)  = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16)  = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8)   = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64)   = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32)   = Just SymOrdDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @UTCTime) = Just SymOrdDict
+  | otherwise                                                = Nothing
+
+
 -- | Lift a concrete value to an SBV literal of its 'SymRep'.
 symLit :: forall a. Sym a => a -> SBV.SBV (SymRep a)
 symLit = SBV.literal . toSym
@@ -342,6 +377,10 @@ indexName (SIdx i)  = indexName i
 --   * 'PInCtor' emits @seInputCtor .== literal (icName ic)@; the
 --     shared 'seInputCtor' makes constructor-mutual-exclusion
 --     decidable.
+--   * 'PCmp' tries 'discoverSymOrd' on its operand type; on a hit it
+--     emits the matching SBV comparison ('SBV..<' \/ '.<=' \/ '.>' \/
+--     '.>=') between the two translated terms; on a miss it emits a
+--     fresh 'SBool' (the comparison is opaque to the solver).
 translatePred
   :: forall rs ci. SymEnv -> HsPred rs ci -> SBV.Symbolic SBV.SBool
 translatePred env = go
@@ -352,8 +391,9 @@ translatePred env = go
     go (PAnd p q)   = (SBV..&&) <$> go p <*> go q
     go (POr p q)    = (SBV..||) <$> go p <*> go q
     go (PNot p)     = SBV.sNot  <$> go p
-    go (PEq a b)    = goEq a b
-    go (PInCtor ic) = pure (seInputCtor env SBV..== SBV.literal (icName ic))
+    go (PEq a b)     = goEq a b
+    go (PInCtor ic)  = pure (seInputCtor env SBV..== SBV.literal (icName ic))
+    go (PCmp op a b) = goCmp op a b
 
     goEq :: forall r. Typeable r
          => Term rs ci r -> Term rs ci r -> SBV.Symbolic SBV.SBool
@@ -363,6 +403,20 @@ translatePred env = go
         sa <- translateTermSym env a
         sb <- translateTermSym env b
         pure (sa SBV..== sb)
+
+    goCmp :: forall r. Typeable r
+          => Cmp -> Term rs ci r -> Term rs ci r -> SBV.Symbolic SBV.SBool
+    goCmp op a b = case discoverSymOrd @r of
+      Nothing         -> SBV.free "cmp"  -- sound opaque fallback
+      Just SymOrdDict -> do
+        sa <- translateTermSym env a
+        sb <- translateTermSym env b
+        let apply = case op of
+              CmpLt -> (SBV..<)
+              CmpLe -> (SBV..<=)
+              CmpGt -> (SBV..>)
+              CmpGe -> (SBV..>=)
+        pure (apply sa sb)
 
 
 -- * Symbolic predicate wrapper ----------------------------------------------

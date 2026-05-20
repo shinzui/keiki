@@ -521,6 +521,7 @@ edgeInputName Edge { guard = g } = walk g
     walk PTop       = Nothing
     walk PBot       = Nothing
     walk (PEq _ _)  = Nothing
+    walk (PCmp {})  = Nothing
 
 
 -- | Extract the output-constructor name(s) from an edge's output

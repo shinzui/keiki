@@ -163,6 +163,36 @@ spec = do
           cmd `shouldBe` AmtTick
           evalPred p regs cmd `shouldBe` True
 
+  describe "ordering predicate PCmp (EP-41 M2)" $ do
+    it "constant contradiction 5 >= 10 over Word64 is symIsBot" $
+      -- Before M2 this guard could only be written via TApp (opaque)
+      -- and would be symIsBot == False.
+      symIsBot (PAnd (PCmp CmpGe (TLit (5 :: Word64)) (TLit 10)) PTop
+                :: HsPred '[] ())
+        `shouldBe` True
+    it "satisfiable constant 10 >= 5 over Word64 is not symIsBot" $
+      symIsBot (PCmp CmpGe (TLit (10 :: Word64)) (TLit 5) :: HsPred '[] ())
+        `shouldBe` False
+    it "symSatExt witness respects amount >= 1000" $ do
+      let p = PAnd (PInCtor inCtorAmtTick)
+                   (PCmp CmpGe (proj amountIdx) (lit (1000 :: Word64)))
+              :: HsPred AmountRegs AmtCmd
+      case symSatExt p of
+        Nothing          -> expectationFailure "amount >= 1000 reported unsat"
+        Just (regs, cmd) -> do
+          (regs ! amountIdx >= 1000) `shouldBe` True
+          evalPred p regs cmd `shouldBe` True
+    it "evalPred agrees with Haskell comparison for every Cmp direction" $ do
+      let vals = [3, 5, 5, 7] :: [Int]
+          chk op f = and [ evalPred (PCmp op (TLit x) (TLit y) :: HsPred '[] ())
+                                    RNil ()
+                             == f x y
+                         | x <- vals, y <- vals ]
+      chk CmpLt (<)  `shouldBe` True
+      chk CmpLe (<=) `shouldBe` True
+      chk CmpGt (>)  `shouldBe` True
+      chk CmpGe (>=) `shouldBe` True
+
   describe "translatePred (boolean skeleton)" $ do
     it "PTop is a tautology" $ do
       proveP (PTop :: HsPred '[] ()) `shouldReturn` True

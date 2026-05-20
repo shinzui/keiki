@@ -178,6 +178,8 @@ weakenLPred (PNot p)      = PNot (weakenLPred @rs1 @rs2 p)
 weakenLPred (PEq a b)     = PEq  (weakenLTerm @rs1 @rs2 a)
                                   (weakenLTerm @rs1 @rs2 b)
 weakenLPred (PInCtor ic)  = PInCtor ic
+weakenLPred (PCmp op a b) = PCmp op (weakenLTerm @rs1 @rs2 a)
+                                    (weakenLTerm @rs1 @rs2 b)
 
 
 -- | Walk an 'Update' and weaken every register write + every
@@ -235,6 +237,8 @@ weakenRPred (PNot p)      = PNot (weakenRPred @rs1 @rs2 p)
 weakenRPred (PEq a b)     = PEq  (weakenRTerm @rs1 @rs2 a)
                                   (weakenRTerm @rs1 @rs2 b)
 weakenRPred (PInCtor ic)  = PInCtor ic
+weakenRPred (PCmp op a b) = PCmp op (weakenRTerm @rs1 @rs2 a)
+                                    (weakenRTerm @rs1 @rs2 b)
 
 
 -- | Walk an 'Update' on a tail-side register file and lift every
@@ -395,6 +399,8 @@ substPred (POr  p q)     o1 = POr  (substPred @rs1 @rs2 p o1)
 substPred (PNot p)       o1 = PNot (substPred @rs1 @rs2 p o1)
 substPred (PEq a b)      o1 = PEq  (substTerm @rs1 @rs2 a o1)
                                     (substTerm @rs1 @rs2 b o1)
+substPred (PCmp op a b)  o1 = PCmp op (substTerm @rs1 @rs2 a o1)
+                                      (substTerm @rs1 @rs2 b o1)
 substPred (PInCtor ic2)  o1 =
   case o1 of
     OPack _ wc1 _
@@ -561,6 +567,8 @@ liftLPredAlt (PNot p)      = PNot (liftLPredAlt @rs @ci1 @ci2 p)
 liftLPredAlt (PEq a b)     = PEq  (liftLTermAlt @rs @ci1 @ci2 a)
                                   (liftLTermAlt @rs @ci1 @ci2 b)
 liftLPredAlt (PInCtor ic)  = PInCtor (leftInCtor ic)
+liftLPredAlt (PCmp op a b) = PCmp op (liftLTermAlt @rs @ci1 @ci2 a)
+                                     (liftLTermAlt @rs @ci1 @ci2 b)
 
 
 -- | Lift an 'HsPred' from the right side's input alphabet to
@@ -578,6 +586,8 @@ liftRPredAlt (PNot p)      = PNot (liftRPredAlt @rs @ci1 @ci2 p)
 liftRPredAlt (PEq a b)     = PEq  (liftRTermAlt @rs @ci1 @ci2 a)
                                   (liftRTermAlt @rs @ci1 @ci2 b)
 liftRPredAlt (PInCtor ic)  = PInCtor (rightInCtor ic)
+liftRPredAlt (PCmp op a b) = PCmp op (liftRTermAlt @rs @ci1 @ci2 a)
+                                     (liftRTermAlt @rs @ci1 @ci2 b)
 
 
 -- | Lift an 'Update' from the left side's input alphabet to

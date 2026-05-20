@@ -51,6 +51,7 @@ module Keiki.Core
   , OutTerm (..)
     -- * Predicate carrier (v1 first-class AST)
   , HsPred (..)
+  , Cmp (..)
     -- * Effective Boolean algebra
   , BoolAlg (..)
     -- * Edges and the transducer
@@ -411,6 +412,29 @@ data HsPred (rs :: [Slot]) (ci :: Type) where
   -- symbolically through this constructor. See
   -- @docs/research/sbv-boolalg-design.md@.
   PInCtor :: InCtor ci ifs -> HsPred rs ci
+  -- | Ordering guard: compares two 'Term's of the same orderable type
+  -- with the relation named by 'Cmp'. @PCmp CmpGe a b@ means @a >= b@,
+  -- and so on. Unlike a threshold written through 'TApp1'\/'TApp2'
+  -- (which is opaque to the solver), 'PCmp' is /structural/: the
+  -- SBV-backed translator in "Keiki.Symbolic" emits a real symbolic
+  -- comparison (@.<@, @.<=@, @.>@, @.>=@) whenever the operand type's
+  -- 'Keiki.Symbolic.SymRep' is symbolically orderable (see
+  -- 'Keiki.Symbolic.discoverSymOrd'); otherwise it falls back to a
+  -- fresh opaque 'SBool', exactly as 'PEq' does for non-'Sym' operands.
+  -- Equality is intentionally left to 'PEq' — 'Cmp' has no "equal"
+  -- case. Added by EP-41.
+  PCmp :: (Ord r, Typeable r)
+       => Cmp -> Term rs ci r -> Term rs ci r -> HsPred rs ci
+
+
+-- | A four-way ordering relation carried by 'PCmp'. @Lt@\/@Le@\/@Gt@\/
+-- @Ge@ are @<@\/@<=@\/@>@\/@>=@ respectively. Kept as a single tag
+-- (rather than four 'HsPred' constructors) so the evaluator and the
+-- SBV translator each switch on one value; the four directions are
+-- recovered by the builder conveniences
+-- 'Keiki.Builder.requireLt'\/'requireLe'\/'requireGt'\/'requireGe'.
+data Cmp = CmpLt | CmpLe | CmpGt | CmpGe
+  deriving stock (Eq, Show)
 
 
 -- * Effective Boolean algebra ----------------------------------------------
@@ -579,6 +603,13 @@ evalPred (PEq a b)     r    c  = evalTerm a r c == evalTerm b r c
 evalPred (PInCtor ic)  _    c  = case icMatch ic c of
                                    Just _  -> True
                                    Nothing -> False
+evalPred (PCmp op a b) r    c  = applyCmp op (evalTerm a r c) (evalTerm b r c)
+  where
+    applyCmp :: Ord x => Cmp -> x -> x -> Bool
+    applyCmp CmpLt x y = x <  y
+    applyCmp CmpLe x y = x <= y
+    applyCmp CmpGt x y = x >  y
+    applyCmp CmpGe x y = x >= y
 
 
 -- | Apply an 'Update' to the register file. 'UCombine' applies left

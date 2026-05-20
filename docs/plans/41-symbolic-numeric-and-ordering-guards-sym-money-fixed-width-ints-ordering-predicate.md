@@ -89,12 +89,24 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
       one-slot `isSingleValuedSym` form is unattainable without the memoization
       sibling (see Surprises / Decision Log 2026-05-20); the memoization-free
       proofs above replace it.
-- [ ] M2 — Ordering predicate: add `data Cmp` and `PCmp` to `Keiki.Core`, its
-      `evalPred` arm, a `discoverSymOrd` companion and the `PCmp` arm of
-      `translatePred` in `Keiki.Symbolic`, and `requireCmp`/`requireLe`/… builder
-      verbs in `Keiki.Builder`; add unit tests proving a constant ordering
-      contradiction is `symIsBot`-empty and an ordering-guard witness respects the
-      bound.
+- [x] M2 — Ordering predicate (2026-05-20): added `data Cmp = CmpLt | CmpLe |
+      CmpGt | CmpGe` and `PCmp :: (Ord r, Typeable r) => Cmp -> Term rs ci r ->
+      Term rs ci r -> HsPred rs ci` to `Keiki.Core` (exported `Cmp(..)`; `PCmp`
+      via `HsPred(..)`), with the `evalPred` arm. Added the `PCmp` arm to every
+      total `HsPred` walker found by grep so the build stays
+      `-Wincomplete-patterns`-clean: `Keiki.Profunctor` (`contraPred`,
+      `contraMaybePred`), `Keiki.Composition` (`weakenLPred`, `weakenRPred`,
+      `substPred`, `liftLPredAlt`, `liftRPredAlt`), `Keiki.Render.Mermaid`
+      (`edgeInputName`'s `walk` → `Nothing`). Added `SymOrdDict` + `discoverSymOrd`
+      and the `goCmp` arm of `translatePred` in `Keiki.Symbolic` (opaque
+      `SBV.free "cmp"` fallback for non-orderable operand types). Added
+      `requireCmp`/`requireLt`/`requireLe`/`requireGt`/`requireGe` and re-exported
+      `Cmp(..)` from `Keiki.Builder`. Added a "ordering predicate PCmp (EP-41 M2)"
+      block to `Keiki.SymbolicSpec`: constant `5 >= 10` over `Word64` is
+      `symIsBot`, `10 >= 5` is not, a `symSatExt` witness with `amount >= 1000`,
+      and `evalPred` agreement with Haskell's `<`/`<=`/`>`/`>=` over all
+      directions. keiki-test: 216 examples, 0 failures; full suite green (351
+      examples, 1 pending).
 - [ ] M3 — Dogfood: add `jitsurei/test/Jitsurei/OrderCartSymbolicSpec.hs`
       exercising the new numeric + ordering support on a real aggregate; migrate
       `Jitsurei.LoanApplication`'s threshold guards from `TApp1 (>= n)` to `PCmp`,

@@ -846,6 +846,7 @@ contraPred f = go
     go (PNot p)     = PNot (go p)
     go (PEq  a b)   = PEq  (contraTerm f a) (contraTerm f b)
     go (PInCtor ic) = PInCtor (contraInCtor f ic)
+    go (PCmp op a b) = PCmp op (contraTerm f a) (contraTerm f b)
 
 
 contraMaybePred :: forall ci ci' rs. (ci' -> Maybe ci) -> HsPred rs ci -> HsPred rs ci'
@@ -859,6 +860,7 @@ contraMaybePred f = go
     go (PNot p)     = PNot (go p)
     go (PEq  a b)   = PEq  (contraMaybeTerm f a) (contraMaybeTerm f b)
     go (PInCtor ic) = PInCtor (contraMaybeInCtor f ic)
+    go (PCmp op a b) = PCmp op (contraMaybeTerm f a) (contraMaybeTerm f b)
 
 
 -- ** Update -------------------------------------------------------------

@@ -162,6 +162,12 @@ module Keiki.Builder
     -- ** Guards
   , requireEq
   , requireGuard
+  , Cmp (..)
+  , requireCmp
+  , requireLt
+  , requireLe
+  , requireGt
+  , requireGe
     -- ** Termination
   , goto
     -- ** Payload projection (OverloadedRecordDot)
@@ -181,7 +187,8 @@ import Prelude hiding ((>>), (>>=), pure, return)
 import qualified Prelude
 
 import Keiki.Core
-  ( Edge (..)
+  ( Cmp (..)
+  , Edge (..)
   , HsPred (..)
   , Index
   , InCtor
@@ -486,6 +493,33 @@ requireEq
   -> Term rs ci r
   -> EdgeBuilder rs ci co v w w ()
 requireEq a b = requireGuard (PEq a b)
+
+
+-- | Conjoin an ordering predicate (@a `op` b@ for the relation named
+-- by 'Cmp') with the edge's existing guard. Unlike a threshold lifted
+-- through 'Keiki.Core.TApp1'\/'TApp2', a 'PCmp' guard is structural and
+-- visible to the SBV-backed analyses. The four direction-specific
+-- conveniences 'requireLt'\/'requireLe'\/'requireGt'\/'requireGe' wrap
+-- this with a fixed 'Cmp'.
+requireCmp
+  :: (Ord r, Typeable r)
+  => Cmp
+  -> Term rs ci r
+  -> Term rs ci r
+  -> EdgeBuilder rs ci co v w w ()
+requireCmp op a b = requireGuard (PCmp op a b)
+
+
+-- | Require @a < b@. See 'requireCmp'.
+requireLt, requireLe, requireGt, requireGe
+  :: (Ord r, Typeable r)
+  => Term rs ci r
+  -> Term rs ci r
+  -> EdgeBuilder rs ci co v w w ()
+requireLt = requireCmp CmpLt
+requireLe = requireCmp CmpLe
+requireGt = requireCmp CmpGt
+requireGe = requireCmp CmpGe
 
 
 -- * Payload projection ----------------------------------------------------
