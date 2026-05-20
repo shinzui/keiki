@@ -12,13 +12,19 @@
 -- The retrospective gate — @isSingleValuedSym (withSymPred
 -- loanApplication) == True@ — remains /pending/. Single-valuedness at
 -- @UnderReview@ requires proving @approvalGuard ∧ ¬approvalGuard@
--- unsatisfiable, which needs the two reads of @#appCreditScore@ (one in
--- each half) to share a single SBV variable. EP-41 supplies the
--- comparison constructor that half of the original pending reason asked
--- for; the remaining half is the per-slot /memoization sibling/: the
--- translator allocates a fresh @reg/appCreditScore@ per occurrence and
--- SBV does not alias same-named 'Data.SBV.free' variables, so the two
--- reads stay independent and the conjunction is reported satisfiable.
+-- unsatisfiable. As of EP-42 (per-slot memoization) the two reads of
+-- @#appCreditScore@ (one in each half) /do/ now share a single SBV
+-- variable — that half of the original pending reason is closed. The
+-- remaining blocker is the /arithmetic-terms sibling/ (EP-43):
+-- @approvalGuard@'s cap conjunct
+-- @appRequestedAmount <= maxApprovalForScore appCreditScore@ still
+-- routes @maxApprovalForScore@ through an opaque 'Keiki.Core.TApp1',
+-- which the memoizing translator deliberately does /not/ cache (opaque
+-- functions have no 'Eq'). So the two copies of that 'TApp1' (one in
+-- @approvalGuard@, one in @PNot approvalGuard@) still mint independent
+-- fresh variables and the self-mutex stays satisfiable until the
+-- 'TApp1' becomes structural arithmetic. Un-pending this gate is
+-- MasterPlan 12's integration capstone, owned by EP-43.
 module Jitsurei.LoanApplicationSymbolicSpec (spec) where
 
 import Test.Hspec
@@ -32,12 +38,12 @@ spec = do
   describe "isSingleValuedSym (withSymPred loanApplication)" $
     it "answers True (the v2 retrospective gate)" $ do
       pendingWith
-        "Needs the per-slot memoization sibling: approvalGuard ∧ PNot \
-        \approvalGuard is mutex only if the two reads of #appCreditScore \
-        \share one SBV variable, but the translator allocates a fresh \
-        \reg/appCreditScore per occurrence and SBV does not alias \
-        \same-named `free` vars. EP-41 supplied the comparison \
-        \constructor (PCmp); the shared-variable half remains."
+        "Needs the arithmetic-terms sibling (EP-43): memoization (EP-42) \
+        \now shares register reads, but the cap conjunct's \
+        \maxApprovalForScore is still an opaque TApp1 that mints a fresh \
+        \variable per occurrence, so approvalGuard ∧ PNot approvalGuard \
+        \stays satisfiable via the cap. The un-pend is MasterPlan 12's \
+        \integration capstone, owned by EP-43."
       isSingleValuedSym (withSymPred loanApplication) `shouldBe` True
 
   describe "ordering-guard win (EP-41)" $

@@ -90,12 +90,16 @@ either of them and can be implemented first.
       `PEq #amount 0`/`PEq #amount 1` fixture single-valued, and the repeated-read witness
       path (contradiction → `Nothing`; satisfiable round-trip → `models` True). See the
       Decision Log on strengthening the repeated-read falsifier.
-- [ ] M3 — Dogfood + pending-reason sharpening: confirm the existing jitsurei symbolic
-      specs still pass; sharpen the pending reason on
-      `jitsurei/test/Jitsurei/LoanApplicationSymbolicSpec.hs` to record that, after
-      memoization, the *only* remaining blocker for its single-valuedness gate is the
-      arithmetic-terms sibling (EP-43); add a memoization-only assertion on a shipped
-      aggregate if one is available without arithmetic.
+- [x] M3 — Dogfood + pending-reason sharpening (2026-05-20): jitsurei-test green
+      (94/0/1-pending). Sharpened both the `pendingWith` message and the module haddock on
+      `jitsurei/test/Jitsurei/LoanApplicationSymbolicSpec.hs` to record that memoization
+      (EP-42) is done and the *only* remaining blocker for the single-valuedness gate is
+      the arithmetic-terms sibling (EP-43)'s cap `TApp1`; the un-pend is MasterPlan 12's
+      capstone owned by EP-43. No memoization-only single-valuedness assertion was added to
+      a shipped aggregate: `OrderCart`'s edges are constructor-disambiguated (`PInCtor`, no
+      register re-read) and `LoanApplication`'s gate also needs arithmetic — neither offers
+      a memoization-*only* win, so M2's keiki-side proofs stand as the lock-in (see the
+      Surprises entry).
 - [ ] M4 — Docs + close: update `docs/research/sbv-boolalg-design.md` (the
       `SymEnv`/translation sections already *describe* this design — mark it implemented)
       and any guide caveats that say repeated reads lose precision. Fill Outcomes.
@@ -130,6 +134,21 @@ either of them and can be implemented first.
 - 2026-05-20 (M1). `keiki.cabal`'s library `build-depends` did **not** list `containers`
   even though `Data.Map.Strict` is now required; added `containers >= 0.6 && < 0.9`. (The
   package was previously only available transitively via `sbv`.)
+
+- 2026-05-20 (M3, honesty correction). The `LoanApplicationSymbolicSpec` pending message
+  that shipped after EP-41 named *only* the per-slot memoization sibling as the remaining
+  blocker for the single-valuedness gate. That was incomplete: memoization alone does
+  **not** un-pend it. `approvalGuard`'s cap conjunct
+  `appRequestedAmount <= maxApprovalForScore appCreditScore` routes its right-hand side
+  through an opaque `TApp1`, and the memoizing translator deliberately does *not* cache
+  `TApp` results (opaque functions have no `Eq` — see the Decision Log). So the two copies
+  of that `TApp1` in `approvalGuard ∧ PNot approvalGuard` still mint independent fresh
+  variables and the self-mutex stays satisfiable via the cap — even though memoization now
+  correctly shares `#appCreditScore`. The remaining blocker is therefore the
+  arithmetic-terms sibling (EP-43), which makes the cap structural so it stops minting
+  per-occurrence variables. This matches the MasterPlan's Integration Point 2 (the un-pend
+  is the joint EP-42 + EP-43 capstone). M3 corrects both the `pendingWith` message and the
+  module haddock to name EP-43.
 
 
 ## Decision Log
