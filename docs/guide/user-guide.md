@@ -519,9 +519,8 @@ The other exports:
 
 | Export | What it does |
 |---|---|
-| `symIsBot p` | Is the predicate unsatisfiable? |
-| `symSat p` | Is there any satisfying assignment? (placeholder witness) |
-| `symSatExt p` | Same, with concrete `(RegFile rs, ci)` witness reconstruction |
+| `symIsBot p` | Is the predicate unsatisfiable? (`not . symIsBot` is the witness-free "is it satisfiable?" check — carries no extraction constraints) |
+| `symSatExt p` | Is there a satisfying assignment, returning a concrete `(RegFile rs, ci)` witness. Since EP-44 this also backs `sat` on `SymPred`. Needs `ExtractRegFile rs` / `KnownInCtors ci`. |
 | `withSymPred t` | Re-tag a transducer's edge guards from `HsPred` to `SymPred` |
 | `isSingleValuedSym t` | All-pairs `isBot (g1 \`conj\` g2)` over each vertex's edges |
 | `Sym a` typeclass | Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime` |
@@ -686,8 +685,9 @@ this guide and in the haddocks.
 | **`IndexN s rs r`** | A slot-name-tagged index. The `s :: Symbol` parameter pins the slot's name in the type, which is what makes the static disjoint-targets check on `(.=)` possible. |
 | **`Term rs ci r`** | A small AST for expressions over registers and the input. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`. Smart constructors: `lit`, `proj`, `inpCtor`. |
 | **`HsPred rs ci`** | The v1 predicate carrier. Constructors: `PTop`, `PBot`, `PAnd`, `POr`, `PNot`, `PEq`, `PInCtor`. Smart constructors: `(.==)`, `matchInCtor`. |
-| **`SymPred rs ci`** | The v2 predicate carrier (a newtype over `HsPred`). Same constructors; the difference is the `BoolAlg` instance, which routes `sat`/`isBot` through SBV instead of returning placeholders. |
-| **`BoolAlg phi a`** | The effective Boolean algebra typeclass: `top`/`bot`/`conj`/`disj`/`neg`/`models`/`sat`/`isBot`. The interface every predicate carrier implements. |
+| **`SymPred rs ci`** | The v2 predicate carrier (a newtype over `HsPred`). Same constructors; the difference is the SBV-backed instances — `BoolAlg`'s `isBot` and the `Sat` class's `sat` dispatch to z3, giving precise answers and (for `sat`) a real `(RegFile rs, ci)` witness. |
+| **`BoolAlg phi a`** | The effective Boolean algebra typeclass: `top`/`bot`/`conj`/`disj`/`neg`/`models`/`isBot`. The interface every predicate carrier implements. |
+| **`Sat phi a`** | A subclass of `BoolAlg` adding `sat :: phi -> Maybe a` (witness extraction). Split out of `BoolAlg` by EP-44 so witness-free analyses (`isSingleValuedSym`) carry no extraction evidence. On `SymPred` the instance is constrained `(ExtractRegFile rs, KnownInCtors ci)` and defines `sat = symSatExt`. |
 | **`Update rs w ci`** | The register-update language. `UKeep`, `USet`, `UCombine`. The phantom `w :: [Symbol]` index records the slots written so far for the static distinct-targets check. |
 | **`combine`** | Concatenate two `Update`s under a `Disjoint` constraint. The constraint enforces no register is written by both halves. |
 | **`InCtor ci ifs`** | Reified evidence that `ci`'s value can be matched against a specific constructor and its payload reassembled as a `RegFile ifs`. Carries the constructor's name (`icName`), a matcher (`icMatch`), and a builder (`icBuild`). Produced by `deriveAggregateCtors`. |
@@ -760,12 +760,12 @@ this guide and in the haddocks.
 | **z3** | Microsoft Research's SMT solver. Required at runtime for `Keiki.Symbolic`'s analyses. Install with `brew install z3` or `apt install z3`. |
 | **`Sym a`** | Typeclass for types that have an SBV representation. Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime`. |
 | **`SymRep a`** | The SBV-side representation of `a`. Associated type on `Sym`. E.g. `SymRep UTCTime = Integer` (POSIX seconds). |
-| **`symSat`** | Symbolic satisfiability check. Returns `Just (placeholder, placeholder)` on a hit, `Nothing` on unsat. |
-| **`symIsBot`** | Symbolic emptiness check. `True` iff the predicate is unsatisfiable. |
-| **`symSatExt`** | Symbolic sat with concrete witness reconstruction. Requires `ExtractRegFile rs` and `KnownInCtors ci` evidence. |
+| **`sat` / `Sat phi a`** | Witness extraction: `sat :: phi -> Maybe a`, the sole method of the `Sat` subclass of `BoolAlg`. On `SymPred` it returns the real `symSatExt` witness (since EP-44); the old crashing placeholder is gone. |
+| **`symIsBot`** | Symbolic emptiness check. `True` iff the predicate is unsatisfiable. (`not . symIsBot` is the witness-free satisfiability check.) |
+| **`symSatExt`** | Symbolic sat with concrete witness reconstruction. Requires `ExtractRegFile rs` and `KnownInCtors ci` evidence. Backs `sat` on `SymPred`. |
 | **`ExtractRegFile rs`** | Typeclass that materialises a `RegFile rs` from a name-keyed reader. The two instances cover `'[]` and `'(s, t) ': rs`. |
 | **`KnownInCtors ci`** | Typeclass enumerating a `ci`'s `InCtor` values for the witness extractor. Hand-written per aggregate (one entry per command constructor). |
-| **`unsafePerformIO` + `NOINLINE`** | The wrapping that makes `symSat`/`symIsBot`/`symSatExt` pure. Justified because each query is deterministic for the same predicate and side-effect-free outside the solver process. |
+| **`unsafePerformIO` + `NOINLINE`** | The wrapping that makes `symIsBot`/`symSatExt` pure. Justified because each query is deterministic for the same predicate and side-effect-free outside the solver process. |
 
 ### 10.7 Naming origins
 

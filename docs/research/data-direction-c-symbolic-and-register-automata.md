@@ -133,7 +133,7 @@ class BoolAlg phi a | phi -> a where
   top, bot :: phi
   conj, disj :: phi -> phi -> phi
   neg :: phi -> phi
-  sat :: phi -> Maybe a              -- witness, or Nothing if unsat
+  sat :: phi -> Maybe a              -- witness; EP-44 moved this to a `Sat` subclass
   isBot :: phi -> Bool
   models :: phi -> a -> Bool
 

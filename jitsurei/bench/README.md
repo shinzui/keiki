@@ -84,7 +84,7 @@ columns.
   amortised to zero in any production system (it runs once at
   module load), so the benches measure only the *post-build*
   transducer.
-- **SBV-backed analyses** (`solveOutput`, `symSat`,
+- **SBV-backed analyses** (`solveOutput`, `symIsBot`,
   `symSatExt`) — solver wall-clock dominates everything else and
   belongs in a separate plan focused on symbolic-perf
   characterisation.

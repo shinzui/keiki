@@ -43,11 +43,14 @@ Three load-bearing analyses, all in `Keiki.Symbolic`:
 - **`symIsBot p`** — is `p` unsatisfiable? "Are these two edge
   guards mutually exclusive?" reduces to
   `isBot (g1 \`conj\` g2)`.
-- **`symSat p`** — is there any `(regs, ci)` satisfying `p`? Wired
-  into `BoolAlg.sat`, which returns a placeholder witness on a hit.
-- **`symSatExt p`** — same as `symSat`, but reconstructs a concrete
-  `(RegFile rs, ci)` witness from the solver's model. Requires
-  `ExtractRegFile rs` and `KnownInCtors ci` evidence.
+- **`symSatExt p`** — is there a `(regs, ci)` satisfying `p`, and if
+  so reconstruct a concrete `(RegFile rs, ci)` witness from the
+  solver's model? Requires `ExtractRegFile rs` and `KnownInCtors ci`
+  evidence. Since EP-44 (MasterPlan 12) this also implements `sat` on
+  `SymPred` — now a method of the `Sat` *subclass* of `BoolAlg`, not
+  `BoolAlg` itself — so `sat` returns a real, forceable witness. The
+  old `symSat` placeholder-witness entry point is retired
+  (`not . symIsBot` is the witness-free "is it satisfiable?" check).
 - **`isSingleValuedSym t`** — for every reachable vertex, asks
   `isBot` of every pairwise conjunction of outgoing-edge guards.
   Returns `True` iff the transducer is single-valued (synthesis §7

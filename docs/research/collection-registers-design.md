@@ -251,7 +251,7 @@ status (see §6).
 **FR6 — Symbolic translation of collection guards (`src/Keiki/Symbolic.hs`).**
 This is make-or-break and should be decided *before* building. keiki's
 distinctive build-time capability — SBV/z3 single-valuedness (`isSingleValuedSym`)
-and emptiness/reachability (`symIsBot`, `symSat`) over `HsPred` — is already
+and emptiness/reachability (`symIsBot`, `symSatExt`) over `HsPred` — is already
 **shipped** (MasterPlan 2 EP-2), over a quantifier-free predicate set (`PEq`,
 `PInCtor`, the Boolean connectives). Collection guards would translate to z3's
 **array** and **finite-set** theories — possible in principle but materially

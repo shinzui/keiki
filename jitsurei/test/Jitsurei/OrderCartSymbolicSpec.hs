@@ -65,3 +65,15 @@ spec = do
             ConfirmPayment _ -> pure ()
             other            -> expectationFailure
                                   ("expected a ConfirmPayment witness, got " <> show other)
+
+    it "sat (BoolAlg/Sat surface) yields the same real witness; models accepts it (EP-44)" $ do
+      -- Since EP-44, `sat` on 'SymPred' is the real 'symSatExt' witness
+      -- (via the 'Sat' instance), so the public algebra surface also gives
+      -- a forceable witness on this shipped Word*-bearing aggregate — and
+      -- 'models' on it holds.
+      let p = PAnd (PInCtor inCtorConfirmPayment)
+                   (PCmp CmpGe (proj amountPaidIdx) (lit (1000 :: Money)))
+              :: HsPred OrderCartRegs OrderCmd
+      case sat (SymPred p) of
+        Nothing -> expectationFailure "amountPaid >= 1000 reported unsat"
+        Just w  -> models (SymPred p) w `shouldBe` True

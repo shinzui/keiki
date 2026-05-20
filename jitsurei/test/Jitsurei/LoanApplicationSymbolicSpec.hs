@@ -66,3 +66,15 @@ spec = do
             (regs ! (#appCreditScore :: Index LoanAppRegs Int)
                >= approvalThresholdScore) `shouldBe` True
             evalPred (guard e) regs cmd `shouldBe` True
+
+  describe "sat (BoolAlg/Sat surface) on the approval edge (EP-44)" $
+    -- Since EP-44, `sat` on 'SymPred' returns the real 'symSatExt'
+    -- witness, so the public algebra surface yields a forceable witness
+    -- that 'models' accepts on this shipped aggregate — no separate
+    -- 'symSatExt' call needed.
+    it "sat's witness satisfies models for the approval edge guard" $
+      case edgesOut loanApplication UnderReview of
+        []      -> expectationFailure "UnderReview has no outgoing edges"
+        (e : _) -> case sat (SymPred (guard e)) of
+          Nothing -> expectationFailure "approval edge guard reported unsat"
+          Just w  -> models (SymPred (guard e)) w `shouldBe` True

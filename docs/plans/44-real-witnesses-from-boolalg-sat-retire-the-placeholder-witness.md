@@ -87,6 +87,18 @@ M1 is retained in the Decision Log / Surprises as history.
       that `sat` now returns the real witness and that `not . symIsBot` is the
       constraint-free satisfiability check). `docs/guide/why-smt.md` uses "sat" only in the
       SMT-verdict sense — left as-is. Outcomes filled below.
+- [x] M3+ — Broader doc/example sweep (2026-05-20, post-close, per user request "update all
+      relevant docs including the affected jitsurei examples"): `docs/guide/user-guide.md`
+      (export + glossary tables: drop `symSat`, add a `Sat phi a` / `sat` entry, fix the
+      `SymPred`/`BoolAlg` rows); concise EP-44 "superseded"/clarifying notes on the affected
+      research notes (`symbolic-analysis-and-runtime-implications.md`,
+      `keiki-generics-design.md`, `collection-registers-design.md`,
+      `data-direction-c-symbolic-and-register-automata.md`); `jitsurei/bench/README.md`
+      (`symSat`→`symIsBot`). jitsurei *examples*: source haddock was already accurate (only
+      `LoanApplication.hs:118`, fixed in M1); added a `sat` (BoolAlg/`Sat` surface)
+      real-witness demonstration to `OrderCartSymbolicSpec` and `LoanApplicationSymbolicSpec`
+      mirroring the M2 `UserRegistration` one (jitsurei-test 94 → 96). `docs/historical/` left
+      as archival. Full suite green: keiki-test 234/0, jitsurei-test 96/0, json 40/0 + 7/0.
 
 
 ## Surprises & Discoveries

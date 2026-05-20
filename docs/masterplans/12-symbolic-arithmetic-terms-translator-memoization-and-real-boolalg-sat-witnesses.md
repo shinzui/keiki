@@ -417,5 +417,6 @@ to a capability subclass used only where the capability is exercised. The audit 
 holds (check existential call sites before tightening a class/instance head); Option A simply
 made the audit moot by not tightening the shared instance at all.
 
-Final suite state: `cabal test all` green — keiki-test 234/0, jitsurei-test 94/0 (0 pending),
-keiki-codec-json-test 40/0, keiki-codec-json-test-test 7/0.
+Final suite state: `cabal test all` green — keiki-test 234/0, jitsurei-test 96/0 (0 pending;
++2 from the post-close `sat` demonstrations added to `OrderCartSymbolicSpec` /
+`LoanApplicationSymbolicSpec`), keiki-codec-json-test 40/0, keiki-codec-json-test-test 7/0.

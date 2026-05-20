@@ -740,6 +740,13 @@ Five small choices fix the shape:
    is shared — both functions call `translatePred` over an env
    built by `mkSymEnv`.
 
+   > **Superseded by EP-44 (MasterPlan 12).** The "can't carry the
+   > constraints" obstacle was resolved not by keeping `symSat` but by
+   > moving `sat` out of `BoolAlg` into a `Sat` subclass whose
+   > `SymPred` instance carries `(ExtractRegFile rs, KnownInCtors ci)`
+   > and defines `sat = symSatExt`. `symSat` and `unsafeWitness` are
+   > retired; the witness-free check is `not . symIsBot`.
+
 **Implemented (see EP-9).** `Keiki.Symbolic` ships
 `symSatExt :: (ExtractRegFile rs, KnownInCtors ci) =>
 HsPred rs ci -> Maybe (RegFile rs, ci)` plus the
