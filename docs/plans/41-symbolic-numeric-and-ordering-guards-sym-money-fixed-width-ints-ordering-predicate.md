@@ -107,10 +107,26 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
       and `evalPred` agreement with Haskell's `<`/`<=`/`>`/`>=` over all
       directions. keiki-test: 216 examples, 0 failures; full suite green (351
       examples, 1 pending).
-- [ ] M3 — Dogfood: add `jitsurei/test/Jitsurei/OrderCartSymbolicSpec.hs`
-      exercising the new numeric + ordering support on a real aggregate; migrate
-      `Jitsurei.LoanApplication`'s threshold guards from `TApp1 (>= n)` to `PCmp`,
-      keeping every existing LoanApplication behavioral spec green.
+- [x] M3 — Dogfood (2026-05-20): added
+      `jitsurei/test/Jitsurei/OrderCartSymbolicSpec.hs` (registered in
+      `jitsurei.cabal` and `jitsurei/test/Spec.hs`): `isSingleValuedSym
+      (withSymPred orderCart) == True`, constant `Money`/`Word64` ordering and
+      equality contradictions are `symIsBot`, and a `symSatExt` ConfirmPayment
+      witness with `amountPaid >= 1000`. Added a `KnownInCtors OrderCmd` instance
+      to `Jitsurei.OrderCart` (the EP-22 "no symbolic instance" comment is now
+      stale — updated) so witness reconstruction works; all input-field types are
+      `Sym` after M1. Migrated `Jitsurei.LoanApplication`'s `readyForReviewGuard`
+      and `approvalGuard` from `PEq (TApp1 (>= n) …) (lit True)` / `TApp2 (<=)` to
+      `PCmp` (behaviour-preserving — `evalPred` identical by construction). The
+      cap conjunct keeps a `TApp1 maxApprovalForScore` on its RHS (arithmetic
+      sibling). Updated `LoanApplicationSymbolicSpec`: the self-mutex retrospective
+      gate stays pending but its reason now names only the memoization sibling
+      (the comparison-constructor half is done), and a new memoization-free
+      assertion shows the approval edge guard's `symSatExt` witness has
+      `appCreditScore >= approvalThresholdScore` (unconstrained before M3). All
+      LoanApplication behavioural + builder-equivalence specs stay green.
+      jitsurei-test: 94 examples, 0 failures, 1 pending (was 88/1); full suite 357
+      examples, 1 pending.
 - [ ] M4 — Docs + close: update `docs/research/sbv-boolalg-design.md`, the money
       note in `docs/research/agent-qualification-decomposition-sketch.md` (§3a/§5),
       and `docs/guide/symbolic-ci.md` if needed; fill Outcomes & Retrospective.

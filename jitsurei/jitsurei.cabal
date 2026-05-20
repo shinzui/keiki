@@ -57,6 +57,7 @@ test-suite jitsurei-test
                         Jitsurei.LoanSpec
                         Jitsurei.LoanWorkflowSpec
                         Jitsurei.OrderCartBuilderSpec
+                        Jitsurei.OrderCartSymbolicSpec
                         Jitsurei.Render.MermaidLoanSpec
                         Jitsurei.OrderCartSpec
                         Jitsurei.UserRegistrationBuilderSpec

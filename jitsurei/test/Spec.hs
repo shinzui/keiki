@@ -11,6 +11,7 @@ import qualified Jitsurei.LoanApplicationViewSpec
 import qualified Jitsurei.LoanSpec
 import qualified Jitsurei.LoanWorkflowSpec
 import qualified Jitsurei.OrderCartBuilderSpec
+import qualified Jitsurei.OrderCartSymbolicSpec
 import qualified Jitsurei.Render.MermaidLoanSpec
 import qualified Jitsurei.OrderCartSpec
 import qualified Jitsurei.UserRegistrationBuilderSpec
@@ -34,6 +35,7 @@ main = hspec $ do
   describe "Jitsurei.Render.MermaidLoan (EP-34 M6)" Jitsurei.Render.MermaidLoanSpec.spec
   describe "Jitsurei.OrderCart"                     Jitsurei.OrderCartSpec.spec
   describe "Jitsurei.OrderCart (builder)"           Jitsurei.OrderCartBuilderSpec.spec
+  describe "Jitsurei.OrderCart (symbolic)"          Jitsurei.OrderCartSymbolicSpec.spec
   describe "Jitsurei.UserRegistration"              Jitsurei.UserRegistrationSpec.spec
   describe "Jitsurei.UserRegistration (builder)"    Jitsurei.UserRegistrationBuilderSpec.spec
   describe "Jitsurei.UserRegistration (GSM EP-19 M7)" Jitsurei.UserRegistrationGSMSpec.spec

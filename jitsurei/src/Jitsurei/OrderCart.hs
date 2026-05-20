@@ -99,17 +99,19 @@ import qualified Keiki.Builder as B
 import Keiki.Builder ((.=))
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
+import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
 
--- | NB: no 'KnownInCtors OrderCmd' instance is provided here. That
--- typeclass is a witness for the SBV-backed @symSatExt@ pipeline,
--- which requires every slot type to be in 'Keiki.Symbolic.Sym'.
--- 'OrderCartRegs' carries 'Word16', 'Word32', and 'Word64' slots
--- that are not in the curated registry, and EP-22's plan declares
--- SBV-bound analyses out of scope for the OrderCart fixture (see
--- the EP-22 Decision Log entry "no symbolic-analysis instance for
--- OrderCmd"). The pure-core operations the benchmarks measure
--- ('delta', 'omega', 'step', 'applyEvent', 'reconstitute') are
--- unaffected.
+-- | EP-22 originally declared SBV-bound analyses out of scope for the
+-- OrderCart fixture and shipped no 'KnownInCtors OrderCmd' instance,
+-- because 'OrderCartRegs' carries 'Word16' \/ 'Word32' \/ 'Word64'
+-- slots that were not in the curated 'Keiki.Symbolic.Sym' registry.
+-- EP-41 added those numeric instances, so the slots are now
+-- solver-visible; the 'KnownInCtors OrderCmd' instance below lets the
+-- SBV-backed @symSatExt@ pipeline reconstruct a concrete 'OrderCmd'
+-- witness from a model (exercised by
+-- 'Jitsurei.OrderCartSymbolicSpec'). The pure-core operations the
+-- benchmarks measure ('delta', 'omega', 'step', 'applyEvent',
+-- 'reconstitute') are unaffected.
 
 
 -- * Domain types ------------------------------------------------------------
@@ -324,6 +326,27 @@ $(deriveAggregateCtors ''OrderCmd ''OrderCartRegs
     , ("RequestRefund",  "RequestRefund")
     , ("ProcessRefund",  "ProcessRefund")
     ])
+
+
+-- | Enumerate the ten 'InCtor' values of 'OrderCmd' so the symbolic
+-- witness extractor ('Keiki.Symbolic.symSatExt') can rebuild a
+-- concrete 'OrderCmd' from an SBV model. Every input field type
+-- ('Text', 'Word16', 'Word64', 'UTCTime') is now in the curated
+-- 'Keiki.Symbolic.Sym' registry (EP-41), so each 'SomeInCtor' entry's
+-- 'Keiki.Symbolic.ExtractRegFile' evidence resolves automatically.
+instance KnownInCtors OrderCmd where
+  allInCtors =
+    [ SomeInCtor inCtorAddItem
+    , SomeInCtor inCtorRemoveItem
+    , SomeInCtor inCtorApplyDiscount
+    , SomeInCtor inCtorReserve
+    , SomeInCtor inCtorConfirmPayment
+    , SomeInCtor inCtorShip
+    , SomeInCtor inCtorDeliver
+    , SomeInCtor inCtorCancel
+    , SomeInCtor inCtorRequestRefund
+    , SomeInCtor inCtorProcessRefund
+    ]
 
 
 -- * Wire constructors for events (TH-derived) ----------------------------

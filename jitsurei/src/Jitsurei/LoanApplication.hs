@@ -17,8 +17,11 @@
 --
 --   * Multi-field threshold guards (credit score \(\ge\) 650 \(\wedge\)
 --     employment verified \(\wedge\) requested amount \(\le\) credit-
---     score-derived cap), expressed via 'TApp1' / 'TApp2' inside an
---     'HsPred' conjunction.
+--     score-derived cap), expressed via the structural ordering guard
+--     'Keiki.Core.PCmp' inside an 'HsPred' conjunction (EP-41 migrated
+--     these off the opaque @'TApp1' (>= n)@ form; only the
+--     credit-score-derived cap's right-hand side still routes through
+--     'TApp1', pending the arithmetic-terms sibling).
 --   * ε-edges (silent transitions): \"sufficient documents tipped the
 --     application from CollectingDocuments to UnderReview\" emits no
 --     public event.
@@ -389,33 +392,40 @@ $(deriveView ''LoanAppVertex ''LoanAppRegs
 --     /\\  appEmploymentVerified == True
 --     /\\  appRequestedAmount    <= maxApprovalForScore appCreditScore
 
+-- EP-41 migrated these threshold guards from the @PEq (TApp1 (>= n) …)
+-- (lit True)@ / @TApp2 (<=)@ form to the structural ordering guard
+-- 'PCmp'. 'evalPred' is unchanged by construction
+-- (@evalPred (PCmp CmpGe a b) == (evalTerm a >= evalTerm b)@ matches the
+-- old @(evalTerm a >= n) == True@), so every behavioural spec stays
+-- green; the win is that the comparisons are now visible to the SBV
+-- translator instead of being opaque 'TApp' terms. The one remaining
+-- opaque term is the cap's right-hand side @maxApprovalForScore
+-- creditScore@ — a /derived/ quantity that needs the arithmetic-terms
+-- sibling ExecPlan before it, too, becomes solver-visible.
 readyForReviewGuard :: HsPred LoanAppRegs LoanCmd
 readyForReviewGuard =
-  PEq (TApp1 (>= minimumIncomeDocs) (proj (#appIncomeDocCount :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appIncomeDocCount :: Index LoanAppRegs Int))
+             (lit minimumIncomeDocs)
     `PAnd`
-  PEq (TApp1 (>= minimumIdDocs) (proj (#appIdDocCount :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appIdDocCount :: Index LoanAppRegs Int))
+             (lit minimumIdDocs)
     `PAnd`
-  PEq (TApp1 (>= 1) (proj (#appCreditScore :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appCreditScore :: Index LoanAppRegs Int))
+             (lit 1)
     `PAnd`
   PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
 
 
 approvalGuard :: HsPred LoanAppRegs LoanCmd
 approvalGuard =
-  PEq (TApp1 (>= approvalThresholdScore)
-        (proj (#appCreditScore :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appCreditScore :: Index LoanAppRegs Int))
+             (lit approvalThresholdScore)
     `PAnd`
   PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
     `PAnd`
-  PEq (TApp2 (<=)
-        (proj (#appRequestedAmount :: Index LoanAppRegs Money))
-        (TApp1 maxApprovalForScore
-          (proj (#appCreditScore :: Index LoanAppRegs Int))))
-      (lit True)
+  PCmp CmpLe (proj (#appRequestedAmount :: Index LoanAppRegs Money))
+             (TApp1 maxApprovalForScore
+               (proj (#appCreditScore :: Index LoanAppRegs Int)))
 
 
 -- * The transducer (builder form) -----------------------------------------
