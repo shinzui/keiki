@@ -10,21 +10,23 @@
 -- score (the comparison hid inside an opaque 'TApp1').
 --
 -- The retrospective gate — @isSingleValuedSym (withSymPred
--- loanApplication) == True@ — remains /pending/. Single-valuedness at
--- @UnderReview@ requires proving @approvalGuard ∧ ¬approvalGuard@
--- unsatisfiable. As of EP-42 (per-slot memoization) the two reads of
--- @#appCreditScore@ (one in each half) /do/ now share a single SBV
--- variable — that half of the original pending reason is closed. The
--- remaining blocker is the /arithmetic-terms sibling/ (EP-43):
--- @approvalGuard@'s cap conjunct
--- @appRequestedAmount <= maxApprovalForScore appCreditScore@ still
--- routes @maxApprovalForScore@ through an opaque 'Keiki.Core.TApp1',
--- which the memoizing translator deliberately does /not/ cache (opaque
--- functions have no 'Eq'). So the two copies of that 'TApp1' (one in
--- @approvalGuard@, one in @PNot approvalGuard@) still mint independent
--- fresh variables and the self-mutex stays satisfiable until the
--- 'TApp1' becomes structural arithmetic. Un-pending this gate is
--- MasterPlan 12's integration capstone, owned by EP-43.
+-- loanApplication) == True@ — is now /proven/ (no longer pending).
+-- Single-valuedness at @UnderReview@ requires proving
+-- @approvalGuard ∧ ¬approvalGuard@ unsatisfiable, which needed two
+-- things, both now delivered (this was MasterPlan 12's integration
+-- capstone):
+--
+--   * EP-42 (per-slot memoization): the two reads of @#appCreditScore@
+--     (one in each half of the self-mutex) share a single SBV variable.
+--   * EP-43 (structural arithmetic): @approvalGuard@'s cap conjunct
+--     @appRequestedAmount <= appCreditScore * 1000@ is now a structural
+--     'Keiki.Core.TArith' (built with @tmul@) the solver reads, not an
+--     opaque 'Keiki.Core.TApp1' that minted an independent fresh
+--     variable per occurrence.
+--
+-- With both, the two copies of @approvalGuard@ range over the same
+-- variables and the conjunction is unsatisfiable, so the gate proves
+-- @True@.
 module Jitsurei.LoanApplicationSymbolicSpec (spec) where
 
 import Test.Hspec
@@ -36,34 +38,31 @@ import Keiki.Symbolic
 spec :: Spec
 spec = do
   describe "isSingleValuedSym (withSymPred loanApplication)" $
-    it "answers True (the v2 retrospective gate)" $ do
-      pendingWith
-        "Needs the arithmetic-terms sibling (EP-43): memoization (EP-42) \
-        \now shares register reads, but the cap conjunct's \
-        \maxApprovalForScore is still an opaque TApp1 that mints a fresh \
-        \variable per occurrence, so approvalGuard ∧ PNot approvalGuard \
-        \stays satisfiable via the cap. The un-pend is MasterPlan 12's \
-        \integration capstone, owned by EP-43."
+    it "answers True (the v2 retrospective gate)" $
+      -- Proven as of EP-43 (composed with EP-42): memoization shares the
+      -- two reads of #appCreditScore across the self-mutex, and the cap
+      -- is now a structural tmul, so approvalGuard ∧ ¬approvalGuard is
+      -- unsatisfiable. This was MasterPlan 12's integration capstone.
       isSingleValuedSym (withSymPred loanApplication) `shouldBe` True
 
-  describe "ordering-guard win (EP-41)" $
+  describe "approval edge guard (EP-41 ordering + EP-43 cap)" $
     -- The approval edge out of UnderReview is guarded by
     --   PAnd (PInCtor inCtorContinue) approvalGuard
-    -- whose approvalGuard now contains PCmp CmpGe #appCreditScore
-    -- (lit approvalThresholdScore). symSatExt therefore returns a
-    -- witness whose credit score is actually >= the threshold (a single
-    -- read of #appCreditScore, so no memoization is needed). Before
-    -- EP-41 the threshold lived inside an opaque TApp1 and the witness
-    -- score was unconstrained (defaulted to 0). We assert only the
-    -- credit-score bound: the cap conjunct (requestedAmount <=
-    -- maxApprovalForScore creditScore) still routes its right-hand side
-    -- through an opaque TApp1, so the full evalPred need not hold on the
-    -- witness (that is the arithmetic-terms sibling's job).
-    it "approval edge guard witness has credit score >= threshold" $
+    -- whose approvalGuard contains PCmp CmpGe #appCreditScore
+    -- (lit approvalThresholdScore) (EP-41 ordering) and the cap
+    -- PCmp CmpLe #appRequestedAmount (tmul #appCreditScore (lit 1000))
+    -- (EP-43 structural arithmetic). symSatExt therefore returns a
+    -- witness whose credit score is >= the threshold AND whose requested
+    -- amount is within the structural cap — so the /whole/ evalPred holds
+    -- on the witness. Before EP-41 the threshold hid in an opaque TApp1
+    -- (score unconstrained); before EP-43 the cap hid in another opaque
+    -- TApp1, so the full evalPred could not be asserted.
+    it "approval edge witness satisfies the whole guard (score + cap)" $
       case edgesOut loanApplication UnderReview of
         []        -> expectationFailure "UnderReview has no outgoing edges"
         (e : _)   -> case symSatExt (guard e) of
           Nothing          -> expectationFailure "approval edge guard reported unsat"
-          Just (regs, _cmd) ->
+          Just (regs, cmd) -> do
             (regs ! (#appCreditScore :: Index LoanAppRegs Int)
                >= approvalThresholdScore) `shouldBe` True
+            evalPred (guard e) regs cmd `shouldBe` True

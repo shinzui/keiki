@@ -143,6 +143,14 @@ minimumIdDocs = 1
 -- linear approximation (@score * 1000@) — the goal is to demonstrate
 -- a multi-field threshold guard, not to implement bank policy. A
 -- score of 700 caps the loan at 700_000 currency units.
+--
+-- Since EP-43, 'approvalGuard' no longer wraps this function in an
+-- opaque 'Keiki.Core.TApp1'; it inlines the same arithmetic
+-- structurally as @tmul (proj #appCreditScore) (lit 1000)@ so the SBV
+-- translator can read the cap. The function is kept (and exported) for
+-- documentation and as the concrete reference the structural form
+-- mirrors: @evalTerm (tmul score (lit 1000)) == maxApprovalForScore
+-- score@.
 maxApprovalForScore :: Int -> Int
 maxApprovalForScore score = score * 1000
 
@@ -394,14 +402,16 @@ $(deriveView ''LoanAppVertex ''LoanAppRegs
 
 -- EP-41 migrated these threshold guards from the @PEq (TApp1 (>= n) …)
 -- (lit True)@ / @TApp2 (<=)@ form to the structural ordering guard
--- 'PCmp'. 'evalPred' is unchanged by construction
--- (@evalPred (PCmp CmpGe a b) == (evalTerm a >= evalTerm b)@ matches the
--- old @(evalTerm a >= n) == True@), so every behavioural spec stays
--- green; the win is that the comparisons are now visible to the SBV
--- translator instead of being opaque 'TApp' terms. The one remaining
--- opaque term is the cap's right-hand side @maxApprovalForScore
--- creditScore@ — a /derived/ quantity that needs the arithmetic-terms
--- sibling ExecPlan before it, too, becomes solver-visible.
+-- 'PCmp'; EP-43 then made the cap's right-hand side structural too. The
+-- cap conjunct now reads @tmul (proj #appCreditScore) (lit 1000)@ — a
+-- 'Keiki.Core.TArith' the SBV translator reads as a real multiplication
+-- — instead of the opaque @TApp1 maxApprovalForScore@. 'evalPred' is
+-- unchanged by construction (@evalPred (PCmp CmpGe a b) ==
+-- (evalTerm a >= evalTerm b)@, and @evalTerm (tmul score (lit 1000)) ==
+-- score * 1000 == maxApprovalForScore score@), so every behavioural
+-- spec stays green; the win is that the whole guard — comparisons and
+-- the derived cap alike — is now visible to the SBV translator instead
+-- of hiding behind opaque 'TApp' terms.
 readyForReviewGuard :: HsPred LoanAppRegs LoanCmd
 readyForReviewGuard =
   PCmp CmpGe (proj (#appIncomeDocCount :: Index LoanAppRegs Int))
@@ -424,8 +434,8 @@ approvalGuard =
   PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
     `PAnd`
   PCmp CmpLe (proj (#appRequestedAmount :: Index LoanAppRegs Money))
-             (TApp1 maxApprovalForScore
-               (proj (#appCreditScore :: Index LoanAppRegs Int)))
+             (tmul (proj (#appCreditScore :: Index LoanAppRegs Int))
+                   (lit 1000))
 
 
 -- * The transducer (builder form) -----------------------------------------

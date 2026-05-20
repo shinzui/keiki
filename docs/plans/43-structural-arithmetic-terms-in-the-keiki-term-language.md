@@ -81,13 +81,18 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
       `evalPred`/`evalTerm` agree with Haskell `+`/`-`/`*`). `cabal test keiki-test` → 229
       examples (was 222), 0 failures. No SBV `Num`-on-`SInteger` surprises — `SBV.SBV
       Integer`'s `Num` instance is exactly what `SymNumDict` carries.
-- [ ] M3 — Dogfood + integration capstone: migrate
-      `Jitsurei.LoanApplication`'s `maxApprovalForScore` cap from `TApp1` to structural
-      `tmul` (behavior-preserving; all LoanApplication behavioural + builder-equivalence
-      specs stay green). If EP-42 (memoization) is complete, un-pend
-      `Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate
-      (`isSingleValuedSym (withSymPred loanApplication) == True`); otherwise keep it
-      pending with a reason naming EP-42 as the remaining blocker and record the deferral.
+- [x] M3 — Dogfood + integration capstone (2026-05-20): migrated
+      `Jitsurei.LoanApplication`'s cap conjunct from
+      `TApp1 maxApprovalForScore (proj #appCreditScore)` to structural
+      `tmul (proj #appCreditScore) (lit 1000)` (behavior-preserving;
+      `maxApprovalForScore` kept + exported, with a haddock note, since it is referenced in
+      docs). LoanApplication behavioural/builder/view specs stayed green (jitsurei-test
+      94/0). **EP-42 is complete, so un-pended the single-valuedness gate** — deleted the
+      `pendingWith` block; `isSingleValuedSym (withSymPred loanApplication) == True` now
+      runs and passes (verified `True` via repl first). Pending count dropped 1 → 0.
+      Strengthened the renamed "approval edge guard (EP-41 ordering + EP-43 cap)" test to
+      assert the full `evalPred` holds on the witness (now possible because the cap is
+      structural). Rewrote the spec's module haddock to record the gate as proven.
 - [ ] M4 — Docs + close: update `docs/research/sbv-boolalg-design.md`,
       `docs/research/agent-qualification-decomposition-sketch.md` (§3(c)/§5: the
       `weightedVolume` operand and `maxApprovalForScore` are now structural; arithmetic
@@ -106,6 +111,20 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
   an output term must still be discovered by hidden-input detection), not a checker
   requirement. `applyNumOp :: Num r => NumOp -> r -> r -> r` is a top-level helper; the
   `Num r` evidence in `evalTerm`'s `TArith` arm comes from matching the GADT constructor.
+
+- 2026-05-20 (M3, integration capstone closed). With EP-42 (memoization) already complete,
+  migrating the cap to a structural `tmul` was sufficient to prove the LoanApplication
+  single-valuedness gate. Repl evidence before un-pending:
+
+      isSingleValuedSym (withSymPred loanApplication)            = True
+      approval-edge symSatExt witness: score>=threshold=True, fullEvalPred=True
+
+  The `fullEvalPred=True` is the concrete arithmetic win on a shipped aggregate: before
+  EP-43 the cap hid in an opaque `TApp1`, so the witness could not be required to satisfy
+  the whole guard; now it does. The `Money = Int` synonym in `LoanApplication` means the
+  `PCmp CmpLe (… :: Term … Money) (tmul (… :: Term … Int) (lit 1000))` typechecks (the cap
+  RHS is `Int`, and `Money ~ Int`). `maxApprovalForScore` is now unused by the guard but
+  stays exported and referenced in docs, so no `-Wunused-top-binds`.
 
 
 ## Decision Log

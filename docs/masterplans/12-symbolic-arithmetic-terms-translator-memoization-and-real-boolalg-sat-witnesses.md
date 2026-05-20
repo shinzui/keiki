@@ -208,7 +208,7 @@ EP-43 (arithmetic terms):
 - [ ] EP-43 M0 — Baseline + authoritative `Term`-walker list
 - [ ] EP-43 M1 — `NumOp`/`TArith` + `evalTerm` + every total `Term` walker + smart constructors (warning-clean)
 - [ ] EP-43 M2 — SBV translation (`SymNumDict`/`discoverSymNum` + `TArith` arm) + keiki-side proofs
-- [ ] EP-43 M3 — Migrate `LoanApplication` cap to `tmul`; **integration capstone:** un-pend the single-valuedness gate iff EP-42 complete
+- [x] EP-43 M3 — Migrate `LoanApplication` cap to `tmul`; **integration capstone:** un-pend the single-valuedness gate (EP-42 complete) (2026-05-20)
 - [ ] EP-43 M4 — Docs (`sbv-boolalg-design.md`, `agent-qualification-decomposition-sketch.md` §3(c)/§5, guides) + close
 
 EP-44 (real witnesses):
@@ -220,7 +220,7 @@ EP-44 (real witnesses):
 
 Integration capstone (cross-plan):
 
-- [ ] `isSingleValuedSym (withSymPred loanApplication) == True` un-pended (requires EP-42 **and** EP-43)
+- [x] `isSingleValuedSym (withSymPred loanApplication) == True` un-pended (required EP-42 **and** EP-43) — closed 2026-05-20 in EP-43 M3; jitsurei-test pending count 1 → 0
 
 
 ## Surprises & Discoveries
@@ -253,6 +253,17 @@ Integration capstone (cross-plan):
   constraint), and `containers` was missing from `keiki.cabal`'s library `build-depends`
   (added `>= 0.6 && < 0.9`). The cross-plan handoff for EP-43/EP-44 is exactly as the
   Integration Points describe — both inherit the memoization with no extra work.
+
+- 2026-05-20 (EP-43 M3, **integration capstone closed**): with EP-42 already complete,
+  migrating `LoanApplication`'s cap from an opaque `TApp1 maxApprovalForScore` to a
+  structural `tmul (proj #appCreditScore) (lit 1000)` proved the single-valuedness gate.
+  `isSingleValuedSym (withSymPred loanApplication)` now returns `True` (verified in repl
+  and as an un-pended spec); jitsurei-test's pending count dropped from 1 to 0. This is the
+  one observable that demonstrably required two plans composed (structural cap from EP-43 +
+  shared `#appCreditScore` variable from EP-42), exactly as Integration Point 2 predicted.
+  A bonus on the same shipped aggregate: the approval-edge `symSatExt` witness now
+  satisfies the *whole* guard under `evalPred` (the cap conjunct included), where before
+  EP-43 the opaque cap meant only the credit-score bound could be asserted.
 
 
 ## Decision Log
