@@ -73,11 +73,22 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
       `ItemQuantity = Word16`, `Money = Word64`, `ItemCount = Word32`
       (register slots `discountBp :: Word16`, `itemCount :: Word32`,
       `amountPaid :: Word64`).
-- [ ] M1 — Numeric `Sym` registry: add `Sym` instances for `Word16`, `Word32`,
-      `Word64` (and `Int64`, `Int32`, `Word8` for completeness), register them in
-      `discoverSym`, thread them through `ExtractRegFile`/`symSatExt`, and add
-      unit tests proving a `Word64`/`Word32` equality guard is now solver-visible
-      and round-trips a witness.
+- [x] M1 — Numeric `Sym` registry (2026-05-20): added `Sym` instances for
+      `Word64`, `Word32`, `Word16`, `Word8`, `Int64`, `Int32` (each
+      `SymRep = Integer`, `toSym`/`fromSym = fromIntegral`, with the
+      over-approximation haddock note) in `src/Keiki/Symbolic.hs`; extended
+      `discoverSym` with one guard per type; updated the module-header and
+      `discoverSym` haddock. `ExtractRegFile`/`symSatExt`/`readModel` needed no
+      shape change — the new instances make `Word*` slots automatically
+      extractable. Added `Keiki.SymbolicSpec` blocks: six `discoverSym` registry
+      assertions and a "numeric Sym registry (EP-41 M1)" block (Word64/Word32
+      `isBot` solver-visibility, an `isSingleValuedSym` fixture flipping
+      False→True on a now-visible constant `Word64` contradiction, and a
+      `symSatExt` Word64 single-read witness round-trip). keiki-test: 212
+      examples, 0 failures (was 201). Note: the originally-proposed two-reads-of-
+      one-slot `isSingleValuedSym` form is unattainable without the memoization
+      sibling (see Surprises / Decision Log 2026-05-20); the memoization-free
+      proofs above replace it.
 - [ ] M2 — Ordering predicate: add `data Cmp` and `PCmp` to `Keiki.Core`, its
       `evalPred` arm, a `discoverSymOrd` companion and the `PCmp` arm of
       `translatePred` in `Keiki.Symbolic`, and `requireCmp`/`requireLe`/… builder
@@ -109,6 +120,30 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
 - M0 (2026-05-20): baseline total is 329 examples (1 pending), not the ~336 the
   plan estimated; the estimate predated some spec churn. The only pending spec is
   `LoanApplicationSymbolicSpec`, as expected.
+
+- M1 (2026-05-20): **SBV's `free` does not alias repeated names.** The plan's M1
+  acceptance proposed proving two edges guarded by `PEq #amount (lit 0)` and
+  `PEq #amount (lit 1)` single-valued, on the parenthetical reasoning that "each
+  guard reads `amount` once". That reasoning is wrong: `isSingleValuedSym` checks
+  `isBot (guard e1 ∧ guard e2)`, which conjoins the two guards into one predicate
+  containing *two* reads of `#amount`. `translateTermSym` allocates a fresh SBV
+  variable per `TReg` occurrence (`SBV.free "reg/amount"` each time), and SBV
+  does **not** unify two `free` calls that share a name — it creates independent
+  variables. Empirically (z3 4.15.8, sbv 14.1):
+
+        cabal repl keiki -v0
+        > r <- SBV.sat (do x <- SBV.free "reg/amount" :: SBV.Symbolic (SBV.SBV Integer)
+        >                  y <- SBV.free "reg/amount" :: SBV.Symbolic (SBV.SBV Integer)
+        >                  pure ((x SBV..== 0) SBV..&& (y SBV..== 1)))
+        > SBV.modelExists r
+        two-reads-same-name SAT (True=>independent): True
+
+  So `(reg/amount == 0) ∧ (reg/amount == 1)` is reported **satisfiable**, hence
+  `isSingleValuedSym` over those two guards answers `False` regardless of this
+  plan's numeric work. Proving it `True` is exactly the deferred *memoization
+  sibling*'s job (share one SBV variable per slot). This plan's numeric
+  contribution is proven memoization-free instead; see the Decision Log entry
+  dated 2026-05-20 ("M1 acceptance revised").
 
 
 ## Decision Log
@@ -156,6 +191,33 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
   `goEq` already falls back for non-`Sym` operands (`src/Keiki/Symbolic.hs:286-291`).
   Rationale: keeps the change sound by construction and additive; never claims a
   guarantee it cannot back.
+  Date: 2026-05-20
+
+- Decision: M1 acceptance revised. The plan's original M1/Validation bullet —
+  "two edges guarded by `PEq #slot (lit 0)` and `PEq #slot (lit 1)` are proven
+  single-valued (`isSingleValuedSym == True`)" — is unattainable without the
+  deferred memoization sibling (see the matching Surprises entry: SBV does not
+  alias repeated `free` names, so the conjoined guards' two reads of the same
+  slot become independent variables). What this plan *can* and *does* prove,
+  memoization-free, that the same slot read once per predicate is now solver-
+  visible:
+  (a) Direct contradiction on Word/fixed-width literals:
+  `isBot (SymPred (PEq (TLit (5 :: Word64)) (TLit 6))) == True` (and the same for
+  `Word32`). Before M1 this was `False` because `discoverSym @Word64` missed and
+  `goEq` emitted an opaque `SBV.free "neq"`; after M1 it is real SBV integer
+  equality. This is the crisp solver-visibility proof.
+  (b) An `isSingleValuedSym` fixture over a transducer that *carries* a `Word64`
+  register, whose two outgoing edges are made mutually exclusive by a now-visible
+  constant `Word64` equality (`PEq (lit 5) (lit 6)`, always false) on one edge —
+  so the verdict flips from `False` (pre-M1, opaque) to `True` (post-M1). Each
+  guard reads the register at most once, so no memoization is needed.
+  (c) A `symSatExt` round-trip over a single read of a `Word64` slot
+  (`PAnd (PInCtor inCtorAmtTick) (PEq #amount (lit 7))`) whose witness has
+  `amount == 7`. The `PInCtor` conjunct pins the input constructor so witness
+  reconstruction (`pickCi`) succeeds; the single `#amount` read is memoization-
+  safe.
+  Rationale: keep the milestone's observable, before/after-falsifiable proofs
+  while staying honest about the memoization boundary the plan already draws.
   Date: 2026-05-20
 
 - Decision: Scope excludes (a) structural arithmetic `Term` constructors and
@@ -555,9 +617,16 @@ The plan is complete when, from `/Users/shinzui/Keikaku/bokuno/keiki`:
 
 3. New, observable behavior (each asserted by a test that would fail before the
    relevant milestone):
-   - A `Word64`/`Word32` equality guard is solver-visible: two edges guarded by
-     `PEq #slot (lit 0)` and `PEq #slot (lit 1)` are proven single-valued
-     (`isSingleValuedSym (withSymPred t) == True`).
+   - A `Word64`/`Word32` equality guard is solver-visible:
+     `isBot (SymPred (PEq (TLit (5 :: Word64)) (TLit 6))) == True` (a real SBV
+     integer contradiction; `False`/opaque before M1), and an
+     `isSingleValuedSym` fixture over a `Word64`-register transducer whose two
+     edges are separated by a now-visible constant `Word64` equality flips from
+     `False` to `True`. (The originally-proposed two-reads-of-the-same-slot
+     `isSingleValuedSym` form — `PEq #slot (lit 0)` ∧ `PEq #slot (lit 1)` —
+     requires the deferred memoization sibling, because SBV does not alias the
+     two `reg/<slot>` reads; see the Surprises and Decision Log entries dated
+     2026-05-20.)
    - A constant ordering contradiction over money — `PCmp CmpGe (lit (5::Word64))
      (lit 10)` — is proven empty (`symIsBot p == True`).
    - An ordering guard yields a faithful witness:

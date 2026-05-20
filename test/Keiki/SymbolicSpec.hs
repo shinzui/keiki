@@ -7,6 +7,8 @@ import qualified Data.SBV as SBV
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
+import Data.Word (Word8, Word16, Word32, Word64)
+import Data.Int (Int32, Int64)
 import Test.Hspec
 
 import Keiki.Symbolic
@@ -14,6 +16,62 @@ import Keiki.Symbolic
 
 -- | A two-constructor input symbol for the 'PInCtor' tests.
 data TinyCmd = TinyFoo Int | TinyBar Int deriving (Eq, Show)
+
+
+-- * Numeric-registry fixtures (EP-41 M1) ---------------------------------
+
+-- | A single-slot register file whose value type is the money/count
+-- carrier 'Word64'. Used to prove the EP-41 numeric instances make
+-- fixed-width-integer slots solver-visible and witness-extractable.
+type AmountRegs = '[ '("amount", Word64) ]
+
+
+-- | A one-constructor (empty-payload) input symbol for the numeric
+-- fixture. The 'KnownInCtors' instance lets 'symSatExt' rebuild it.
+data AmtCmd = AmtTick deriving (Eq, Show)
+
+
+inCtorAmtTick :: InCtor AmtCmd '[]
+inCtorAmtTick = InCtor
+  { icName  = "AmtTick"
+  , icMatch = \case AmtTick -> Just RNil
+  , icBuild = \RNil -> AmtTick
+  }
+
+
+instance KnownInCtors AmtCmd where
+  allInCtors = [ SomeInCtor inCtorAmtTick ]
+
+
+-- | The 'amount' slot index, named once for reuse.
+amountIdx :: Index AmountRegs Word64
+amountIdx = ZIdx
+
+
+-- | A two-edge transducer over a 'Word64' register. Both edges leave
+-- the @False@ vertex; the second edge carries a constant 'Word64'
+-- equality that is always false (@5 == 6@), so the pair is mutually
+-- exclusive /iff/ the solver can see that @5 == 6@ is unsatisfiable
+-- over 'Word64'. Before EP-41 added @Sym Word64@, that equality
+-- translated to an opaque fresh 'SBool' and the verdict was @False@;
+-- after EP-41 it is real SBV integer equality and the verdict is
+-- @True@. Each guard reads the register at most once, so the verdict
+-- does not depend on the deferred per-slot memoization.
+amountFixture :: SymTransducer (HsPred AmountRegs AmtCmd)
+                               AmountRegs Bool AmtCmd ()
+amountFixture = SymTransducer
+  { edgesOut = \case
+      False ->
+        [ Edge { guard  = PEq (proj amountIdx) (lit (0 :: Word64))
+               , update = UKeep, output = [], target = True }
+        , Edge { guard  = PEq (lit (5 :: Word64)) (lit (6 :: Word64))
+               , update = UKeep, output = [], target = True }
+        ]
+      True -> []
+  , initial     = False
+  , initialRegs = RCons (Proxy @"amount") 0 RNil
+  , isFinal     = (== True)
+  }
 
 
 inCtorTinyFoo :: InCtor TinyCmd '[ '("a", Int) ]
@@ -66,7 +124,44 @@ spec = do
     it "discovers Sym Integer" $ symKnown (Proxy @Integer) `shouldBe` True
     it "discovers Sym Text"    $ symKnown (Proxy @Text)    `shouldBe` True
     it "discovers Sym UTCTime" $ symKnown (Proxy @UTCTime) `shouldBe` True
+    -- EP-41: fixed-width integers (money + counts).
+    it "discovers Sym Word64"  $ symKnown (Proxy @Word64)  `shouldBe` True
+    it "discovers Sym Word32"  $ symKnown (Proxy @Word32)  `shouldBe` True
+    it "discovers Sym Word16"  $ symKnown (Proxy @Word16)  `shouldBe` True
+    it "discovers Sym Word8"   $ symKnown (Proxy @Word8)   `shouldBe` True
+    it "discovers Sym Int64"   $ symKnown (Proxy @Int64)   `shouldBe` True
+    it "discovers Sym Int32"   $ symKnown (Proxy @Int32)   `shouldBe` True
     it "rejects unknown types" $ symKnown (Proxy @())      `shouldBe` False
+
+  describe "numeric Sym registry (EP-41 M1)" $ do
+    it "Word64 equality is solver-visible: isBot (PEq lit5 lit6) is True" $
+      -- Before M1 this was False (opaque 'neq' fallback); after M1 it is
+      -- a real SBV integer contradiction.
+      isBot (SymPred (PEq (TLit (5 :: Word64)) (TLit 6)) :: SymPred '[] ())
+        `shouldBe` True
+    it "Word64 equality stays sat when consistent: isBot (PEq lit5 lit5) is False" $
+      isBot (SymPred (PEq (TLit (5 :: Word64)) (TLit 5)) :: SymPred '[] ())
+        `shouldBe` False
+    it "Word32 equality is solver-visible: isBot (PEq lit10 lit11) is True" $
+      isBot (SymPred (PEq (TLit (10 :: Word32)) (TLit 11)) :: SymPred '[] ())
+        `shouldBe` True
+    it "isSingleValuedSym sees a now-visible constant Word64 contradiction" $
+      -- The amountFixture's second edge guard is the always-false
+      -- Word64 equality 5 == 6, which only becomes solver-visible with
+      -- the EP-41 'Sym Word64' instance. Verdict flips False -> True.
+      isSingleValuedSym (withSymPred amountFixture) `shouldBe` True
+    it "symSatExt round-trips a Word64 slot (amount == 7)" $ do
+      -- Single read of #amount (memoization-safe); PInCtor pins the
+      -- input constructor so witness reconstruction succeeds.
+      let p = PAnd (PInCtor inCtorAmtTick)
+                   (PEq (proj amountIdx) (lit (7 :: Word64)))
+              :: HsPred AmountRegs AmtCmd
+      case symSatExt p of
+        Nothing          -> expectationFailure "Word64 equality reported unsat"
+        Just (regs, cmd) -> do
+          (regs ! amountIdx) `shouldBe` (7 :: Word64)
+          cmd `shouldBe` AmtTick
+          evalPred p regs cmd `shouldBe` True
 
   describe "translatePred (boolean skeleton)" $ do
     it "PTop is a tautology" $ do

@@ -18,7 +18,10 @@
 -- Milestones implemented in this revision (through M5 of EP-2):
 --
 --   * The 'Sym' typeclass and instances for 'Bool', 'Int', 'Integer',
---     'Text', and 'UTCTime'.
+--     'Text', 'UTCTime', and the fixed-width integers 'Word8' \/
+--     'Word16' \/ 'Word32' \/ 'Word64' \/ 'Int32' \/ 'Int64' (the
+--     last group added by EP-41 so money and count registers are
+--     solver-visible).
 --   * 'SymEnv' carrying the shared symbolic input-constructor tag.
 --   * 'translateTermSym' / 'translatePred' walking 'Term' / 'HsPred'
 --     into SBV expressions.
@@ -61,12 +64,14 @@ module Keiki.Symbolic
   , module Keiki.Core
   ) where
 
+import Data.Int (Int32, Int64)
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 import qualified Data.SBV as SBV
 import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Time (UTCTime)
+import Data.Word (Word8, Word16, Word32, Word64)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Typeable (Typeable)
 import GHC.TypeLits (KnownSymbol, symbolVal)
@@ -119,6 +124,67 @@ instance Sym Int where
   fromSym    = fromIntegral
   symDefault = 0
 
+-- The fixed-width integer instances below all encode as the unbounded
+-- mathematical 'Integer', exactly like 'Sym Int'. This is an
+-- /over-approximation/: the modular wraparound of the Haskell @Word*@ /
+-- @Int*@ type is not modeled. The consequence is sound for
+-- satisfiability (every concrete model the solver finds is a real
+-- witness once decoded through 'fromSym') but may miss an
+-- unsatisfiability that depends on overflow (e.g. @x + 1 == 0@ over
+-- 'Word64' is satisfiable at the type's wrap point but the 'Integer'
+-- encoding reports it unsat). keiki's money and count guards are
+-- equality and ordering checks against in-range literals, where the
+-- over-approximation never bites. The motivating money type is
+-- @Jitsurei.OrderCart@'s @Money = Word64@ (fixed-point minor units).
+
+-- | Money and large counts. Encoded as 'Integer'; see the note above
+-- on the unbounded-'Integer' over-approximation.
+instance Sym Word64 where
+  type SymRep Word64 = Integer
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
+
+-- | Item counts and similar 32-bit unsigned registers. Encoded as
+-- 'Integer'; see the over-approximation note above.
+instance Sym Word32 where
+  type SymRep Word32 = Integer
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
+
+-- | Quantities, basis points, and similar 16-bit unsigned registers.
+-- Encoded as 'Integer'; see the over-approximation note above.
+instance Sym Word16 where
+  type SymRep Word16 = Integer
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
+
+-- | 8-bit unsigned (completeness). Encoded as 'Integer'; see the
+-- over-approximation note above.
+instance Sym Word8 where
+  type SymRep Word8 = Integer
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
+
+-- | 64-bit signed (completeness). Encoded as 'Integer'; see the
+-- over-approximation note above.
+instance Sym Int64 where
+  type SymRep Int64 = Integer
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
+
+-- | 32-bit signed (completeness). Encoded as 'Integer'; see the
+-- over-approximation note above.
+instance Sym Int32 where
+  type SymRep Int32 = Integer
+  toSym      = fromIntegral
+  fromSym    = fromIntegral
+  symDefault = 0
+
 -- | 'Text' is encoded as Haskell 'String' for SBV's 'SString' theory.
 instance Sym Text where
   type SymRep Text = String
@@ -147,10 +213,12 @@ data SymDict r where
 
 -- | Try to discover a 'Sym' instance for @r@ at runtime. Returns
 -- @Just SymDict@ for any of the curated supported types
--- ('Bool', 'Int', 'Integer', 'Text', 'UTCTime'); 'Nothing'
--- otherwise. The translator uses this to route 'PEq' over arbitrary
--- types: a 'Sym' hit translates to '(.==)' on SBV terms; a miss
--- falls back to a fresh 'SBool' (loses precision but stays sound).
+-- ('Bool', 'Int', 'Integer', 'Text', 'UTCTime', and the fixed-width
+-- integers 'Word8' \/ 'Word16' \/ 'Word32' \/ 'Word64' \/ 'Int32' \/
+-- 'Int64'); 'Nothing' otherwise. The translator uses this to route
+-- 'PEq' over arbitrary types: a 'Sym' hit translates to '(.==)' on
+-- SBV terms; a miss falls back to a fresh 'SBool' (loses precision but
+-- stays sound).
 discoverSym :: forall r. Typeable r => Maybe (SymDict r)
 discoverSym
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Bool)    = Just SymDict
@@ -158,6 +226,12 @@ discoverSym
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymDict
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Text)    = Just SymDict
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @UTCTime) = Just SymDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64)  = Just SymDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32)  = Just SymDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16)  = Just SymDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8)   = Just SymDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64)   = Just SymDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32)   = Just SymDict
   | otherwise                                                = Nothing
 
 
