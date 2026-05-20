@@ -75,10 +75,14 @@ either of them and can be implemented first.
       keiki-codec-json-test-test 7/0. *Before* values of falsifiers 1–3 captured via
       `cabal repl keiki` (recorded in Surprises & Discoveries); falsifier 4 (repeated-read
       `symSatExt`) needs a `KnownInCtors` fixture so its before/after is captured at M2.
-- [ ] M1 — Memoizing `SymEnv` + translator: replace the `SymEnv` newtype with one that
-      carries an `IORef`-backed memo cache; rewrite the `TReg` and `TInpCtorField` arms
-      of `translateTermSym` to consult the cache; keep `mkSymEnv` allocating the cache.
-      Build green, full suite green.
+- [x] M1 — Memoizing `SymEnv` + translator (2026-05-20): `SymEnv` is now a record with
+      `seVarCache :: IORef (Map String SomeSBV)`; added `SomeSBV` existential and
+      `memoFree`; rewrote the `TReg`/`TInpCtorField` arms to call `memoFree`; `mkSymEnv`
+      allocates the cache via `liftIO (newIORef Map.empty)`. Added `containers` to
+      `keiki.cabal`'s library `build-depends`. Library builds warning-clean; `cabal test
+      all` green with M0 counts unchanged (keiki-test 216/0, jitsurei-test 94/0/1-pending,
+      json 40/0 + 7/0). Repl re-check: falsifiers flipped F1 `False→True`, F2a
+      `True→False`, F3 `False→True`; F2b stays `False`.
 - [ ] M2 — keiki-side proofs: add a "memoization (EP-42)" block to
       `Keiki.SymbolicSpec` proving the four falsifiers flip.
 - [ ] M3 — Dogfood + pending-reason sharpening: confirm the existing jitsurei symbolic
@@ -108,6 +112,19 @@ either of them and can be implemented first.
   solver believes `x` can differ from itself. F2b is the sanity baseline (it is and stays
   `False`). M2 will lock F1/F3 (and the repeated-read `symSatExt` falsifier F4) into the
   suite and show them flip after M1.
+
+- 2026-05-20 (M1). `Data.SBV`'s `SymVal` class confirmed to carry a `Typeable`
+  superclass (`:info SBV.SymVal` shows `class (SBV.HasKind a, ... Typeable a, …) =>
+  SymVal a`), so the `SomeSBV` existential needs no extra constraint: matching
+  `SomeSBV (v :: SBV.SBV b)` brings `Typeable b` into scope for the `eqTypeRep` check in
+  `memoFree`. The plan's fallback (adding `Typeable (SymRep a)` to the `Sym` context) was
+  not needed. After M1 the repl falsifiers flip exactly as predicted (F1 `True`, F2a
+  `False`, F2b `False`, F3 `True`), and the full suite is unchanged at M0 counts — the
+  `SymEnv` newtype→record widening is internal and caused no regression.
+
+- 2026-05-20 (M1). `keiki.cabal`'s library `build-depends` did **not** list `containers`
+  even though `Data.Map.Strict` is now required; added `containers >= 0.6 && < 0.9`. (The
+  package was previously only available transitively via `sbv`.)
 
 
 ## Decision Log

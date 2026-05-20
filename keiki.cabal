@@ -69,6 +69,7 @@ library
     hs-source-dirs:     src
     build-depends:      base ^>= 4.21,
                         bytestring ^>= 0.12,
+                        containers >= 0.6 && < 0.9,
                         cryptohash-sha256 ^>= 0.11,
                         nothunks >= 0.3 && < 0.4,
                         profunctors >= 5.6 && < 6,

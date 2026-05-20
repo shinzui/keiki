@@ -66,8 +66,12 @@ module Keiki.Symbolic
   , module Keiki.Core
   ) where
 
+import Control.Monad.IO.Class (liftIO)
 import Data.Int (Int32, Int64)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.Kind (Type)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Proxy (Proxy (..))
 import qualified Data.SBV as SBV
 import qualified Data.Text as T
@@ -285,29 +289,61 @@ symFree = SBV.free
 -- | Translation context: shared symbolic state that must be threaded
 -- through a single predicate's walk so that, for example, two
 -- 'PInCtor' atoms over distinct constructors agree they cannot both
--- be true.
+-- be true, and two reads of the same register (or input field) share
+-- one solver variable.
 --
--- Currently only the input constructor tag is shared. Per-slot
--- register variables and per-(InCtor, field) input variables are
--- allocated fresh on each occurrence; this loses the precision of
--- recognizing two reads of the same slot as the same value, but is
--- sound (sat/unsat answers are still correct conservatively) and
--- sufficient for the User Registration smoke test.
-newtype SymEnv = SymEnv
+-- Two pieces of state are shared:
+--
+--   * 'seInputCtor' — the symbolic input-constructor tag, so 'PInCtor'
+--     atoms over distinct constructors are recognized as mutually
+--     unsatisfiable.
+--   * 'seVarCache' — a per-translation memo cache (EP-42) keyed by the
+--     deterministic variable name ('TReg' allocates @"reg/\<slot\>"@,
+--     'TInpCtorField' allocates @"inp/\<ctor\>/\<field\>"@). The first
+--     read of a name allocates one 'SBV.free' variable and stores it;
+--     every later read of the same name returns the cached variable.
+--     This makes the solver see two reads of @#x@ as the /same/ value,
+--     so @proj #x .== proj #x@ is valid (not merely satisfiable). The
+--     'TApp1' \/ 'TApp2' escape hatches are deliberately /not/ cached:
+--     they wrap opaque Haskell functions with no 'Eq', so two
+--     applications cannot be recognized as equal and each stays a fresh
+--     per-occurrence variable.
+data SymEnv = SymEnv
   { seInputCtor :: SBV.SBV String
     -- ^ The shared symbolic input constructor tag. 'PInCtor' atoms
     -- assert @seInputCtor .== literal (icName ic)@; the solver
     -- recognizes that two such constraints with distinct names are
     -- mutually unsatisfiable.
+  , seVarCache :: IORef (Map String SomeSBV)
+    -- ^ Memo cache: maps a deterministic variable name ("reg/\<slot\>"
+    -- or "inp/\<ctor\>/\<field\>") to the single SBV variable allocated
+    -- for it during this predicate translation. Lazily populated on
+    -- first read so unread slots stay unconstrained (and 'symSatExt'
+    -- falls back to 'symDefault' for them). Scoped to one
+    -- 'translatePred' walk (one 'mkSymEnv'), so variables are shared
+    -- /within/ a query but never leak across independent queries.
   }
 
 
+-- | An SBV variable of some representation type, packed so the memo
+-- cache in 'SymEnv' can hold variables of different representation
+-- types under one map. 'SBV.SymVal' has a 'Typeable' superclass, so
+-- pattern-matching @SomeSBV (v :: SBV.SBV a)@ brings @Typeable a@ into
+-- scope — exactly what 'memoFree' needs to check the recovered type
+-- matches the requested one on a cache hit.
+data SomeSBV where
+  SomeSBV :: SBV.SymVal a => SBV.SBV a -> SomeSBV
+
+
 -- | Allocate a fresh 'SymEnv'. Lives in 'SBV.Symbolic' because
--- 'seInputCtor' is a free symbolic variable.
+-- 'seInputCtor' is a free symbolic variable and the memo cache is an
+-- 'IORef' created in the underlying 'IO' ('SBV.Symbolic' is
+-- @SymbolicT IO@, hence 'MonadIO').
 mkSymEnv :: SBV.Symbolic SymEnv
 mkSymEnv = do
-  ctor <- SBV.free "inputCtor"
-  pure (SymEnv ctor)
+  ctor  <- SBV.free "inputCtor"
+  cache <- liftIO (newIORef Map.empty)
+  pure (SymEnv ctor cache)
 
 
 -- * Translation -------------------------------------------------------------
@@ -333,27 +369,54 @@ mkSymEnv = do
 --   * 'TApp1' / 'TApp2' keep their anonymous names; their values are
 --     not extracted as part of the witness.
 --
--- Note on repeated reads: SBV's 'SBV.free' uniquifies repeated
--- variable names by appending @_N@. Two reads of the same slot
--- (e.g. @proj #x .== proj #x@) produce two independent SBV variables
--- in the model. For sat\/unsat answers this is sound (it
--- over-approximates SAT). For 'symSatExt' witness extraction this
--- means a witness reconstructed by name lookup may not satisfy a
--- predicate with repeated reads. The User Registration test target
--- has no repeated reads and is sound. Memoization (via an 'IORef'
--- cache in 'SymEnv') is a future improvement; see EP-9 design log.
+-- Note on repeated reads (EP-42): 'TReg' and 'TInpCtorField' reads are
+-- memoized through the env's 'seVarCache'. The first read of a given
+-- slot\/field allocates one 'SBV.free' variable and caches it under its
+-- deterministic name; every later read of the same name returns the
+-- cached variable. So two reads of the same slot (e.g.
+-- @proj #x .== proj #x@) share /one/ SBV variable: the solver knows
+-- they are equal, @x \/= x@ is unsat, and 'symSatExt''s by-name witness
+-- extraction is correct for repeated reads. The 'TApp1' \/ 'TApp2'
+-- escape hatches stay per-occurrence fresh (their opaque functions
+-- have no 'Eq', so two applications cannot be recognized as equal);
+-- their values are not part of the extracted witness.
 translateTermSym
   :: forall rs ci r. Sym r
   => SymEnv
   -> Term rs ci r
   -> SBV.Symbolic (SBV.SBV (SymRep r))
 translateTermSym _env  (TLit r)              = pure (symLit r)
-translateTermSym _env  (TReg ix)             =
-  SBV.free ("reg/" <> indexName ix)
-translateTermSym _env  (TInpCtorField ic ix) =
-  SBV.free ("inp/" <> icName ic <> "/" <> indexName ix)
+translateTermSym env   (TReg ix)             =
+  memoFree env ("reg/" <> indexName ix)
+translateTermSym env   (TInpCtorField ic ix) =
+  memoFree env ("inp/" <> icName ic <> "/" <> indexName ix)
 translateTermSym _env  (TApp1 _f _t)         = SBV.free "app1"
 translateTermSym _env  (TApp2 _f _a _b)      = SBV.free "app2"
+
+
+-- | Memoized symbolic-variable allocator (EP-42). Looks @name@ up in
+-- the env's 'seVarCache'. On a hit, recover the cached SBV variable —
+-- checking its representation type matches the requested one, which it
+-- always does because a deterministic name maps to exactly one type.
+-- On a miss, allocate a fresh 'SBV.free', store it under @name@, and
+-- return it. This is what makes repeated reads of the same register or
+-- input field share a single solver variable.
+memoFree
+  :: forall a. SBV.SymVal a
+  => SymEnv -> String -> SBV.Symbolic (SBV.SBV a)
+memoFree env name = do
+  m <- liftIO (readIORef (seVarCache env))
+  case Map.lookup name m of
+    Just (SomeSBV (v :: SBV.SBV b)) ->
+      case eqTypeRep (typeRep @a) (typeRep @b) of
+        Just HRefl -> pure v
+        Nothing    ->
+          -- Unreachable: a name maps to exactly one representation type.
+          error ("memoFree: type mismatch for cached variable " <> name)
+    Nothing -> do
+      v <- SBV.free name
+      liftIO (modifyIORef' (seVarCache env) (Map.insert name (SomeSBV v)))
+      pure v
 
 
 -- | Recover the slot name an 'Index' points at by walking to the
