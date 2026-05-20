@@ -83,8 +83,13 @@ either of them and can be implemented first.
       all` green with M0 counts unchanged (keiki-test 216/0, jitsurei-test 94/0/1-pending,
       json 40/0 + 7/0). Repl re-check: falsifiers flipped F1 `False→True`, F2a
       `True→False`, F3 `False→True`; F2b stays `False`.
-- [ ] M2 — keiki-side proofs: add a "memoization (EP-42)" block to
-      `Keiki.SymbolicSpec` proving the four falsifiers flip.
+- [x] M2 — keiki-side proofs (2026-05-20): added a `describe "memoization (EP-42)"` block
+      to `Keiki.SymbolicSpec` (6 assertions) plus a `twoReadEdgeFixture`. `cabal test
+      keiki-test` → 222 examples (was 216), 0 failures. The four falsifiers are locked in:
+      `symIsBot (PNot (PEq #amount #amount))` True, `symSat …` Nothing, the two-edge
+      `PEq #amount 0`/`PEq #amount 1` fixture single-valued, and the repeated-read witness
+      path (contradiction → `Nothing`; satisfiable round-trip → `models` True). See the
+      Decision Log on strengthening the repeated-read falsifier.
 - [ ] M3 — Dogfood + pending-reason sharpening: confirm the existing jitsurei symbolic
       specs still pass; sharpen the pending reason on
       `jitsurei/test/Jitsurei/LoanApplicationSymbolicSpec.hs` to record that, after
@@ -146,6 +151,26 @@ either of them and can be implemented first.
   arithmetic-terms sibling (EP-43), which replaces the relevant `TApp` with structural
   arithmetic so it stops minting fresh per-occurrence variables. See the MasterPlan's
   Integration Points.
+  Date: 2026-05-20
+
+- Decision: Strengthen M2's repeated-read `symSatExt` falsifier (the plan's item 4). The
+  plan suggested `PAnd (PInCtor inCtorX) (PEq (proj #x) (proj #x))` and asserting the
+  witness satisfies `models`. On inspection that is *not* a before/after flip: concrete
+  `evalPred` reads the same register twice, so `proj #x == proj #x` is trivially `True`
+  for any witness regardless of memoization — the pre-EP-42 by-name witness already
+  satisfied `models` for that predicate. The witness can only *fail* `models` when the
+  solver exploited the two reads' independence to satisfy a constraint no single value can
+  (e.g. `#x == 0 ∧ #x == 1`); but that exact predicate is precisely the one that becomes
+  *unsatisfiable* after memoization, so the genuine flip is `Just`(bogus witness)
+  → `Nothing`. M2 therefore asserts both: (a) the repeated-read contradiction
+  `PInCtor ∧ #amount==0 ∧ #amount==1` now has *no* witness (`symSatExt … == Nothing`,
+  whose pre-EP-42 satisfiability is the same conjunction empirically captured as
+  falsifier F3 — the single-valuedness gate's conjunct), and (b) a positive round-trip
+  (`PInCtor ∧ #amount==#amount` yields a witness satisfying `models`) as a regression
+  guard on the witness path.
+  Rationale: keep the test suite's claims accurate — every "before/after-falsifiable"
+  assertion must really flip. The contradiction form is the honest repeated-read flip; the
+  round-trip is a genuine (non-flipping) regression guard, labelled as such.
   Date: 2026-05-20
 
 

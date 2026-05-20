@@ -1,7 +1,7 @@
 module Keiki.SymbolicSpec (spec) where
 
 import Data.Kind (Type)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, isNothing)
 import Data.Proxy (Proxy (..))
 import qualified Data.SBV as SBV
 import Data.Text (Text)
@@ -65,6 +65,33 @@ amountFixture = SymTransducer
         [ Edge { guard  = PEq (proj amountIdx) (lit (0 :: Word64))
                , update = UKeep, output = [], target = True }
         , Edge { guard  = PEq (lit (5 :: Word64)) (lit (6 :: Word64))
+               , update = UKeep, output = [], target = True }
+        ]
+      True -> []
+  , initial     = False
+  , initialRegs = RCons (Proxy @"amount") 0 RNil
+  , isFinal     = (== True)
+  }
+
+
+-- | A two-edge transducer over the 'Word64' @amount@ register whose
+-- /both/ guards read the register: @PEq #amount 0@ and @PEq #amount 1@.
+-- Single-valuedness forms the conjunction @#amount == 0 ∧ #amount == 1@,
+-- which is unsatisfiable only if the two reads of @#amount@ (one per
+-- guard) share a single SBV variable. Before EP-42's per-slot
+-- memoization the two reads were independent fresh variables, so the
+-- conjunction stayed satisfiable and the verdict was @False@; after
+-- EP-42 the shared variable makes it a real contradiction and the
+-- verdict flips to @True@. Contrast 'amountFixture', whose second guard
+-- is a /constant/ contradiction (@5 == 6@) that needs no memoization.
+twoReadEdgeFixture :: SymTransducer (HsPred AmountRegs AmtCmd)
+                                    AmountRegs Bool AmtCmd ()
+twoReadEdgeFixture = SymTransducer
+  { edgesOut = \case
+      False ->
+        [ Edge { guard  = PEq (proj amountIdx) (lit (0 :: Word64))
+               , update = UKeep, output = [], target = True }
+        , Edge { guard  = PEq (proj amountIdx) (lit (1 :: Word64))
                , update = UKeep, output = [], target = True }
         ]
       True -> []
@@ -192,6 +219,57 @@ spec = do
       chk CmpLe (<=) `shouldBe` True
       chk CmpGt (>)  `shouldBe` True
       chk CmpGe (>=) `shouldBe` True
+
+  describe "memoization (EP-42)" $ do
+    -- All four assertions exercise repeated reads of the same register
+    -- #amount. Before EP-42 each read minted a fresh SBV variable, so
+    -- the solver believed two reads of #amount could disagree; after
+    -- EP-42 they share one variable. Recorded before-values (M0 repl,
+    -- mirrored on #x): F1 symIsBot (x /= x) = False, symSat = Just;
+    -- F3 the two-edge fixture verdict = False. See the plan's
+    -- Surprises & Discoveries.
+    let pNeq = PNot (PEq (proj amountIdx) (proj amountIdx))
+               :: HsPred AmountRegs AmtCmd
+        pEq  = PEq (proj amountIdx) (proj amountIdx)
+               :: HsPred AmountRegs AmtCmd
+
+    it "x /= x is empty: symIsBot (PNot (PEq #amount #amount)) is True" $
+      symIsBot pNeq `shouldBe` True
+
+    it "x /= x is unsat via symSat: symSat (PNot (PEq #amount #amount)) is Nothing" $
+      isJust (symSat pNeq) `shouldBe` False
+
+    it "x == x stays satisfiable: symIsBot (PEq #amount #amount) is False (sanity)" $
+      symIsBot pEq `shouldBe` False
+
+    it "two edges PEq #amount 0 / PEq #amount 1 are single-valued" $
+      -- The single-valuedness conjunction is #amount == 0 ∧ #amount == 1,
+      -- a contradiction only when the two reads share one variable.
+      isSingleValuedSym (withSymPred twoReadEdgeFixture) `shouldBe` True
+
+    it "a repeated-read contradiction has no witness: symSatExt (#amount==0 ∧ #amount==1) is Nothing" $ do
+      -- Same conjunction as the single-valuedness gate, surfaced through
+      -- symSatExt. Before EP-42 the independent reads let the solver
+      -- satisfy #amount==0 and #amount==1 separately, so symSatExt
+      -- returned a Just whose by-name witness failed models; after EP-42
+      -- the shared variable makes it a true contradiction (Nothing).
+      let pContra = PAnd (PInCtor inCtorAmtTick)
+                         (PAnd (PEq (proj amountIdx) (lit (0 :: Word64)))
+                               (PEq (proj amountIdx) (lit (1 :: Word64))))
+                    :: HsPred AmountRegs AmtCmd
+      isNothing (symSatExt pContra) `shouldBe` True
+
+    it "symSatExt witness over a repeated read satisfies models" $ do
+      -- Positive round-trip: a satisfiable repeated-read predicate. The
+      -- by-name witness now coincides with the single shared variable,
+      -- so it satisfies models. (PInCtor pins the constructor so witness
+      -- reconstruction succeeds.)
+      let p = PAnd (PInCtor inCtorAmtTick)
+                   (PEq (proj amountIdx) (proj amountIdx))
+              :: HsPred AmountRegs AmtCmd
+      case symSatExt p of
+        Nothing          -> expectationFailure "repeated-read predicate reported unsat"
+        Just (regs, cmd) -> models (SymPred p) (regs, cmd) `shouldBe` True
 
   describe "translatePred (boolean skeleton)" $ do
     it "PTop is a tautology" $ do
