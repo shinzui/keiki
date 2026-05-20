@@ -276,15 +276,20 @@ approvalGuard =
 ```
 
 The LoanApplication's symbolic spec (`LoanApplicationSymbolicSpec`)
-still marks the *single-valuedness* gate `pendingWith`: proving
-`approvalGuard ∧ ¬approvalGuard` unsatisfiable needs the two reads of
-`#appCreditScore` (one per half) to share one solver variable, which
-is the per-slot *memoization* follow-on (the translator allocates a
-fresh variable per read, and SBV does not alias same-named variables).
-EP-41 supplied the comparison constructor that gate's reason originally
-asked for; the spec also asserts, un-pended, that the approval edge's
-`symSatExt` witness has a credit score `>=` the threshold. See the
-spec's module haddock for the full caveat.
+still marks the *single-valuedness* gate `pendingWith`, but the reason
+has narrowed. Proving `approvalGuard ∧ ¬approvalGuard` unsatisfiable
+needed two things: the two reads of `#appCreditScore` (one per half) to
+share one solver variable, and the cap conjunct
+`appRequestedAmount <= maxApprovalForScore appCreditScore` to be visible
+to the solver. EP-42 (per-slot *memoization*) delivered the first — the
+two reads now share a variable. The remaining blocker is the
+*arithmetic-terms* follow-on (EP-43): `maxApprovalForScore` is still an
+opaque `TApp1` that mints a fresh variable per occurrence, so the
+self-mutex stays satisfiable via the cap until that term becomes
+structural arithmetic. EP-41 supplied the comparison constructor the
+gate's reason originally asked for; the spec also asserts, un-pended,
+that the approval edge's `symSatExt` witness has a credit score `>=` the
+threshold. See the spec's module haddock for the full caveat.
 
 `UnderReview` then has two `Continue`-keyed edges — approve under
 `approvalGuard`, decline under `PNot approvalGuard` — plus a
@@ -699,12 +704,13 @@ emits transitions that actually exist.
 - **Symbolic CI.** [symbolic-ci.md](symbolic-ci.md) walks through
   wiring `isSingleValuedSym` into a CI image. The LoanApplication's
   symbolic spec is currently `pendingWith` because its
-  single-valuedness gate needs the per-slot *memoization* follow-on
-  (two reads of `#appCreditScore` must share a solver variable); the
-  ordering-guard half was delivered by EP-41 and the spec asserts the
-  ordering win un-pended. That spec is a useful template for what the
-  symbolic gate looks like when it *does* hold (as in
-  `Jitsurei.UserRegistration`).
+  single-valuedness gate needs the *arithmetic-terms* follow-on
+  (EP-43): per-slot memoization (EP-42) now shares the two reads of
+  `#appCreditScore`, but the cap conjunct's `maxApprovalForScore` is
+  still an opaque `TApp1`. The ordering-guard half was delivered by
+  EP-41 and the spec asserts the ordering win un-pended. That spec is a
+  useful template for what the symbolic gate looks like when it *does*
+  hold (as in `Jitsurei.UserRegistration`).
 - **Per-vertex views.** [b-views.md](b-views.md) covers
   `deriveView` in depth, including the validation rules that gave
   rise to this tutorial's `Drafting → Intake` rename.

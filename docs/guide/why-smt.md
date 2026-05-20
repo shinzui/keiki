@@ -159,11 +159,15 @@ Three places where the assurance weakens:
   "they really are mutually exclusive." Never the reverse. (A bare
   threshold like `amount >= 1000` no longer needs an escape — write it
   as `requireGe #amount (lit 1000)` and the solver sees it.)
-- **Repeated reads of one register.** The translator currently
-  allocates a fresh solver variable per register read, so a predicate
-  that reads the same slot twice (e.g. a self-mutex `g ∧ ¬g` over a
-  shared register) is treated as two independent values — the gate may
-  fail (`False`) when the truth is mutual exclusion. Never the reverse.
+- **Repeated reads of one register.** *Fixed in EP-42 of MasterPlan
+  12.* The translator now memoizes register and input-field reads, so a
+  predicate that reads the same slot twice (e.g. a self-mutex `g ∧ ¬g`
+  over a shared register) shares one solver variable and the gate
+  decides it correctly. The one residual is reads routed through a
+  `TApp1` / `TApp2` escape hatch (the bullet above): those are not
+  memoized (opaque functions have no `Eq`), so two applications still
+  mint independent variables — the gate may fail (`False`) when the
+  truth is mutual exclusion. Never the reverse.
 - **`Unknown` from the solver.** Some predicate shapes push z3 outside
   its decidable fragment. keiki treats `Unknown` conservatively — as
   if the predicate were satisfiable — so a spurious `Unknown` causes

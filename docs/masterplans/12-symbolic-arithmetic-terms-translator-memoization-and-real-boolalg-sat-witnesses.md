@@ -106,7 +106,7 @@ registry, the prose below, and the child plans' cross-references all use one num
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | In Progress |
+| 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | Complete |
 | 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | Not Started |
 | 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Not Started |
 
@@ -197,11 +197,11 @@ EP-43's M3 capstone executed after both EP-42 and EP-43's earlier milestones are
 
 EP-42 (memoization):
 
-- [ ] EP-42 M0 — Baseline + record *before* falsifiers
-- [ ] EP-42 M1 — Memoizing `SymEnv` + translator (`memoFree`, name-keyed `IORef` cache)
-- [ ] EP-42 M2 — keiki-side proofs (`x ≠ x` empty; `PEq #x 0`/`PEq #x 1` single-valued; repeated-read `symSatExt` satisfies `models`)
-- [ ] EP-42 M3 — Dogfood + sharpen `LoanApplicationSymbolicSpec` pending reason to name EP-43
-- [ ] EP-42 M4 — Docs (`sbv-boolalg-design.md` memoization marked implemented) + close
+- [x] EP-42 M0 — Baseline + record *before* falsifiers (2026-05-20)
+- [x] EP-42 M1 — Memoizing `SymEnv` + translator (`memoFree`, name-keyed `IORef` cache) (2026-05-20)
+- [x] EP-42 M2 — keiki-side proofs (`x ≠ x` empty; `PEq #x 0`/`PEq #x 1` single-valued; repeated-read `symSatExt` flip) (2026-05-20)
+- [x] EP-42 M3 — Dogfood + sharpen `LoanApplicationSymbolicSpec` pending reason to name EP-43 (2026-05-20)
+- [x] EP-42 M4 — Docs (`sbv-boolalg-design.md` memoization marked implemented) + close (2026-05-20)
 
 EP-43 (arithmetic terms):
 
@@ -240,6 +240,19 @@ Integration capstone (cross-plan):
   `translateTermSym _env (TApp1 _f _t) = SBV.free "app1"` (`src/Keiki/Symbolic.hs:355`)
   allocates per occurrence; EP-41 verified empirically that same-name `SBV.free` calls do
   not alias (EP-41 Surprises & Discoveries, 2026-05-20).
+
+- 2026-05-20 (EP-42 complete): **Memoization landed; the capstone correctly remains blocked
+  on EP-43.** EP-42 shipped the name-keyed `IORef (Map String SomeSBV)` cache in `SymEnv`
+  and the four falsifiers flipped (recorded in EP-42's Outcomes). As predicted in the
+  planning entry above, the `LoanApplicationSymbolicSpec` single-valuedness gate did *not*
+  become un-pendable: with `#appCreditScore` now shared, the surviving blocker is the cap's
+  opaque `TApp1` (EP-43). EP-42 M3 corrected the gate's pending message and module haddock
+  to name EP-43, and swept the guide/research docs so no stale "repeated reads lose
+  precision" claim remains (except the honest `TApp` residual). Two minor implementation
+  surprises: `SBV.SymVal` carries a `Typeable` superclass (so `SomeSBV` needs no extra
+  constraint), and `containers` was missing from `keiki.cabal`'s library `build-depends`
+  (added `>= 0.6 && < 0.9`). The cross-plan handoff for EP-43/EP-44 is exactly as the
+  Integration Points describe — both inherit the memoization with no extra work.
 
 
 ## Decision Log

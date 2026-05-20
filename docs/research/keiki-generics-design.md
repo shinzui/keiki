@@ -702,21 +702,23 @@ Five small choices fix the shape:
    `KnownSymbol` evidence on `Index`'s `ZIdx` constructor; a small
    helper `indexName :: Index rs r -> String` walks the index.
 
-3. *No memoization in v1.* SBV's `free name` uniquifies repeated
-   names by appending `_N` — two calls to `free "x"` produce `x`
-   and `x_0`, both with their own model value. For predicates with
+3. *Memoization (no longer a v1 gap — implemented in EP-42 of
+   MasterPlan 12).* SBV's `free name` uniquifies repeated names by
+   appending `_N` — two calls to `free "x"` produce `x` and `x_0`,
+   both with their own model value. In v1 this meant predicates with
    repeated reads of the same slot or input field
-   (e.g. `proj #x .== proj #x`), the two allocations are independent
-   SBV variables; the solver may pick distinct values and the
-   witness extractor's name lookup returns only the first
-   allocation. The reconstructed witness then *might not* satisfy
-   the original predicate's structural-equality reads. The User
-   Registration test target — the `RequiresConfirmation`
-   ConfirmAccount edge guard — has no repeated reads, so the
-   round-trip is sound. Memoization (via an `IORef`-cached
-   `Map String SomeSBV` in `SymEnv`) is a documented follow-up;
-   `symSatExt`'s haddock states the limitation and the workaround
-   (split a repeated-read predicate into a fresh-variable form).
+   (e.g. `proj #x .== proj #x`) allocated independent SBV variables;
+   the solver could pick distinct values and the witness extractor's
+   name lookup returned only the first allocation, so the
+   reconstructed witness *might not* satisfy the original predicate's
+   structural-equality reads. (The User Registration test target —
+   the `RequiresConfirmation` ConfirmAccount edge guard — had no
+   repeated reads, so its round-trip was sound regardless.) EP-42
+   added exactly the `IORef`-cached `Map String SomeSBV` in `SymEnv`
+   this note anticipated: `TReg` / `TInpCtorField` reads are memoized
+   by name, so repeated reads share one variable and `symSatExt`
+   witnesses are correct for them. The residual is reads routed
+   through `TApp1` / `TApp2`, which are not memoized.
 
 4. *`Sym` typeclass extension.* Add a `symDefault :: a` method.
    Defaults: `Bool→False`, `Int→0`, `Integer→0`, `Text→""`,

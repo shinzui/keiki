@@ -100,9 +100,18 @@ either of them and can be implemented first.
       register re-read) and `LoanApplication`'s gate also needs arithmetic — neither offers
       a memoization-*only* win, so M2's keiki-side proofs stand as the lock-in (see the
       Surprises entry).
-- [ ] M4 — Docs + close: update `docs/research/sbv-boolalg-design.md` (the
-      `SymEnv`/translation sections already *describe* this design — mark it implemented)
-      and any guide caveats that say repeated reads lose precision. Fill Outcomes.
+- [x] M4 — Docs + close (2026-05-20): updated `docs/research/sbv-boolalg-design.md`
+      (Translation environment + Term translation rules → "implemented in EP-42", with the
+      single name-keyed-`IORef` simplification documented); softened the repeated-read
+      caveats in `docs/guide/why-smt.md`, `docs/research/symbolic-analysis-and-runtime-implications.md`,
+      `docs/research/keiki-generics-design.md` (item 3), and the LoanApplication caveats in
+      `docs/guide/loan-application-tutorial.md` (both mentions now name EP-43 as the
+      remaining blocker); softened the `symSatExt` haddock and module-header in
+      `src/Keiki/Symbolic.hs`. `docs/guide/symbolic-ci.md` had no repeated-read caveat (its
+      only caveat is the `TApp` residual, still accurate). Build warning-clean (the two
+      pre-existing `Jitsurei/Loan.hs` + `CoreBankingSync.hs` unused-bind warnings are
+      unrelated); full suite green (keiki-test 222/0, jitsurei-test 94/0/1-pending, json
+      40/0 + 7/0).
 
 
 ## Surprises & Discoveries
@@ -195,9 +204,45 @@ either of them and can be implemented first.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. Note especially whether
-`Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate became un-pendable here
-or remained blocked on EP-43, and which falsifiers flipped.)
+Delivered (2026-05-20). The symbolic translator now memoizes register (`TReg`) and
+input-field (`TInpCtorField`) reads: within one predicate translation, two reads of the
+same slot or `(InCtor, field)` pair share a single SBV variable. Implemented as a single
+`IORef (Map String SomeSBV)` cache keyed by the deterministic variable name in `SymEnv`
+(simpler than the design note's two-structure sketch; equivalent because `"reg/…"` and
+`"inp/…/…"` names are prefix-disjoint). `TApp1`/`TApp2` stay per-occurrence fresh by
+design (opaque functions have no `Eq`).
+
+Falsifiers that flipped (all locked into `Keiki.SymbolicSpec`'s "memoization (EP-42)"
+block, before-values in Surprises & Discoveries):
+
+- `symIsBot (PNot (PEq (proj #x) (proj #x)))`: `False → True` (x ≠ x is now empty).
+- `symSat (PNot (PEq (proj #x) (proj #x)))`: `Just → Nothing`.
+- An `isSingleValuedSym` fixture with edges `PEq #x 0` / `PEq #x 1`: `False → True`.
+- A repeated-read contradiction `PInCtor ∧ #x==0 ∧ #x==1` via `symSatExt`:
+  `Just`(bogus witness) `→ Nothing`. (The plan's literal "`proj #x == proj #x` witness
+  satisfies models" is *not* a flip — concrete `evalPred` makes it trivially true — so it
+  is kept only as a positive regression guard; see the Decision Log.)
+
+`Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate did **not** become
+un-pendable here: it remains blocked on EP-43. Memoization is necessary but not sufficient
+because `approvalGuard`'s cap conjunct `appRequestedAmount <= maxApprovalForScore
+appCreditScore` routes `maxApprovalForScore` through an opaque `TApp1`, which is not
+memoized, so the two copies in `approvalGuard ∧ ¬approvalGuard` still mint independent
+variables. M3 sharpened that gate's pending message (and module haddock) to name EP-43 as
+the sole remaining blocker — correcting the post-EP-41 message that had blamed memoization
+alone. The un-pend is MasterPlan 12's integration capstone, owned by EP-43.
+
+Surprises worth carrying forward: (1) `SBV.SymVal` carries a `Typeable` superclass, so
+`SomeSBV` needs no extra constraint; (2) `containers` was missing from `keiki.cabal`'s
+library `build-depends` despite being used transitively; (3) the post-EP-41 pending
+message under-counted the gate's blockers (memoization-only, when arithmetic is also
+required) — now corrected.
+
+Lessons: the `SymEnv` newtype→record widening was fully internal and caused zero
+regressions, validating the additive-with-internal-shape-change approach. Sibling plans
+EP-43 (arithmetic) and EP-44 (real `sat` witnesses) inherit this memoization
+automatically: EP-43's `TArith` arm reads operands via the recursive `translateTermSym
+env` call, and EP-44's `sat = symSatExt` consumes the now-correct repeated-read witnesses.
 
 
 ## Context and Orientation

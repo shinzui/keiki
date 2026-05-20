@@ -144,13 +144,13 @@ functions. Where precision is lost:
   with what the Haskell function would compute. `isBot` may say
   `False` when the true answer is `True` — never the other way.
 - **Repeated reads of the same slot or input field in one
-  predicate.** SBV uniquifies repeated variable names by appending
-  `_N`. `proj #x .== proj #x` becomes a comparison of two
-  independent symbolic values, not a tautology. Sound for sat/unsat
-  (over-approximates SAT). For `symSatExt`, witnesses reconstructed
-  by name lookup may not satisfy structural-equality predicates with
-  this shape. Memoization is a deferred improvement (see
-  `symSatExt`'s haddock).
+  predicate.** *Fixed in EP-42 of MasterPlan 12.* The translator
+  memoizes `TReg` and `TInpCtorField` reads through an `IORef`-backed
+  name-keyed cache in `SymEnv`, so `proj #x .== proj #x` shares one
+  SBV variable and is a tautology, and `symSatExt`'s by-name witness
+  extraction is correct for repeated reads. The residual is reads
+  routed through `TApp1` / `TApp2` (the bullet above), which are not
+  memoized (opaque functions have no `Eq`).
 - **Solver `Unknown` / timeout.** Treated conservatively: `isBot`
   returns `False`, `sat` returns `Nothing`. SBV's default has no
   timeout; a 5s cap is configured in `mkSymEnv`'s site.

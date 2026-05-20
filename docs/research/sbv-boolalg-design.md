@@ -255,48 +255,63 @@ since EP-17 of MasterPlan 6 retired `PMatchC` (2026-05-02).
 
 ### Translation environment
 
-The translation needs:
+*Implemented in EP-42 of MasterPlan 12* (per-slot / per-input-field
+memoization). The translation needs:
 
-- A symbolic register file: one fresh `SBV (SymRep r)` per slot.
 - A symbolic input constructor tag: one fresh `SString`. Used to encode
   `PInCtor` (see below) and to permit constructor-mutual-exclusion to
   be discharged by the solver.
-- Per-`InCtor`-per-field symbolic value cache: each unique
-  `(icName, slotName)` pair maps to one fresh SBV var of the field's
-  representation type. Caching ensures two reads of the same
-  `(InCtor, slot)` translate to the same SBV var.
+- A memo cache so that two reads of the same register slot, or of the
+  same `(InCtor, field)` pair, translate to the *same* SBV variable.
+  Without it, `proj #x .== proj #x` compares two independent values and
+  looks satisfiable-but-not-valid (and a self-mutex `g ∧ ¬g` over a
+  re-read register is reported satisfiable).
 - A registry of `Sym`-typed slots so we can decode model values back
-  for witness extraction.
+  for witness extraction. This is the separate `ExtractRegFile` /
+  `KnownInCtors` machinery, not part of `SymEnv`.
 
-Concretely:
+The shipped shape is simpler than this note's original sketch (which
+carried a pre-allocated `seRegFile` heterogeneous tuple plus a separate
+`seInpFieldCache`). EP-42 uses a *single* cache keyed by the full
+deterministic variable name, which is equivalent because register names
+(`"reg/<slot>"`) and input-field names (`"inp/<ctor>/<field>"`) are
+prefix-disjoint, and lazier because slots are allocated on first read
+rather than pre-allocated:
 
-    data SymEnv rs ci = SymEnv
-      { seRegFile      :: SymRegFile rs
-        -- ^ Per-slot fresh SBV vars + decoders.
-      , seInputCtor    :: SBV String
+    data SymEnv = SymEnv
+      { seInputCtor :: SBV.SBV String
         -- ^ One fresh tag for the input constructor name.
-      , seInpFieldCache :: IORef (Map (String, String) SomeSBV)
-        -- ^ Per-(icName, slotName) cache of SBV vars + decoders.
+      , seVarCache  :: IORef (Map String SomeSBV)
+        -- ^ Name-keyed memo cache: "reg/<slot>" or "inp/<ctor>/<field>"
+        --   maps to the single SBV var allocated for it in this walk.
       }
 
-`SymRegFile rs` is itself a heterogeneous tuple of SBV vars, indexed by
-the slot list. We carry a pre-allocated SBV var per slot so that
-register-read translation is a constant-time lookup.
+    data SomeSBV where
+      SomeSBV :: SBV.SymVal a => SBV.SBV a -> SomeSBV
+
+`SomeSBV` packs SBV vars of different representation types under one
+map; `SymVal`'s `Typeable` superclass supplies the `eqTypeRep` evidence
+that `memoFree` uses to recover the element type on a cache hit.
 
 The cache uses an `IORef` because `Symbolic` is `SymbolicT IO`. The
-`IORef` is created at the top of each translation and discarded after
-the SBV call.
+`IORef` is created at the top of each translation (in `mkSymEnv`) and
+discarded after the SBV call, so variables are shared *within* one
+solver query but never leak across independent queries. The `TApp1` /
+`TApp2` escape hatches are deliberately *not* cached (opaque functions
+have no `Eq`, so two applications cannot be recognized as equal); each
+stays a fresh per-occurrence variable.
 
 ### Term translation rules
 
 For each `Term rs ci r`:
 
 - `TLit r` — `pure (symLit r)`. Requires `Sym r`.
-- `TReg ix` — `pure (lookupSlot ix env.seRegFile)`. Requires the slot's
-  type to be `Sym`-able.
-- `TInpCtorField ic ix` — query the per-`(icName ic, slotName ix)`
-  cache; allocate a fresh SBV var on cache miss. Returns the cached
-  var. Requires the field's type to be `Sym`-able.
+- `TReg ix` — `memoFree env ("reg/" <> indexName ix)`: look the name up
+  in `seVarCache`, return the cached var on a hit, else allocate a fresh
+  `free` and cache it. Requires the slot's type to be `Sym`-able.
+- `TInpCtorField ic ix` — `memoFree env ("inp/" <> icName ic <> "/" <>
+  indexName ix)`: the same memoized allocation, keyed by the
+  input-field name. Requires the field's type to be `Sym`-able.
 - `TApp1 f t` — opaque function. Translation produces a fresh free
   variable of the result type and the predicate the term participates
   in becomes "soft" (the solver is free to pick any value). Loses

@@ -22,7 +22,10 @@
 --     'Word16' \/ 'Word32' \/ 'Word64' \/ 'Int32' \/ 'Int64' (the
 --     last group added by EP-41 so money and count registers are
 --     solver-visible).
---   * 'SymEnv' carrying the shared symbolic input-constructor tag.
+--   * 'SymEnv' carrying the shared symbolic input-constructor tag and
+--     (since EP-42 of MasterPlan 12) an 'IORef' memo cache that shares
+--     one SBV variable per register slot / input field across repeated
+--     reads, so @proj #x .== proj #x@ is valid, not merely satisfiable.
 --   * 'translateTermSym' / 'translatePred' walking 'Term' / 'HsPred'
 --     into SBV expressions.
 --   * 'discoverSym' — runtime dispatch from 'Typeable' to 'Sym'
@@ -688,22 +691,21 @@ class KnownInCtors ci where
 -- satisfiable predicate, returns @Just (regs, cmd)@ where @regs@
 -- and @cmd@ are concrete values reconstructed from the SBV model.
 -- @models p (regs, cmd) == True@ holds for the returned witness,
--- modulo two known limitations:
+-- modulo one known limitation:
 --
--- 1. /Repeated reads of the same slot or input field/. The
---    translator allocates each occurrence as a fresh SBV variable
---    (SBV uniquifies repeated names by appending @_N@). The witness
---    extractor reads the first allocation by name, so a predicate
---    with @proj #x .== proj #x@-style structure may produce a
---    witness that doesn't satisfy the predicate's structural
---    equality. The User Registration test target has no repeated
---    reads. Memoization is a future improvement.
--- 2. /Escape-hatch terms/ ('TApp1', 'TApp2', and 'PEq' over a
---    non-'Sym' operand type, the @neq@ fallback in 'goEq').
---    These translate to fresh anonymous SBV variables; their values
---    are not extracted. The witness reflects only the slots and
---    input-fields the predicate references through 'TReg' and
---    'TInpCtorField'.
+--   * /Escape-hatch terms/ ('TApp1', 'TApp2', and 'PEq' over a
+--     non-'Sym' operand type, the @neq@ fallback in 'goEq').
+--     These translate to fresh anonymous SBV variables; their values
+--     are not extracted, and two occurrences of the same opaque
+--     application do not share a variable (opaque functions have no
+--     'Eq'). The witness reflects only the slots and input-fields the
+--     predicate references through 'TReg' and 'TInpCtorField'.
+--
+-- /Repeated reads/ of the same register or input field are handled
+-- correctly: since EP-42 'translateTermSym' memoizes 'TReg' \/
+-- 'TInpCtorField' reads (see 'SymEnv'\'s 'seVarCache'), so two reads of
+-- @#x@ share one SBV variable and the by-name witness extraction
+-- satisfies @proj #x .== proj #x@-style structural equality.
 --
 -- 'symSatExt' is /pure/ via 'unsafePerformIO' on the SBV solver
 -- call (deterministic for a given predicate, side-effect-free
