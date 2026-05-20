@@ -50,15 +50,22 @@ sibling (`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.m
 
 ## Progress
 
-- [ ] M0 — Baseline: confirm `z3 --version`, run `cabal build all` and `cabal test all`,
-      record example/pending counts. In `cabal repl`, confirm the *before* behavior:
-      `sat (SymPred p)` on a satisfiable `p` returns `Just _`, but forcing the witness
-      (e.g. via `models`) throws the `unsafeWitness` error. Record in Surprises.
-- [ ] M1 — Real `sat`: constrain the `BoolAlg (SymPred rs ci)` instance head with
-      `(ExtractRegFile rs, KnownInCtors ci)` and define `sat (SymPred p) = symSatExt p`;
-      retire `unsafeWitness` and the witness-free `symSat`; fix up exports, comments, and
-      any keiki/jitsurei fixture command type that now needs a `KnownInCtors` instance to
-      use the `SymPred` algebra. Build green, full suite green.
+- [x] M0 — Baseline (2026-05-20): z3 4.15.8; build/test green at the EP-43-close baseline
+      (keiki-test 229/0, jitsurei-test 94/0/0-pending, json 40/0 + 7/0). *Before* behavior
+      confirmed in `cabal repl keiki` over a satisfiable `PEq (proj #x) (lit 0)`:
+      `sat (SymPred p)` is `Just _`, but `models (SymPred p) w` (which forces the witness)
+      throws the placeholder exception (transcript in Surprises). EP-42 is complete, so the
+      soft-dependency caveat is moot — `sat` witnesses will be correct even for repeated
+      reads.
+- [ ] M1 — Real `sat` — **DEFERRED 2026-05-20** (user decision; see Decision Log and
+      Surprises). The instance-head approach was prototyped and reverted: it does not
+      compile against the existing test suite because the `BoolAlg (SymPred)` instance-head
+      constraints `(ExtractRegFile rs, KnownInCtors ci)` ripple onto `isBot` /
+      `isSingleValuedSym`, and `isSingleValuedSym` is exercised on `SomeSymTransducer` —
+      an existential in `Keiki.Profunctor` that hides `rs` and carries no `ExtractRegFile`
+      evidence — so the constraint is unsatisfiable without modifying that core type. Not
+      attempted further pending a design decision (split `sat` into its own class vs. widen
+      the existential). EP-42 and EP-43 (the substantive wins) shipped regardless.
 - [ ] M2 — Proofs: add a "real BoolAlg.sat witness (EP-44)" block to `Keiki.SymbolicSpec`
       proving the witness is forceable and satisfies `models`; strengthen
       `Jitsurei.UserRegistrationSymbolicSpec`'s `isJust (sat ...)` checks to also confirm
@@ -71,8 +78,49 @@ sibling (`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.m
 
 ## Surprises & Discoveries
 
-(None yet. Record the M0 *before* crash output, and which fixture/command types needed a
-new `KnownInCtors` instance once the instance-head constraints rippled through.)
+- 2026-05-20 (M0, *before* the fix). In `cabal repl keiki` over a satisfiable
+  `p = PEq (proj #x) (lit 0)` (a `Word64` register fixture):
+
+      BEFORE sat is Just = True
+      BEFORE models on witness = *** Exception: Keiki.Symbolic.sat: placeholder witness;
+        use symSat-backed analyses (isBot, isSingleValuedSym) or a future symSatExt for
+        the concrete witness.
+
+  So `sat (SymPred p)` *looks* like it returns a witness, but the witness is a landmine:
+  any predicate whose `evalPred` actually inspects the register file or command (here
+  `PEq (proj #x) (lit 0)` reads `#x`) crashes when `models` forces it. (`PTop`-style
+  predicates don't crash only because `evalPred` never touches the witness.) This is the
+  exact sharp edge M1 was meant to remove by pointing `sat` at `symSatExt`.
+
+- 2026-05-20 (M1, **blocker — why EP-44 was deferred**). Prototyping M1 (instance head
+  `(ExtractRegFile rs, KnownInCtors ci) => BoolAlg (SymPred rs ci)`, `sat = symSatExt`)
+  revealed a blast radius far larger than the plan estimated. `cabal build keiki-test`
+  failed at ~11 sites; `jitsurei-test` was clean (all shipped aggregates satisfy the
+  constraints). Two root causes the plan did not foresee:
+
+  1. **The `Keiki.Profunctor` existential `SomeSymTransducer ci co` hides `rs`** and carries
+     only `(WeakenR rs, KnownSlotNames rs, Bounded s, Enum s)` — *not* `ExtractRegFile rs`.
+     `CategorySpec` / `ChoiceSpec` / `StrongSpec` unpack it and call
+     `isSingleValuedSym (withSymPred t)`. After the instance-head change that needs
+     `ExtractRegFile rs`, but `rs` is existentially hidden with no such evidence, so it is
+     **unsatisfiable by any instance or signature** — the only fix is to add
+     `ExtractRegFile rs` to the `SomeSymTransducer` constructor (a core profunctor change)
+     and thread it through every construction site.
+
+  2. **Composition produces ci types with no natural `KnownInCtors`** — `Int`,
+     `Either EmailCmd PingCmd`, `Either EmailCmd Int`, tuples (from `left'`/`right'`/
+     `first'`/`second'`). These would need a generic `KnownInCtors (Either a b)` plus
+     degenerate `allInCtors = []` instances for `Int`/tuples (which silently make `sat`
+     return `Nothing` — a footgun).
+
+  Mitigating facts that informed the defer: `sat` is **never called polymorphically**
+  through a `BoolAlg phi` constraint (only at concrete `SymPred` types), and
+  `isSingleValuedSym` uses only `isBot`/`conj` — so a cleaner future design could split
+  `sat` into its own constrained class, leaving `BoolAlg (SymPred)` unconstrained and the
+  whole ripple gone. Also, the real witness is **already available today** via the
+  standalone `symSatExt`; EP-44 was only an ergonomics/honesty fix on the `BoolAlg.sat`
+  method. Given the modest benefit versus a core-type change, the user chose to defer (see
+  Decision Log).
 
 
 ## Decision Log
@@ -115,12 +163,54 @@ new `KnownInCtors` instance once the instance-head constraints rippled through.)
   exactly the confusion this plan removes.
   Date: 2026-05-20
 
+- Decision: **EP-44 is DEFERRED** (not implemented). The M0 baseline and an M1 prototype
+  were done; the prototype was reverted (the only code change, in `src/Keiki/Symbolic.hs`,
+  was rolled back, leaving the EP-42/EP-43-close state intact). `unsafeWitness`, `symSat`,
+  and the unconstrained `BoolAlg (SymPred)` instance remain as before.
+  Rationale: the planned instance-head approach has a much larger blast radius than the
+  plan estimated (see Surprises, M1 entry): it makes `isSingleValuedSym` uncompilable on
+  the `Keiki.Profunctor` existential `SomeSymTransducer` (which hides `rs` and can't carry
+  `ExtractRegFile rs`), and forces `KnownInCtors` instances for non-aggregate ci types
+  (`Int`, `Either`, tuples) that have no natural ones. Closing it properly requires either
+  (a) splitting `sat` out of `BoolAlg` into its own constrained class — clean (no ripple
+  to `isSingleValuedSym`, since `sat` is never used polymorphically) but a Core class-shape
+  change, or (b) widening the `SomeSymTransducer` existential — a core profunctor change.
+  Both exceed EP-44's stated "smallest plan" scope/risk, and the real witness is already
+  available via the standalone `symSatExt`. The user chose to defer (2026-05-20) and keep
+  the documented placeholder. A future ExecPlan can pick option (a) or (b).
+  Date: 2026-05-20
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. Record the final shape of the `BoolAlg`
-instance, the list of command types that needed a new `KnownInCtors`, and the before/after
-behavior of `sat`'s witness.)
+**Deferred (2026-05-20), not delivered.** M0 (baseline + the *before* placeholder-crash
+capture) was completed; the M1 prototype was built, found to be infeasible without a
+core-type change, and reverted. The shipped state is unchanged from EP-43's close:
+`BoolAlg (SymPred rs ci)` remains unconstrained, `sat` still returns the crashing
+`unsafeWitness` placeholder, and `symSat` is still exported. The real witness remains
+available via the standalone `symSatExt` (which EP-42 made correct for repeated reads).
+
+Why deferred: the plan's instance-head approach (put `(ExtractRegFile rs, KnownInCtors ci)`
+on the `BoolAlg (SymPred)` head so `sat = symSatExt`) compiles for shipped aggregates
+(`jitsurei-test` was clean) but breaks ~11 keiki-test sites, fundamentally because the
+`Keiki.Profunctor` existential `SomeSymTransducer` hides `rs` without `ExtractRegFile`
+evidence — so `isSingleValuedSym` on profunctor/category-composed transducers can no longer
+be type-checked. The constraints also can't be satisfied for composition-produced ci types
+(`Int`, `Either`, tuples). Full detail in Surprises (M1 entry) and the Decision Log.
+
+What a future ExecPlan should do: prefer **splitting `sat` into its own constrained
+typeclass** (e.g. a `SatWitness phi a` with `satExt`), leaving `BoolAlg (SymPred)`
+unconstrained. This is clean because `sat` is never called through a polymorphic `BoolAlg
+phi` constraint and `isSingleValuedSym` uses only `isBot`/`conj`, so there is no ripple to
+the composition tests. It still must address the `()` / no-`PInCtor` witness case (the
+existing M5 `sat top` / `sat (PEq lit5 lit5)` tests over `SymPred '[] ()` rely on a witness
+the constructor-tag-keyed `pickCi` can't currently reconstruct). The alternative — widening
+the `SomeSymTransducer` existential with `ExtractRegFile rs` — is heavier and touches core
+profunctor construction sites.
+
+Net for MasterPlan 12: two of three plans delivered (EP-42 memoization, EP-43 structural
+arithmetic), the integration capstone closed (LoanApplication single-valuedness proven),
+and EP-44 deferred with a clear, scoped path forward.
 
 
 ## Context and Orientation

@@ -108,7 +108,7 @@ registry, the prose below, and the child plans' cross-references all use one num
 |---|-------|------|-----------|-----------|--------|
 | 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | Complete |
 | 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | Complete |
-| 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Not Started |
+| 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Deferred (M0 done; M1 infeasible as planned — see Decision Log) |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -211,12 +211,13 @@ EP-43 (arithmetic terms):
 - [x] EP-43 M3 — Migrate `LoanApplication` cap to `tmul`; **integration capstone:** un-pend the single-valuedness gate (EP-42 complete) (2026-05-20)
 - [x] EP-43 M4 — Docs (`sbv-boolalg-design.md`, `agent-qualification-decomposition-sketch.md` §3(c)/§5, guides) + close (2026-05-20)
 
-EP-44 (real witnesses):
+EP-44 (real witnesses) — **DEFERRED 2026-05-20** (M1 infeasible as planned; see Decision
+Log and Surprises):
 
-- [ ] EP-44 M0 — Baseline + record *before* placeholder crash
-- [ ] EP-44 M1 — Constrain `BoolAlg (SymPred …)` head; `sat = symSatExt`; retire `unsafeWitness`/`symSat`; add any missing fixture `KnownInCtors`
-- [ ] EP-44 M2 — Proofs (`sat` witness survives forcing and satisfies `models`)
-- [ ] EP-44 M3 — Docs (`sbv-boolalg-design.md` "Sat witness extraction" superseded) + close
+- [x] EP-44 M0 — Baseline + record *before* placeholder crash (2026-05-20)
+- [ ] EP-44 M1 — Constrain `BoolAlg (SymPred …)` head; `sat = symSatExt`; retire `unsafeWitness`/`symSat`; add any missing fixture `KnownInCtors` — **deferred** (instance-head ripple breaks `isSingleValuedSym` on the `SomeSymTransducer` existential; prototype reverted)
+- [ ] EP-44 M2 — Proofs (`sat` witness survives forcing and satisfies `models`) — deferred
+- [ ] EP-44 M3 — Docs (`sbv-boolalg-design.md` "Sat witness extraction" superseded) + close — deferred
 
 Integration capstone (cross-plan):
 
@@ -265,6 +266,23 @@ Integration capstone (cross-plan):
   satisfies the *whole* guard under `evalPred` (the cap conjunct included), where before
   EP-43 the opaque cap meant only the credit-score bound could be asserted.
 
+- 2026-05-20 (EP-44 deferred — instance-head approach has a hidden core dependency): EP-44
+  planned to put `(ExtractRegFile rs, KnownInCtors ci)` on the `BoolAlg (SymPred rs ci)`
+  instance head so `sat = symSatExt`. Integration Point 3 noted the ripple onto
+  `isSingleValuedSym` and asserted "all shipped aggregates and the fixtures the other plans
+  use already satisfy it." True for *shipped aggregates* (`jitsurei-test` compiled clean)
+  but **false for the keiki-test suite**: `CategorySpec`/`ChoiceSpec`/`StrongSpec` call
+  `isSingleValuedSym (withSymPred t)` where `t` is unpacked from the `Keiki.Profunctor`
+  existential `SomeSymTransducer ci co`, which **hides `rs`** and carries no
+  `ExtractRegFile rs` evidence — making the constraint unsatisfiable by any instance.
+  Composition also yields ci types (`Int`, `Either …`, tuples) with no natural
+  `KnownInCtors`. Closing EP-44 needs a design pivot beyond its "smallest plan" scope:
+  either split `sat` out of `BoolAlg` into its own constrained class (clean — `sat` is
+  never used through a polymorphic `BoolAlg` constraint, and `isSingleValuedSym` uses only
+  `isBot`/`conj`), or widen the `SomeSymTransducer` existential. The user chose to defer
+  (the real witness is already available via the standalone `symSatExt`). The M1 prototype
+  was reverted; the tree is at the EP-43-close state.
+
 
 ## Decision Log
 
@@ -296,10 +314,57 @@ Integration capstone (cross-plan):
   gaps. The port stays a possible future ExecPlan.
   Date: 2026-05-20
 
+- Decision: **Defer EP-44 (real `BoolAlg.sat` witnesses).** EP-42 and EP-43 shipped; EP-44
+  is deferred after its M1 prototype proved infeasible as planned.
+  Rationale: the instance-head approach makes `isSingleValuedSym` uncompilable on the
+  `Keiki.Profunctor` existential `SomeSymTransducer` (hides `rs`, no `ExtractRegFile`
+  evidence) and demands `KnownInCtors` for non-aggregate ci types — a core-type change well
+  beyond the plan's "smallest plan" scope. The real witness is already available via the
+  standalone `symSatExt`, so the placeholder-only cost is ergonomic. User chose to defer
+  (2026-05-20) with a scoped path forward (prefer splitting `sat` into its own constrained
+  class). See Surprises and `docs/plans/44-…md`.
+  Date: 2026-05-20
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. Compare against the Vision: are structural
-arithmetic operands, repeated-read precision, and real `sat` witnesses all delivered, and
-was the LoanApplication single-valuedness gate un-pended? Record which falsifiers flipped
-and any decomposition adjustments.)
+Status as of 2026-05-20: **two of three plans delivered, the integration capstone closed,
+EP-44 deferred.**
+
+Against the Vision's three promises:
+
+1. **Structural arithmetic operands — DELIVERED (EP-43).** `Term` gained `TArith`
+   (`NumOp = OpAdd | OpSub | OpMul`) with `tadd`/`tsub`/`tmul`; the SBV translator reads it
+   via `discoverSymNum`. Falsifiers flipped: a constant arithmetic ordering contradiction
+   (`2 + 3 > 10`) and equality contradiction (`10 - 3 == 8`) are now `symIsBot`; arithmetic
+   witnesses respect `#a + #b >= 10` and `#req <= #score * 1000`. `Jitsurei.LoanApplication`'s
+   cap is now a structural `tmul`.
+
+2. **Repeated-read precision — DELIVERED (EP-42).** The translator memoizes register and
+   input-field reads through a name-keyed `IORef` cache in `SymEnv`. Falsifiers flipped:
+   `symIsBot (PNot (PEq #x #x))` `False → True`; `symSat (PNot (PEq #x #x))`
+   `Just → Nothing`; a two-edge `PEq #x 0`/`PEq #x 1` fixture `False → True`; a repeated-read
+   contradiction witness `Just`(bogus) `→ Nothing`.
+
+3. **Real `BoolAlg.sat` witnesses — DEFERRED (EP-44).** Not delivered. The planned
+   instance-head approach proved infeasible without a core change to the `Keiki.Profunctor`
+   existential `SomeSymTransducer` (which hides `rs` and so can't satisfy the
+   `ExtractRegFile rs` the instance head would demand), and would force `KnownInCtors`
+   instances for non-aggregate ci types. `sat` still returns the documented crashing
+   placeholder; the **real witness remains available via the standalone `symSatExt`** (which
+   EP-42 made correct for repeated reads). A future ExecPlan should split `sat` into its own
+   constrained typeclass (no ripple to `isSingleValuedSym`, since `sat` is never used
+   polymorphically) — see EP-44's Outcomes for the scoped path. See Decision Log + Surprises.
+
+Capstone: **CLOSED.** `isSingleValuedSym (withSymPred loanApplication) == True` is proven
+and un-pended (jitsurei-test pending 1 → 0), the one observable that required EP-42 and
+EP-43 composed.
+
+Decomposition adjustment: the MasterPlan under-counted EP-44's blast radius — it treated the
+instance-head ripple as satisfied by "all shipped aggregates," missing that the keiki-test
+suite exercises `isSingleValuedSym` on the `rs`-hiding profunctor existential. The lesson:
+when a typeclass-instance constraint is added, audit *every* call site's type context,
+including existentially-quantified ones, not just the shipped aggregates.
+
+Final suite state: `cabal test all` green — keiki-test 229/0, jitsurei-test 94/0 (0 pending),
+keiki-codec-json-test 40/0, keiki-codec-json-test-test 7/0.
