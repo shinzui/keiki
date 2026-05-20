@@ -126,8 +126,12 @@ The solver returns `sat` with a witness like `submittedAt = deadline =
 outgoing edges, asks the solver "is `g1 ∧ g2` satisfiable?", and
 returns `True` only if every answer is `unsat`. The translation from
 your Haskell guards to SMT formulas is mechanical: SBV maps `PEq`,
-`PAnd`, `POr`, `PNot`, equalities over `Int`/`Bool`/`Text`/`UTCTime`,
-into the solver's language.
+`PAnd`, `POr`, `PNot`, the ordering guard `PCmp` (`<`/`<=`/`>`/`>=`,
+authored with `requireLt`/`requireLe`/`requireGt`/`requireGe`), and
+equalities/orderings over `Int`/`Integer`/`Bool`/`Text`/`UTCTime` and
+the fixed-width integers (`Word8`/`Word16`/`Word32`/`Word64`/`Int32`/
+`Int64` — keiki's money convention is `Word64` minor units), into the
+solver's language.
 
 The result, when it's `True`, is closer to a proof than to a passed
 test. Every input that could fire two edges has been searched for and
@@ -141,16 +145,25 @@ procedure.
 Three places where the assurance weakens:
 
 - **Curated types only.** The translation has built-in support for
-  `Bool`, `Int`, `Integer`, `Text`, `UTCTime`. Slot or input types
-  outside this set fall back to a fresh symbolic variable — the solver
-  can't reason about their internals, and precision drops. You can add
-  a `Sym` instance for a new type if it has a natural SBV
+  `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, and the fixed-width
+  integers `Word8`/`Word16`/`Word32`/`Word64`/`Int32`/`Int64`. Slot or
+  input types outside this set fall back to a fresh symbolic variable —
+  the solver can't reason about their internals, and precision drops.
+  You can add a `Sym` instance for a new type if it has a natural SBV
   representation.
 - **Escape hatches.** The predicate AST has `TApp1` / `TApp2`
-  constructors that lift opaque Haskell functions. The solver can't
-  see inside them, so it picks "some" value and the answer becomes an
+  constructors that lift opaque Haskell functions (e.g. a *computed*
+  threshold operand such as a weighted sum). The solver can't see
+  inside them, so it picks "some" value and the answer becomes an
   over-approximation: the gate may fail (`False`) when the truth is
-  "they really are mutually exclusive." Never the reverse.
+  "they really are mutually exclusive." Never the reverse. (A bare
+  threshold like `amount >= 1000` no longer needs an escape — write it
+  as `requireGe #amount (lit 1000)` and the solver sees it.)
+- **Repeated reads of one register.** The translator currently
+  allocates a fresh solver variable per register read, so a predicate
+  that reads the same slot twice (e.g. a self-mutex `g ∧ ¬g` over a
+  shared register) is treated as two independent values — the gate may
+  fail (`False`) when the truth is mutual exclusion. Never the reverse.
 - **`Unknown` from the solver.** Some predicate shapes push z3 outside
   its decidable fragment. keiki treats `Unknown` conservatively — as
   if the predicate were satisfiable — so a spurious `Unknown` causes

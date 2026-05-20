@@ -203,8 +203,13 @@ diagnosis path:
    simultaneously satisfiable. Common causes:
    - Two edges out of the same vertex that match the same input
      constructor without disambiguating predicates (`requireEq`).
-     Fix: add `requireEq` (or `requireGuard`) to one edge so the
-     guards become mutually exclusive.
+     Fix: add `requireEq` (or, for a threshold, the ordering verbs
+     `requireLt`/`requireLe`/`requireGt`/`requireGe`, or
+     `requireGuard`) to one edge so the guards become mutually
+     exclusive. Ordering guards (`PCmp`) are solver-visible over the
+     curated numeric types, so `requireGe #amount (lit 1000)` on one
+     edge and `requireLt #amount (lit 1000)` on the other proves the
+     split.
    - An edge with a stronger and a weaker form of the same
      condition (`top` and `requireEq … …`). Either merge them or
      add a negation.
@@ -227,14 +232,19 @@ The check is a hard CI gate. Skip it for:
   guards. The translator falls back to fresh variables and the
   check loses precision (it may say `False` when the answer is
   `True`). Either drop the escape hatch or accept a property test
-  in its place.
+  in its place. Note: a bare threshold (`amount >= 1000`) no longer
+  needs an escape — use the structural ordering guard (`PCmp` via
+  `requireGe` etc.); only a *computed* operand (a weighted sum) still
+  needs `TApp` until the arithmetic-terms follow-on lands.
 - Local prototype aggregates that haven't stabilised yet. The
   check is a good signal at PR time but a bad signal during early
   drafting — false positives slow you down. Add it once the
   aggregate has shape.
 - Aggregates whose register file uses types outside the curated
-  `Sym` set. The translator falls back to fresh variables there
-  too; same precision loss. Either add a `Sym` instance for the
+  `Sym` set (`Bool`, `Int`, `Integer`, `Text`, `UTCTime`, and the
+  fixed-width integers `Word8`/`Word16`/`Word32`/`Word64`/`Int32`/
+  `Int64`). The translator falls back to fresh variables for other
+  types; same precision loss. Either add a `Sym` instance for the
   type or treat the imprecision as known.
 
 For everything else — and certainly for any aggregate that ships

@@ -77,7 +77,7 @@ type ChapterQualRegs =
 sentinel epoch) so the threshold guard never reads an `uninit:` slot.
 Following keiki's own convention (`Jitsurei.OrderCart`'s `Money = Word64`),
 `Money` here is `Word64` minor units (cents), **not** `Scientific`;
-making money guards solver-visible is the follow-up EP (§5).
+money guards over `Word64` are solver-visible as of EP-41 (§5).
 
 ### Alphabets
 
@@ -114,9 +114,11 @@ data ChapterQualEvent
 
 The credit formula (`mkTotalVolume`/`mkTotalSides`, with the 0.5
 co-agent multiplier) has no arithmetic constructor in `Term`, so it is
-built with `TApp` — the same escape `Jitsurei.LoanApplication` accepts
-for `creditScore >= 650`. Sides are doubled to stay in `Int` and avoid a
-fractional `0.5`:
+built with `TApp` — the same escape `Jitsurei.LoanApplication` still
+accepts for its derived cap `maxApprovalForScore creditScore` (the
+`creditScore >= 650` *comparison* itself is a structural `PCmp` since
+EP-41; only the arithmetic remains opaque). Sides are doubled to stay in
+`Int` and avoid a fractional `0.5`:
 
 ```haskell
 weightedVolume :: Term ChapterQualRegs ci Money
@@ -212,20 +214,26 @@ could offer:
 
 What stays an **escape** (honestly):
 
-- The **threshold guard** is `TApp`-wrapped — ordering (`>=`) over a
-  `TApp`-derived weighted sum of `Money`. The solver sees it as an
-  opaque free Boolean. This does **not** cost the control guarantees
-  above (those rest on `PInCtor` + vertex), but the *content* of "did
-  they cross the bar" is unverified. Three gaps stack here, in closing
-  order: **(a)** the money type (`Word64`) and **(b)** an ordering
-  predicate are both delivered by the follow-up EP-41 (§5), after which
-  `weightedVolume >= minVolume` is a structural `PCmp` over `Word64`
-  terms; **(c)** the `weightedVolume` *operand* is still a `TApp` sum, so
-  full verification of the threshold additionally needs structural
-  arithmetic terms — the remaining sibling EP. (A common workaround that
-  needs none of these: maintain the weighted total as its own scalar
-  tally register and compare *that* directly, keeping the operand
-  structural.)
+- The **threshold guard** mixes structural and opaque parts. Ordering
+  (`>=`) over a weighted sum of `Money`: three gaps stacked here, in
+  closing order. **(a)** the money type (`Word64`) and **(b)** an
+  ordering predicate (`PCmp`) are **now delivered** by EP-41 (done; §5) —
+  so a threshold written as `PCmp CmpGe weightedVolume (lit minVolume)`
+  is a structural comparison over `Word64` that the solver reads exactly,
+  and a *constant* threshold (e.g. comparing a single tally register
+  against a literal bound) is fully verifiable today. **(c)** the
+  `weightedVolume` *operand* is still a `TApp` sum, so if the left side
+  is a derived quantity its content remains opaque (`appRequestedAmount
+  <= maxApprovalForScore creditScore` in `Jitsurei.LoanApplication` is
+  the shipped instance of exactly this) — full verification of a
+  *derived-quantity* threshold additionally needs structural arithmetic
+  terms, the remaining sibling EP. (A common workaround that needs none
+  of (c): maintain the weighted total as its own scalar tally register
+  and compare *that* directly with `PCmp`, keeping the operand
+  structural — now fully solver-visible.) Note also that two reads of the
+  *same* register in one predicate do not yet share a solver variable
+  (the per-slot memoization sibling), so a self-mutex like
+  `g ∧ ¬g` over a shared register is still reported satisfiable.
 
 
 ## 4. What moved out of the aggregate — and where it went
@@ -259,18 +267,24 @@ it:
 
 ## 5. Follow-up
 
-The keiki *capability* gaps this exercise surfaces (everything else is
-modeling) are symbolic visibility of money/numeric values and of ordering
+The keiki *capability* gaps this exercise surfaced (everything else is
+modeling) were symbolic visibility of money/numeric values and of ordering
 guards, so the qualification threshold can be verified rather than escaped
-through `TApp`. These are scoped as
-`docs/plans/41-symbolic-numeric-and-ordering-guards-sym-money-fixed-width-ints-ordering-predicate.md`,
-which adds `Sym` instances for the fixed-width integer types (money is
-`Word64` minor units per keiki convention — §3(a)) and a structural
-ordering predicate `PCmp` (§3(b)). Two related gaps stay sibling
-follow-ons in that plan: structural arithmetic terms (needed so the
+through `TApp`. These were scoped as — and **delivered by** —
+`docs/plans/41-symbolic-numeric-and-ordering-guards-sym-money-fixed-width-ints-ordering-predicate.md`
+(EP-41, complete): it adds `Sym` instances for the fixed-width integer
+types (money is `Word64` minor units per keiki convention — §3(a)) and a
+structural ordering predicate `PCmp` (§3(b)). So money equality and
+`<`/`<=`/`>`/`>=` over `Word64` registers are now solver-visible, proven
+by `Jitsurei.OrderCartSymbolicSpec` and the migrated
+`Jitsurei.LoanApplication` threshold guards. Two related gaps stay sibling
+follow-ons (still open): structural arithmetic terms (needed so the
 `weightedVolume` *operand* in §3(c) is visible) and per-slot translator
 memoization (needed so repeated reads of one register share a solver
-variable).
+variable — without it a self-mutex over a shared register is still
+reported satisfiable, which is why
+`Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate remains
+pending even after EP-41 supplied the comparison constructor).
 
 
 ## Pointers

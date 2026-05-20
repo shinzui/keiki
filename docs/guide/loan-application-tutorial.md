@@ -237,46 +237,54 @@ predicates:
 ```haskell
 readyForReviewGuard :: HsPred LoanAppRegs LoanCmd
 readyForReviewGuard =
-  PEq (TApp1 (>= minimumIncomeDocs)
-        (proj (#appIncomeDocCount :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appIncomeDocCount :: Index LoanAppRegs Int))
+             (lit minimumIncomeDocs)
     `PAnd`
-  PEq (TApp1 (>= minimumIdDocs)
-        (proj (#appIdDocCount :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appIdDocCount :: Index LoanAppRegs Int))
+             (lit minimumIdDocs)
     `PAnd`
-  PEq (TApp1 (>= 1) (proj (#appCreditScore :: Index LoanAppRegs Int)))
-      (lit True)
+  PCmp CmpGe (proj (#appCreditScore :: Index LoanAppRegs Int))
+             (lit 1)
     `PAnd`
   PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
 ```
 
-`HsPred` has no native comparison constructor, so `>=` and similar
-relations are lifted via `TApp1`. The trade-off is documented:
-`TApp1` over arbitrary Haskell functions translates to a *fresh*
-anonymous SBV variable, so `isSingleValuedSym` cannot recognise that
-two textually-identical `TApp1` terms refer to the same value. The
-LoanApplication's symbolic spec (`LoanApplicationSymbolicSpec`) is
-marked `pendingWith` for that reason — see the spec's module
-haddock for the full caveat.
+The ordering relations use `HsPred`'s structural comparison guard
+`PCmp` (added by EP-41; authored in the builder as
+`requireGe`/`requireLe`/…). Because `PCmp` is structural, the SBV
+translator emits a real symbolic comparison rather than the opaque
+fresh variable that a `TApp1 (>= n)` lift produces — so thresholds
+over the curated numeric types (here `Int`; money is `Word64`) are
+now visible to `isSingleValuedSym` and `symSatExt`. Equality against a
+`Bool` register stays a plain `PEq`.
 
-The approval branch uses a similar conjunction including a `TApp2`
-(two-argument lift) for the `requestedAmount ≤ creditScore × 1000`
-cap:
+The approval branch is a similar conjunction. Its credit-score and
+cap relations are `PCmp`; the cap's *right-hand side*
+(`maxApprovalForScore creditScore`, a computed quantity) still routes
+through `TApp1`, because arithmetic over `Term` is a separate
+follow-on:
 
 ```haskell
 approvalGuard :: HsPred LoanAppRegs LoanCmd
 approvalGuard =
-  PEq (TApp1 (>= approvalThresholdScore) (proj (#appCreditScore :: …)))
-      (lit True)
+  PCmp CmpGe (proj (#appCreditScore :: …)) (lit approvalThresholdScore)
     `PAnd`
   PEq (proj (#appEmploymentVerified :: …)) (lit True)
     `PAnd`
-  PEq (TApp2 (<=)
-        (proj (#appRequestedAmount :: …))
-        (TApp1 maxApprovalForScore (proj (#appCreditScore :: …))))
-      (lit True)
+  PCmp CmpLe (proj (#appRequestedAmount :: …))
+             (TApp1 maxApprovalForScore (proj (#appCreditScore :: …)))
 ```
+
+The LoanApplication's symbolic spec (`LoanApplicationSymbolicSpec`)
+still marks the *single-valuedness* gate `pendingWith`: proving
+`approvalGuard ∧ ¬approvalGuard` unsatisfiable needs the two reads of
+`#appCreditScore` (one per half) to share one solver variable, which
+is the per-slot *memoization* follow-on (the translator allocates a
+fresh variable per read, and SBV does not alias same-named variables).
+EP-41 supplied the comparison constructor that gate's reason originally
+asked for; the spec also asserts, un-pended, that the approval edge's
+`symSatExt` witness has a credit score `>=` the threshold. See the
+spec's module haddock for the full caveat.
 
 `UnderReview` then has two `Continue`-keyed edges — approve under
 `approvalGuard`, decline under `PNot approvalGuard` — plus a
@@ -690,10 +698,13 @@ emits transitions that actually exist.
   reductions) in addition to the sequential `compose` used here.
 - **Symbolic CI.** [symbolic-ci.md](symbolic-ci.md) walks through
   wiring `isSingleValuedSym` into a CI image. The LoanApplication's
-  symbolic spec is currently `pendingWith` because of `TApp1` /
-  `TApp2` limitations in the SBV backend; that spec is a useful
-  template for what the symbolic gate looks like when it *does*
-  hold (as in `Jitsurei.UserRegistration`).
+  symbolic spec is currently `pendingWith` because its
+  single-valuedness gate needs the per-slot *memoization* follow-on
+  (two reads of `#appCreditScore` must share a solver variable); the
+  ordering-guard half was delivered by EP-41 and the spec asserts the
+  ordering win un-pended. That spec is a useful template for what the
+  symbolic gate looks like when it *does* hold (as in
+  `Jitsurei.UserRegistration`).
 - **Per-vertex views.** [b-views.md](b-views.md) covers
   `deriveView` in depth, including the validation rules that gave
   rise to this tutorial's `Drafting → Intake` rename.

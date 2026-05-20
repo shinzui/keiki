@@ -127,9 +127,21 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
       LoanApplication behavioural + builder-equivalence specs stay green.
       jitsurei-test: 94 examples, 0 failures, 1 pending (was 88/1); full suite 357
       examples, 1 pending.
-- [ ] M4 — Docs + close: update `docs/research/sbv-boolalg-design.md`, the money
-      note in `docs/research/agent-qualification-decomposition-sketch.md` (§3a/§5),
-      and `docs/guide/symbolic-ci.md` if needed; fill Outcomes & Retrospective.
+- [x] M4 — Docs + close (2026-05-20): updated `docs/research/sbv-boolalg-design.md`
+      (new numeric `Sym` instances + a "Ordering guard (PCmp)" subsection covering
+      `Cmp`/`SymOrdDict`/`discoverSymOrd` and the builder verbs);
+      `docs/research/agent-qualification-decomposition-sketch.md` (§2 money note,
+      §3 escape paragraph, §"weighted totals", and §5 — money + ordering gaps now
+      closed by EP-41, arithmetic + memoization remain siblings);
+      `docs/guide/why-smt.md` (curated-types and translation lists now include the
+      fixed-width integers and `PCmp`; added a repeated-reads caveat);
+      `docs/guide/symbolic-ci.md` (ordering disambiguation tip, curated-`Sym` set,
+      threshold-no-longer-an-escape note); and
+      `docs/guide/loan-application-tutorial.md` (guard code blocks migrated to
+      `PCmp`, pending-reason prose corrected to name the memoization follow-on).
+      Swept docs/src for stale "no comparison constructor" claims (only the
+      historical EP-34 plan retains them, as history). Outcomes & Retrospective
+      filled. Final: full suite 357 examples, 0 failures, 1 pending.
 
 
 ## Surprises & Discoveries
@@ -261,7 +273,65 @@ ExecPlans; see "Interfaces and Dependencies" → "Sibling follow-ons".
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered (all five milestones, 2026-05-20). A keiki author can now write money
+and fixed-width-integer equality guards and `<`/`≤`/`>`/`≥` ordering guards and
+have the SBV/z3 layer reason about them for real:
+
+- **Numeric registry.** `src/Keiki/Symbolic.hs` gained `Sym` instances for
+  `Word64`/`Word32`/`Word16`/`Word8`/`Int64`/`Int32` (each `SymRep = Integer`),
+  registered in `discoverSym`. Money (`OrderCart`'s `Money = Word64`) and counts
+  (`Word32`/`Word16`) are now solver-visible and witness-extractable with no
+  per-aggregate code.
+- **Ordering predicate.** `Keiki.Core` gained `data Cmp` and the structural
+  `PCmp` guard with its `evalPred` arm; `Keiki.Symbolic` gained `SymOrdDict` +
+  `discoverSymOrd` and the `goCmp` translation arm (real `.<`/`.<=`/`.>`/`.>=`
+  on a hit, sound opaque fallback on a miss); `Keiki.Builder` gained
+  `requireCmp`/`requireLt`/`requireLe`/`requireGt`/`requireGe`.
+- **Dogfood.** `Jitsurei.OrderCartSymbolicSpec` exercises the numeric + ordering
+  support on a shipped money/count aggregate (and `OrderCart` gained a
+  `KnownInCtors` instance). `Jitsurei.LoanApplication`'s threshold guards were
+  migrated from opaque `TApp1 (>= n)` / `TApp2 (<=)` to `PCmp` with every
+  behavioural and builder-equivalence spec staying green; its symbolic spec
+  asserts, un-pended, that the approval edge witness's credit score is `>=` the
+  threshold.
+
+Observable falsifiers (each fails before its milestone, passes after):
+`isBot (SymPred (PEq (TLit (5::Word64)) (TLit 6))) == True`;
+`symIsBot (PCmp CmpGe (lit (5::Word64)) (lit 10)) == True`;
+`symSatExt` over `amount >= 1000` yields a witness with `amount >= 1000`;
+OrderCart's symbolic spec passes; LoanApplication's approval-witness score
+`>= 650`.
+
+What remains (explicitly out of scope; named siblings):
+
+1. **Structural arithmetic in `Term`.** A guard over a *computed* operand (a
+   weighted sum, or `maxApprovalForScore creditScore`) still routes that operand
+   through an opaque `TApp`, so the comparison's left/right side is invisible
+   even though `PCmp` itself is structural.
+2. **Per-slot translator memoization.** Two reads of the same register in one
+   predicate become independent SBV variables (SBV does not alias same-named
+   `free` calls — verified empirically, see Surprises). This is what keeps
+   `LoanApplicationSymbolicSpec`'s single-valuedness gate pending: the self-mutex
+   `approvalGuard ∧ ¬approvalGuard` needs the two `#appCreditScore` reads to
+   share one variable.
+
+Lessons learned:
+
+- The plan's original M1 single-valuedness assertion (two edges over `PEq #slot
+  0` / `PEq #slot 1`) was unattainable without the memoization sibling, because
+  SBV does not alias repeated `free` names — caught early by a `cabal repl`
+  experiment and replaced with memoization-free proofs (constant `isBot`
+  contradictions and single-read `symSatExt` round-trips). Recording the
+  empirical SBV behavior in Surprises kept the plan honest about the boundary.
+- The plan framed LoanApplication around `Word64` money/score; the shipped
+  aggregate actually uses `Int`, so the migration leaned on the pre-existing
+  `Sym Int` plus the new `discoverSymOrd` `Int` arm — `Word64` was exercised on
+  `OrderCart` instead. No change to the work, just where each half landed.
+- Adding a new `HsPred` constructor required `PCmp` arms in seven total walkers
+  (`evalPred`, `translatePred`, two in `Profunctor`, five — actually
+  `weakenLPred`/`weakenRPred`/`substPred`/`liftLPredAlt`/`liftRPredAlt` — in
+  `Composition`, and `Mermaid`'s `edgeInputName`); `-Wincomplete-patterns`
+  surfaced each, so the additive change stayed warning-clean.
 
 
 ## Context and Orientation

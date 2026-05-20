@@ -188,6 +188,53 @@ Instances required by EP-2:
 `Email` and `ConfirmationCode` are `type` aliases for `Text` — no
 separate instance needed.
 
+EP-41 adds the fixed-width integer types so money and count registers are
+solver-visible (keiki's money convention is `Word64` minor units, e.g.
+`Jitsurei.OrderCart`'s `Money = Word64`). Each encodes as the unbounded
+mathematical `Integer`, exactly like `Sym Int`:
+
+    instance Sym Word64       where { type SymRep Word64       = Integer;      toSym = fromIntegral; fromSym = fromIntegral }
+    instance Sym Word32       where { type SymRep Word32       = Integer;      toSym = fromIntegral; fromSym = fromIntegral }
+    instance Sym Word16       where { type SymRep Word16       = Integer;      toSym = fromIntegral; fromSym = fromIntegral }
+    instance Sym Word8        where { type SymRep Word8        = Integer;      toSym = fromIntegral; fromSym = fromIntegral }
+    instance Sym Int64        where { type SymRep Int64        = Integer;      toSym = fromIntegral; fromSym = fromIntegral }
+    instance Sym Int32        where { type SymRep Int32        = Integer;      toSym = fromIntegral; fromSym = fromIntegral }
+
+The `Integer` encoding is an over-approximation: modular wraparound of the
+Haskell `Word*`/`Int*` type is not modeled. This is sound for
+satisfiability (every model the solver finds is a real witness once
+decoded) but can miss an UNSAT that depends on overflow. keiki's money and
+count guards compare against in-range literals, where the
+over-approximation never bites.
+
+`discoverSym` is extended with one `eqTypeRep` guard per new type.
+
+### Ordering guard (`PCmp`)
+
+EP-41 also adds a first-class ordering guard to `HsPred`:
+
+    data Cmp = CmpLt | CmpLe | CmpGt | CmpGe
+    PCmp :: (Ord r, Typeable r) => Cmp -> Term rs ci r -> Term rs ci r -> HsPred rs ci
+
+Before this, a threshold (`amount >= 1000`) had to be wrapped in an opaque
+`TApp1 (>= 1000)`, invisible to the solver. `PCmp` is structural: the
+translator emits a real SBV comparison (`.<`/`.<=`/`.>`/`.>=`) whenever the
+operand type's `SymRep` is symbolically orderable. That evidence is
+discovered by a companion to `discoverSym`:
+
+    data SymOrdDict r where
+      SymOrdDict :: (Sym r, OrdSymbolic (SBV (SymRep r))) => SymOrdDict r
+
+    discoverSymOrd :: forall r. Typeable r => Maybe (SymOrdDict r)
+
+`discoverSymOrd` returns evidence for the numeric/time types whose `SymRep`
+is an `OrdSymbolic Integer` (`Int`, `Integer`, the six fixed-width
+integers, `UTCTime`); `Bool` and `Text` are omitted (Bool ordering is not a
+meaningful guard, `SString` ordering is out of scope). On a miss `PCmp`
+falls back to a fresh opaque `SBool`, exactly as `PEq` does for non-`Sym`
+operands — sound, just imprecise. The builder exposes
+`requireCmp`/`requireLt`/`requireLe`/`requireGt`/`requireGe`.
+
 Helpers:
 
     symLit  :: Sym a => a -> SBV (SymRep a)
