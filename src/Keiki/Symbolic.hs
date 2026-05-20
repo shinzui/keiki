@@ -47,6 +47,8 @@ module Keiki.Symbolic
   , discoverSym
   , SymOrdDict (..)
   , discoverSymOrd
+  , SymNumDict (..)
+  , discoverSymNum
     -- * Translation
   , SymEnv (..)
   , mkSymEnv
@@ -277,6 +279,41 @@ discoverSymOrd
   | otherwise                                                = Nothing
 
 
+-- | Reify both a 'Sym' instance for @r@ and evidence that its 'SymRep'
+-- is symbolically /numeric/ (a 'Num' instance on @'SBV.SBV' ('SymRep'
+-- r)@). This is what 'TArith' translation needs: 'Sym' to push the
+-- operands into SBV, 'Num' to emit a real @+@ \/ @-@ \/ @*@ over the
+-- translated terms. Companion to 'discoverSym' \/ 'discoverSymOrd'
+-- (EP-43).
+data SymNumDict r where
+  SymNumDict :: (Sym r, Num (SBV.SBV (SymRep r))) => SymNumDict r
+
+
+-- | Try to discover numeric evidence for @r@ at runtime, companion to
+-- 'discoverSymOrd'. Returns @Just SymNumDict@ for the numeric types
+-- whose 'SymRep' is the SBV-'Num' 'Integer' ('Int', 'Integer', and the
+-- fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32' \/ 'Word64' \/
+-- 'Int32' \/ 'Int64'); 'Nothing' otherwise. 'Bool', 'Text', and
+-- 'UTCTime' are omitted — not meaningfully arithmetic here. A 'Nothing'
+-- makes the 'TArith' translator fall back to a fresh opaque variable,
+-- exactly as 'goEq' \/ 'goCmp' fall back for non-'Sym' operands —
+-- sound, just imprecise. (The 'Num' constraint on the 'TArith'
+-- constructor already prevents arithmetic at non-numeric types, so this
+-- fallback is only reachable for a numeric type intentionally left out
+-- of the registry.)
+discoverSymNum :: forall r. Typeable r => Maybe (SymNumDict r)
+discoverSymNum
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int)     = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64)  = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32)  = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16)  = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8)   = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64)   = Just SymNumDict
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32)   = Just SymNumDict
+  | otherwise                                                = Nothing
+
+
 -- | Lift a concrete value to an SBV literal of its 'SymRep'.
 symLit :: forall a. Sym a => a -> SBV.SBV (SymRep a)
 symLit = SBV.literal . toSym
@@ -354,12 +391,15 @@ mkSymEnv = do
 -- | Translate a 'Term rs ci r' to an SBV expression of the carrier's
 -- representation type. Requires 'Sym' evidence for @r@.
 --
--- The translation is /structural/ for 'TLit', 'TReg', and
--- 'TInpCtorField'. 'TApp1' and 'TApp2' wrap opaque Haskell functions
--- and translate to fresh SBV variables of the result type — sound
--- but imprecise. The User Registration aggregate uses none of these
--- escape hatches, so the loss of precision is purely aspirational
--- for v2's scope.
+-- The translation is /structural/ for 'TLit', 'TReg',
+-- 'TInpCtorField', and (since EP-43) 'TArith': a 'TArith' over a type
+-- whose 'SymRep' is SBV-numeric (a 'discoverSymNum' hit) emits a real
+-- @+@ \/ @-@ \/ @*@ over the translated operands, so a guard over a
+-- /computed/ value is visible to the solver. 'TApp1' and 'TApp2' wrap
+-- opaque Haskell functions and translate to fresh SBV variables of the
+-- result type — sound but imprecise; 'TArith' falls back to the same
+-- fresh variable only if its (numeric) operand type is absent from the
+-- 'discoverSymNum' registry.
 --
 -- Variable naming (consumed by 'symSatExt' for witness extraction):
 --
@@ -395,9 +435,16 @@ translateTermSym env   (TInpCtorField ic ix) =
   memoFree env ("inp/" <> icName ic <> "/" <> indexName ix)
 translateTermSym _env  (TApp1 _f _t)         = SBV.free "app1"
 translateTermSym _env  (TApp2 _f _a _b)      = SBV.free "app2"
--- EP-43 M1 placeholder: opaque until M2 wires the structural arm via
--- 'discoverSymNum'. Each occurrence is a fresh variable (no precision).
-translateTermSym _env  (TArith _op _a _b)    = SBV.free "arith"
+translateTermSym env    (TArith op a b)      = case discoverSymNum @r of
+  Nothing         -> SBV.free "arith"   -- sound opaque fallback
+  Just SymNumDict -> do
+    sa <- translateTermSym env a
+    sb <- translateTermSym env b
+    let apply = case op of
+          OpAdd -> (+)
+          OpSub -> (-)
+          OpMul -> (*)
+    pure (apply sa sb)
 
 
 -- | Memoized symbolic-variable allocator (EP-42). Looks @name@ up in

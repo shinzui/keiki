@@ -71,11 +71,16 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
       Core carry a `_ = []` wildcard, so the explicit `TArith` arms there are for
       correctness (hidden-input detection through arithmetic operands), not to satisfy the
       checker.
-- [ ] M2 — SBV translation + keiki-side proofs: add `SymNumDict` + `discoverSymNum` and
-      the real `TArith` arm of `translateTermSym` in `Keiki.Symbolic`; add a "structural
-      arithmetic (EP-43)" block to `Keiki.SymbolicSpec` (constant contradiction is
-      `symIsBot`; single-read sum witness respects the bound; `evalPred`/`evalTerm`
-      agreement with Haskell arithmetic).
+- [x] M2 — SBV translation + keiki-side proofs (2026-05-20): added `SymNumDict` +
+      `discoverSymNum` (exported) and the real `TArith` arm of `translateTermSym` (emits
+      `(+)`/`(-)`/`(*)` over translated operands on a `discoverSymNum` hit, opaque
+      `SBV.free "arith"` fallback otherwise); updated `translateTermSym`'s haddock. Added a
+      `describe "structural arithmetic (EP-43)"` block to `Keiki.SymbolicSpec` (7
+      assertions: constant `2+3>10` / `10-3==8` are `symIsBot`, satisfiable companions are
+      not; `symSatExt` witnesses respect `#a+#b>=10` and `#req<=#score*1000`;
+      `evalPred`/`evalTerm` agree with Haskell `+`/`-`/`*`). `cabal test keiki-test` → 229
+      examples (was 222), 0 failures. No SBV `Num`-on-`SInteger` surprises — `SBV.SBV
+      Integer`'s `Num` instance is exactly what `SymNumDict` carries.
 - [ ] M3 — Dogfood + integration capstone: migrate
       `Jitsurei.LoanApplication`'s `maxApprovalForScore` cap from `TApp1` to structural
       `tmul` (behavior-preserving; all LoanApplication behavioural + builder-equivalence

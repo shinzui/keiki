@@ -101,6 +101,47 @@ twoReadEdgeFixture = SymTransducer
   }
 
 
+-- * Structural-arithmetic fixtures (EP-43) -------------------------------
+
+-- | A four-slot 'Int' register file for structural-arithmetic proofs:
+-- @#a@/@#b@ feed a sum, @#score@/@#req@ feed a multiply-cap.
+type ArithRegs = '[ '("a", Int), '("b", Int), '("score", Int), '("req", Int) ]
+
+aIdx, bIdx, scoreIdx, reqIdx :: Index ArithRegs Int
+aIdx     = #a
+bIdx     = #b
+scoreIdx = #score
+reqIdx   = #req
+
+
+-- | A one-constructor (empty-payload) input for the arithmetic
+-- fixtures. The 'KnownInCtors' instance lets 'symSatExt' rebuild it.
+data ArithCmd = ArithTick deriving (Eq, Show)
+
+
+inCtorArithTick :: InCtor ArithCmd '[]
+inCtorArithTick = InCtor
+  { icName  = "ArithTick"
+  , icMatch = \case ArithTick -> Just RNil
+  , icBuild = \RNil -> ArithTick
+  }
+
+
+instance KnownInCtors ArithCmd where
+  allInCtors = [ SomeInCtor inCtorArithTick ]
+
+
+-- | A full 'ArithRegs' register file from four 'Int' values, in slot
+-- order @a, b, score, req@. Used by the @evalPred@/@evalTerm@ agreement
+-- proof.
+arithRegs :: Int -> Int -> Int -> Int -> RegFile ArithRegs
+arithRegs a b s r =
+  RCons (Proxy @"a") a
+    (RCons (Proxy @"b") b
+      (RCons (Proxy @"score") s
+        (RCons (Proxy @"req") r RNil)))
+
+
 inCtorTinyFoo :: InCtor TinyCmd '[ '("a", Int) ]
 inCtorTinyFoo = InCtor
   { icName  = "TinyFoo"
@@ -270,6 +311,63 @@ spec = do
       case symSatExt p of
         Nothing          -> expectationFailure "repeated-read predicate reported unsat"
         Just (regs, cmd) -> models (SymPred p) (regs, cmd) `shouldBe` True
+
+  describe "structural arithmetic (EP-43)" $ do
+    -- Before EP-43 a computed operand could only be written through an
+    -- opaque TApp, so the solver saw a fresh unconstrained variable and
+    -- a constant arithmetic contradiction was reported satisfiable.
+
+    it "constant 2 + 3 > 10 is symIsBot (empty)" $
+      symIsBot (PCmp CmpGt (tadd (lit (2 :: Int)) (lit 3)) (lit 10)
+                :: HsPred '[] ())
+        `shouldBe` True
+
+    it "constant 2 + 3 >= 5 is not symIsBot (satisfiable)" $
+      symIsBot (PCmp CmpGe (tadd (lit (2 :: Int)) (lit 3)) (lit 5)
+                :: HsPred '[] ())
+        `shouldBe` False
+
+    it "constant 10 - 3 == 8 is symIsBot (contradiction)" $
+      symIsBot (PEq (tsub (lit (10 :: Int)) (lit 3)) (lit 8)
+                :: HsPred '[] ())
+        `shouldBe` True
+
+    it "constant 4 * 3 == 12 is not symIsBot (consistent)" $
+      symIsBot (PEq (tmul (lit (4 :: Int)) (lit 3)) (lit 12)
+                :: HsPred '[] ())
+        `shouldBe` False
+
+    it "symSatExt witness respects #a + #b >= 10" $ do
+      -- #a and #b are distinct registers, so this needs no memoization;
+      -- the witness sum must actually clear the bound.
+      let p = PAnd (PInCtor inCtorArithTick)
+                   (PCmp CmpGe (tadd (proj aIdx) (proj bIdx)) (lit 10))
+              :: HsPred ArithRegs ArithCmd
+      case symSatExt p of
+        Nothing          -> expectationFailure "#a + #b >= 10 reported unsat"
+        Just (regs, cmd) -> do
+          ((regs ! aIdx) + (regs ! bIdx) >= 10) `shouldBe` True
+          evalPred p regs cmd `shouldBe` True
+
+    it "symSatExt witness respects #req <= #score * 1000" $ do
+      let p = PAnd (PInCtor inCtorArithTick)
+                   (PCmp CmpLe (proj reqIdx) (tmul (proj scoreIdx) (lit 1000)))
+              :: HsPred ArithRegs ArithCmd
+      case symSatExt p of
+        Nothing          -> expectationFailure "#req <= #score * 1000 reported unsat"
+        Just (regs, cmd) -> do
+          ((regs ! reqIdx) <= (regs ! scoreIdx) * 1000) `shouldBe` True
+          evalPred p regs cmd `shouldBe` True
+
+    it "evalTerm/evalPred over tadd/tsub/tmul matches Haskell arithmetic" $ do
+      let vals = [-2, 0, 3, 7] :: [Int]
+          chk f mk = and [ evalPred (PEq (mk (proj aIdx) (proj bIdx)) (lit (f a b))
+                                     :: HsPred ArithRegs ArithCmd)
+                                    (arithRegs a b 0 0) ArithTick
+                         | a <- vals, b <- vals ]
+      chk (+) tadd `shouldBe` True
+      chk (-) tsub `shouldBe` True
+      chk (*) tmul `shouldBe` True
 
   describe "translatePred (boolean skeleton)" $ do
     it "PTop is a tautology" $ do
