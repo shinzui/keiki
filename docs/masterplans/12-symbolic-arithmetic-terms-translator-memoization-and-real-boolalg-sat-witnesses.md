@@ -108,7 +108,7 @@ registry, the prose below, and the child plans' cross-references all use one num
 |---|-------|------|-----------|-----------|--------|
 | 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | Complete |
 | 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | Complete |
-| 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Deferred (M0 done; M1 infeasible as planned — see Decision Log) |
+| 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | In Progress (un-deferred 2026-05-20 → Option A: split `sat` into a `Sat` class — see Decision Log) |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -314,8 +314,27 @@ Integration capstone (cross-plan):
   gaps. The port stays a possible future ExecPlan.
   Date: 2026-05-20
 
-- Decision: **Defer EP-44 (real `BoolAlg.sat` witnesses).** EP-42 and EP-43 shipped; EP-44
-  is deferred after its M1 prototype proved infeasible as planned.
+- Decision: **Un-defer EP-44 and pivot to Option A — split `sat` into its own class.**
+  After reviewing the two scoped paths (Option A: split `sat` out of `BoolAlg` into
+  `class BoolAlg phi a => Sat phi a`; Option B: widen the `SomeSymTransducer` existential
+  with `ExtractRegFile rs` and keep instance-head constraints), the user chose Option A
+  (2026-05-20).
+  Rationale: the extraction constraints `(ExtractRegFile rs, KnownInCtors ci)` are needed
+  only by `sat` (the one method that *constructs* the witness type); `models` consumes it
+  and `isBot`/`conj`/structural ops ignore it. Option B taxes `isSingleValuedSym` (a pure
+  mutex check) with extraction evidence, only fixes the `rs` half (still needs degenerate
+  `KnownInCtors` for `Either`/tuples/`Int`), and entrenches the coupling permanently.
+  Option A aligns the constraint with the operation: `sat` is never used through a
+  polymorphic `BoolAlg phi` constraint and `isSingleValuedSym` uses only `isBot`/`conj`, so
+  the split has zero ripple to any call site — no existential or core-profunctor change — and
+  is the more honest design (witness extraction is a strictly stronger capability, the
+  `Eq`→`Ord` idiom). This supersedes the "Defer EP-44" decision below. See
+  `docs/plans/44-…md` Decision Log ("Pivot to Option A").
+  Date: 2026-05-20
+
+- Decision (SUPERSEDED 2026-05-20 by the Option A pivot above): **Defer EP-44 (real
+  `BoolAlg.sat` witnesses).** EP-42 and EP-43 shipped; EP-44 was deferred after its M1
+  prototype proved infeasible as planned.
   Rationale: the instance-head approach makes `isSingleValuedSym` uncompilable on the
   `Keiki.Profunctor` existential `SomeSymTransducer` (hides `rs`, no `ExtractRegFile`
   evidence) and demands `KnownInCtors` for non-aggregate ci types — a core-type change well

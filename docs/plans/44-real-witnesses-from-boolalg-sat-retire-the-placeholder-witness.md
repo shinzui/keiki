@@ -50,30 +50,32 @@ sibling (`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.m
 
 ## Progress
 
+**Re-planned 2026-05-20 around Option A (split `sat` into its own class) after the original
+instance-head approach was deferred as infeasible.** See the "Pivot to Option A" Decision
+Log entry. The milestones below are the Option-A milestones; the original instance-head
+M1 is retained in the Decision Log / Surprises as history.
+
 - [x] M0 — Baseline (2026-05-20): z3 4.15.8; build/test green at the EP-43-close baseline
       (keiki-test 229/0, jitsurei-test 94/0/0-pending, json 40/0 + 7/0). *Before* behavior
       confirmed in `cabal repl keiki` over a satisfiable `PEq (proj #x) (lit 0)`:
       `sat (SymPred p)` is `Just _`, but `models (SymPred p) w` (which forces the witness)
       throws the placeholder exception (transcript in Surprises). EP-42 is complete, so the
-      soft-dependency caveat is moot — `sat` witnesses will be correct even for repeated
-      reads.
-- [ ] M1 — Real `sat` — **DEFERRED 2026-05-20** (user decision; see Decision Log and
-      Surprises). The instance-head approach was prototyped and reverted: it does not
-      compile against the existing test suite because the `BoolAlg (SymPred)` instance-head
-      constraints `(ExtractRegFile rs, KnownInCtors ci)` ripple onto `isBot` /
-      `isSingleValuedSym`, and `isSingleValuedSym` is exercised on `SomeSymTransducer` —
-      an existential in `Keiki.Profunctor` that hides `rs` and carries no `ExtractRegFile`
-      evidence — so the constraint is unsatisfiable without modifying that core type. Not
-      attempted further pending a design decision (split `sat` into its own class vs. widen
-      the existential). EP-42 and EP-43 (the substantive wins) shipped regardless.
+      soft-dependency caveat is moot — `sat` witnesses are correct even for repeated reads.
+- [ ] M1 (Option A) — Split `sat` into a `Sat` subclass of `BoolAlg`; `BoolAlg (SymPred)`
+      stays unconstrained, `instance (ExtractRegFile rs, KnownInCtors ci) => Sat (SymPred
+      rs ci)` defines `sat = symSatExt`; retire `unsafeWitness`/`symSat`; add `KnownInCtors
+      ()`; make `symSatExt` sound for unconstrained-`ci` predicates by constraining
+      `seInputCtor` to the known-constructor domain. `isSingleValuedSym` (uses only
+      `isBot`/`conj`) keeps its `BoolAlg`-only constraint, so no existential change and no
+      ripple to the Category/Choice/Strong/Profunctor composition tests.
 - [ ] M2 — Proofs: add a "real BoolAlg.sat witness (EP-44)" block to `Keiki.SymbolicSpec`
       proving the witness is forceable and satisfies `models`; strengthen
       `Jitsurei.UserRegistrationSymbolicSpec`'s `isJust (sat ...)` checks to also confirm
       `models` on the returned witness.
 - [ ] M3 — Docs + close: update `docs/research/sbv-boolalg-design.md` (the "Sat witness
-      extraction" decision is superseded — `BoolAlg.sat` on `SymPred` now returns real
-      witnesses via instance-head constraints) and any guide that mentions the placeholder.
-      Fill Outcomes.
+      extraction" decision is superseded — `BoolAlg.sat` no longer carries the placeholder;
+      `sat` lives in a separate `Sat` class whose `SymPred` instance returns real witnesses)
+      and any guide that mentions the placeholder. Fill Outcomes.
 
 
 ## Surprises & Discoveries
@@ -125,9 +127,48 @@ sibling (`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.m
 
 ## Decision Log
 
-- Decision: Make `sat` on `SymPred` real by adding `(ExtractRegFile rs, KnownInCtors ci)`
-  to the **instance head** of `BoolAlg (SymPred rs ci) (RegFile rs, ci)`, and defining
-  `sat (SymPred p) = symSatExt p`.
+- Decision: **Pivot to Option A — split `sat` out of `BoolAlg` into its own class
+  `class BoolAlg phi a => Sat phi a where sat :: phi -> Maybe a`.** Un-defers EP-44
+  (2026-05-20, user decision after reviewing both options). `BoolAlg (SymPred rs ci)` stays
+  *unconstrained*; the extraction evidence moves to
+  `instance (ExtractRegFile rs, KnownInCtors ci) => Sat (SymPred rs ci) (RegFile rs, ci)`
+  with `sat = symSatExt`.
+  Rationale: the constraints `(ExtractRegFile rs, KnownInCtors ci)` are needed only by the
+  one method that *constructs* the witness type (`sat`); every other `BoolAlg` method either
+  consumes the witness (`models`) or ignores it (`isBot`/`conj`/structural ops). Putting them
+  on the `BoolAlg` instance head (the original approach below) taxes `isSingleValuedSym` —
+  a pure mutual-exclusion check that never builds a witness — and is unsatisfiable on the
+  `Keiki.Profunctor` existential `SomeSymTransducer` (hides `rs`) and on composition-produced
+  `ci` types (`Either`, tuples, `Int`). Widening the existential fixes only the `rs` half and
+  still needs degenerate `KnownInCtors` instances. Splitting `sat` aligns the constraints with
+  the operation that needs them: `sat` is *never* called through a polymorphic `BoolAlg phi`
+  constraint (only at concrete `SymPred` types), and `isSingleValuedSym` uses only
+  `isBot`/`conj` — so the split has zero ripple to any existing call site, needs no
+  existential or core-profunctor change, and is the more honest design (witness extraction is
+  a strictly stronger capability than mutex-checking — the `Eq`→`Ord` / `Foldable`→
+  `Traversable` idiom). This supersedes the instance-head and deferral decisions below.
+  Date: 2026-05-20
+
+- Decision: **(Option A detail)** make `symSatExt` *sound* for predicates that do not pin a
+  constructor (e.g. `top`, `PEq lit5 lit5` over `SymPred '[] ()`) by constraining the
+  shared `seInputCtor` SBV variable to the known-constructor domain
+  (`sOr [ seInputCtor .== icName ic | ic <- allInCtors @ci ]`) inside `symSatExt`'s solver
+  call. Add a `KnownInCtors ()` instance (a single zero-field `inCtorUnit :: InCtor () '[]`).
+  Rationale: without a `PInCtor` atom the solver leaves `seInputCtor` free and may pick a
+  string matching no constructor, so `pickCi` returns `Nothing` and `sat top` would be
+  `Nothing` (the existing M5 tests expect `Just _`). A naive "fall back to the first
+  constructor" in `pickCi` is *unsound* for `PNot (PInCtor A)`-style predicates (the solver
+  could pick a non-constructor string and the fallback would yield a witness that fails
+  `models`). Constraining `seInputCtor` to the real finite domain forces the solver to choose
+  an actual constructor, so `pickCi` always matches and the witness always satisfies `models`
+  — it also *improves* completeness on `PNot (PInCtor …)` predicates. The constraint lives in
+  `symSatExt` (which already carries `KnownInCtors ci`), not in the shared `translatePred`
+  path used by `symIsBot`/`symSat`, so it adds no constraints to those.
+  Date: 2026-05-20
+
+- Decision (SUPERSEDED by the Pivot to Option A, above): Make `sat` on `SymPred` real by
+  adding `(ExtractRegFile rs, KnownInCtors ci)` to the **instance head** of
+  `BoolAlg (SymPred rs ci) (RegFile rs, ci)`, and defining `sat (SymPred p) = symSatExt p`.
   Rationale: the `BoolAlg` class types `sat :: phi -> Maybe a` with no per-method
   constraints, and Haskell cannot attach constraints to a single method beyond the
   class/instance head. The constraints witness reconstruction needs
@@ -163,10 +204,12 @@ sibling (`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.m
   exactly the confusion this plan removes.
   Date: 2026-05-20
 
-- Decision: **EP-44 is DEFERRED** (not implemented). The M0 baseline and an M1 prototype
+- Decision (SUPERSEDED 2026-05-20 by the Pivot to Option A): **EP-44 was DEFERRED** (not
+  implemented under the instance-head approach). The M0 baseline and an M1 prototype
   were done; the prototype was reverted (the only code change, in `src/Keiki/Symbolic.hs`,
   was rolled back, leaving the EP-42/EP-43-close state intact). `unsafeWitness`, `symSat`,
-  and the unconstrained `BoolAlg (SymPred)` instance remain as before.
+  and the unconstrained `BoolAlg (SymPred)` instance remained as before — until the Option A
+  pivot un-deferred the plan.
   Rationale: the planned instance-head approach has a much larger blast radius than the
   plan estimated (see Surprises, M1 entry): it makes `isSingleValuedSym` uncompilable on
   the `Keiki.Profunctor` existential `SomeSymTransducer` (which hides `rs` and can't carry
@@ -363,60 +406,92 @@ Record the exception text in Surprises.
 
 Acceptance: build/tests pass; the placeholder crash is recorded.
 
-### M1 — Real `sat`
+### M1 — Real `sat` (Option A: split `sat` into a `Sat` class)
 
-Goal: `sat` on `SymPred` returns a real, forceable witness; the placeholder is gone.
+Goal: `sat` returns a real, forceable witness; the placeholder is gone; `BoolAlg (SymPred)`
+and therefore `isSingleValuedSym` stay unconstrained (no existential / core-profunctor
+change).
+
+In `src/Keiki/Core.hs`:
+
+1. Remove `sat :: phi -> Maybe a` (and its haddock) from the `BoolAlg` class. Add, right
+   after the class, a one-method subclass that carries the witness-extraction capability:
+
+        -- | A 'BoolAlg' whose witnesses can be extracted from a
+        -- satisfiable predicate. Split from 'BoolAlg' (EP-44): witness
+        -- reconstruction needs carrier-specific evidence the algebra's
+        -- build/decide methods do not, so keeping it separate leaves
+        -- 'isSingleValuedSym' (which uses only 'isBot'/'conj')
+        -- extraction-constraint-free.
+        class BoolAlg phi a => Sat phi a where
+          sat :: phi -> Maybe a
+
+2. In the `BoolAlg (HsPred rs ci)` instance, delete the `sat _ = Nothing` line. Add a
+   trivial `instance Sat (HsPred rs ci) (RegFile rs, ci) where sat _ = Nothing` (the v1
+   syntactic carrier has no solver, hence no witness).
+
+3. Add `Sat (..)` to the module export list (next to `BoolAlg (..)`).
 
 In `src/Keiki/Symbolic.hs`:
 
-1. Change the instance head to carry the extraction constraints and point `sat` at the
-   real extractor:
+4. Drop the `sat` line from the (still unconstrained) `BoolAlg (SymPred rs ci)` instance.
+   Add the witness instance:
 
         instance (ExtractRegFile rs, KnownInCtors ci)
-              => BoolAlg (SymPred rs ci) (RegFile rs, ci) where
-          top                           = SymPred PTop
-          bot                           = SymPred PBot
-          conj (SymPred p) (SymPred q)  = SymPred (PAnd p q)
-          disj (SymPred p) (SymPred q)  = SymPred (POr  p q)
-          neg  (SymPred p)              = SymPred (PNot p)
-          models (SymPred p) (regs, ci) = evalPred p regs ci
-          sat (SymPred p)               = symSatExt p
-          isBot (SymPred p)             = symIsBot p
+              => Sat (SymPred rs ci) (RegFile rs, ci) where
+          sat (SymPred p) = symSatExt p
 
-2. Delete `unsafeWitness` (lines ~460–465) and `symSat` (lines ~474–482). Remove `symSat`
-   from the module export list (around line 56). Update the module header haddock (lines
-   ~30–37) that describes `symSat`/the placeholder.
+   (`Sat` is re-exported via `module Keiki.Core`, so callers importing only `Keiki.Symbolic`
+   still see `sat`.)
 
-3. Build:
+5. Delete `unsafeWitness` and `symSat`; remove `symSat` from the export list; reword the
+   module-header haddock and `symIsBot`'s haddock that reference `symSat`/the placeholder.
 
-        cabal build all
+6. Add a `KnownInCtors ()` instance near the other witness-extraction machinery:
 
-   GHC will now flag every place that uses the `SymPred` `BoolAlg` instance at an `rs`/`ci`
-   lacking `ExtractRegFile`/`KnownInCtors`. For each:
-   - If it is a real aggregate, it already has the instances (no action).
-   - If it is a test fixture command type without `KnownInCtors`, add a one-line instance
-     (a `[SomeInCtor …]` list, one entry per `InCtor`, following the pattern in
-     `Jitsurei.UserRegistration`'s `KnownInCtors UserCmd`). If a fixture register list has
-     a non-`Sym` slot type, switch it to a `Sym` type (all keiki fixtures should already
-     be `Sym`-typed). Record each addition in Surprises.
+        inCtorUnit :: InCtor () '[]
+        inCtorUnit = InCtor
+          { icName = "()", icMatch = \() -> Just RNil, icBuild = \RNil -> () }
 
-4. Fix comment references to `symSat`/placeholder: `grep -rn "symSat\b\|unsafeWitness\|placeholder witness" src jitsurei docs` and update the prose (e.g.
-   `jitsurei/src/Jitsurei/LoanApplication.hs:117`,
-   `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs` comments) to say `sat` now
-   returns a real witness.
+        instance KnownInCtors () where
+          allInCtors = [SomeInCtor inCtorUnit]
 
-5. Run the suite:
+7. Make `symSatExt` sound for predicates that don't pin a constructor: inside its
+   `SBV.sat` block, after `translatePred`, constrain `seInputCtor` to the known-ctor domain
+   so the solver must choose a real constructor (so `pickCi` always matches and the witness
+   satisfies `models`):
 
-        cabal test all
+        res <- SBV.sat $ do
+          env <- mkSymEnv
+          b   <- translatePred env p
+          let ctorNames = [ icName ic | SomeInCtor ic <- allInCtors @ci ]
+          when (not (null ctorNames)) $
+            SBV.constrain $ SBV.sOr [ seInputCtor env SBV..== SBV.literal n | n <- ctorNames ]
+          pure b
 
-   It must stay green. `Jitsurei.UserRegistrationSymbolicSpec`'s `isJust (sat (SymPred p))`
-   assertions still pass (now backed by a real witness).
+   (Add `import Control.Monad (when)`.) `pickCi` needs no change.
 
-What exists at the end: `sat (SymPred p)` returns the same real witness as `symSatExt p`;
-`unsafeWitness` and `symSat` are gone.
+8. Build and let GHC confirm: because `BoolAlg (SymPred)` stays unconstrained,
+   `isSingleValuedSym (withSymPred …)` on the `SomeSymTransducer` existential and on
+   `Either`/tuple `ci` (Category/Choice/Strong/Profunctor specs) compiles unchanged — the
+   whole reason for the pivot. `sat` is only used at concrete aggregate `SymPred` types
+   (`UserRegistrationSymbolicSpec`, `SymbolicSpec` M5), all of which have the evidence.
+
+9. Fix comment references: `grep -rn "symSat\b\|unsafeWitness\|placeholder witness" src jitsurei docs`
+   and update prose (e.g. `jitsurei/src/Jitsurei/LoanApplication.hs`,
+   `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs`) to say `sat` returns a real
+   witness via the `Sat` instance.
+
+10. Run `cabal test all` — must stay green; `SymbolicSpec`'s `sat (… :: SymPred '[] ())`
+    M5 tests now pass with real `(RNil, ())` witnesses.
+
+What exists at the end: `sat` lives in `Sat`; `sat (SymPred p)` returns the same real
+witness as `symSatExt p`; `unsafeWitness`/`symSat` are gone; `BoolAlg (SymPred)` and
+`isSingleValuedSym` are unchanged in their constraints.
 
 Acceptance: `cabal build all` and `cabal test all` pass; no `unsafeWitness`/`symSat`
-remain (`grep` returns only historical doc mentions).
+remain (`grep` returns only historical doc mentions); no existential or `KnownInCtors
+(Either …)`/tuple instances were needed.
 
 ### M2 — Proofs
 
