@@ -107,7 +107,7 @@ registry, the prose below, and the child plans' cross-references all use one num
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | Complete |
-| 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | In Progress |
+| 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | Complete |
 | 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -205,11 +205,11 @@ EP-42 (memoization):
 
 EP-43 (arithmetic terms):
 
-- [ ] EP-43 M0 — Baseline + authoritative `Term`-walker list
-- [ ] EP-43 M1 — `NumOp`/`TArith` + `evalTerm` + every total `Term` walker + smart constructors (warning-clean)
-- [ ] EP-43 M2 — SBV translation (`SymNumDict`/`discoverSymNum` + `TArith` arm) + keiki-side proofs
+- [x] EP-43 M0 — Baseline + authoritative `Term`-walker list (2026-05-20)
+- [x] EP-43 M1 — `NumOp`/`TArith` + `evalTerm` + every total `Term` walker + smart constructors (warning-clean) (2026-05-20)
+- [x] EP-43 M2 — SBV translation (`SymNumDict`/`discoverSymNum` + `TArith` arm) + keiki-side proofs (2026-05-20)
 - [x] EP-43 M3 — Migrate `LoanApplication` cap to `tmul`; **integration capstone:** un-pend the single-valuedness gate (EP-42 complete) (2026-05-20)
-- [ ] EP-43 M4 — Docs (`sbv-boolalg-design.md`, `agent-qualification-decomposition-sketch.md` §3(c)/§5, guides) + close
+- [x] EP-43 M4 — Docs (`sbv-boolalg-design.md`, `agent-qualification-decomposition-sketch.md` §3(c)/§5, guides) + close (2026-05-20)
 
 EP-44 (real witnesses):
 

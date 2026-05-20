@@ -317,12 +317,23 @@ For each `Term rs ci r`:
   in becomes "soft" (the solver is free to pick any value). Loses
   precision but does not corrupt soundness.
 - `TApp2 f a b` — same as `TApp1`.
+- `TArith op a b` (added by EP-43) — *structural* arithmetic. On a
+  `discoverSymNum` hit (the operand type's `SymRep` is an SBV `Num`,
+  i.e. the numeric registry types `Int`/`Integer`/`Word8`…`Word64`/
+  `Int32`/`Int64`), it translates both operands and emits the real
+  `(+)`/`(-)`/`(*)` over them, so a guard over a *computed* value (a
+  weighted sum, a derived cap) is visible to the solver. On a miss
+  (a numeric type intentionally left out of the registry) it falls back
+  to a fresh free variable, exactly like `TApp`. `discoverSymNum`
+  yields a `SymNumDict` carrying `Num (SBV (SymRep r))`, the companion
+  to `discoverSymOrd`'s `SymOrdDict`.
 
-There is a curated whitelist for `TApp1`/`TApp2`-with-SBV-friendly-ops
-(e.g. integer addition, equality, string concatenation). EP-2 does not
-require it for the User Registration smoke test (no `TApp1`/`TApp2` in
-that aggregate). The whitelist is **out of scope**; the fallback is
-"fresh free variable, lose precision."
+The `TApp1`/`TApp2` escape hatches remain opaque (there is no curated
+whitelist for them — that was always out of scope). Structural
+arithmetic via `TArith` is the supported, solver-visible way to write
+`+`/`-`/`*` over numeric operands; reach for `TApp` only for genuinely
+opaque Haskell (and accept the precision loss). The fallback for an
+unsupported operand stays "fresh free variable, lose precision."
 
 ### HsPred translation rules
 

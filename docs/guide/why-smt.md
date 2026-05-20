@@ -152,13 +152,16 @@ Three places where the assurance weakens:
   You can add a `Sym` instance for a new type if it has a natural SBV
   representation.
 - **Escape hatches.** The predicate AST has `TApp1` / `TApp2`
-  constructors that lift opaque Haskell functions (e.g. a *computed*
-  threshold operand such as a weighted sum). The solver can't see
+  constructors that lift opaque Haskell functions. The solver can't see
   inside them, so it picks "some" value and the answer becomes an
   over-approximation: the gate may fail (`False`) when the truth is
   "they really are mutually exclusive." Never the reverse. (A bare
-  threshold like `amount >= 1000` no longer needs an escape — write it
-  as `requireGe #amount (lit 1000)` and the solver sees it.)
+  threshold like `amount >= 1000` needs no escape — write it as
+  `requireGe #amount (lit 1000)`. A *computed* operand like a weighted
+  sum or a derived cap needs no escape either since EP-43 — write it
+  with the structural arithmetic terms `tadd`/`tsub`/`tmul` and the
+  solver reads it. Only genuinely opaque Haskell, or fractional
+  arithmetic — `Double`/SReal is out of scope — still needs `TApp`.)
 - **Repeated reads of one register.** *Fixed in EP-42 of MasterPlan
   12.* The translator now memoizes register and input-field reads, so a
   predicate that reads the same slot twice (e.g. a self-mutex `g ∧ ¬g`

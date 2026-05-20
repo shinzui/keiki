@@ -19,9 +19,10 @@
 --     employment verified \(\wedge\) requested amount \(\le\) credit-
 --     score-derived cap), expressed via the structural ordering guard
 --     'Keiki.Core.PCmp' inside an 'HsPred' conjunction (EP-41 migrated
---     these off the opaque @'TApp1' (>= n)@ form; only the
---     credit-score-derived cap's right-hand side still routes through
---     'TApp1', pending the arithmetic-terms sibling).
+--     the comparisons off the opaque @'TApp1' (>= n)@ form; EP-43 then
+--     made the cap's right-hand side a structural @'Keiki.Core.TArith'@
+--     — @tmul (proj #appCreditScore) (lit 1000)@ — so the whole guard
+--     is solver-visible and the single-valuedness gate is proven).
 --   * ε-edges (silent transitions): \"sufficient documents tipped the
 --     application from CollectingDocuments to UnderReview\" emits no
 --     public event.

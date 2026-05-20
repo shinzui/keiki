@@ -260,9 +260,8 @@ now visible to `isSingleValuedSym` and `symSatExt`. Equality against a
 
 The approval branch is a similar conjunction. Its credit-score and
 cap relations are `PCmp`; the cap's *right-hand side*
-(`maxApprovalForScore creditScore`, a computed quantity) still routes
-through `TApp1`, because arithmetic over `Term` is a separate
-follow-on:
+(`maxApprovalForScore creditScore`, a computed quantity) is — since
+EP-43 — a structural `tmul`, so the whole guard is solver-visible:
 
 ```haskell
 approvalGuard :: HsPred LoanAppRegs LoanCmd
@@ -272,24 +271,20 @@ approvalGuard =
   PEq (proj (#appEmploymentVerified :: …)) (lit True)
     `PAnd`
   PCmp CmpLe (proj (#appRequestedAmount :: …))
-             (TApp1 maxApprovalForScore (proj (#appCreditScore :: …)))
+             (tmul (proj (#appCreditScore :: …)) (lit 1000))
 ```
 
-The LoanApplication's symbolic spec (`LoanApplicationSymbolicSpec`)
-still marks the *single-valuedness* gate `pendingWith`, but the reason
-has narrowed. Proving `approvalGuard ∧ ¬approvalGuard` unsatisfiable
-needed two things: the two reads of `#appCreditScore` (one per half) to
-share one solver variable, and the cap conjunct
-`appRequestedAmount <= maxApprovalForScore appCreditScore` to be visible
-to the solver. EP-42 (per-slot *memoization*) delivered the first — the
-two reads now share a variable. The remaining blocker is the
-*arithmetic-terms* follow-on (EP-43): `maxApprovalForScore` is still an
-opaque `TApp1` that mints a fresh variable per occurrence, so the
-self-mutex stays satisfiable via the cap until that term becomes
-structural arithmetic. EP-41 supplied the comparison constructor the
-gate's reason originally asked for; the spec also asserts, un-pended,
-that the approval edge's `symSatExt` witness has a credit score `>=` the
-threshold. See the spec's module haddock for the full caveat.
+The LoanApplication's symbolic spec (`LoanApplicationSymbolicSpec`) now
+*proves* the *single-valuedness* gate (it is no longer `pendingWith`).
+Proving `approvalGuard ∧ ¬approvalGuard` unsatisfiable needed two
+things, both now delivered: the two reads of `#appCreditScore` (one per
+half) to share one solver variable — EP-42 (per-slot *memoization*) —
+and the cap conjunct `appRequestedAmount <= appCreditScore * 1000` to be
+solver-visible — EP-43 (structural *arithmetic terms*), the `tmul`
+above. EP-41 had already supplied the comparison constructor. The spec
+also asserts that the approval edge's `symSatExt` witness satisfies the
+whole guard (credit-score bound *and* the structural cap). See the
+spec's module haddock for the full story.
 
 `UnderReview` then has two `Continue`-keyed edges — approve under
 `approvalGuard`, decline under `PNot approvalGuard` — plus a

@@ -94,6 +94,12 @@ approvalGuard =
       (lit True)
 ```
 
+(*This is the original opaque-operand snapshot, kept for the AST-as-data
+comparison. The shipped guard is now fully structural: the comparisons
+are `PCmp` (EP-41) and the cap is `tmul (proj #appCreditScore) (lit
+1000)` (EP-43), so the whole guard is solver-visible. See
+`docs/guide/loan-application-tutorial.md`.*)
+
 Builder-form authoring of the approval/decline branches:
 
 ```haskell
@@ -692,7 +698,10 @@ EP-28/EP-29) but not shipped.
 #### Multi-field threshold guards
 
 ```haskell
--- keiki: structural HsPred AST
+-- keiki: structural HsPred AST (original opaque-operand form; the
+-- shipped guard now uses PCmp comparisons (EP-41) and a structural
+-- cap tmul (proj #appCreditScore) (lit 1000) (EP-43), so it is fully
+-- solver-visible — see docs/guide/loan-application-tutorial.md)
 approvalGuard =
   PEq (TApp1 (>= 650) (proj #appCreditScore)) (lit True)
     `PAnd` PEq (proj #appEmploymentVerified) (lit True)

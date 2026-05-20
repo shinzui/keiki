@@ -110,29 +110,35 @@ data ChapterQualEvent
 `InCtor`/`WireCtor` values are TH-derived (`deriveAggregateCtors`,
 `deriveWireCtors`); not shown.
 
-### The weighted totals (the one escape)
+### The weighted totals (now mostly structural)
 
 The credit formula (`mkTotalVolume`/`mkTotalSides`, with the 0.5
-co-agent multiplier) has no arithmetic constructor in `Term`, so it is
-built with `TApp` — the same escape `Jitsurei.LoanApplication` still
-accepts for its derived cap `maxApprovalForScore creditScore` (the
-`creditScore >= 650` *comparison* itself is a structural `PCmp` since
-EP-41; only the arithmetic remains opaque). Sides are doubled to stay in
-`Int` and avoid a fractional `0.5`:
+co-agent multiplier) used to have *no* arithmetic constructor in `Term`,
+so it was built with `TApp`. Since EP-43 (structural arithmetic terms),
+integer `+`/`-`/`*` are first-class `Term`s (`tadd`/`tsub`/`tmul`) the
+SBV translator reads — the same win that made `Jitsurei.LoanApplication`'s
+derived cap structural (`appRequestedAmount <= appCreditScore * 1000`,
+now `tmul`, no longer a `TApp`). The integer "doubled to stay in `Int`"
+form is therefore fully solver-visible. A *fractional* `0.5` multiplier
+is still out of scope (no `Double`/SReal — EP-43's boundary), so either
+keep the doubling workaround (structural) or fall back to `TApp` for a
+genuine fraction:
 
 ```haskell
+-- 2 * totalSides, integer-valued — now fully structural (EP-43):
+weightedSidesx2 :: Term ChapterQualRegs ci Int
+weightedSidesx2 =
+  tadd (tmul (lit 2) (tadd #listingSides #buyerSides))
+       (tadd #colistingSides #cobuyerSides)
+
+-- The fractional-0.5 volume form still needs TApp (SReal is out of
+-- scope); prefer the doubled integer form above when verification
+-- matters:
 weightedVolume :: Term ChapterQualRegs ci Money
 weightedVolume =
   TApp2 (\primary co -> primary + 0.5 * co)
-        (TApp2 (+) #listingVolume #buyerVolume)
-        (TApp2 (+) #colistingVolume #cobuyerVolume)
-
--- 2 * totalSides, integer-valued:
-weightedSidesx2 :: Term ChapterQualRegs ci Int
-weightedSidesx2 =
-  TApp2 (\primary co -> 2 * primary + co)
-        (TApp2 (+) #listingSides #buyerSides)
-        (TApp2 (+) #colistingSides #cobuyerSides)
+        (tadd #listingVolume #buyerVolume)
+        (tadd #colistingVolume #cobuyerVolume)
 ```
 
 ### The transducer
@@ -222,18 +228,18 @@ What stays an **escape** (honestly):
   is a structural comparison over `Word64` that the solver reads exactly,
   and a *constant* threshold (e.g. comparing a single tally register
   against a literal bound) is fully verifiable today. **(c)** the
-  `weightedVolume` *operand* is still a `TApp` sum, so if the left side
-  is a derived quantity its content remains opaque (`appRequestedAmount
-  <= maxApprovalForScore creditScore` in `Jitsurei.LoanApplication` is
-  the shipped instance of exactly this) — full verification of a
-  *derived-quantity* threshold additionally needs structural arithmetic
-  terms, the remaining sibling EP. (A common workaround that needs none
-  of (c): maintain the weighted total as its own scalar tally register
-  and compare *that* directly with `PCmp`, keeping the operand
-  structural — now fully solver-visible.) Note also that two reads of the
-  *same* register in one predicate do not yet share a solver variable
-  (the per-slot memoization sibling), so a self-mutex like
-  `g ∧ ¬g` over a shared register is still reported satisfiable.
+  `weightedVolume` *operand*, when written with integer `+`/`*`, is now a
+  structural `tadd`/`tmul` the solver reads (EP-43, done; §5) — so a
+  *derived-quantity* threshold is fully verifiable too. The shipped
+  instance is `Jitsurei.LoanApplication`'s `appRequestedAmount <=
+  appCreditScore * 1000`, now a structural `tmul`. (Only a *fractional*
+  weight like `0.5` stays opaque, since `Double`/SReal is out of scope;
+  use the doubled-integer form to keep it structural.) And two reads of
+  the *same* register in one predicate **now share** a solver variable
+  (EP-42 per-slot memoization, done; §5), so a self-mutex like `g ∧ ¬g`
+  over a shared register is correctly reported unsatisfiable — which is
+  exactly why `Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness
+  gate is now proven (it needed both EP-42 and EP-43).
 
 
 ## 4. What moved out of the aggregate — and where it went
@@ -277,14 +283,17 @@ types (money is `Word64` minor units per keiki convention — §3(a)) and a
 structural ordering predicate `PCmp` (§3(b)). So money equality and
 `<`/`<=`/`>`/`>=` over `Word64` registers are now solver-visible, proven
 by `Jitsurei.OrderCartSymbolicSpec` and the migrated
-`Jitsurei.LoanApplication` threshold guards. Two related gaps stay sibling
-follow-ons (still open): structural arithmetic terms (needed so the
-`weightedVolume` *operand* in §3(c) is visible) and per-slot translator
-memoization (needed so repeated reads of one register share a solver
-variable — without it a self-mutex over a shared register is still
-reported satisfiable, which is why
-`Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate remains
-pending even after EP-41 supplied the comparison constructor).
+`Jitsurei.LoanApplication` threshold guards. The two related gaps are now
+**also delivered** (MasterPlan 12): structural arithmetic terms — EP-43
+(`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md`),
+so the `weightedVolume` *operand* in §3(c) is visible when written with
+`tadd`/`tmul` — and per-slot translator memoization — EP-42
+(`docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md`),
+so repeated reads of one register share a solver variable. With both,
+`Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate is no
+longer pending — it is proven (the self-mutex `approvalGuard ∧
+¬approvalGuard` is unsatisfiable once the cap is structural and the
+`#appCreditScore` reads are shared).
 
 
 ## Pointers

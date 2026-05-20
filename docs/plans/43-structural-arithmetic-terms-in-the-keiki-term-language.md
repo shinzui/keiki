@@ -93,11 +93,16 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
       Strengthened the renamed "approval edge guard (EP-41 ordering + EP-43 cap)" test to
       assert the full `evalPred` holds on the witness (now possible because the cap is
       structural). Rewrote the spec's module haddock to record the gate as proven.
-- [ ] M4 — Docs + close: update `docs/research/sbv-boolalg-design.md`,
-      `docs/research/agent-qualification-decomposition-sketch.md` (§3(c)/§5: the
-      `weightedVolume` operand and `maxApprovalForScore` are now structural; arithmetic
-      gap closed), and the guides; sweep for stale "no arithmetic in Term" claims. Fill
-      Outcomes.
+- [x] M4 — Docs + close (2026-05-20): updated `docs/research/sbv-boolalg-design.md` (Term
+      translation rules now list `TArith` + `SymNumDict`/`discoverSymNum`);
+      `docs/research/agent-qualification-decomposition-sketch.md` §3 weighted-totals (the
+      doubled-integer form is now structural `tadd`/`tmul`; fractional `0.5` stays
+      out-of-scope), §3(c) and §5 (arithmetic delivered by EP-43, memoization by EP-42, the
+      LoanApplication gate proven); the guides `docs/guide/why-smt.md`,
+      `docs/guide/symbolic-ci.md`, `docs/guide/loan-application-tutorial.md` (cap code block
+      → `tmul`, escape-hatch caveats narrowed to genuinely-opaque/fractional). Swept stale
+      claims: added historical notes to the two `worked-comparison-loanworkflow-keiki-vs-crem.md`
+      snapshots and corrected `Jitsurei.LoanApplication`'s module haddock. Build/test green.
 
 
 ## Surprises & Discoveries
@@ -177,9 +182,41 @@ provable and is un-pended. That capstone requires EP-42; the rest of this plan d
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. Record the final walker list, whether the
-LoanApplication single-valuedness gate was un-pended here or deferred to await EP-42, and
-the observable falsifiers that flipped.)
+Delivered (2026-05-20). The keiki `Term` language now has structural arithmetic: a single
+`TArith :: (Num r, Typeable r) => NumOp -> Term rs ci r -> Term rs ci r -> Term rs ci r`
+constructor (`NumOp = OpAdd | OpSub | OpMul`), smart constructors `tadd`/`tsub`/`tmul`, an
+`evalTerm` arm, and a `TArith` arm in all 14 total `Term` walkers. The SBV translator reads
+it for real (via the new `discoverSymNum`/`SymNumDict`), so a guard over a *computed* value
+— a weighted sum, a derived cap — is solver-visible instead of routing through an opaque
+`TApp`. Scope held to `+`/`-`/`*` over the numeric registry types; division and
+`Double`/SReal stayed out of scope.
+
+Final walker list (the authoritative set, all given a `TArith` arm): `evalTerm`, `stepOne`,
+`termReadsInput`, `termHasInpCtorField`, and two `goTerm`s in `Keiki.Core`; `weakenLTerm`,
+`weakenRTerm`, `substTerm`, `liftLTermAlt`, `liftRTermAlt` in `Keiki.Composition`; two
+`go`s in `Keiki.Profunctor`; `translateTermSym` in `Keiki.Symbolic`. `-Wincomplete-patterns`
+confirmed completeness; the two `goTerm`s have a `_ = []` wildcard so their arms are a
+correctness addition (hidden-input detection through arithmetic).
+
+Observable falsifiers that flipped (locked into `Keiki.SymbolicSpec`'s "structural
+arithmetic (EP-43)" block): a constant arithmetic ordering contradiction `2 + 3 > 10` and
+the equality `10 - 3 == 8` are now `symIsBot` (were satisfiable through `TApp`); `symSatExt`
+witnesses respect `#a + #b >= 10` and `#req <= #score * 1000`; and `evalPred`/`evalTerm`
+agree with Haskell `+`/`-`/`*`.
+
+The LoanApplication single-valuedness gate was **un-pended here** (EP-42 was already
+complete): migrating the cap to a structural `tmul` was the last piece, and
+`isSingleValuedSym (withSymPred loanApplication) == True` now proves (jitsurei-test pending
+1 → 0). This was MasterPlan 12's integration capstone — the one observable requiring two
+plans composed. A bonus on the shipped aggregate: the approval-edge `symSatExt` witness now
+satisfies the *whole* guard under `evalPred`, where before EP-43 the opaque cap allowed only
+the credit-score bound to be asserted.
+
+Lessons: a single tagged constructor (`TArith` + `NumOp`) over three (`TAdd`/`TSub`/`TMul`)
+kept the walker cost to one arm each — the right call given a new `Term` constructor touches
+14 sites. The `discoverSymNum` companion mirrored `discoverSymOrd` exactly, so the translator
+arm and its sound opaque fallback dropped in cleanly. No SBV `Num`-on-`SInteger` surprises.
+`Money = Int` in `LoanApplication` made the cap migration typecheck without a cast.
 
 
 ## Context and Orientation

@@ -232,10 +232,13 @@ The check is a hard CI gate. Skip it for:
   guards. The translator falls back to fresh variables and the
   check loses precision (it may say `False` when the answer is
   `True`). Either drop the escape hatch or accept a property test
-  in its place. Note: a bare threshold (`amount >= 1000`) no longer
-  needs an escape — use the structural ordering guard (`PCmp` via
-  `requireGe` etc.); only a *computed* operand (a weighted sum) still
-  needs `TApp` until the arithmetic-terms follow-on lands.
+  in its place. Note: a bare threshold (`amount >= 1000`) needs no
+  escape — use the structural ordering guard (`PCmp` via `requireGe`
+  etc.); and a *computed* operand (a weighted sum, a derived cap)
+  needs no escape either since EP-43 — write it with the structural
+  arithmetic terms `tadd`/`tsub`/`tmul`. Only genuinely opaque
+  Haskell (or fractional `Double`/SReal arithmetic, out of scope)
+  still needs `TApp`.
 - Local prototype aggregates that haven't stabilised yet. The
   check is a good signal at PR time but a bad signal during early
   drafting — false positives slow you down. Add it once the
