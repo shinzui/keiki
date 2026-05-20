@@ -437,6 +437,12 @@ stays unchanged:
       sat   (SymPred p)             = symSat   p
       isBot (SymPred p)             = symIsBot p
 
+(Historical sketch. Since EP-44 — see the "Superseded by EP-44" banner under
+"Sat witness extraction" — `sat` is no longer a `BoolAlg` method: it lives in a
+separate `Sat` class, and the `Sat (SymPred)` instance defines `sat = symSatExt`.
+This `BoolAlg (SymPred)` instance keeps only the seven build/decide methods
+(`top`/`bot`/`conj`/`disj`/`neg`/`models`/`isBot`).)
+
 The instance carries a constraint-set requirement on `rs` and `ci` —
 enough `Sym` instances to allow translation. The class signature
 itself doesn't admit per-instance constraints, so the constraint
@@ -449,6 +455,34 @@ User Registration: `Sym Text`, `Sym UTCTime`. Both are provided by
 
 
 ## Sat witness extraction
+
+> **Superseded by EP-44 (MasterPlan 12), 2026-05-20.** The decision below
+> (return an `unsafeWitness` placeholder from the typeclass `sat` and expose a
+> separate `symSatExt`) shipped and stood until EP-44. EP-44 reverses the
+> *placeholder* half by **splitting `sat` out of `BoolAlg` into its own class**
+> rather than putting extraction constraints on the `BoolAlg` instance head:
+>
+>     class BoolAlg phi a => Sat phi a where
+>       sat :: phi -> Maybe a
+>
+>     instance (ExtractRegFile rs, KnownInCtors ci)
+>           => Sat (SymPred rs ci) (RegFile rs, ci) where
+>       sat (SymPred p) = symSatExt p
+>
+> `BoolAlg (SymPred)` stays *unconstrained*, so `isSingleValuedSym` (which uses
+> only `isBot`/`conj`) carries no extraction constraints and keeps type-checking
+> on the `Keiki.Profunctor.SomeSymTransducer` existential (which hides `rs`) and
+> on composition-produced `ci` types (`Either`, tuples). Putting the constraints
+> on the `BoolAlg (SymPred)` instance head instead — the originally-considered
+> alternative — was prototyped and abandoned: it makes `isSingleValuedSym`
+> uncompilable on those carriers and demands degenerate `KnownInCtors` for
+> non-aggregate `ci`. `sat` is never used through a polymorphic `BoolAlg phi`
+> constraint, so the split has no call-site cost. `unsafeWitness` and the
+> witness-free `symSat` are retired (witness-free satisfiability is `not .
+> symIsBot`); the real `symSatExt` (made repeated-read-correct by EP-42, and
+> total on unconstrained-`ci` predicates by constraining `seInputCtor` to the
+> known-constructor domain) is now the implementation of `sat`. The historical
+> design follows.
 
 SBV's `sat` returns a `SatResult` carrying a model: a map from
 variable names to concrete `CV` (Concrete Value) tags. To produce a

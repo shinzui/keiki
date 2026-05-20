@@ -108,7 +108,7 @@ registry, the prose below, and the child plans' cross-references all use one num
 |---|-------|------|-----------|-----------|--------|
 | 42 | Per-slot and per-input-field memoization in the symbolic translator | docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md | None | None | Complete |
 | 43 | Structural arithmetic terms in the keiki Term language | docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md | None (M0–M2, M4); EP-42 for the M3 un-pend capstone | EP-42 | Complete |
-| 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | In Progress (un-deferred 2026-05-20 → Option A: split `sat` into a `Sat` class — see Decision Log) |
+| 44 | Real witnesses from BoolAlg.sat (retire the placeholder witness) | docs/plans/44-real-witnesses-from-boolalg-sat-retire-the-placeholder-witness.md | None | EP-42 | Complete (Option A: `sat` split into a `Sat` class — un-deferred 2026-05-20) |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -211,13 +211,14 @@ EP-43 (arithmetic terms):
 - [x] EP-43 M3 — Migrate `LoanApplication` cap to `tmul`; **integration capstone:** un-pend the single-valuedness gate (EP-42 complete) (2026-05-20)
 - [x] EP-43 M4 — Docs (`sbv-boolalg-design.md`, `agent-qualification-decomposition-sketch.md` §3(c)/§5, guides) + close (2026-05-20)
 
-EP-44 (real witnesses) — **DEFERRED 2026-05-20** (M1 infeasible as planned; see Decision
-Log and Surprises):
+EP-44 (real witnesses) — **DELIVERED 2026-05-20 via Option A** (the `sat`-class split; the
+original instance-head M1 was deferred as infeasible, then un-deferred — see Decision Log
+and Surprises):
 
 - [x] EP-44 M0 — Baseline + record *before* placeholder crash (2026-05-20)
-- [ ] EP-44 M1 — Constrain `BoolAlg (SymPred …)` head; `sat = symSatExt`; retire `unsafeWitness`/`symSat`; add any missing fixture `KnownInCtors` — **deferred** (instance-head ripple breaks `isSingleValuedSym` on the `SomeSymTransducer` existential; prototype reverted)
-- [ ] EP-44 M2 — Proofs (`sat` witness survives forcing and satisfies `models`) — deferred
-- [ ] EP-44 M3 — Docs (`sbv-boolalg-design.md` "Sat witness extraction" superseded) + close — deferred
+- [x] EP-44 M1 — Split `sat` into `class BoolAlg phi a => Sat phi a`; `Sat (SymPred)` instance defines `sat = symSatExt`; `BoolAlg (SymPred)` left unconstrained; retire `unsafeWitness`/`symSat`; add `KnownInCtors ()` + `seInputCtor` domain constraint for sound unconstrained-`ci` witnesses (2026-05-20) — **no** existential/core-profunctor change; composition specs untouched
+- [x] EP-44 M2 — Proofs (`sat` witness survives forcing and satisfies `models`; `sat`/`symSatExt` agree; real `()` witness) (2026-05-20)
+- [x] EP-44 M3 — Docs (`sbv-boolalg-design.md` "Sat witness extraction" marked superseded; `symbolic-ci.md` updated) + close (2026-05-20)
 
 Integration capstone (cross-plan):
 
@@ -283,6 +284,26 @@ Integration capstone (cross-plan):
   (the real witness is already available via the standalone `symSatExt`). The M1 prototype
   was reverted; the tree is at the EP-43-close state.
 
+- 2026-05-20 (EP-44 un-deferred and **DELIVERED via Option A** — the split had zero ripple,
+  exactly as the analysis predicted): the user chose Option A (split `sat` out of `BoolAlg`
+  into `class BoolAlg phi a => Sat phi a`) over Option B (widen the `SomeSymTransducer`
+  existential). The decisive insight that resolved the earlier deferral: the extraction
+  constraints `(ExtractRegFile rs, KnownInCtors ci)` are needed only by the one method that
+  *constructs* the witness type (`sat`), so they belong on a capability subclass, not on the
+  shared `BoolAlg` instance head. Confirmation: `cabal build all` was clean on the **first
+  try** — the `CategorySpec`/`ChoiceSpec`/`StrongSpec`/`ProfunctorSpec` sites that defeated
+  the instance-head prototype (because `isSingleValuedSym` would have needed extraction
+  evidence on the `rs`-hiding existential and on `Either`/tuple `ci`) compiled with **no
+  change at all**, because `isSingleValuedSym` uses only `isBot`/`conj` and never `sat`. The
+  only test breakage was one direct `symSat` caller (an EP-42 unsat check) redirected to
+  `symSatExt`. The residual `()`/no-`PInCtor` witness case (flagged by the deferral as the
+  hard part) was solved *soundly* by constraining the shared `seInputCtor` tag to the
+  known-constructor domain inside `symSatExt` (which already carries `KnownInCtors ci`) plus
+  a one-line `KnownInCtors ()` — not by an unsound first-constructor fallback; this also made
+  `symSatExt` complete on `PNot (PInCtor …)` guards. Net: all three MasterPlan promises
+  delivered. The Outcomes-retrospective lesson held — the correct response to a constraint
+  rippling onto a polymorphic analysis was to keep it off the shared class entirely.
+
 
 ## Decision Log
 
@@ -347,8 +368,9 @@ Integration capstone (cross-plan):
 
 ## Outcomes & Retrospective
 
-Status as of 2026-05-20: **two of three plans delivered, the integration capstone closed,
-EP-44 deferred.**
+Status as of 2026-05-20: **all three plans delivered and the integration capstone closed.**
+(EP-44 was briefly deferred mid-stream when its instance-head approach proved infeasible,
+then un-deferred and delivered via Option A — the `sat`-class split. See the Decision Log.)
 
 Against the Vision's three promises:
 
@@ -365,25 +387,35 @@ Against the Vision's three promises:
    `Just → Nothing`; a two-edge `PEq #x 0`/`PEq #x 1` fixture `False → True`; a repeated-read
    contradiction witness `Just`(bogus) `→ Nothing`.
 
-3. **Real `BoolAlg.sat` witnesses — DEFERRED (EP-44).** Not delivered. The planned
-   instance-head approach proved infeasible without a core change to the `Keiki.Profunctor`
-   existential `SomeSymTransducer` (which hides `rs` and so can't satisfy the
-   `ExtractRegFile rs` the instance head would demand), and would force `KnownInCtors`
-   instances for non-aggregate ci types. `sat` still returns the documented crashing
-   placeholder; the **real witness remains available via the standalone `symSatExt`** (which
-   EP-42 made correct for repeated reads). A future ExecPlan should split `sat` into its own
-   constrained typeclass (no ripple to `isSingleValuedSym`, since `sat` is never used
-   polymorphically) — see EP-44's Outcomes for the scoped path. See Decision Log + Surprises.
+3. **Real `BoolAlg.sat` witnesses — DELIVERED (EP-44, via Option A).** `sat` was split out
+   of `BoolAlg` into a subclass `class BoolAlg phi a => Sat phi a`; the
+   `Sat (SymPred rs ci)` instance (constrained `(ExtractRegFile rs, KnownInCtors ci)`)
+   defines `sat = symSatExt`, so `sat (SymPred p)` now returns a real, forceable
+   `(RegFile rs, ci)` witness that satisfies `models` — `case sat (SymPred p) of Just w ->
+   models (SymPred p) w` is `True` where before EP-44 forcing `w` threw the placeholder
+   error. The crashing `unsafeWitness` and the witness-free `symSat` are retired
+   (`not . symIsBot` is the constraint-free satisfiability check). Because the extraction
+   constraints sit on the `Sat` instance, not on `BoolAlg`, `isSingleValuedSym` stayed
+   unconstrained and **nothing rippled** — the deferral's blocker (the `rs`-hiding
+   `SomeSymTransducer` existential and `Either`/tuple `ci` in the composition specs)
+   evaporated. The `()`/no-`PInCtor` witness case was solved soundly by constraining
+   `seInputCtor` to the known-constructor domain inside `symSatExt` plus a one-line
+   `KnownInCtors ()`. See Decision Log + Surprises.
 
 Capstone: **CLOSED.** `isSingleValuedSym (withSymPred loanApplication) == True` is proven
 and un-pended (jitsurei-test pending 1 → 0), the one observable that required EP-42 and
 EP-43 composed.
 
-Decomposition adjustment: the MasterPlan under-counted EP-44's blast radius — it treated the
-instance-head ripple as satisfied by "all shipped aggregates," missing that the keiki-test
-suite exercises `isSingleValuedSym` on the `rs`-hiding profunctor existential. The lesson:
-when a typeclass-instance constraint is added, audit *every* call site's type context,
-including existentially-quantified ones, not just the shipped aggregates.
+Decomposition adjustment: the MasterPlan initially under-counted EP-44's blast radius — it
+treated the instance-head ripple as satisfied by "all shipped aggregates," missing that the
+keiki-test suite exercises `isSingleValuedSym` on the `rs`-hiding profunctor existential.
+That mistake forced the mid-stream deferral. The resolution (Option A) shows the deeper
+lesson: when a constraint added for *one* method ripples onto a polymorphic analysis that
+doesn't use that method, the fix is not to satisfy the constraint everywhere (audit every
+call site, widen the existential) but to **keep it off the shared class** — move the method
+to a capability subclass used only where the capability is exercised. The audit lesson still
+holds (check existential call sites before tightening a class/instance head); Option A simply
+made the audit moot by not tightening the shared instance at all.
 
-Final suite state: `cabal test all` green — keiki-test 229/0, jitsurei-test 94/0 (0 pending),
+Final suite state: `cabal test all` green — keiki-test 234/0, jitsurei-test 94/0 (0 pending),
 keiki-codec-json-test 40/0, keiki-codec-json-test-test 7/0.

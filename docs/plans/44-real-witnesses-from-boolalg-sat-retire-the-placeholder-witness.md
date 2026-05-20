@@ -80,10 +80,13 @@ M1 is retained in the Decision Log / Surprises as history.
       the witness through `models` (constructor-pinned so `evalPred` is total). keiki-test
       229 → 234, jitsurei-test 94/0 — all green. Each new assertion crashes before M1
       (forcing the placeholder) and passes after.
-- [ ] M3 — Docs + close: update `docs/research/sbv-boolalg-design.md` (the "Sat witness
-      extraction" decision is superseded — `BoolAlg.sat` no longer carries the placeholder;
-      `sat` lives in a separate `Sat` class whose `SymPred` instance returns real witnesses)
-      and any guide that mentions the placeholder. Fill Outcomes.
+- [x] M3 — Docs + close (2026-05-20): added a "Superseded by EP-44" banner to
+      `docs/research/sbv-boolalg-design.md`'s "Sat witness extraction" section (and a pointer
+      on the historical instance sketch) describing the `Sat`-class split; updated
+      `docs/guide/symbolic-ci.md` (renamed the `symSat`→`sat` describe label, added a note
+      that `sat` now returns the real witness and that `not . symIsBot` is the
+      constraint-free satisfiability check). `docs/guide/why-smt.md` uses "sat" only in the
+      SMT-verdict sense — left as-is. Outcomes filled below.
 
 
 ## Surprises & Discoveries
@@ -261,34 +264,49 @@ M1 is retained in the Decision Log / Surprises as history.
 
 ## Outcomes & Retrospective
 
-**Deferred (2026-05-20), not delivered.** M0 (baseline + the *before* placeholder-crash
-capture) was completed; the M1 prototype was built, found to be infeasible without a
-core-type change, and reverted. The shipped state is unchanged from EP-43's close:
-`BoolAlg (SymPred rs ci)` remains unconstrained, `sat` still returns the crashing
-`unsafeWitness` placeholder, and `symSat` is still exported. The real witness remains
-available via the standalone `symSatExt` (which EP-42 made correct for repeated reads).
+**Delivered (2026-05-20) via Option A — the `Sat`-class split** (after an initial deferral
+of the instance-head approach; see the Decision Log for the full arc). `sat` no longer lives
+in `BoolAlg`: it is the single method of a new subclass
+`class BoolAlg phi a => Sat phi a where sat :: phi -> Maybe a` (`Keiki.Core`). The
+`Sat (SymPred rs ci)` instance — constrained `(ExtractRegFile rs, KnownInCtors ci)` —
+defines `sat = symSatExt`, so `sat (SymPred p)` returns the same real, forceable
+`(RegFile rs, ci)` witness `symSatExt` produces. `BoolAlg (SymPred)` stays unconstrained,
+the crashing `unsafeWitness` and the witness-free `symSat` are retired, and a witness-free
+satisfiability check remains as `not . symIsBot`.
 
-Why deferred: the plan's instance-head approach (put `(ExtractRegFile rs, KnownInCtors ci)`
-on the `BoolAlg (SymPred)` head so `sat = symSatExt`) compiles for shipped aggregates
-(`jitsurei-test` was clean) but breaks ~11 keiki-test sites, fundamentally because the
-`Keiki.Profunctor` existential `SomeSymTransducer` hides `rs` without `ExtractRegFile`
-evidence — so `isSingleValuedSym` on profunctor/category-composed transducers can no longer
-be type-checked. The constraints also can't be satisfied for composition-produced ci types
-(`Int`, `Either`, tuples). Full detail in Surprises (M1 entry) and the Decision Log.
+Why Option A and not the deferred approaches: the extraction constraints are needed only by
+the one method that *constructs* the witness type (`sat`); `models` consumes it and
+`isBot`/`conj`/structural ops ignore it. Putting them on the `BoolAlg (SymPred)` instance
+head (the original plan) taxed `isSingleValuedSym` — a pure mutex check — and was
+unsatisfiable on `Keiki.Profunctor.SomeSymTransducer` (hides `rs`) and on `Either`/tuple
+`ci`. Widening the existential fixes only the `rs` half and still needs degenerate
+`KnownInCtors`. Splitting `sat` aligns the constraint with the operation: it has **zero
+ripple** (confirmed — `cabal build all` clean on the first try, the Category/Choice/Strong/
+Profunctor specs untouched) because `sat` is never used through a polymorphic `BoolAlg phi`
+constraint and `isSingleValuedSym` uses only `isBot`/`conj`. It is the more honest design,
+matching the `Eq`→`Ord` / `Foldable`→`Traversable` idiom (witness extraction is a strictly
+stronger capability).
 
-What a future ExecPlan should do: prefer **splitting `sat` into its own constrained
-typeclass** (e.g. a `SatWitness phi a` with `satExt`), leaving `BoolAlg (SymPred)`
-unconstrained. This is clean because `sat` is never called through a polymorphic `BoolAlg
-phi` constraint and `isSingleValuedSym` uses only `isBot`/`conj`, so there is no ripple to
-the composition tests. It still must address the `()` / no-`PInCtor` witness case (the
-existing M5 `sat top` / `sat (PEq lit5 lit5)` tests over `SymPred '[] ()` rely on a witness
-the constructor-tag-keyed `pickCi` can't currently reconstruct). The alternative — widening
-the `SomeSymTransducer` existential with `ExtractRegFile rs` — is heavier and touches core
-profunctor construction sites.
+The `()` / no-`PInCtor` witness case that the deferral flagged as the residual hard part was
+solved soundly (not by an unsound "first-constructor" fallback): `symSatExt` constrains the
+shared `seInputCtor` tag to the known-constructor domain (it already has `KnownInCtors ci`),
+so the solver must pick a real constructor; `pickCi` always matches and the witness always
+satisfies `models`. A one-line `KnownInCtors ()` (`inCtorUnit`) covers the no-command
+carrier. Bonus: this also makes `symSatExt` *complete* on `PNot (PInCtor …)` guards.
 
-Net for MasterPlan 12: two of three plans delivered (EP-42 memoization, EP-43 structural
-arithmetic), the integration capstone closed (LoanApplication single-valuedness proven),
-and EP-44 deferred with a clear, scoped path forward.
+Proofs (M2): `Keiki.SymbolicSpec`'s "real BoolAlg.sat witness (EP-44)" block (5 tests) forces
+the `sat` witness through `models` for register and `PInCtor` guards, checks `sat bot ==
+Nothing`, `sat`/`symSatExt` agreement, and the `SymPred '[] ()` real-`()`-witness case;
+`Jitsurei.UserRegistrationSymbolicSpec`'s satisfiable `sat` checks now force `models` on the
+returned witness. Each crashes before M1 and passes after. Final suite: keiki-test 234/0,
+jitsurei-test 94/0 (0 pending), json 40/0 + 7/0.
+
+Net for MasterPlan 12: **all three plans delivered** — EP-42 memoization, EP-43 structural
+arithmetic, EP-44 real `sat` witnesses — plus the integration capstone (LoanApplication
+single-valuedness). Retrospective lesson confirmed: when a typeclass-instance constraint
+ripples onto a polymorphic analysis, audit *every* call-site type context (including
+existentials); the fix here was to not put the constraint on the shared class at all but on
+a capability subclass used only where the capability is exercised.
 
 
 ## Context and Orientation

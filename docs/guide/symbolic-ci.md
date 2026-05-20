@@ -81,7 +81,7 @@ optional bands of coverage worth borrowing for any non-trivial
 aggregate:
 
 ```haskell
-describe "symSat over the aggregate" $ do
+describe "sat over the aggregate" $ do
   it "satisfiable: PInCtor on a real ctor" $
     isJust (sat (SymPred (PInCtor inCtorConfirm))) `shouldBe` True
 
@@ -105,6 +105,13 @@ gives back a model, and `evalPred` on the reconstructed
 `(RegFile, ci)` agrees with the predicate. Drift in either is a
 signal something has changed in the symbolic surface or the
 aggregate's input ctor declarations.
+
+> Since EP-44, `sat` is a method of the `Sat` class (a subclass of `BoolAlg`,
+> not `BoolAlg` itself) and on `SymPred` returns the **same real witness** as
+> `symSatExt` — so `case sat (SymPred g) of Just w -> models (SymPred g) w` is a
+> valid round-trip too (it was a crash before EP-44, when `sat` returned a
+> placeholder). The witness-free "is it satisfiable?" check that needs no
+> `ExtractRegFile`/`KnownInCtors` evidence is `not . symIsBot`.
 
 ---
 
