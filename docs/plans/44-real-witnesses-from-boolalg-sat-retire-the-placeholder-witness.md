@@ -61,13 +61,17 @@ M1 is retained in the Decision Log / Surprises as history.
       `sat (SymPred p)` is `Just _`, but `models (SymPred p) w` (which forces the witness)
       throws the placeholder exception (transcript in Surprises). EP-42 is complete, so the
       soft-dependency caveat is moot — `sat` witnesses are correct even for repeated reads.
-- [ ] M1 (Option A) — Split `sat` into a `Sat` subclass of `BoolAlg`; `BoolAlg (SymPred)`
-      stays unconstrained, `instance (ExtractRegFile rs, KnownInCtors ci) => Sat (SymPred
-      rs ci)` defines `sat = symSatExt`; retire `unsafeWitness`/`symSat`; add `KnownInCtors
-      ()`; make `symSatExt` sound for unconstrained-`ci` predicates by constraining
-      `seInputCtor` to the known-constructor domain. `isSingleValuedSym` (uses only
-      `isBot`/`conj`) keeps its `BoolAlg`-only constraint, so no existential change and no
-      ripple to the Category/Choice/Strong/Profunctor composition tests.
+- [x] M1 (Option A) — 2026-05-20. Split `sat` into a `Sat` subclass of `BoolAlg`;
+      `BoolAlg (SymPred)` stays unconstrained, `instance (ExtractRegFile rs, KnownInCtors
+      ci) => Sat (SymPred rs ci)` defines `sat = symSatExt`; retired `unsafeWitness`/
+      `symSat`; added `KnownInCtors ()` (`inCtorUnit`); made `symSatExt` sound for
+      unconstrained-`ci` predicates by constraining `seInputCtor` to the known-constructor
+      domain. `isSingleValuedSym` kept its `BoolAlg`-only constraint — **no** existential or
+      core-profunctor change, and the Category/Choice/Strong/Profunctor composition specs
+      compiled untouched (the whole point of the pivot). `cabal build all` + `cabal test
+      all` green (keiki-test 229/0, jitsurei-test 94/0/0-pending, json 40/0 + 7/0). One
+      test-site edit: `SymbolicSpec`'s lone `symSat` caller (an EP-42 unsat check) moved to
+      `symSatExt`.
 - [ ] M2 — Proofs: add a "real BoolAlg.sat witness (EP-44)" block to `Keiki.SymbolicSpec`
       proving the witness is forceable and satisfies `models`; strengthen
       `Jitsurei.UserRegistrationSymbolicSpec`'s `isJust (sat ...)` checks to also confirm
@@ -79,6 +83,33 @@ M1 is retained in the Decision Log / Surprises as history.
 
 
 ## Surprises & Discoveries
+
+- 2026-05-20 (M1, Option A — the pivot worked exactly as designed). Splitting `sat` into a
+  `Sat` subclass had **zero ripple**: the only code edits were in `Keiki.Core` (split the
+  class, move `HsPred`'s `sat _ = Nothing` to a `Sat` instance) and `Keiki.Symbolic` (add
+  the `Sat (SymPred …)` instance, retire `unsafeWitness`/`symSat`, add `KnownInCtors ()`,
+  add the `seInputCtor` domain constraint). `cabal build all` was clean on the first try —
+  the Category/Choice/Strong/Profunctor specs that *defeated* the instance-head approach
+  (because `isSingleValuedSym` would have needed `ExtractRegFile`/`KnownInCtors` on the
+  `rs`-hiding `SomeSymTransducer` and on `Either`/tuple `ci`) compiled with **no change at
+  all**, confirming the Decomposition analysis: `isSingleValuedSym` uses only `isBot`/`conj`
+  and never touches `sat`. The only test-suite breakage was a single direct `symSat` caller
+  in `Keiki.SymbolicSpec` (an EP-42 unsat smoke check), redirected to `symSatExt`. No
+  fixture `KnownInCtors` instances and no existential change were needed — contrast the
+  instance-head approach's ~11 broken sites + core-type change.
+
+- 2026-05-20 (M1, the unconstrained-`ci` soundness fix). Making `sat = symSatExt` exposed
+  the latent gap the original plan's Outcomes flagged: `symSatExt` over `SymPred '[] ()`
+  (the M5 `sat top` / `sat (PEq lit5 lit5)` tests) had no `PInCtor` to pin `seInputCtor`, so
+  the solver left it free, `pickCi` matched nothing, and the witness was lost. A naive
+  "fall back to the first constructor" would be **unsound** for `PNot (PInCtor A)` (the
+  solver could pick a non-constructor string and the fallback would build a witness that
+  fails `models`). The sound fix is to constrain `seInputCtor` to the known-constructor
+  domain *inside* `symSatExt` (which already has `KnownInCtors ci`): the solver must then
+  choose a real constructor, `pickCi` always matches, and the witness always satisfies
+  `models`. Bonus: this also makes `symSatExt` *complete* on `PNot (PInCtor …)` guards
+  (it now finds the other constructor) — a strict improvement, and it leaves the shared
+  `translatePred` path (used by `symIsBot`, which lacks `KnownInCtors`) untouched.
 
 - 2026-05-20 (M0, *before* the fix). In `cabal repl keiki` over a satisfiable
   `p = PEq (proj #x) (lit 0)` (a `Word64` register fixture):

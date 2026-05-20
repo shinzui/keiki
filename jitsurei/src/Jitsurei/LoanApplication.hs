@@ -115,7 +115,7 @@ import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
 
 -- | Whole-currency-unit amounts. Kept as 'Int' rather than a newtype
 -- so the 'Sym' curated registry recognises the slot type and the
--- symbolic analyses (@isSingleValuedSym@, @symSat@) work without a
+-- symbolic analyses (@isSingleValuedSym@, @sat@) work without a
 -- bespoke 'Sym' instance.
 type Money = Int
 

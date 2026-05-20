@@ -31,13 +31,18 @@
 --   * 'discoverSym' — runtime dispatch from 'Typeable' to 'Sym'
 --     evidence over the curated registry of supported types.
 --   * 'SymPred' newtype wrapper plus its 'BoolAlg' instance with
---     structural 'top' / 'bot' / 'conj' / 'disj' / 'neg' and a 'models'
+--     structural 'top' / 'bot' / 'conj' / 'disj' / 'neg', a 'models'
 --     that re-uses the v1 'evalPred' (concrete evaluation, no solver
---     call).
---   * 'symIsBot' / 'symSat' — pure-API wrappers around SBV's solver
---     calls (via 'unsafePerformIO' + NOINLINE). 'SymPred''s 'BoolAlg'
---     methods 'sat' and 'isBot' route through these, so the v1
---     placeholder behavior is replaced with precise symbolic answers.
+--     call), and an 'isBot' backed by z3.
+--   * 'symIsBot' — pure-API wrapper around SBV's solver call (via
+--     'unsafePerformIO' + NOINLINE) that 'SymPred''s 'isBot' routes
+--     through, so the v1 syntactic over-approximation is replaced with a
+--     precise symbolic answer.
+--   * 'symSatExt' — full witness extraction. Since EP-44 (MasterPlan 12)
+--     the 'Keiki.Core.Sat' method 'sat' on 'SymPred' /is/
+--     'symSatExt' (via the @Sat (SymPred …)@ instance, which carries the
+--     'ExtractRegFile' / 'KnownInCtors' evidence witness reconstruction
+--     needs); the old crashing placeholder is gone.
 module Keiki.Symbolic
   ( -- * Symbolic representation
     Sym (..)
@@ -58,7 +63,6 @@ module Keiki.Symbolic
   , SymPred (..)
     -- * Solver-backed analyses
   , symIsBot
-  , symSat
   , symSatExt
     -- * Witness extraction
   , ExtractRegFile (..)
@@ -71,6 +75,7 @@ module Keiki.Symbolic
   , module Keiki.Core
   ) where
 
+import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Int (Int32, Int64)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
@@ -551,8 +556,13 @@ newtype SymPred (rs :: [Slot]) (ci :: Type) = SymPred { unSymPred :: HsPred rs c
 
 -- | The v2 'BoolAlg' instance. The five structural methods compose
 -- 'HsPred' constructors. 'models' delegates to the v1 'evalPred'
--- (concrete evaluation, no solver call). 'sat' and 'isBot' route
--- through 'symSat' / 'symIsBot', which dispatch to z3 via SBV.
+-- (concrete evaluation, no solver call). 'isBot' routes through
+-- 'symIsBot', which dispatches to z3 via SBV. Witness extraction
+-- ('Keiki.Core.sat') lives in the separate 'Sat' instance below, which
+-- carries the 'ExtractRegFile' / 'KnownInCtors' evidence it needs; this
+-- instance is deliberately /unconstrained/ so the witness-free analyses
+-- ('isSingleValuedSym') keep type-checking on register-file-existential
+-- carriers and on @ci@ types with no 'KnownInCtors'.
 instance BoolAlg (SymPred rs ci) (RegFile rs, ci) where
   top                                = SymPred PTop
   bot                                = SymPred PBot
@@ -560,49 +570,27 @@ instance BoolAlg (SymPred rs ci) (RegFile rs, ci) where
   disj (SymPred p) (SymPred q)       = SymPred (POr  p q)
   neg  (SymPred p)                   = SymPred (PNot p)
   models (SymPred p) (regs, ci)      = evalPred p regs ci
-  sat (SymPred p)                    = symSat   p
   isBot (SymPred p)                  = symIsBot p
 
 
+-- | Witness extraction for the SBV-backed carrier (EP-44, MasterPlan
+-- 12). @'sat' (SymPred p)@ returns the same real, forceable witness as
+-- 'symSatExt' — a concrete @(RegFile rs, ci)@ reconstructed from the
+-- solver model. The constraints @ExtractRegFile rs@ / @KnownInCtors ci@
+-- live here (not on 'BoolAlg') so only witness extraction pays for them.
+instance (ExtractRegFile rs, KnownInCtors ci)
+      => Sat (SymPred rs ci) (RegFile rs, ci) where
+  sat (SymPred p) = symSatExt p
+
+
 -- * Solver-backed analyses --------------------------------------------------
-
--- | The pure-API witness placeholder. 'symSat' returns
--- @Just (placeholder, placeholder)@ on a satisfiable predicate; this
--- pair tells callers \"yes, a witness exists\" without obliging the
--- 'BoolAlg' typeclass to thread a 'WitnessExtract'-style constraint.
--- Forcing either component crashes with a directing message; tests
--- that need the real witness will be served by a future
--- @symSatExt@ helper paired with hand-written extractors.
-unsafeWitness :: a
-unsafeWitness =
-  error
-    "Keiki.Symbolic.sat: placeholder witness; use symSat-backed \
-    \analyses (isBot, isSingleValuedSym) or a future symSatExt for \
-    \the concrete witness."
-
-
--- | Symbolic satisfiability check. Translates the predicate to an
--- SBV expression and asks z3 whether a model exists. Returns
--- @Just (placeholder, placeholder)@ on a model and 'Nothing' on
--- unsat or solver-unknown. The 'unsafePerformIO' is justified
--- because every SBV query is deterministic for a given predicate
--- and side-effect-free outside the solver process.
-{-# NOINLINE symSat #-}
-symSat :: HsPred rs ci -> Maybe (RegFile rs, ci)
-symSat p = unsafePerformIO $ do
-  res <- SBV.sat $ do
-    env <- mkSymEnv
-    translatePred env p
-  pure $ if SBV.modelExists res
-           then Just (unsafeWitness, unsafeWitness)
-           else Nothing
-
 
 -- | Symbolic emptiness check. Translates the predicate to an SBV
 -- expression and asks z3 whether any model exists; @True@ when none
 -- does (the predicate is bot), @False@ otherwise (including the
 -- conservative 'Unknown' fallback). The 'unsafePerformIO' wrapper is
--- justified for the same reason as 'symSat'.
+-- justified because every SBV query is deterministic for a given
+-- predicate and side-effect-free outside the solver process.
 {-# NOINLINE symIsBot #-}
 symIsBot :: HsPred rs ci -> Bool
 symIsBot p = unsafePerformIO $ do
@@ -735,6 +723,25 @@ class KnownInCtors ci where
   allInCtors :: [SomeInCtor ci]
 
 
+-- | The single zero-field constructor of @()@ — a transducer whose
+-- command alphabet carries no information. Lets 'symSatExt' (and hence
+-- 'Keiki.Core.sat') reconstruct a @()@ witness for predicates over
+-- @SymPred rs ()@.
+inCtorUnit :: InCtor () '[]
+inCtorUnit = InCtor
+  { icName  = "()"
+  , icMatch = \() -> Just RNil
+  , icBuild = \RNil -> ()
+  }
+
+
+-- | @()@ has one constructor; its 'allInCtors' is the singleton
+-- 'inCtorUnit'. Added by EP-44 so @sat@ over a no-command carrier
+-- (@SymPred '[] ()@) yields a real @(RNil, ())@ witness.
+instance KnownInCtors () where
+  allInCtors = [SomeInCtor inCtorUnit]
+
+
 -- * symSatExt ---------------------------------------------------------------
 
 -- | Symbolic satisfiability with full witness extraction. On a
@@ -757,13 +764,17 @@ class KnownInCtors ci where
 -- @#x@ share one SBV variable and the by-name witness extraction
 -- satisfies @proj #x .== proj #x@-style structural equality.
 --
+-- The model's input-constructor tag is confined to the known
+-- constructor domain (@KnownInCtors ci@), so a predicate without a
+-- 'PInCtor' atom still reconstructs a real command (the first/only
+-- constructor) rather than failing to match an arbitrary solver string.
+--
 -- 'symSatExt' is /pure/ via 'unsafePerformIO' on the SBV solver
 -- call (deterministic for a given predicate, side-effect-free
--- outside the solver process). The 'BoolAlg' typeclass method 'sat'
--- continues to return the placeholder witness from 'symSat';
--- 'symSatExt' is a separate function because 'BoolAlg.sat'\'s
--- signature can't carry the 'ExtractRegFile' / 'KnownInCtors'
--- constraints.
+-- outside the solver process). Since EP-44 it /is/ the implementation
+-- of the 'Keiki.Core.Sat' method 'sat' on 'SymPred' (via the
+-- @Sat (SymPred …)@ instance, which carries the 'ExtractRegFile' /
+-- 'KnownInCtors' evidence the witness-free 'BoolAlg' class cannot).
 {-# NOINLINE symSatExt #-}
 symSatExt
   :: forall rs ci.
@@ -774,7 +785,20 @@ symSatExt
 symSatExt p = unsafePerformIO $ do
   res <- SBV.sat $ do
     env <- mkSymEnv
-    translatePred env p
+    b   <- translatePred env p
+    -- Constrain the shared input-constructor tag to the known
+    -- constructor domain so the solver cannot pick a string matching no
+    -- constructor. Predicates without a 'PInCtor' atom leave the tag
+    -- free, so without this the solver could choose an unknown tag,
+    -- 'pickCi' would find no match, and a satisfiable predicate would
+    -- (wrongly) yield no witness. Confining the tag to the real finite
+    -- domain keeps the reconstructed witness sound (it always satisfies
+    -- 'models') and improves completeness on @PNot (PInCtor …)@ guards.
+    let ctorNames = [ icName ic | SomeInCtor ic <- allInCtors @ci ]
+    when (not (null ctorNames)) $
+      SBV.constrain $
+        SBV.sOr [ seInputCtor env SBV..== SBV.literal n | n <- ctorNames ]
+    pure b
   pure $
     if SBV.modelExists res
       then do

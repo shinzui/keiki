@@ -1,10 +1,12 @@
 -- | Symbolic-side spec for the User Registration aggregate. Asserts
 -- the v2 retrospective gate: 'isSingleValuedSym' answers @True@ on
 -- the 'userReg' transducer once its guards are lifted to 'SymPred',
--- proved symbolically by z3. Adds 'symSat'-based smoke checks on a
+-- proved symbolically by z3. Adds 'sat'-based smoke checks on a
 -- non-trivial predicate over the User Registration register file.
 -- EP-9 adds 'symSatExt' round-trip tests: sat → concrete witness →
--- 'evalPred' agrees.
+-- 'evalPred' agrees. Since EP-44, 'Keiki.Core.sat' on 'SymPred' /is/
+-- the real witness ('symSatExt'), so the smoke checks below can also
+-- force the returned witness (see M2).
 module Jitsurei.UserRegistrationSymbolicSpec (spec) where
 
 import Data.Maybe (isJust, isNothing)
@@ -20,7 +22,7 @@ spec = do
     it "answers True (the v2 retrospective gate)" $
       isSingleValuedSym (withSymPred userReg) `shouldBe` True
 
-  describe "symSat over the User Registration aggregate" $ do
+  describe "sat over the User Registration aggregate" $ do
     it "satisfiable: PInCtor inCtorConfirm" $ do
       let p = PInCtor inCtorConfirm :: HsPred UserRegRegs UserCmd
       isJust (sat (SymPred p)) `shouldBe` True

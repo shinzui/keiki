@@ -55,6 +55,7 @@ module Keiki.Core
   , Cmp (..)
     -- * Effective Boolean algebra
   , BoolAlg (..)
+  , Sat (..)
     -- * Edges and the transducer
   , Edge (..)
   , SymTransducer (..)
@@ -465,7 +466,8 @@ data Cmp = CmpLt | CmpLe | CmpGt | CmpGe
 -- * Effective Boolean algebra ----------------------------------------------
 
 -- | An effective Boolean algebra over @a@-typed witnesses, used as the
--- guard carrier of edges.
+-- guard carrier of edges. Witness /extraction/ ('sat') is a separate,
+-- stronger capability — see 'Sat'.
 class BoolAlg phi a | phi -> a where
   top    :: phi
   bot    :: phi
@@ -473,11 +475,26 @@ class BoolAlg phi a | phi -> a where
   disj   :: phi -> phi -> phi
   neg    :: phi -> phi
   models :: phi -> a -> Bool
-  -- | The default 'HsPred' instance below returns 'Nothing'; the
-  -- SBV-backed instance in "Keiki.Symbolic" (MasterPlan 2 EP-2)
-  -- produces concrete witnesses.
-  sat    :: phi -> Maybe a
   isBot  :: phi -> Bool
+
+
+-- | A 'BoolAlg' whose witnesses can be /extracted/ from a satisfiable
+-- predicate: @'sat' phi@ returns 'Just' a value satisfying @phi@, or
+-- 'Nothing' when @phi@ is unsatisfiable.
+--
+-- Split out of 'BoolAlg' by EP-44 (MasterPlan 12). Witness
+-- reconstruction needs carrier-specific evidence — for the SBV-backed
+-- 'Keiki.Symbolic.SymPred' carrier, @ExtractRegFile rs@ (to rebuild the
+-- register file from the solver model) and @KnownInCtors ci@ (to rebuild
+-- the command) — that the algebra's build/decide methods do not. Keeping
+-- 'sat' in its own class means the witness-free analyses
+-- ('Keiki.Symbolic.isSingleValuedSym', which uses only 'isBot'/'conj')
+-- carry no extraction constraints, so they keep type-checking on
+-- register-file-existential carriers (e.g. 'Keiki.Profunctor.SomeSymTransducer')
+-- and on composition-produced @ci@ types ('Either', tuples) that have no
+-- 'KnownInCtors'. See @docs/research/sbv-boolalg-design.md@.
+class BoolAlg phi a => Sat phi a where
+  sat :: phi -> Maybe a
 
 
 instance BoolAlg (HsPred rs ci) (RegFile rs, ci) where
@@ -487,9 +504,15 @@ instance BoolAlg (HsPred rs ci) (RegFile rs, ci) where
   disj p q            = POr p q
   neg p               = PNot p
   models p (regs, ci) = evalPred p regs ci
-  sat _               = Nothing
   isBot PBot          = True
   isBot _             = False
+
+
+-- | The v1 syntactic carrier has no solver, hence no extractable
+-- witness; 'sat' is always 'Nothing'. The precise witnesses come from
+-- the SBV-backed @Sat (SymPred …)@ instance in "Keiki.Symbolic".
+instance Sat (HsPred rs ci) (RegFile rs, ci) where
+  sat _ = Nothing
 
 
 -- * Edges and the transducer -----------------------------------------------

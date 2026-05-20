@@ -266,7 +266,7 @@ spec = do
     -- #amount. Before EP-42 each read minted a fresh SBV variable, so
     -- the solver believed two reads of #amount could disagree; after
     -- EP-42 they share one variable. Recorded before-values (M0 repl,
-    -- mirrored on #x): F1 symIsBot (x /= x) = False, symSat = Just;
+    -- mirrored on #x): F1 symIsBot (x /= x) = False, symSatExt = Just;
     -- F3 the two-edge fixture verdict = False. See the plan's
     -- Surprises & Discoveries.
     let pNeq = PNot (PEq (proj amountIdx) (proj amountIdx))
@@ -277,8 +277,8 @@ spec = do
     it "x /= x is empty: symIsBot (PNot (PEq #amount #amount)) is True" $
       symIsBot pNeq `shouldBe` True
 
-    it "x /= x is unsat via symSat: symSat (PNot (PEq #amount #amount)) is Nothing" $
-      isJust (symSat pNeq) `shouldBe` False
+    it "x /= x is unsat via symSatExt: symSatExt (PNot (PEq #amount #amount)) is Nothing" $
+      isJust (symSatExt pNeq) `shouldBe` False
 
     it "x == x stays satisfiable: symIsBot (PEq #amount #amount) is False (sanity)" $
       symIsBot pEq `shouldBe` False
