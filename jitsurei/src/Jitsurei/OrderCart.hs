@@ -370,11 +370,7 @@ $(deriveWireCtors ''OrderEvent
 -- | The aggregate's transducer, authored with 'Keiki.Builder'. Twelve
 -- edges across eight vertices; the canonical happy path is
 -- Empty -> OpenWithItems -> Reserved -> Paid -> Shipped -> Delivered.
-orderCart :: SymTransducer (HsPred OrderCartRegs OrderCmd)
-                           OrderCartRegs
-                           OrderVertex
-                           OrderCmd
-                           OrderEvent
+orderCart :: Guarded OrderCartRegs OrderVertex OrderCmd OrderEvent
 orderCart = B.buildTransducer Empty emptyOrderRegs
               (\case Delivered -> True
                      Cancelled -> True
@@ -504,11 +500,7 @@ orderCart = B.buildTransducer Empty emptyOrderRegs
 -- "Keiki.Core" AST. Retained as a side-by-side reference for the
 -- 'Jitsurei.OrderCartBuilderSpec' equivalence test and for the
 -- builder/AST head-to-head group of @keiki-bench@.
-orderCartAST :: SymTransducer (HsPred OrderCartRegs OrderCmd)
-                              OrderCartRegs
-                              OrderVertex
-                              OrderCmd
-                              OrderEvent
+orderCartAST :: Guarded OrderCartRegs OrderVertex OrderCmd OrderEvent
 orderCartAST = SymTransducer
   { edgesOut    = orderCartASTEdges
   , initial     = Empty
@@ -522,7 +514,7 @@ orderCartAST = SymTransducer
 
 orderCartASTEdges
   :: OrderVertex
-  -> [Edge (HsPred OrderCartRegs OrderCmd)
+  -> [Edge (Pred OrderCartRegs OrderCmd)
            OrderCartRegs OrderCmd OrderEvent OrderVertex]
 orderCartASTEdges = \case
 

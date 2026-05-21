@@ -155,11 +155,7 @@ $(deriveWireCtors ''LoanEvent'
 
 -- * The transducer ---------------------------------------------------------
 
-loan :: SymTransducer (HsPred LoanRegs LoanCmd')
-                      LoanRegs
-                      LoanVertex
-                      LoanCmd'
-                      LoanEvent'
+loan :: Guarded LoanRegs LoanVertex LoanCmd' LoanEvent'
 loan = B.buildTransducer LoanInitial emptyLoanRegs
          (\case LoanLinked -> True; _ -> False) do
 

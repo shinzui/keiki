@@ -151,11 +151,7 @@ $(deriveView ''EmailVertex ''EmailRegs
 -- ('Keiki.Composition.compose', the deciders, the symbolic
 -- analyses, the example specs) uses by name.
 emailDelivery
-  :: SymTransducer (HsPred EmailRegs EmailCmd)
-                   EmailRegs
-                   EmailVertex
-                   EmailCmd
-                   EmailEvent
+  :: Guarded EmailRegs EmailVertex EmailCmd EmailEvent
 emailDelivery = B.buildTransducer EmailPending emptyEmailRegs
                   (\case EmailSentVertex -> True; _ -> False) do
 
@@ -180,11 +176,7 @@ emailDelivery = B.buildTransducer EmailPending emptyEmailRegs
 -- removable in a follow-up plan once the migration is judged
 -- stable.
 emailDeliveryAST
-  :: SymTransducer (HsPred EmailRegs EmailCmd)
-                   EmailRegs
-                   EmailVertex
-                   EmailCmd
-                   EmailEvent
+  :: Guarded EmailRegs EmailVertex EmailCmd EmailEvent
 emailDeliveryAST = SymTransducer
   { edgesOut    = emailDeliveryASTEdges
   , initial     = EmailPending
@@ -195,7 +187,7 @@ emailDeliveryAST = SymTransducer
 
 emailDeliveryASTEdges
   :: EmailVertex
-  -> [Edge (HsPred EmailRegs EmailCmd) EmailRegs EmailCmd EmailEvent EmailVertex]
+  -> [Edge (Pred EmailRegs EmailCmd) EmailRegs EmailCmd EmailEvent EmailVertex]
 emailDeliveryASTEdges = \case
 
   EmailPending ->

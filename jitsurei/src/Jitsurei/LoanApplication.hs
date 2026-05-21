@@ -544,7 +544,7 @@ loanApplication = B.buildTransducer Intake emptyLoanAppRegs
 
     -- Decline branch — the negation of 'approvalGuard'.
     B.onCmd inCtorContinue $ \d -> B.do
-      B.requireGuard (PNot approvalGuard)
+      B.requireGuard (pnot approvalGuard)
       B.slot @"appDecidedAt"     .= continueAt d
       B.slot @"appDeclineReason" .= lit "Below threshold"
       B.emit wireApplicationDeclined ApplicationDeclinedTermFields
@@ -590,11 +590,7 @@ isFinalLoanApp = \case
 -- | Hand-authored against the post-MP-6 'Keiki.Core' AST. Retained
 -- as a side-by-side reference for the
 -- 'Jitsurei.LoanApplicationBuilderSpec' equivalence test.
-loanApplicationAST :: SymTransducer (HsPred LoanAppRegs LoanCmd)
-                                    LoanAppRegs
-                                    LoanAppVertex
-                                    LoanCmd
-                                    LoanEvent
+loanApplicationAST :: Guarded LoanAppRegs LoanAppVertex LoanCmd LoanEvent
 loanApplicationAST = SymTransducer
   { edgesOut    = loanApplicationASTEdges
   , initial     = Intake
@@ -605,7 +601,7 @@ loanApplicationAST = SymTransducer
 
 loanApplicationASTEdges
   :: LoanAppVertex
-  -> [Edge (HsPred LoanAppRegs LoanCmd) LoanAppRegs LoanCmd LoanEvent LoanAppVertex]
+  -> [Edge (Pred LoanAppRegs LoanCmd) LoanAppRegs LoanCmd LoanEvent LoanAppVertex]
 loanApplicationASTEdges = \case
 
   Intake ->
@@ -724,7 +720,7 @@ loanApplicationASTEdges = \case
       -- "ε-edge" — no public event — fired by Continue when the
       -- threshold guards hold. See builder-form comment.
     , Edge
-        { guard  = PAnd isContinue readyForReviewGuard
+        { guard  = isContinue .&& readyForReviewGuard
         , update = UKeep
         , output = []
         , target = UnderReview
@@ -733,7 +729,7 @@ loanApplicationASTEdges = \case
 
   UnderReview ->
     [ Edge
-        { guard  = PAnd isContinue approvalGuard
+        { guard  = isContinue .&& approvalGuard
         , update = USet (#appDecidedAt :: IndexN "appDecidedAt" LoanAppRegs UTCTime)
                         (lit (read "1970-01-01 00:00:00 UTC" :: UTCTime))
         , output = [ pack
@@ -747,7 +743,7 @@ loanApplicationASTEdges = \case
         , target = Approved
         }
     , Edge
-        { guard  = PAnd isContinue (PNot approvalGuard)
+        { guard  = isContinue .&& pnot approvalGuard
         , update = USet (#appDecidedAt :: IndexN "appDecidedAt" LoanAppRegs UTCTime)
                         (lit (read "1970-01-01 00:00:00 UTC" :: UTCTime))
               `combine`

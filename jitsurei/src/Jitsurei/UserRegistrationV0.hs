@@ -89,7 +89,7 @@ emptyRegsV0 = emptyRegFile
 -- 'matchInCtor' alongside the V5 aggregate so the SBV-backed
 -- 'BoolAlg' instance recognizes constructor mutex on the V0 form
 -- too. The 'evalPred' semantics is preserved.
-isStart, isConfirm, isResend, isGdpr :: HsPred UserRegRegs UserCmd
+isStart, isConfirm, isResend, isGdpr :: Pred UserRegRegs UserCmd
 isStart    = matchInCtor inCtorStart
 isConfirm  = matchInCtor inCtorConfirm
 isResend   = matchInCtor inCtorResend
@@ -124,11 +124,7 @@ wireAccountDeletedV0         = mkWireCtorVia @"AccountDeletedV0"
 -- * The V0 transducer ------------------------------------------------------
 
 userRegV0
-  :: SymTransducer (HsPred UserRegRegs UserCmd)
-                   UserRegRegs
-                   Vertex
-                   UserCmd
-                   UserEventV0
+  :: Guarded UserRegRegs Vertex UserCmd UserEventV0
 userRegV0 = SymTransducer
   { edgesOut = userRegV0Edges
   , initial     = PotentialCustomer
@@ -139,7 +135,7 @@ userRegV0 = SymTransducer
 
 userRegV0Edges
   :: Vertex
-  -> [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEventV0 Vertex]
+  -> [Edge (Pred UserRegRegs UserCmd) UserRegRegs UserCmd UserEventV0 Vertex]
 userRegV0Edges = \case
   -- EP-19 M7: collapsed entrance into one length-2 multi-event edge,
   -- matching V5. V0's hidden-input bug is on the Confirm edge below,

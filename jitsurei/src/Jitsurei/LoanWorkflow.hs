@@ -42,7 +42,7 @@ module Jitsurei.LoanWorkflow
   ) where
 
 import Keiki.Composition (Composite, compose)
-import Keiki.Core (HsPred, SymTransducer)
+import Keiki.Core (Guarded)
 import Keiki.Generics (Append)
 import Keiki.Profunctor (lmapMaybeCi)
 
@@ -108,8 +108,7 @@ syncOutputToLoanCmd (SyncToLegacyRequested  _)    = Nothing
 -- | The three-aggregate composition. Type-level only — see the
 -- module's variance caveat.
 loanWorkflow
-  :: SymTransducer
-       (HsPred (Append LoanAppRegs (Append SyncRegs LoanRegs)) LoanCmd)
+  :: Guarded
        (Append LoanAppRegs (Append SyncRegs LoanRegs))
        (Composite LoanAppVertex (Composite SyncVertex LoanVertex))
        LoanCmd

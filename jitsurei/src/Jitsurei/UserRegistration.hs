@@ -275,11 +275,7 @@ $(deriveView ''Vertex ''UserRegRegs
 -- is the canonical form every downstream consumer
 -- ('Keiki.Composition.compose', the deciders, the symbolic
 -- analyses, the example specs) uses by name.
-userReg :: SymTransducer (HsPred UserRegRegs UserCmd)
-                         UserRegRegs
-                         Vertex
-                         UserCmd
-                         UserEvent
+userReg :: Guarded UserRegRegs Vertex UserCmd UserEvent
 userReg = B.buildTransducer PotentialCustomer emptyRegs
             (\case Deleted -> True; _ -> False) do
 
@@ -353,11 +349,7 @@ userReg = B.buildTransducer PotentialCustomer emptyRegs
 -- 'Jitsurei.UserRegistrationBuilderSpec' equivalence test;
 -- removable in a follow-up plan once the migration is judged
 -- stable.
-userRegAST :: SymTransducer (HsPred UserRegRegs UserCmd)
-                            UserRegRegs
-                            Vertex
-                            UserCmd
-                            UserEvent
+userRegAST :: Guarded UserRegRegs Vertex UserCmd UserEvent
 userRegAST = SymTransducer
   { edgesOut    = userRegASTEdges
   , initial     = PotentialCustomer
@@ -368,7 +360,7 @@ userRegAST = SymTransducer
 
 userRegASTEdges
   :: Vertex
-  -> [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEvent Vertex]
+  -> [Edge (Pred UserRegRegs UserCmd) UserRegRegs UserCmd UserEvent Vertex]
 userRegASTEdges = \case
 
   -- EP-19 M7: collapsed two letter edges into one length-2 multi-event

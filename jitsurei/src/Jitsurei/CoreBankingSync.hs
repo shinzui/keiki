@@ -181,11 +181,7 @@ $(deriveWireCtors ''SyncOutput
 
 -- * The transducer ---------------------------------------------------------
 
-coreBankingSync :: SymTransducer (HsPred SyncRegs SyncInput)
-                                 SyncRegs
-                                 SyncVertex
-                                 SyncInput
-                                 SyncOutput
+coreBankingSync :: Guarded SyncRegs SyncVertex SyncInput SyncOutput
 coreBankingSync = B.buildTransducer SyncIdle emptySyncRegs
                     (\case SyncSettled -> True; _ -> False) do
 
