@@ -413,39 +413,32 @@ $(deriveView ''LoanAppVertex ''LoanAppRegs
 -- spec stays green; the win is that the whole guard — comparisons and
 -- the derived cap alike — is now visible to the SBV translator instead
 -- of hiding behind opaque 'TApp' terms.
-readyForReviewGuard :: HsPred LoanAppRegs LoanCmd
+--
+-- EP-45 then changed only how these guards /read/, not what they mean:
+-- the comparisons are written with the dot-prefixed operators ('.>=',
+-- '.<=', '.==', '.&&', '.*') that alias the very same constructors
+-- ('PCmp', 'PEq', 'PAnd', 'tmul'), so the 'HsPred' AST — and therefore
+-- 'evalPred' and the SBV translation — is byte-for-byte unchanged. The
+-- guard signatures use the 'Pred' synonym for @'HsPred' rs ci@.
+readyForReviewGuard :: Pred LoanAppRegs LoanCmd
 readyForReviewGuard =
-  PCmp CmpGe (proj (#appIncomeDocCount :: Index LoanAppRegs Int))
-             (lit minimumIncomeDocs)
-    `PAnd`
-  PCmp CmpGe (proj (#appIdDocCount :: Index LoanAppRegs Int))
-             (lit minimumIdDocs)
-    `PAnd`
-  PCmp CmpGe (proj (#appCreditScore :: Index LoanAppRegs Int))
-             (lit 1)
-    `PAnd`
-  PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
+       proj (#appIncomeDocCount :: Index LoanAppRegs Int) .>= lit minimumIncomeDocs
+  .&&  proj (#appIdDocCount     :: Index LoanAppRegs Int) .>= lit minimumIdDocs
+  .&&  proj (#appCreditScore    :: Index LoanAppRegs Int) .>= lit 1
+  .&&  proj (#appEmploymentVerified :: Index LoanAppRegs Bool) .== lit True
 
 
-approvalGuard :: HsPred LoanAppRegs LoanCmd
+approvalGuard :: Pred LoanAppRegs LoanCmd
 approvalGuard =
-  PCmp CmpGe (proj (#appCreditScore :: Index LoanAppRegs Int))
-             (lit approvalThresholdScore)
-    `PAnd`
-  PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
-    `PAnd`
-  PCmp CmpLe (proj (#appRequestedAmount :: Index LoanAppRegs Money))
-             (tmul (proj (#appCreditScore :: Index LoanAppRegs Int))
-                   (lit 1000))
+       proj (#appCreditScore :: Index LoanAppRegs Int) .>= lit approvalThresholdScore
+  .&&  proj (#appEmploymentVerified :: Index LoanAppRegs Bool) .== lit True
+  .&&  proj (#appRequestedAmount :: Index LoanAppRegs Money)
+         .<= proj (#appCreditScore :: Index LoanAppRegs Int) .* lit 1000
 
 
 -- * The transducer (builder form) -----------------------------------------
 
-loanApplication :: SymTransducer (HsPred LoanAppRegs LoanCmd)
-                                 LoanAppRegs
-                                 LoanAppVertex
-                                 LoanCmd
-                                 LoanEvent
+loanApplication :: Guarded LoanAppRegs LoanAppVertex LoanCmd LoanEvent
 loanApplication = B.buildTransducer Intake emptyLoanAppRegs
                     isFinalLoanApp do
 

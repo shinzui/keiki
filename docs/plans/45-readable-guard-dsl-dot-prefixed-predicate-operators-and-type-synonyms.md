@@ -97,10 +97,11 @@ This section must always reflect the actual current state of the work.
       (`Pred`-annotated `sampleGuard` round-trips through `evalPred`, which takes
       `HsPred`). `cabal build all` green; `cabal test keiki-test` 249 examples,
       0 failures incl. the `type synonyms` example. (2026-05-20)
-- [ ] M3: Rewrite the guards and signatures in
+- [x] M3: Rewrite the guards and signatures in
       `jitsurei/src/Jitsurei/LoanApplication.hs` to use the new operators and
       `Pred` / `Guarded`. `cabal test jitsurei-test` green (incl. the symbolic
-      spec).
+      spec) — 96 examples, 0 failures; all four `Jitsurei.LoanApplication*`
+      groups pass. Only LoanApplication.hs changed. (2026-05-20)
 - [ ] M3: (Optional sweep) adopt the operators/synonyms in the other jitsurei
       aggregates that hand-write `HsPred` (`UserRegistration.hs`,
       `UserRegistrationV0.hs`).
