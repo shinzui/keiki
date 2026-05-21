@@ -102,9 +102,11 @@ This section must always reflect the actual current state of the work.
       `Pred` / `Guarded`. `cabal test jitsurei-test` green (incl. the symbolic
       spec) — 96 examples, 0 failures; all four `Jitsurei.LoanApplication*`
       groups pass. Only LoanApplication.hs changed. (2026-05-20)
-- [ ] M3: (Optional sweep) adopt the operators/synonyms in the other jitsurei
+- [x] M3: (Optional sweep) adopt the operators/synonyms in the other jitsurei
       aggregates that hand-write `HsPred` (`UserRegistration.hs`,
-      `UserRegistrationV0.hs`).
+      `UserRegistrationV0.hs`) — rewrote each `PAnd isConfirm (… .== …)` guard
+      to `isConfirm .&& (… .== …)`. `cabal test jitsurei-test` 96 examples, 0
+      failures. Separate commit from the flagship. (2026-05-20)
 - [ ] M4: Document the operator set and type synonyms — module haddocks in
       `src/Keiki/Core.hs`, plus the authoring guide and foundations docs; record
       the SBV-qualified-import caveat.

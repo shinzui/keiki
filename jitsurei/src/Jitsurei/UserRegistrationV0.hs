@@ -175,8 +175,8 @@ userRegV0Edges = \case
       -- and solveOutput returns Nothing — replay halts. The hidden-
       -- input check (post-EP-1) names this missing field precisely.
       Edge
-        { guard  = PAnd isConfirm
-            (inpConfirm #confirmCode
+        { guard  = isConfirm
+            .&& (inpConfirm #confirmCode
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
         , update = USet (#confirmedAt :: IndexN "confirmedAt" UserRegRegs UTCTime)
                         (inpConfirm #at)

@@ -403,8 +403,8 @@ userRegASTEdges = \case
     [ -- Right code: confirm. The 'isConfirm' conjunct short-circuits the
       -- inpConfirm read for non-ConfirmAccount inputs.
       Edge
-        { guard  = PAnd isConfirm
-            (inpConfirm #confirmCode
+        { guard  = isConfirm
+            .&& (inpConfirm #confirmCode
               .== proj (#confirmCode :: Index UserRegRegs ConfirmationCode))
         , update = USet (#confirmedAt :: IndexN "confirmedAt" UserRegRegs UTCTime)
                         (inpConfirm #at)
