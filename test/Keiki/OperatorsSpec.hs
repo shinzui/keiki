@@ -14,6 +14,13 @@ p pr = evalPred pr RNil NoCmd
 n :: Term '[] NoCmd Int -> Int
 n t = evalTerm t RNil NoCmd
 
+-- A guard written at the aliased type Pred…
+sampleGuard :: Pred '[] NoCmd
+sampleGuard = lit (1 :: Int) .>= lit 0 .&& lit (2 :: Int) ./= lit 5
+
+-- …is accepted where an HsPred is expected (evalPred takes HsPred).
+-- If `Pred` were not a true synonym for `HsPred`, this would not compile.
+
 spec :: Spec
 spec = do
   describe "comparison operators" $ do
@@ -65,5 +72,9 @@ spec = do
       n (lit 2 .+ lit 3 .* lit 4) `shouldBe` 14
     it "arithmetic feeds a comparison without parens" $
       p (lit (10 :: Int) .<= lit 3 .* lit 4) `shouldBe` True
+
+  describe "type synonyms" $
+    it "Pred is interchangeable with HsPred" $
+      evalPred sampleGuard RNil NoCmd `shouldBe` True
   where
     g = [1, 2, 3] :: [Int]

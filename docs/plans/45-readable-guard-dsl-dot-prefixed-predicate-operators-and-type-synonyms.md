@@ -90,12 +90,13 @@ This section must always reflect the actual current state of the work.
       its named relation and to match its underlying constructor. (2026-05-20)
 - [x] M1: `cabal build keiki && cabal test keiki-test` green — 248 examples, 0
       failures; the `Keiki.Core operators (EP-45)` group passes. (2026-05-20)
-- [ ] M2: Add type synonyms `Pred` and `Guarded` to `src/Keiki/Core.hs` (and
+- [x] M2: Add type synonyms `Pred` and `Guarded` to `src/Keiki/Core.hs` (and
       its export list) and `SymGuarded` to `src/Keiki/Symbolic.hs` (and its
-      export list).
-- [ ] M2: Compile-prove the synonyms are interchangeable with their expansions
-      (a `Guarded …`-annotated binding type-checks against a value built the old
-      way). `cabal build all` green.
+      export list). (2026-05-20)
+- [x] M2: Compile-prove the synonyms are interchangeable with their expansions
+      (`Pred`-annotated `sampleGuard` round-trips through `evalPred`, which takes
+      `HsPred`). `cabal build all` green; `cabal test keiki-test` 249 examples,
+      0 failures incl. the `type synonyms` example. (2026-05-20)
 - [ ] M3: Rewrite the guards and signatures in
       `jitsurei/src/Jitsurei/LoanApplication.hs` to use the new operators and
       `Pred` / `Guarded`. `cabal test jitsurei-test` green (incl. the symbolic

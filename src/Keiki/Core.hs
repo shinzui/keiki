@@ -52,6 +52,7 @@ module Keiki.Core
   , OutTerm (..)
     -- * Predicate carrier (v1 first-class AST)
   , HsPred (..)
+  , Pred
   , Cmp (..)
     -- * Effective Boolean algebra
   , BoolAlg (..)
@@ -59,6 +60,7 @@ module Keiki.Core
     -- * Edges and the transducer
   , Edge (..)
   , SymTransducer (..)
+  , Guarded
   , applyEdgeUpdate
   , edgeReadsInput
     -- * Helpers (the user-facing DSL surface)
@@ -560,6 +562,17 @@ data SymTransducer phi rs s ci co = SymTransducer
   , initialRegs :: RegFile rs
   , isFinal     :: s -> Bool
   }
+
+
+-- | Readable alias for the v1 predicate carrier:
+-- @'Pred' rs ci@ is exactly @'HsPred' rs ci@.
+type Pred rs ci = HsPred rs ci
+
+
+-- | A 'SymTransducer' whose guard carrier is the v1 'HsPred'. Collapses
+-- the @'SymTransducer' ('HsPred' rs ci) rs s ci co@ signature — which
+-- otherwise repeats @rs@ and @ci@ — into @'Guarded' rs s ci co@.
+type Guarded rs s ci co = SymTransducer (HsPred rs ci) rs s ci co
 
 
 -- | Apply an edge's update to the register file. The 'Edge''s

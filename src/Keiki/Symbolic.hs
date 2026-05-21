@@ -61,6 +61,7 @@ module Keiki.Symbolic
   , translatePred
     -- * Symbolic predicate wrapper
   , SymPred (..)
+  , SymGuarded
     -- * Solver-backed analyses
   , symIsBot
   , symSatExt
@@ -552,6 +553,11 @@ translatePred env = go
 -- @userReg@-style transducers via 'fmap'-like adapters; M6 of EP-2
 -- ships 'withSymPred' which re-tags every edge guard.
 newtype SymPred (rs :: [Slot]) (ci :: Type) = SymPred { unSymPred :: HsPred rs ci }
+
+
+-- | A 'SymTransducer' whose guard carrier is the SBV-backed 'SymPred'.
+-- The symbolic analogue of 'Keiki.Core.Guarded'.
+type SymGuarded rs s ci co = SymTransducer (SymPred rs ci) rs s ci co
 
 
 -- | The v2 'BoolAlg' instance. The five structural methods compose
