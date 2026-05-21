@@ -90,7 +90,7 @@ hatches.
 
 A library consumer who imports `Keiki.Symbolic` inherits:
 
-- **Cabal dep on `sbv ^>=11.7`.** Hard, not behind a flag — the
+- **Cabal dep on `sbv >= 11.7 && < 15`.** Hard, not behind a flag — the
   synthesis-§7 single-valuedness invariant is load-bearing for the
   formalism, and a flag would split the test matrix into "with SBV"
   and "without SBV" paths. (See sbv-boolalg-design.md §"Cabal flag".)
@@ -98,8 +98,8 @@ A library consumer who imports `Keiki.Symbolic` inherits:
   default. Install with `brew install z3` on macOS or
   `apt install z3` on Debian. If it's missing, SBV throws at the
   first solver call with a clear "Couldn't find solver" message.
-- **GHC 9.10.3 or newer.** `sbv ^>=11.7` and the rest of the pin set
-  agree on this floor.
+- **GHC 9.12.x.** `keiki.cabal` pins `tested-with: GHC == 9.12.*`;
+  `sbv >= 11.7 && < 15` and the rest of the pin set resolve against it.
 
 A consumer who only imports `Keiki.Core` pays none of this. The v1
 best-effort `BoolAlg HsPred` is unchanged.

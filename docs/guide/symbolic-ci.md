@@ -35,9 +35,9 @@ For a CI image to run the check, three things need to be present.
 
 | Requirement | Provisioned by |
 |---|---|
-| `sbv ^>=11.7` resolved into the build plan | `keiki.cabal` already lists it |
+| `sbv >= 11.7 && < 15` resolved into the build plan | `keiki.cabal` already lists it |
 | `z3` binary on `PATH` | OS install on the CI image |
-| GHC 9.10.3+ | The repo's `flake.nix` / `cabal.project` pins |
+| GHC 9.12.* | The repo's `flake.nix` / `cabal.project` pins |
 
 For the OS install:
 
@@ -120,16 +120,19 @@ aggregate's input ctor declarations.
 The repo convention (followed by `UserRegistrationSymbolicSpec`):
 
 ```
-test/
-  Keiki/
-    Examples/
+jitsurei/
+  test/
+    Jitsurei/
       YourAggregateSymbolicSpec.hs    -- this module
 ```
 
-Hook into the test suite via `Spec.hs`'s discovery (Hspec auto-
-discovers `*Spec.hs` modules under the test source dir). Confirm
-with `cabal test --test-show-details=direct` and look for the
-`describe` line in the output.
+The test suite is wired manually, not by `hspec-discover`: add an
+`import qualified …SymbolicSpec` line and a matching
+`describe "…" …SymbolicSpec.spec` line to `jitsurei/test/Spec.hs`
+(copy the pattern of the specs already listed there). Confirm with
+`cabal test --test-show-details=direct` and look for the `describe`
+line in the output. (In your own project, mirror whatever wiring your
+`Spec.hs` already uses.)
 
 ---
 
@@ -187,7 +190,8 @@ conservatively: `isBot` returns `False`, so
 `isSingleValuedSym` returns `False`. A spurious `False` will fail
 your CI check; the surrounding error will name the edges. Most
 real-world predicates over the curated `Sym` set
-(`Bool`/`Int`/`Integer`/`Text`/`UTCTime`) are inside z3's
+(`Bool`/`Int`/`Integer`/`Text`/`UTCTime` and the fixed-width integers
+`Word8`/`Word16`/`Word32`/`Word64`/`Int32`/`Int64`) are inside z3's
 decidable fragment.
 
 ---
@@ -198,12 +202,16 @@ If `isSingleValuedSym (withSymPred yourAggregate) == False`, the
 diagnosis path:
 
 1. **Find the offending vertex.** Add a debug print or break the
-   spec into per-vertex assertions:
+   spec into per-vertex assertions, pairing the edges out of each
+   vertex the way `isSingleValuedSym` does internally:
    ```haskell
    forM_ [minBound .. maxBound] $ \v ->
      it ("vertex " <> show v <> " is single-valued") $
-       all (\(g1, g2) -> isBot (g1 `conj` g2))
-           (edgePairs (withSymPred yourAggregate) v)
+       let es = edgesOut (withSymPred yourAggregate) v
+       in and [ isBot (guard e1 `conj` guard e2)
+              | (i, e1) <- zip [0 :: Int ..] es
+              , (j, e2) <- zip [0 :: Int ..] es
+              , i < j ]
          `shouldBe` True
    ```
 2. **Read the offending pair's guards.** They must be

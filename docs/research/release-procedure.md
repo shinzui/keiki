@@ -49,39 +49,36 @@ same for `keiki-codec-json-test`.
 
 Before running any `cabal upload`, verify each item.
 
-### 1. The cross-GHC golden-hash gate is green on a real matrix
+### 1. The golden-hash gate is green on the supported toolchain
 
-The `tested-with` field in `keiki.cabal` and `keiki-codec-json.cabal`
-must list every GHC version the package is validated against. The
-`.github/workflows/ci.yml` `test` job's matrix must match.
+keiki supports **GHC 9.12 only**. The `tested-with` field in
+`keiki.cabal` and `keiki-codec-json.cabal` is `GHC == 9.12.*`, and the
+`.github/workflows/ci.yml` `test` job's matrix must match it
+(`ghc: ['9.12.2']`).
 
 The release-blocking gate is the
 `keiki-codec-json/test/Keiki/Codec/JSON/GoldenSpec.hs` assertion that
 `regFileShapeHash (Proxy @ExemplarSlots)` matches the pinned value
-`a37b2b77042a635f394a082765f3410ea23a0b89745b0c77242b925a03aa172b`.
-A divergence between GHC versions means the hash discriminator is no
-longer cross-version stable.
+`a37b2b77042a635f394a082765f3410ea23a0b89745b0c77242b925a03aa172b`. On
+the supported toolchain this catches any drift in the shape-hash
+discriminator — an accidental change to the shape encoding or to the
+hash itself.
 
-A one-row `tested-with` matrix has nothing to compare against; the
-gate is operationally vacuous in that state. Before publishing,
-expand the matrix to **at least two** entries:
+Because only one GHC major is supported, the gate no longer compares
+*across* GHC versions; that cross-version check only has teeth while
+`tested-with` lists more than one major. If a future release widens
+support, add the GHC major to both `tested-with` and the CI matrix,
+install it locally, and re-run the gate against the pin on each:
 
-    tested-with:        GHC == 9.10.*, GHC == 9.12.*
-
-Update the matching CI matrix in `.github/workflows/ci.yml`:
-
-    matrix:
-      ghc: ['9.10.7', '9.12.2']
-
-Install the second GHC locally (if not already present) and run:
-
-    ghcup install ghc 9.10.7
-    GHCUP_GHC_VERSION=9.10.7 cabal test \
+    GHCUP_GHC_VERSION=<version> cabal test \
       keiki-codec-json:keiki-codec-json-test \
       --test-options="--match 'M3 golden hash'"
 
-The test must pass against the pinned value. If it fails, follow the
-EP-36 §8 procedure in `keiki-codec-json/CONTRIBUTING.md` —
+A divergence between GHC versions would then mean the hash
+discriminator is no longer cross-version stable.
+
+In all cases the test must pass against the pinned value. If it fails,
+follow the EP-36 §8 procedure in `keiki-codec-json/CONTRIBUTING.md` —
 **do not silently update the golden**.
 
 ### 2. Every package's `cabal check` is clean

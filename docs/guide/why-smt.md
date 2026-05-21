@@ -119,8 +119,12 @@ g2 = (input is Submit) AND (submittedAt ≥ deadline)
 g1 ∧ g2  ≡  (input is Submit) AND (submittedAt = deadline)
 ```
 
-The solver returns `sat` with a witness like `submittedAt = deadline =
-0`. keiki reports the offending edge pair and the CI gate fails.
+The solver finds that conjunction satisfiable — there is an assignment
+(`submittedAt = deadline`) that fires both edges — so the
+single-valuedness check returns `False` and the CI gate fails. To see
+the offending assignment, ask `sat` on the conjunction: since EP-44 it
+returns a real, forceable witness (e.g. `submittedAt = deadline = 0`)
+reconstructed from the solver's model, not a placeholder.
 
 `isSingleValuedSym` walks every reachable vertex, takes every pair of
 outgoing edges, asks the solver "is `g1 ∧ g2` satisfiable?", and
@@ -144,7 +148,8 @@ procedure.
 
 ## 5. The catch
 
-Three places where the assurance weakens:
+Places where the assurance weakens (and one, since EP-42, where it no
+longer does):
 
 - **Curated types only.** The translation has built-in support for
   `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, and the fixed-width
