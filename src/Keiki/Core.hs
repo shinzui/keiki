@@ -70,6 +70,17 @@ module Keiki.Core
   , tsub
   , tmul
   , (.==)
+  , (.<)
+  , (.<=)
+  , (.>)
+  , (.>=)
+  , (./=)
+  , (.&&)
+  , (.||)
+  , pnot
+  , (.+)
+  , (.-)
+  , (.*)
   , pack
     -- * Evaluators
   , evalTerm
@@ -610,6 +621,57 @@ tmul = TArith OpMul
 (.==) :: (Eq r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
 (.==) = PEq
 infix 4 .==
+
+
+-- * Predicate & term operators (readable guard DSL) ----------------------
+
+-- | Ordering-guard operators. Each is an alias for 'PCmp' at a fixed
+-- 'Cmp': @a .>= b@ is @'PCmp' 'CmpGe' a b@ (i.e. @a >= b@); @a .< b@ is
+-- @'PCmp' 'CmpLt' a b@; and so on. Same fixity as '(.==)' (@infix 4@):
+-- relational operators do not chain, sit below the arithmetic operators
+-- ('.+'/'.-'/'.*'), and above the logical ones ('.&&'/'.||').
+(.<), (.<=), (.>), (.>=)
+  :: (Ord r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
+(.<)  = PCmp CmpLt
+(.<=) = PCmp CmpLe
+(.>)  = PCmp CmpGt
+(.>=) = PCmp CmpGe
+infix 4 .<, .<=, .>, .>=
+
+-- | Inequality guard. @a ./= b@ is @'pnot' (a '.==' b)@, i.e.
+-- @'PNot' ('PEq' a b)@. Mirrors 'Prelude.(/=)' against the existing
+-- '(.==)'.
+(./=) :: (Eq r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
+a ./= b = PNot (PEq a b)
+infix 4 ./=
+
+-- | Conjunction / disjunction of predicates. Aliases for 'PAnd' / 'POr',
+-- mirroring 'Prelude.(&&)' / 'Prelude.(||)' in fixity (@infixr 3@ /
+-- @infixr 2@), so @p .&& q .|| r@ parses as @(p .&& q) .|| r@.
+(.&&), (.||) :: HsPred rs ci -> HsPred rs ci -> HsPred rs ci
+(.&&) = PAnd
+(.||) = POr
+infixr 3 .&&
+infixr 2 .||
+
+-- | Predicate negation. Alias for 'PNot'. ('Keiki.Core.BoolAlg' also
+-- exposes 'neg', which is this same operation lifted through the class;
+-- 'pnot' is the direct AST alias for hand-written guards.)
+pnot :: HsPred rs ci -> HsPred rs ci
+pnot = PNot
+
+-- | Structural arithmetic operators on 'Term's. Aliases for
+-- 'tadd' / 'tsub' / 'tmul', mirroring 'Prelude.(+)' / '(-)' / '(*)' in
+-- fixity (@infixl 6@ / @infixl 6@ / @infixl 7@). Because they build the
+-- structural 'TArith' node (not an opaque 'TApp'), arithmetic written
+-- with them is visible to the SBV translator in "Keiki.Symbolic".
+(.+), (.-), (.*)
+  :: (Num r, Typeable r) => Term rs ci r -> Term rs ci r -> Term rs ci r
+(.+) = tadd
+(.-) = tsub
+(.*) = tmul
+infixl 6 .+, .-
+infixl 7 .*
 
 
 -- | Structural-output construction. 'solveOutput' inverts the result

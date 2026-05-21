@@ -102,6 +102,7 @@ test-suite keiki-test
                         Keiki.Fixtures.UserRegistration
                         Keiki.Generics.THSpec
                         Keiki.NoThunksSpec
+                        Keiki.OperatorsSpec
                         Keiki.ProfunctorSpec
                         Keiki.Render.MermaidSpec
                         Keiki.ShapeSpec
