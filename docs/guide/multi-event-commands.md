@@ -102,7 +102,7 @@ B.from UnderReview do
     B.goto Approved
 
   B.onCmd inCtorContinue $ \_ -> B.do
-    B.requireGuard (PNot approvalGuard)
+    B.requireGuard (pnot approvalGuard)
     B.emit wireApplicationDeclined (...)
     B.goto Declined
 ```

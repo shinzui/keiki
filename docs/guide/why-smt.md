@@ -127,7 +127,9 @@ outgoing edges, asks the solver "is `g1 ∧ g2` satisfiable?", and
 returns `True` only if every answer is `unsat`. The translation from
 your Haskell guards to SMT formulas is mechanical: SBV maps `PEq`,
 `PAnd`, `POr`, `PNot`, the ordering guard `PCmp` (`<`/`<=`/`>`/`>=`,
-authored with `requireLt`/`requireLe`/`requireGt`/`requireGe`), and
+authored with the operators `.==`/`.&&`/`.>=`/… — see
+`docs/guide/user-guide.md` §3.4 — or the builder's
+`requireLt`/`requireLe`/`requireGt`/`requireGe`), and
 equalities/orderings over `Int`/`Integer`/`Bool`/`Text`/`UTCTime` and
 the fixed-width integers (`Word8`/`Word16`/`Word32`/`Word64`/`Int32`/
 `Int64` — keiki's money convention is `Word64` minor units), into the

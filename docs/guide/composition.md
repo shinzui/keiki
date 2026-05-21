@@ -110,8 +110,7 @@ declaring `AlertSource`'s output to *be* `EmailCmd`:
 ```haskell
 type AlertEvent = EmailCmd
 
-alertSource :: SymTransducer (HsPred AlertRegs AlertCmd)
-                              AlertRegs AlertVertex AlertCmd EmailCmd
+alertSource :: Guarded AlertRegs AlertVertex AlertCmd EmailCmd
 ```
 
 When the two natural alphabets don't match, you can either:
@@ -131,18 +130,15 @@ two-stage pipeline. Reading it top to bottom:
 ```haskell
 -- Stage 1: AlertSource. Defined inline in the spec.
 alertSource
-  :: SymTransducer (HsPred AlertRegs AlertCmd)
-                   AlertRegs AlertVertex AlertCmd EmailCmd
+  :: Guarded AlertRegs AlertVertex AlertCmd EmailCmd
 
 -- Stage 2: the EmailDelivery example aggregate.
 emailDelivery
-  :: SymTransducer (HsPred EmailRegs EmailCmd)
-                   EmailRegs EmailVertex EmailCmd EmailEvent
+  :: Guarded EmailRegs EmailVertex EmailCmd EmailEvent
 
 -- The pipeline.
 pipeline
-  :: SymTransducer
-       (HsPred (Append AlertRegs EmailRegs) AlertCmd)
+  :: Guarded
        (Append AlertRegs EmailRegs)
        (Composite AlertVertex EmailVertex)
        AlertCmd
@@ -364,8 +360,7 @@ single-valuedness reduces to the underlying sub-aggregates'.
 pair:
 
 ```haskell
-siblings :: SymTransducer
-              (HsPred (Append EmailRegs PingRegs) (Either EmailCmd PingCmd))
+siblings :: Guarded
               (Append EmailRegs PingRegs)
               (Composite EmailVertex PingVertex)
               (Either EmailCmd PingCmd)

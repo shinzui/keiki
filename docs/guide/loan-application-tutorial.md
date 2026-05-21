@@ -235,43 +235,38 @@ The `readyForReviewGuard` is a conjunction of four register-side
 predicates:
 
 ```haskell
-readyForReviewGuard :: HsPred LoanAppRegs LoanCmd
+readyForReviewGuard :: Pred LoanAppRegs LoanCmd
 readyForReviewGuard =
-  PCmp CmpGe (proj (#appIncomeDocCount :: Index LoanAppRegs Int))
-             (lit minimumIncomeDocs)
-    `PAnd`
-  PCmp CmpGe (proj (#appIdDocCount :: Index LoanAppRegs Int))
-             (lit minimumIdDocs)
-    `PAnd`
-  PCmp CmpGe (proj (#appCreditScore :: Index LoanAppRegs Int))
-             (lit 1)
-    `PAnd`
-  PEq (proj (#appEmploymentVerified :: Index LoanAppRegs Bool)) (lit True)
+       proj (#appIncomeDocCount :: Index LoanAppRegs Int) .>= lit minimumIncomeDocs
+  .&&  proj (#appIdDocCount     :: Index LoanAppRegs Int) .>= lit minimumIdDocs
+  .&&  proj (#appCreditScore    :: Index LoanAppRegs Int) .>= lit 1
+  .&&  proj (#appEmploymentVerified :: Index LoanAppRegs Bool) .== lit True
 ```
 
-The ordering relations use `HsPred`'s structural comparison guard
-`PCmp` (added by EP-41; authored in the builder as
-`requireGe`/`requireLe`/…). Because `PCmp` is structural, the SBV
-translator emits a real symbolic comparison rather than the opaque
-fresh variable that a `TApp1 (>= n)` lift produces — so thresholds
-over the curated numeric types (here `Int`; money is `Word64`) are
-now visible to `isSingleValuedSym` and `symSatExt`. Equality against a
-`Bool` register stays a plain `PEq`.
+The ordering relations use the `.>=` operator (EP-45) — a readable
+alias for `HsPred`'s structural comparison guard `PCmp` (added by
+EP-41; also authored in the builder as `requireGe`/`requireLe`/…).
+Because `PCmp` is structural, the SBV translator emits a real symbolic
+comparison rather than the opaque fresh variable that a `TApp1 (>= n)`
+lift produces — so thresholds over the curated numeric types (here
+`Int`; money is `Word64`) are now visible to `isSingleValuedSym` and
+`symSatExt`. Equality against a `Bool` register stays a plain `.==`
+(a `PEq`); conjunction is `.&&` (a `PAnd`); the guard's type is the
+`Pred` synonym for `HsPred`.
 
 The approval branch is a similar conjunction. Its credit-score and
-cap relations are `PCmp`; the cap's *right-hand side*
+cap relations are `.>=`/`.<=` (`PCmp`); the cap's *right-hand side*
 (`maxApprovalForScore creditScore`, a computed quantity) is — since
-EP-43 — a structural `tmul`, so the whole guard is solver-visible:
+EP-43 — a structural `.*` (`tmul`), so the whole guard is
+solver-visible. Because `.*` binds tighter than `.<=`, the cap needs
+no parentheses:
 
 ```haskell
-approvalGuard :: HsPred LoanAppRegs LoanCmd
+approvalGuard :: Pred LoanAppRegs LoanCmd
 approvalGuard =
-  PCmp CmpGe (proj (#appCreditScore :: …)) (lit approvalThresholdScore)
-    `PAnd`
-  PEq (proj (#appEmploymentVerified :: …)) (lit True)
-    `PAnd`
-  PCmp CmpLe (proj (#appRequestedAmount :: …))
-             (tmul (proj (#appCreditScore :: …)) (lit 1000))
+       proj (#appCreditScore :: …) .>= lit approvalThresholdScore
+  .&&  proj (#appEmploymentVerified :: …) .== lit True
+  .&&  proj (#appRequestedAmount :: …) .<= proj (#appCreditScore :: …) .* lit 1000
 ```
 
 The LoanApplication's symbolic spec (`LoanApplicationSymbolicSpec`) now
@@ -280,14 +275,14 @@ Proving `approvalGuard ∧ ¬approvalGuard` unsatisfiable needed two
 things, both now delivered: the two reads of `#appCreditScore` (one per
 half) to share one solver variable — EP-42 (per-slot *memoization*) —
 and the cap conjunct `appRequestedAmount <= appCreditScore * 1000` to be
-solver-visible — EP-43 (structural *arithmetic terms*), the `tmul`
+solver-visible — EP-43 (structural *arithmetic terms*), the `.*`
 above. EP-41 had already supplied the comparison constructor. The spec
 also asserts that the approval edge's `symSatExt` witness satisfies the
 whole guard (credit-score bound *and* the structural cap). See the
 spec's module haddock for the full story.
 
 `UnderReview` then has two `Continue`-keyed edges — approve under
-`approvalGuard`, decline under `PNot approvalGuard` — plus a
+`approvalGuard`, decline under `pnot approvalGuard` — plus a
 `Withdraw` edge.
 
 ---
@@ -494,8 +489,7 @@ syncOutputToLoanCmd (SyncToLegacyRequested  _)    = Nothing
 The composite:
 
 ```haskell
-loanWorkflow :: SymTransducer
-                  (HsPred (Append LoanAppRegs (Append SyncRegs LoanRegs)) LoanCmd)
+loanWorkflow :: Guarded
                   (Append LoanAppRegs (Append SyncRegs LoanRegs))
                   (Composite LoanAppVertex (Composite SyncVertex LoanVertex))
                   LoanCmd

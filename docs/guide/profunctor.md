@@ -240,9 +240,7 @@ upcastV1ToV2 (EmailSent d) = EmailEventV2
   , v2Schema    = 2
   }
 
-emailDeliveryV2 :: SymTransducer (HsPred EmailRegs EmailCmd)
-                                 EmailRegs EmailVertex
-                                 EmailCmd EmailEventV2
+emailDeliveryV2 :: Guarded EmailRegs EmailVertex EmailCmd EmailEventV2
 emailDeliveryV2 = rmapCo upcastV1ToV2 emailDelivery
 ```
 
@@ -304,13 +302,11 @@ adapter:
 ```haskell
 -- Stage 1's natural output is `Versioned EmailCmd`.
 stage1
-  :: SymTransducer (HsPred S1Regs S1Cmd)
-                   S1Regs S1Vertex S1Cmd (Versioned EmailCmd)
+  :: Guarded S1Regs S1Vertex S1Cmd (Versioned EmailCmd)
 
 -- Stage 2's natural input is `EmailCmd`.
 emailDelivery
-  :: SymTransducer (HsPred EmailRegs EmailCmd)
-                   EmailRegs EmailVertex EmailCmd EmailEvent
+  :: Guarded EmailRegs EmailVertex EmailCmd EmailEvent
 
 -- The composite needs the alphabets to align. Two equivalent fixes:
 

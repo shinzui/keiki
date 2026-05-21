@@ -83,11 +83,11 @@ aggregate:
 ```haskell
 describe "sat over the aggregate" $ do
   it "satisfiable: PInCtor on a real ctor" $
-    isJust (sat (SymPred (PInCtor inCtorConfirm))) `shouldBe` True
+    isJust (sat (SymPred (matchInCtor inCtorConfirm))) `shouldBe` True
 
   it "unsatisfiable: PInCtor mutex" $
-    isJust (sat (SymPred (PAnd (PInCtor inCtorConfirm)
-                               (PInCtor inCtorResend))))
+    isJust (sat (SymPred (matchInCtor inCtorConfirm
+                            .&& matchInCtor inCtorResend)))
       `shouldBe` False
 
 describe "symSatExt round-trip" $ do

@@ -109,6 +109,14 @@ For keiki v1, predicates are just Haskell functions and
 witnesses). v2 swaps in an SBV-backed predicate AST so the analysis
 becomes symbolic.
 
+Concretely you write a guard as an `HsPred` AST. The underlying
+constructors are `PEq`, `PCmp`, `PAnd`, `POr`, `PNot`, `PInCtor`, but
+the preferred authoring surface is the dot-prefixed operators
+(`.>=`, `.<=`, `.==`, `./=`, `.&&`, `.||`, `pnot`, and the term
+arithmetic `.+`/`.-`/`.*`) — thin aliases for those constructors that
+read as the inequalities they are. See "Writing guards with operators"
+in `docs/guide/user-guide.md` §3.4 for the full set and fixities.
+
 ## Tracking data over time: registers
 
 Predicates handle commands' payloads, but workflows also need to

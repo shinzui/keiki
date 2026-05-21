@@ -102,8 +102,7 @@ $(deriveWireCtors ''EmailEvent
 
 -- 5. The transducer.
 emailDelivery
-  :: SymTransducer (HsPred EmailRegs EmailCmd)
-                   EmailRegs EmailVertex EmailCmd EmailEvent
+  :: Guarded EmailRegs EmailVertex EmailCmd EmailEvent
 emailDelivery = B.buildTransducer EmailPending emptyRegFile
                   (\case EmailSentVertex -> True; _ -> False) do
   B.from EmailPending do
@@ -245,6 +244,56 @@ a visible marker that the edge is intentionally silent. This is
 especially useful for `onCmd`-keyed state advances such as
 "Continue when ready" or "delete before confirmation without a
 public event."
+
+#### Writing guards with operators (EP-45)
+
+A guard passed to `requireGuard` (or written directly as the `guard`
+field of an `Edge`) is an `HsPred`. You can spell it out with the data
+constructors — but it reads far better with the dot-prefixed operators,
+which are thin definitional aliases for those constructors. Compare:
+
+```haskell
+-- with the constructors
+approvalGuard =
+  PCmp CmpGe (proj #appCreditScore) (lit approvalThresholdScore)
+    `PAnd`
+  PEq (proj #appEmploymentVerified) (lit True)
+    `PAnd`
+  PCmp CmpLe (proj #appRequestedAmount)
+             (tmul (proj #appCreditScore) (lit 1000))
+
+-- with the operators (same AST, byte-for-byte)
+approvalGuard =
+       proj #appCreditScore .>= lit approvalThresholdScore
+  .&&  proj #appEmploymentVerified .== lit True
+  .&&  proj #appRequestedAmount .<= proj #appCreditScore .* lit 1000
+```
+
+The full operator set, all mirroring their Prelude counterparts:
+
+| Group | Operators | Fixity | Alias for |
+|---|---|---|---|
+| Relational (build `HsPred`) | `.<` `.<=` `.>` `.>=` `.==` `./=` | `infix 4` | `PCmp` / `PEq` |
+| Logical (combine `HsPred`) | `.&&` / `.\|\|` / `pnot` | `infixr 3` / `infixr 2` | `PAnd` / `POr` / `PNot` |
+| Arithmetic (build `Term`) | `.+` `.-` `.*` | `infixl 6` / `infixl 6` / `infixl 7` | `tadd` / `tsub` / `tmul` |
+
+Because the fixities match `Prelude`, `.*` binds tighter than `.+`, the
+arithmetic binds tighter than the relational operators, and those bind
+tighter than `.&&`/`.||` — so `proj #x .<= proj #y .* lit 1000` needs no
+parentheses around the right operand, and `p .&& q .|| r` parses as
+`(p .&& q) .|| r`.
+
+Two cautions. Keep spaces around the operators (`lit a .* lit b`, not
+`lit a.*lit b`): a dot touching an identifier is `OverloadedRecordDot`
+field access, not an operator. And if you import `Data.SBV` alongside
+`Keiki.Core`/`Keiki.Symbolic`, import it qualified — SBV exports the
+same operator names (`Keiki.Symbolic` already does this internally, so
+the operators are unambiguous when you import only `Keiki.Symbolic`).
+
+The verbose carrier signatures also have synonyms: `Pred rs ci` for
+`HsPred rs ci`, `Guarded rs s ci co` for
+`SymTransducer (HsPred rs ci) rs s ci co`, and `SymGuarded rs s ci co`
+(in `Keiki.Symbolic`) for the SBV-backed carrier.
 
 #### Slot writes
 
@@ -628,8 +677,10 @@ When writing a new aggregate, the high-traffic references:
    worked example inline and lists every export with a one-line
    summary.
 3. **`Keiki.Core`'s exported helpers** for terms / predicates.
-   `proj`, `lit`, `inpCtor`, `(.==)` are the constructors you
-   reach for inside `requireEq`/`requireGuard` blocks.
+   `proj`, `lit`, `inpCtor` build terms; the dot-prefixed operators
+   (`.>=`/`.<=`/`.==`/`./=`/`.&&`/`.||`/`pnot`, and arithmetic
+   `.+`/`.-`/`.*`) build guards — these are what you reach for inside
+   `requireGuard` blocks. See §3.4.
 4. **The glossary below** when you hit a term you don't recognise.
 
 ---
@@ -679,12 +730,15 @@ this guide and in the haddocks.
 | Term | Definition |
 |---|---|
 | **`SymTransducer phi rs s ci co`** | The library's central type. `phi` is the predicate carrier (`HsPred` for v1, `SymPred` for v2); `rs` is the slot list; `s` the vertex; `ci`/`co` the command/event types. |
+| **`Guarded rs s ci co`** | Synonym (EP-45) for `SymTransducer (HsPred rs ci) rs s ci co` — the common `HsPred`-carried transducer, without repeating `rs`/`ci`. |
+| **`SymGuarded rs s ci co`** | Synonym (EP-45, in `Keiki.Symbolic`) for `SymTransducer (SymPred rs ci) rs s ci co` — the SBV-backed-carrier analogue of `Guarded`. |
 | **Slot** | A `(Symbol, Type)` pair: a register's name and its value type. |
 | **`RegFile rs`** | A typed heterogeneous tuple indexed by a slot list. The data the transducer remembers between transitions. |
 | **`Index rs r`** | A position into a register file pointing at a slot of type `r`. `ZIdx` is the head; `SIdx` the recursive constructor. |
 | **`IndexN s rs r`** | A slot-name-tagged index. The `s :: Symbol` parameter pins the slot's name in the type, which is what makes the static disjoint-targets check on `(.=)` possible. |
-| **`Term rs ci r`** | A small AST for expressions over registers and the input. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`. Smart constructors: `lit`, `proj`, `inpCtor`. |
-| **`HsPred rs ci`** | The v1 predicate carrier. Constructors: `PTop`, `PBot`, `PAnd`, `POr`, `PNot`, `PEq`, `PInCtor`. Smart constructors: `(.==)`, `matchInCtor`. |
+| **`Term rs ci r`** | A small AST for expressions over registers and the input. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`, `TArith`. Smart constructors: `lit`, `proj`, `inpCtor`, `tadd`/`tsub`/`tmul` (operators `.+`/`.-`/`.*`). |
+| **`Pred rs ci`** | Synonym for `HsPred rs ci` (EP-45). The short, readable name for a guard's type. |
+| **`HsPred rs ci`** | The v1 predicate carrier. Constructors: `PTop`, `PBot`, `PAnd`, `POr`, `PNot`, `PEq`, `PInCtor`, `PCmp`. The preferred authoring surface is the EP-45 operators (`.>=`/`.<=`/`.==`/`./=`/`.&&`/`.||`/`pnot`, see §3.4) — thin aliases for these constructors; `matchInCtor` builds a `PInCtor`. |
 | **`SymPred rs ci`** | The v2 predicate carrier (a newtype over `HsPred`). Same constructors; the difference is the SBV-backed instances — `BoolAlg`'s `isBot` and the `Sat` class's `sat` dispatch to z3, giving precise answers and (for `sat`) a real `(RegFile rs, ci)` witness. |
 | **`BoolAlg phi a`** | The effective Boolean algebra typeclass: `top`/`bot`/`conj`/`disj`/`neg`/`models`/`isBot`. The interface every predicate carrier implements. |
 | **`Sat phi a`** | A subclass of `BoolAlg` adding `sat :: phi -> Maybe a` (witness extraction). Split out of `BoolAlg` by EP-44 so witness-free analyses (`isSingleValuedSym`) carry no extraction evidence. On `SymPred` the instance is constrained `(ExtractRegFile rs, KnownInCtors ci)` and defines `sat = symSatExt`. |

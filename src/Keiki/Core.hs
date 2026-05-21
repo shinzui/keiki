@@ -20,6 +20,28 @@
 -- 'mkOut' (MP-6 EP-16), 'PMatchC' / 'matchCmd' (MP-6 EP-17), and
 -- 'unsafeCombine' (MP-6 EP-18, replaced by the static 'Disjoint'
 -- check on 'combine').
+--
+-- == Guard-authoring operators (EP-45)
+--
+-- Predicates and term arithmetic can be written with infix operators
+-- that mirror their Prelude counterparts:
+--
+--   * Relational (build 'HsPred', @infix 4@): '.<' '.<=' '.>' '.>='
+--     '.==' './=' — each an alias for 'PCmp'/'PEq' at a fixed relation.
+--   * Logical (combine 'HsPred'): '.&&' (@infixr 3@, 'PAnd'),
+--     '.||' (@infixr 2@, 'POr'), 'pnot' ('PNot').
+--   * Arithmetic (build 'Term', mirror @+@\/@-@\/@*@): '.+' '.-' '.*' —
+--     aliases for 'tadd'\/'tsub'\/'tmul'.
+--
+-- The verbose carrier signatures have synonyms: 'Pred' @rs ci@ for
+-- @'HsPred' rs ci@, 'Guarded' @rs s ci co@ for
+-- @'SymTransducer' ('HsPred' rs ci) rs s ci co@ (and
+-- 'Keiki.Symbolic.SymGuarded' for the SBV-backed carrier).
+--
+-- Keep spaces around the operators (@lit a .* lit b@); a dot touching an
+-- identifier (@x.y@) is OverloadedRecordDot field access. If you import
+-- "Data.SBV" alongside this module, import it qualified — SBV exports
+-- the same operator names.
 module Keiki.Core
   ( -- * Slots and the register file
     Slot

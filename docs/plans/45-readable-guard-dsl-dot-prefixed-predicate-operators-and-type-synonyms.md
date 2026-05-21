@@ -107,10 +107,18 @@ This section must always reflect the actual current state of the work.
       `UserRegistrationV0.hs`) — rewrote each `PAnd isConfirm (… .== …)` guard
       to `isConfirm .&& (… .== …)`. `cabal test jitsurei-test` 96 examples, 0
       failures. Separate commit from the flagship. (2026-05-20)
-- [ ] M4: Document the operator set and type synonyms — module haddocks in
-      `src/Keiki/Core.hs`, plus the authoring guide and foundations docs; record
-      the SBV-qualified-import caveat.
-- [ ] M4: Final `cabal test all` green; fill Outcomes & Retrospective.
+- [x] M4: Document the operator set and type synonyms — module haddock in
+      `src/Keiki/Core.hs`, the authoring guide (`docs/guide/user-guide.md` §3.4
+      + glossary), and a foundations pointer (`docs/foundations/05-…md`); SBV
+      qualified-import caveat recorded. `cabal haddock keiki` exit 0. (2026-05-20)
+- [x] M4: Final `cabal test all` green — jitsurei 96, keiki 249,
+      keiki-codec-json 40, keiki-codec-json-test 7; all 0 failures. Outcomes &
+      Retrospective filled. (2026-05-20)
+- [x] M5 (user-requested, mid-flight): sweep **all** jitsurei aggregates and the
+      user-facing guides to the operator/synonym surface, not just the flagship.
+      All `SymTransducer (HsPred …)` aggregate signatures → `Guarded`; remaining
+      `PAnd`/`PNot` guards → `.&&`/`pnot`; tutorial/guide guard examples and
+      concrete aggregate signatures rewritten. `cabal test all` green. (2026-05-20)
 
 
 ## Surprises & Discoveries
@@ -118,7 +126,28 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The whole change was zero-friction precisely because every alias is
+  definitional. No pre-existing test needed editing across all four suites
+  (`cabal test all`: jitsurei 96, keiki 249, keiki-codec-json 40,
+  keiki-codec-json-test 7 — all 0 failures), which is the strongest evidence the
+  aliases are faithful synonyms (the Validation section flagged any test edit as
+  a bug-in-the-plan signal; none was needed).
+
+- The `LoanApplication.hs` AST was byte-for-byte preserved through the rewrite,
+  so the SBV-backed `Jitsurei.LoanApplication (symbolic)` spec passed unchanged
+  — direct evidence the solver still sees the same structure after the surface
+  swap.
+
+- `git status` after the M3 flagship edit showed *only*
+  `jitsurei/src/Jitsurei/LoanApplication.hs` modified, confirming the flagship
+  diff is reviewable in isolation (per the Validation section's
+  `git show --stat HEAD` check).
+
+- The doc/jitsurei full sweep (M5) surfaced a useful distinction: aggregate
+  *definition* signatures collapse cleanly to `Guarded` (readability win), but
+  the *combinator/class* signatures in `composition.md`/`profunctor.md` are
+  better left spelled out — they teach how `rs`/`ci` move under composition, and
+  `Guarded` would hide that. Recorded in the Decision Log.
 
 
 ## Decision Log
@@ -168,13 +197,80 @@ Record every decision made while working on the plan.
   in the library (verified by grep), so they introduce no clash.
   Date: 2026-05-21
 
+- Decision: Expand the demonstration scope (mid-flight, at the user's explicit
+  request: "ensure to update the docs and jitsurei to use the operators since
+  they are easier to read") from the flagship LoanApplication to **every**
+  jitsurei aggregate and **every** user-facing guide.
+  Rationale: The synonyms/operators are definitional aliases (same AST, same
+  types), so the sweep is risk-free and `cabal test all` stays green. Concretely:
+  (a) every `SymTransducer (HsPred …)` aggregate signature in
+  `jitsurei/src/Jitsurei/{LoanApplication,Loan,EmailDelivery,UserRegistration,
+  UserRegistrationV0,CoreBankingSync,OrderCart,LoanWorkflow}.hs` → `Guarded`
+  (and `[Edge (HsPred …)]` / helper sigs → `Pred`); (b) the remaining
+  `PAnd`/`PNot` value-level guards in LoanApplication → `.&&`/`pnot`;
+  (c) the guard examples and concrete aggregate signatures in
+  `docs/guide/{user-guide,loan-application-tutorial,ast-drop-down,
+  multi-event-commands,composition,profunctor,symbolic-ci,why-smt}.md` →
+  operators/`Guarded`.
+  Rationale for what was *left* explicit: the **combinator and class type
+  signatures** in `composition.md`/`profunctor.md` (e.g. `compose`, `lmapCi`,
+  the `Profunctor` methods) keep the spelled-out `SymTransducer (HsPred rs ci) …`
+  form, because those docs exist to teach how the `rs`/`ci` parameters move
+  under composition — collapsing them into `Guarded` would hide the very plumbing
+  being taught. Likewise the conceptual "SBV maps `PEq`/`PAnd`/`PCmp`…" prose in
+  `why-smt.md`/`symbolic-ci.md` keeps the constructor names (it describes the
+  AST/translation), with a one-line pointer added to the operator surface.
+  Date: 2026-05-20
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (all milestones complete, 2026-05-20).** The readable guard DSL is
+delivered exactly as the Purpose section promised. An aggregate author can now
+write ordering guards as the inequalities they are
+(`proj #appCreditScore .>= lit approvalThresholdScore`), combine them with
+`.&&`/`.||`/`pnot`, build operands with `.+`/`.-`/`.*`, and type guards/transducers
+with `Pred`/`Guarded`/`SymGuarded` instead of the parameter-repeating
+`SymTransducer (HsPred rs ci) rs s ci co`.
+
+Against the two "see it working" criteria from the Purpose:
+
+  1. *Focused operator test* — `test/Keiki/OperatorsSpec.hs` proves each operator
+     computes its named relation and is behaviourally identical to the data
+     constructor it aliases (grid checks against `PCmp CmpGe`, `PEq`,
+     `PNot . PEq`), plus fixity (`lit 2 .+ lit 3 .* lit 4 == 14`) and a
+     type-synonym round-trip. Visible as the `Keiki.Core operators (EP-45)` group
+     in `cabal test keiki-test` (249 examples, 0 failures).
+
+  2. *Flagship semantic preservation* — `jitsurei/src/Jitsurei/LoanApplication.hs`
+     reads through the operators while its entire pre-existing suite — behavioural,
+     builder, view, **and symbolic** — stays green unchanged (96 examples), proving
+     the rewrite changed how guards *read*, not what they *mean* or how the SBV
+     solver sees them.
+
+**Beyond the original plan (M5, user-requested mid-flight).** At the user's
+explicit request, the adoption was extended from the flagship to *every* jitsurei
+aggregate (all eight modules now use `Guarded`/`Pred`; remaining `PAnd`/`PNot`
+guards now use `.&&`/`pnot`) and *every* user-facing guide (guard examples and
+concrete aggregate signatures rewritten to the operator/synonym surface). The
+combinator/class type signatures in `composition.md`/`profunctor.md` and the
+conceptual "SBV maps `PEq`/`PAnd`/`PCmp`…" prose were deliberately left in
+constructor form (with operator pointers added) — see the Decision Log for the
+rationale.
+
+**Gaps / non-goals.** The change is purely additive: the data constructors
+(`PCmp`, `PEq`, `PAnd`, …) and smart constructors (`tadd`/`tsub`/`tmul`) remain
+exported and unchanged, so no downstream consumer is forced to migrate. `PInCtor`
+keeps its `matchInCtor` helper (no operator — it is a constructor-match, not a
+relation). The escape-hatch terms `TApp1`/`TApp2` intentionally have no operator.
+
+**Lesson.** Definitional aliasing is the cheapest possible readability win: because
+`(.>=) = PCmp CmpGe` (etc.) produce the identical AST, the entire surface change —
+library, eight aggregates, and the docs — landed without editing a single
+pre-existing test assertion, and `cabal test all` is green end-to-end.
 
 
 ## Context and Orientation
