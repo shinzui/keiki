@@ -115,44 +115,45 @@ data ChapterQualEvent
 The credit formula (`mkTotalVolume`/`mkTotalSides`, with the 0.5
 co-agent multiplier) used to have *no* arithmetic constructor in `Term`,
 so it was built with `TApp`. Since EP-43 (structural arithmetic terms),
-integer `+`/`-`/`*` are first-class `Term`s (`tadd`/`tsub`/`tmul`) the
-SBV translator reads — the same win that made `Jitsurei.LoanApplication`'s
-derived cap structural (`appRequestedAmount <= appCreditScore * 1000`,
-now `tmul`, no longer a `TApp`). The integer "doubled to stay in `Int`"
+integer `+`/`-`/`*` are first-class `Term`s (`tadd`/`tsub`/`tmul`, spelled
+here with the EP-45 operators `.+`/`.-`/`.*`) the SBV translator reads —
+the same win that made `Jitsurei.LoanApplication`'s derived cap structural
+(`appRequestedAmount <= appCreditScore * 1000`, now a structural `.*`
+(`tmul`), no longer a `TApp`). The integer "doubled to stay in `Int`"
 form is therefore fully solver-visible. A *fractional* `0.5` multiplier
 is still out of scope (no `Double`/SReal — EP-43's boundary), so either
 keep the doubling workaround (structural) or fall back to `TApp` for a
 genuine fraction:
 
 ```haskell
--- 2 * totalSides, integer-valued — now fully structural (EP-43):
+-- 2 * totalSides, integer-valued — now fully structural (EP-43),
+-- written with the EP-45 arithmetic operators (.* binds tighter than .+):
 weightedSidesx2 :: Term ChapterQualRegs ci Int
 weightedSidesx2 =
-  tadd (tmul (lit 2) (tadd #listingSides #buyerSides))
-       (tadd #colistingSides #cobuyerSides)
+  lit 2 .* (#listingSides .+ #buyerSides)
+    .+ (#colistingSides .+ #cobuyerSides)
 
 -- The fractional-0.5 volume form still needs TApp (SReal is out of
 -- scope); prefer the doubled integer form above when verification
--- matters:
+-- matters. The integer sub-sums stay structural .+ terms:
 weightedVolume :: Term ChapterQualRegs ci Money
 weightedVolume =
   TApp2 (\primary co -> primary + 0.5 * co)
-        (tadd #listingVolume #buyerVolume)
-        (tadd #colistingVolume #cobuyerVolume)
+        (#listingVolume .+ #buyerVolume)
+        (#colistingVolume .+ #cobuyerVolume)
 ```
 
 ### The transducer
 
 ```haskell
-chapterQualification :: SymTransducer (HsPred ChapterQualRegs ChapterQualCmd)
-                                      ChapterQualRegs Vertex ChapterQualCmd ChapterQualEvent
+chapterQualification :: Guarded ChapterQualRegs Vertex ChapterQualCmd ChapterQualEvent
 chapterQualification = buildTransducer NotQualified initialRegs isFinal $ do
 
   B.from NotQualified do
     -- Accumulate. Self-loop, no control change. (one per role; listing shown)
     B.onCmd inCtorRecordListing $ \d -> B.do
-      B.slot @"listingVolume" .= TApp2 (+) #listingVolume d.closePrice
-      B.slot @"listingSides"  .= TApp1 (+ 1) #listingSides
+      B.slot @"listingVolume" .= #listingVolume .+ d.closePrice
+      B.slot @"listingSides"  .= #listingSides  .+ lit 1
       B.emit wireListingRecorded ListingRecordedFields
         { propertyId = d.propertyId, closePrice = d.closePrice, at = d.at }
       B.goto NotQualified
@@ -163,8 +164,8 @@ chapterQualification = buildTransducer NotQualified initialRegs isFinal $ do
     -- THE analyzable transition: cross the threshold.
     B.onCmd inCtorQualifyCheck $ \d -> B.do
       B.requireGuard
-        (    PEq (TApp2 (>=) weightedVolume   d.minVolume)    (lit True)
-        `pand` PEq (TApp2 (>=) weightedSidesx2 (twice d.minSides)) (lit True))
+        (    weightedVolume  .>= d.minVolume
+        .&&  weightedSidesx2 .>= twice d.minSides)
       B.slot @"qualifiedAt" .= d.at
       B.emit wireAgentQualified AgentQualifiedFields
         { memberId = d.memberId, chapterId = d.chapterId, qualifiedAt = d.at }
@@ -177,8 +178,8 @@ chapterQualification = buildTransducer NotQualified initialRegs isFinal $ do
   B.from Qualified do
     -- Still accumulating while qualified (self-loops, as above).
     B.onCmd inCtorRecordListing $ \d -> B.do
-      B.slot @"listingVolume" .= TApp2 (+) #listingVolume d.closePrice
-      B.slot @"listingSides"  .= TApp1 (+ 1) #listingSides
+      B.slot @"listingVolume" .= #listingVolume .+ d.closePrice
+      B.slot @"listingSides"  .= #listingSides  .+ lit 1
       B.emit wireListingRecorded ListingRecordedFields
         { propertyId = d.propertyId, closePrice = d.closePrice, at = d.at }
       B.goto Qualified
@@ -186,8 +187,8 @@ chapterQualification = buildTransducer NotQualified initialRegs isFinal $ do
     -- THE analyzable transition: fall back below the threshold.
     B.onCmd inCtorRequalifyCheck $ \d -> B.do
       B.requireGuard
-        (PNot ( PEq (TApp2 (>=) weightedVolume   d.minVolume)    (lit True)
-         `pand` PEq (TApp2 (>=) weightedSidesx2 (twice d.minSides)) (lit True)))
+        (pnot ( weightedVolume  .>= d.minVolume
+          .&&   weightedSidesx2 .>= twice d.minSides))
       B.emit wireAgentNoLongerQualified DisqualifiedFields
         { memberId = d.memberId, chapterId = d.chapterId, disqualifiedAt = d.at }
       B.goto NotQualified
@@ -197,8 +198,9 @@ chapterQualification = buildTransducer NotQualified initialRegs isFinal $ do
       B.goto Retired
 ```
 
-(`pand` = `PAnd`; `twice = TApp1 (* 2)`. The qualify/requalify guards are
-the same predicate; one edge takes it, the other its negation.)
+(`.&&` = `PAnd`, `pnot` = `PNot`; `twice t = t .* lit 2`, a structural
+`tmul`. The qualify/requalify guards are the same predicate; one edge
+takes it, the other its negation.)
 
 
 ## 3. What keiki verifies here (and what it doesn't)
@@ -223,16 +225,17 @@ What stays an **escape** (honestly):
 - The **threshold guard** mixes structural and opaque parts. Ordering
   (`>=`) over a weighted sum of `Money`: three gaps stacked here, in
   closing order. **(a)** the money type (`Word64`) and **(b)** an
-  ordering predicate (`PCmp`) are **now delivered** by EP-41 (done; §5) —
-  so a threshold written as `PCmp CmpGe weightedVolume (lit minVolume)`
-  is a structural comparison over `Word64` that the solver reads exactly,
+  ordering predicate (`PCmp`, the EP-45 operators `.<`/`.<=`/`.>`/`.>=`)
+  are **now delivered** by EP-41 (done; §5) — so a threshold written as
+  `weightedVolume .>= lit minVolume` (a `PCmp CmpGe`) is a structural
+  comparison over `Word64` that the solver reads exactly,
   and a *constant* threshold (e.g. comparing a single tally register
   against a literal bound) is fully verifiable today. **(c)** the
-  `weightedVolume` *operand*, when written with integer `+`/`*`, is now a
-  structural `tadd`/`tmul` the solver reads (EP-43, done; §5) — so a
+  `weightedVolume` *operand*, when written with integer `.+`/`.*`, is now
+  a structural `tadd`/`tmul` the solver reads (EP-43, done; §5) — so a
   *derived-quantity* threshold is fully verifiable too. The shipped
   instance is `Jitsurei.LoanApplication`'s `appRequestedAmount <=
-  appCreditScore * 1000`, now a structural `tmul`. (Only a *fractional*
+  appCreditScore * 1000`, now a structural `.*` (`tmul`). (Only a *fractional*
   weight like `0.5` stays opaque, since `Double`/SReal is out of scope;
   use the doubled-integer form to keep it structural.) And two reads of
   the *same* register in one predicate **now share** a solver variable
@@ -287,13 +290,24 @@ by `Jitsurei.OrderCartSymbolicSpec` and the migrated
 **also delivered** (MasterPlan 12): structural arithmetic terms — EP-43
 (`docs/plans/43-structural-arithmetic-terms-in-the-keiki-term-language.md`),
 so the `weightedVolume` *operand* in §3(c) is visible when written with
-`tadd`/`tmul` — and per-slot translator memoization — EP-42
+`tadd`/`tmul` (the `.+`/`.*` operators) — and per-slot translator
+memoization — EP-42
 (`docs/plans/42-per-slot-and-per-input-field-memoization-in-the-symbolic-translator.md`),
 so repeated reads of one register share a solver variable. With both,
 `Jitsurei.LoanApplicationSymbolicSpec`'s single-valuedness gate is no
 longer pending — it is proven (the self-mutex `approvalGuard ∧
 ¬approvalGuard` is unsatisfiable once the cap is structural and the
 `#appCreditScore` reads are shared).
+
+The guard and term snippets above are written in the EP-45 readable-DSL
+surface — the dot-prefixed operators (`.>=`/`.<=`/`.==`/`.&&`/`.+`/`.*`,
+with `pnot`) and the `Pred`/`Guarded` type synonyms. These are thin
+definitional aliases for the same `PCmp`/`PEq`/`PAnd`/`PNot`/`tadd`/`tmul`
+constructors and the `SymTransducer (HsPred …)` carrier, so the AST — and
+therefore everything this note claims about evaluation, replay, and
+solver visibility — is byte-for-byte unchanged. See
+`docs/plans/45-readable-guard-dsl-dot-prefixed-predicate-operators-and-type-synonyms.md`
+(EP-45) and user-guide §3.4.
 
 
 ## Pointers

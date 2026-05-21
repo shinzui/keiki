@@ -99,12 +99,12 @@ type SubscriptionRegs =
 
 B.from Active do
   B.onCmd inCtorAssignSeat $ \d -> B.do
-    B.slot @"activeSeats" .= TApp1 (+ 1) #activeSeats
+    B.slot @"activeSeats" .= #activeSeats .+ lit 1
     B.emit wireSeatAssigned SeatAssignedFields { user = d.user, at = d.at }
     B.goto Active
 
   B.onCmd inCtorReleaseSeat $ \d -> B.do
-    B.slot @"activeSeats" .= TApp1 (subtract 1) #activeSeats
+    B.slot @"activeSeats" .= #activeSeats .- lit 1
     B.emit wireSeatReleased SeatReleasedFields { user = d.user, at = d.at }
     B.goto Active
 
@@ -134,18 +134,27 @@ replay re-derives it mechanically (no hand-written `apply`), and
 
 ### Honest about the boundary
 
-- The *increment* `TApp1 (+ 1)` is opaque to the solver — but that's the
-  **update**, not a guard. Single-valuedness reasons about *guards*, so
-  an opaque counter update doesn't cost you anything there.
-- Only the **equality** fragment is verifiable. An *ordering* tally guard
-  like `activeSeats < seatLimit` is not structural today; it routes
-  through `TApp` exactly as `Jitsurei.LoanApplication`'s
-  `creditScore >= 650` guard does (`PEq (TApp1 (>= 650) …) (lit True)`).
-  That's a small, well-understood gap — a candidate for a future
-  ordering predicate — and nowhere near the array+quantifier theories a
-  collection-content guard would need. Where you can, phrase the
-  decisive guard as the equality boundary (`== 0`, `== seatLimit`/full)
-  rather than the inequality.
+- The tally **update** `#activeSeats .+ lit 1` is a structural `tadd`
+  (EP-43, the `.+`/`.-` operators), so the counter itself is
+  solver-visible. Even if you wrote it opaquely as `TApp1 (+ 1)` — the
+  form the shipped `Jitsurei.OrderCart` still uses — single-valuedness
+  would be unaffected, because it reasons about *guards*, not updates.
+- **Ordering tally guards are verifiable too, now.** A guard like
+  `#activeSeats .< #seatLimit` is a structural `PCmp` (EP-41, the
+  `.<`/`.<=`/`.>`/`.>=` operators) over the curated numeric types (here
+  `Word16`), so `isSingleValuedSym` and reachability read it exactly.
+  This used to be a gap — ordering tally guards routed through `TApp`,
+  and `Jitsurei.LoanApplication`'s threshold was once
+  `PEq (TApp1 (>= 650) …) (lit True)`; it is now `… .>= lit 650` (see the
+  loan-application tutorial). Equality (`== 0`, `== seatLimit`) was always
+  the easy case and still is.
+- The boundary that *remains*: a guard over **collection contents** —
+  `Map.null holders`, `all released holders`, `Map.size holders` — is an
+  opaque `TApp` the solver learns nothing from; it would need array +
+  quantifier theories. That is exactly what modeling with the grain
+  avoids: collapse the set-wide condition to a scalar and you stay inside
+  the fragment keiki verifies. (A *fractional* weight like `0.5 *` also
+  stays opaque — no `Double`/SReal — so keep tally arithmetic integer.)
 
 **Use a tally when** your guards and outputs only need counts, sums,
 "any/all/none", or a small fixed set of summary flags — and you never
@@ -211,15 +220,17 @@ doesn't, for two reasons:
    isn't holding the set; it's deciding atomically, against the current
    set, whether the next element is allowed. Even with the `Map` in a
    register, the guard you'd write — `Map.size holders < seatLimit` — is
-   a collection-size comparison that keiki cannot verify, so the one
-   invariant you most want checked is the one you've made opaque.
+   opaque not because of the `<` (ordering is structural since EP-41) but
+   because reading `holders` is an opaque `TApp` over a collection — so
+   the one invariant you most want checked is the one you've made opaque.
 2. **The verifiable answer is a coordinator, not a container.** Keep the
    parent as the authority for the set-wide rule, holding the §3 tally,
    and have it *authorize* membership: a reservation step
-   (`ReserveSeat` succeeds only while `activeSeats < seatLimit`, then the
-   child is created) keeps the limit enforced at one point. The
-   limit-boundary guard you most care about — "the subscription is now
-   full", `activeSeats == seatLimit` — is then a verifiable `PEq`.
+   (`ReserveSeat` succeeds only while `#activeSeats .< #seatLimit`, then
+   the child is created) keeps the limit enforced at one point. Because
+   the limit lives in a scalar tally, that reservation guard is itself a
+   structural `PCmp` keiki verifies (EP-41) — as is the boundary guard
+   "the subscription is now full", `#activeSeats .== #seatLimit` (a `PEq`).
 
 So even the hard case resolves to **§3 + §4** (a coordinator with a
 tally, plus per-element aggregates), not to a collection register.
