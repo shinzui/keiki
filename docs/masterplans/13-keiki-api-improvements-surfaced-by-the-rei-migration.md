@@ -135,7 +135,7 @@ invariant and must be designed and prototyped before code.
 | 46 | Document the output-invertibility contract and derived-value modeling patterns | docs/plans/46-document-the-output-invertibility-contract-and-derived-value-modeling-patterns.md | None | None | Complete |
 | 47 | Recompute-and-verify derived event outputs in solveOutput replay | docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md | None | EP-46 | Not Started |
 | 48 | N-ary event-family codec composition and singleton-event support | docs/plans/48-n-ary-event-family-codec-composition-and-singleton-event-support.md | None | None | Not Started |
-| 49 | Builder ergonomics: assignment synonym and register-read label helper | docs/plans/49-builder-ergonomics-assignment-synonym-and-register-read-label-helper.md | None | None | In Progress |
+| 49 | Builder ergonomics: assignment synonym and register-read label helper | docs/plans/49-builder-ergonomics-assignment-synonym-and-register-read-label-helper.md | None | None | Complete |
 | 50 | Mermaid renderer: atlas entry point and structural edge-summary annotations | docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md | None | EP-46 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -231,9 +231,9 @@ the authoritative, detailed version.)
 - [ ] EP-48 M2: Implement the combinator and the `OutTerm`/`Term`/`HsPred`/`Update` re-tag lifts into the summed alphabet.
 - [ ] EP-48 M3: Singleton-event support (`mkWireCtor0`; `deriveWireCtors` accepts zero-arg ctors).
 - [ ] EP-48 M4: Multi-family round-trip test via `solveOutput` + `icName` uniqueness test + docs.
-- [ ] EP-49 M1: `:=` non-breaking synonym for `.=` in `Keiki.Builder` (same fixity), exported + haddock.
-- [ ] EP-49 M2: `reg @"slot"` register-read helper mirroring `slot @"name"`, exported + haddock.
-- [ ] EP-49 M3: Dogfood in one `jitsurei` aggregate; tests; new generic-lens interop guide in `docs/guide/` (new projects: don't import `Data.Generics.Labels ()` globally, so bare `#slot` reads work; helpers are the no-refactor path); doc note in guard-authoring guide.
+- [x] EP-49 M1 (2026-05-21): `=:` non-breaking synonym for `.=` in `Keiki.Builder` (same `infixr 6` fixity), exported + haddock. (Planned `:=` is impossible — colon-prefixed operators are data constructors in Haskell; maintainer chose `=:`.)
+- [x] EP-49 M2 (2026-05-21): `reg @"slot"` register-read helper mirroring `slot @"name"`, exported + haddock.
+- [x] EP-49 M3 (2026-05-21): Dogfood in `jitsurei` LoanApplication (guards→`reg`, one edge→`=:`); `(=:)`≡`(.=)` test; new generic-lens interop guide `docs/guide/generic-lens-and-label-reads.md` (new projects: don't import `Data.Generics.Labels ()` globally; helpers are the no-refactor path); doc notes + glossary rows in user-guide. Full `cabal test all` green.
 - [ ] EP-50 M1: Atlas entry point assembling N labelled diagrams into one document.
 - [ ] EP-50 M2: Opt-in structural edge summary (written-slot names + guard/`Cmp` summary); default unchanged.
 - [ ] EP-50 M3: Golden proving default is byte-identical + golden for annotated/atlas output; docs.
@@ -379,6 +379,23 @@ Discovered during EP-46 implementation (2026-05-21):
   §4 forward pointers all name `docs/plans/47-…`. EP-47 M4 can amend §2 (and the §4/§7.2
   forward pointers) as a localized edit rather than a rewrite, exactly as the integration point
   intends.
+
+Discovered during EP-49 implementation (2026-05-21):
+
+- **The planned `:=` operator is a hard Haskell impossibility — affected EP-49 M1.** GHC
+  reserves operators beginning with a colon (`:`) for *data constructors*, so `(:=) = (.=)`
+  fails to compile (GHC-94426, "Invalid data constructor '(:=)' in type signature"). The
+  master plan's Vision/Decision-Log text and EP-49's body all named `:=`; that glyph cannot be
+  a value-level synonym. The maintainer chose `=:` (a valid `=`-prefixed operator, no
+  `lens`/`aeson` clash, same `infixr 6`/body). **Anywhere this MasterPlan says `:=` (Vision §4
+  bullet, the EP-49 Decision Log entry, the EP-49 M1 progress seed), read `=:`.** `reg` (M2) was
+  unaffected. Lesson for future plans: validate a proposed operator glyph against Haskell's
+  lexical rules (colon-prefix ⇒ constructor) before committing it.
+- **The user-guide `#name` "proj of an IndexN" mislabel (flagged earlier as EP-46↔EP-49 shared
+  territory) was corrected by EP-49, not EP-46.** EP-46 deliberately left user-guide lines
+  ~320–321 untouched; EP-49 M3 rewrote them to "`#name` resolves via `IsLabel s (Term rs ci r)`
+  to a `TReg`" and added the `reg @"name"` form. No conflict occurred between the two plans on
+  that region.
 
 
 ## Decision Log
