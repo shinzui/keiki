@@ -93,6 +93,7 @@ test-suite keiki-test
                         Keiki.CompositionAlternativeSpec
                         Keiki.CompositionFeedback1Spec
                         Keiki.CompositionMultiEventSpec
+                        Keiki.CompositionNarySpec
                         Keiki.CoreApplyEventsSpec
                         Keiki.CoreHiddenInputsGSMSpec
                         Keiki.CoreInFlightSpec

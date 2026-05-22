@@ -105,7 +105,13 @@ This section must always reflect the actual current state of the work.
   "<Ctor>" <Ctor>` with NO `<Short>TermFields` record; narrowed the catch-all `fail` to the
   `Nothing` (multi-arg/record) case so it no longer claims singletons are unsupported. Existing
   single-record events unchanged. `cabal build keiki` clean.
-- [ ] M4: Tests + docs — multi-family round-trip through `solveOutput`; `icName`/`wcName` cross-family uniqueness check + test; singleton-event round-trip; a short docs section in `docs/guide/composition.md`.
+- [x] M4 (2026-05-21): Added `test/Keiki/CompositionNarySpec.hs` (registered in `keiki.cabal`
+  `other-modules` and `test/Spec.hs`) with three groups: multi-family round-trip through
+  `solveOutput` (family 1 and family 2, plus a wrong-arm rejection); `icName`/`wcName`
+  uniqueness (injected names pairwise-distinct + a colliding-alphabet caught by the nub check);
+  and singleton-event round-trip (`deriveWireCtors` over zero-arg ctors + `solveOutput` inverts
+  the singleton event to its command). Added §8.7 "Summing N event families (EP-48)" to
+  `docs/guide/composition.md`. `cabal test all` green (keiki-test 253→260, 0 failures).
 
 
 ## Surprises & Discoveries
@@ -113,7 +119,17 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **The implementation matched the plan with no surprises (2026-05-21).** All six binary lifts
+  were already exported, so the N-ary injectors are pure point-free compositions
+  (`outTerm3At2 = liftROutAlt . liftLOutAlt`, etc.); GHC inferred the intermediate `Either`
+  nests from each helper's top-level signature with no ambiguity and no `unsafeCoerce`. The
+  ghci M1 prototype's prediction (family *k* = `rightX^(k-1) . leftX`) held verbatim.
+- **The name-collision obligation is hard to trigger as a *silent* mis-inversion in a unit
+  test, so it was made executable via the uniqueness check itself.** Rather than fabricate a
+  mis-inverting `unsafeCoerce` scenario, the test asserts that a colliding-name alphabet
+  (two families both naming a ctor `"Dup"`) is *caught* by the `nub`-based uniqueness check
+  (`length names /= length (nub names)`), which is the practical guard a consumer would run.
+  This documents the obligation without depending on undefined-behaviour specifics.
 
 
 ## Decision Log
@@ -189,7 +205,32 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-21): complete, all four milestones landed.** Against the original purpose —
+sum N already-derived event families into one alphabet without a hand-written flat union, and
+derive singleton events — the result is:
+
+- `Keiki.Composition` exports arity-3 coproduct injectors (`wireCtor3At{1,2,3}`,
+  `inCtor3At{1,2,3}`, `outTerm3At{1,2,3}`) composed from the existing binary lifts, with
+  haddock giving the general N recipe; `solveOutput` inverts a summed event in any family back
+  to its command (tested for families 1 and 2).
+- `deriveWireCtors` now derives zero-arg (singleton) events via the new `mkWireCtor0` +
+  `genWire` arm, mirroring the command side's `mkInCtor0`; round-trip tested.
+- The name-uniqueness obligation is stated in haddock and docs and made executable in the test.
+- `docs/guide/composition.md` §8.7 documents the feature.
+
+**Validation:** `cabal test all` green; keiki-test grew 253→260 (the 7 new examples), 0 failures.
+The binary `alternative` and all existing lifts/derivations are untouched; `Keiki.Core` is
+untouched; no new `unsafeCoerce`.
+
+**Gaps / lessons:**
+- The deliverable is fixed-arity-3 convenience wrappers + a documented general recipe, not a
+  type-indexed N-ary witness (recorded decision). This covers the realistic consumer case
+  (Rei's families) cheaply; a consumer with N>3 composes one more `right…` per the documented
+  recipe. If a future consumer repeatedly needs large N, a type-level `Nat`-indexed injector is
+  the natural follow-up — but it was correctly judged more code for no semantic gain here.
+- The string-equality name match in `solveOutput`/`stepOne` remains the one real correctness
+  obligation; this plan enforces it by contract + test, and EP-47 (which reasons about the same
+  site) does not change it — so the two stayed independent as designed.
 
 
 ## Context and Orientation

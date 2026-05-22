@@ -134,7 +134,7 @@ invariant and must be designed and prototyped before code.
 |---|-------|------|-----------|-----------|--------|
 | 46 | Document the output-invertibility contract and derived-value modeling patterns | docs/plans/46-document-the-output-invertibility-contract-and-derived-value-modeling-patterns.md | None | None | Complete |
 | 47 | Recompute-and-verify derived event outputs in solveOutput replay | docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md | None | EP-46 | Not Started |
-| 48 | N-ary event-family codec composition and singleton-event support | docs/plans/48-n-ary-event-family-codec-composition-and-singleton-event-support.md | None | None | In Progress |
+| 48 | N-ary event-family codec composition and singleton-event support | docs/plans/48-n-ary-event-family-codec-composition-and-singleton-event-support.md | None | None | Complete |
 | 49 | Builder ergonomics: assignment synonym and register-read label helper | docs/plans/49-builder-ergonomics-assignment-synonym-and-register-read-label-helper.md | None | None | Complete |
 | 50 | Mermaid renderer: atlas entry point and structural edge-summary annotations | docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md | None | EP-46 | Complete |
 
@@ -227,10 +227,10 @@ the authoritative, detailed version.)
 - [ ] EP-47 M2: Implement recompute-and-verify in `solveOutput`/`gatherInpEntries`; update `checkHiddenInputs`.
 - [ ] EP-47 M3: Round-trip, determinism-preservation, and negative (hidden-input still fails) tests.
 - [ ] EP-47 M4: Amend the EP-46 contract page + user-guide to the relaxed contract; close.
-- [ ] EP-48 M1: N-ary `WireCtor`-sum combinator design + types (generalizing `leftWireCtor`/`rightWireCtor`).
-- [ ] EP-48 M2: Implement the combinator and the `OutTerm`/`Term`/`HsPred`/`Update` re-tag lifts into the summed alphabet.
-- [ ] EP-48 M3: Singleton-event support (`mkWireCtor0`; `deriveWireCtors` accepts zero-arg ctors).
-- [ ] EP-48 M4: Multi-family round-trip test via `solveOutput` + `icName` uniqueness test + docs.
+- [x] EP-48 M1 (2026-05-21): N-ary `WireCtor`-sum design confirmed via ghci prototype — right-nested `Either`, family *k* = `rightX^(k-1) . leftX`, composed from the already-exported binary lifts. Decision: ship arity-3 wrappers + general recipe, no type-indexed witness.
+- [x] EP-48 M2 (2026-05-21): Implemented arity-3 injectors (`wireCtor3At{1,2,3}`/`inCtor3At{1,2,3}`/`outTerm3At{1,2,3}`) in `src/Keiki/Composition.hs`, additively (binary `alternative`/lifts untouched; `Keiki.Core` untouched; no new `unsafeCoerce`).
+- [x] EP-48 M3 (2026-05-21): Singleton-event support — `mkWireCtor0` in `src/Keiki/Generics.hs` + a `Just Nothing` arm in `genWire`; `deriveWireCtors` accepts zero-arg ctors. Existing derivations unchanged.
+- [x] EP-48 M4 (2026-05-21): `test/Keiki/CompositionNarySpec.hs` (multi-family round-trip via `solveOutput` + `icName`/`wcName` uniqueness + singleton round-trip; registered in cabal + Spec.hs) + `docs/guide/composition.md` §8.7. keiki-test 253→260, 0 failures.
 - [x] EP-49 M1 (2026-05-21): `=:` non-breaking synonym for `.=` in `Keiki.Builder` (same `infixr 6` fixity), exported + haddock. (Planned `:=` is impossible — colon-prefixed operators are data constructors in Haskell; maintainer chose `=:`.)
 - [x] EP-49 M2 (2026-05-21): `reg @"slot"` register-read helper mirroring `slot @"name"`, exported + haddock.
 - [x] EP-49 M3 (2026-05-21): Dogfood in `jitsurei` LoanApplication (guards→`reg`, one edge→`=:`); `(=:)`≡`(.=)` test; new generic-lens interop guide `docs/guide/generic-lens-and-label-reads.md` (new projects: don't import `Data.Generics.Labels ()` globally; helpers are the no-refactor path); doc notes + glossary rows in user-guide. Full `cabal test all` green.
@@ -411,6 +411,20 @@ Discovered during EP-50 implementation (2026-05-21):
   `docs/guide/deriving-lifecycle-transitions.md` that EP-46 cross-links remains valid. EP-50
   also repointed the note EP-46 left there (which forward-referenced the EP-50 *plan*) to the
   now-shipped `docs/guide/mermaid-rendering.md`.
+
+Discovered during EP-48 implementation (2026-05-21):
+
+- **All six binary `Either` lifts were already exported from `Keiki.Composition`**, so the
+  N-ary codec story needed no new export of primitives — the arity-3 injectors are pure
+  point-free compositions of the shipped lifts, GHC inferring the `Either` nests from each
+  helper's signature with no ambiguity and no new `unsafeCoerce`. The chosen deliverable is
+  fixed-arity-3 wrappers + a documented general recipe (family *k* = `rightX^(k-1) . leftX`),
+  not a type-indexed witness — recorded in the EP-48 Decision Log as more code for no semantic
+  gain at the realistic arities.
+- **The string-equality name-match obligation (shared with EP-47) stayed independent.** EP-48
+  enforces `icName`/`wcName` cross-family uniqueness by contract + test (a colliding alphabet
+  is caught by a `nub` check); EP-47 only *reasons about* the same `stepOne` site and does not
+  change it. The two plans needed no coordination, as the Integration Points predicted.
 
 
 ## Decision Log

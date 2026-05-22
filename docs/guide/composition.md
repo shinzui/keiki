@@ -402,6 +402,68 @@ reconstitute siblings [Left (EmailSent _), Right (Pong _)] `shouldSatisfy` isJus
 
 ---
 
+### 8.7 Summing N event families (EP-48)
+
+`alternative` sums *two transducers*. Sometimes you instead have one event
+stream that legitimately carries several already-derived **event families** —
+several closed event sums, each with its own `deriveWireCtors`-produced codec —
+and you want one output alphabet over all of them *without* hand-writing a flat
+union and losing the per-family derivation.
+
+The summed alphabet is the right-nested `Either` chain. For three families
+`co1`, `co2`, `co3` it is `Either co1 (Either co2 co3)` (and the analogous nest
+of `Either ci_k` on the input side). `Keiki.Composition` ships arity-3 injectors
+that re-home one family's `WireCtor` / `InCtor` / whole edge `OutTerm` into the
+sum:
+
+```haskell
+wireCtor3At1 :: WireCtor co1 fs -> WireCtor (Either co1 (Either co2 co3)) fs
+wireCtor3At2 :: WireCtor co2 fs -> WireCtor (Either co1 (Either co2 co3)) fs
+wireCtor3At3 :: WireCtor co3 fs -> WireCtor (Either co1 (Either co2 co3)) fs
+-- and inCtor3At{1,2,3} (input side) and outTerm3At{1,2,3} (whole OPack)
+```
+
+Each is just the shipped binary lifters (`leftWireCtor`/`rightWireCtor`,
+`leftInCtor`/`rightInCtor`, `liftLOutAlt`/`liftROutAlt` — the "Either lifters"
+that `alternative` uses internally) composed the right number of times. An edge
+authored against family `k` participates in a transducer over the summed
+alphabet via `outTerm3At<k>`, and `solveOutput` inverts the summed event back to
+the (injected) command:
+
+```haskell
+type SumCmd = Either ACmd (Either BCmd CCmd)
+type SumEvt = Either AEvt (Either BEvt CEvt)
+
+sumOutB :: OutTerm Regs SumCmd SumEvt
+sumOutB = outTerm3At2 (pack inCtorBFlip wireBFlipped (OFCons (inpBFlip #bVal) OFNil))
+
+-- solveOutput sumOutB regs (Right (Left (BFlipped (BData 7))))
+--   == Just (Right (Left (BFlip (BData 7))))
+```
+
+**Beyond three families**, compose one more `right…` per extra family: family
+`k` of `N` injects via `right…` applied `k-1` times then `left…` once, and the
+last family `N` via `right…` applied `N-1` times (no trailing `left…`, since the
+innermost arm is the bare family type).
+
+**Name-uniqueness obligation.** `solveOutput` matches input constructors by
+`icName` *string equality* (and groups outputs by `wcName`). When several
+families are summed, their constructor-name strings **must be pairwise
+distinct** — otherwise inversion can silently recover the wrong command. The
+`Either` wrapper keeps families structurally apart at the match step, but the
+names are the human-facing contract; keep them unique across summed families.
+
+**Singleton (payload-free) events.** `deriveWireCtors` also accepts a
+zero-argument event constructor (e.g. `data DoorEvent = Opened | Closed`),
+producing a `WireCtor … ()` via `mkWireCtor0` — the event-side twin of the
+command-side `mkInCtor0`. The constructor's event sum must derive `Eq` (they all
+do in practice).
+
+For deeper background see `docs/guide/multi-event-commands.md` and
+`docs/research/composition-combinators-design.md`.
+
+---
+
 ## 9. `feedback1` — single-step aggregate ↔ policy
 
 ### 9.1 The shape
