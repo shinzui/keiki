@@ -132,7 +132,7 @@ invariant and must be designed and prototyped before code.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 46 | Document the output-invertibility contract and derived-value modeling patterns | docs/plans/46-document-the-output-invertibility-contract-and-derived-value-modeling-patterns.md | None | None | In Progress |
+| 46 | Document the output-invertibility contract and derived-value modeling patterns | docs/plans/46-document-the-output-invertibility-contract-and-derived-value-modeling-patterns.md | None | None | Complete |
 | 47 | Recompute-and-verify derived event outputs in solveOutput replay | docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md | None | EP-46 | Not Started |
 | 48 | N-ary event-family codec composition and singleton-event support | docs/plans/48-n-ary-event-family-codec-composition-and-singleton-event-support.md | None | None | Not Started |
 | 49 | Builder ergonomics: assignment synonym and register-read label helper | docs/plans/49-builder-ergonomics-assignment-synonym-and-register-read-label-helper.md | None | None | Not Started |
@@ -220,9 +220,9 @@ Track milestone-level progress across all child plans. Each entry names the chil
 the milestone. (Milestones are seeded top-down here for coordination; each child plan owns
 the authoritative, detailed version.)
 
-- [ ] EP-46 M1: New `docs/guide/output-invertibility.md` stating the exact accept/reject term list and the `Nothing` (not-an-exception) semantics.
-- [ ] EP-46 M2: Worked "derived value → do X" recipes (audit field via `TReg` already round-trips; computed total via mirror-command today + forward pointer to EP-47; the Direction-A mirror workaround).
-- [ ] EP-46 M3: Cross-link sweep + modeling redirects — #3 general structural-guard guidance (bounds→`PCmp`, multi-way branching→disjoint edges, computed operands→`tadd`/`tsub`/`tmul`) with the note that the validated Rei residual is collection-register *update* tuple-threading, not guards; #2a single-record idiom (source the dropped id from a register).
+- [x] EP-46 M1 (2026-05-21): New `docs/guide/output-invertibility.md` stating the exact accept/reject term list and the `Nothing` (not-an-exception) semantics; also the all-or-nothing-per-edge failure, output-only scoping, and `checkHiddenInputs` net.
+- [x] EP-46 M2 (2026-05-21): Worked "derived value → do X" recipes (audit field via `TReg` already round-trips; computed total via mirror-command today + forward pointer to EP-47; the Direction-A mirror workaround).
+- [x] EP-46 M3 (2026-05-21): Cross-link sweep + modeling redirects — #3 general structural-guard guidance (bounds→`PCmp`, multi-way branching→disjoint edges, computed operands→`tadd`/`tsub`/`tmul`) with the note that the validated Rei residual is collection-register *update* tuple-threading, not guards; #2a single-record idiom (source the dropped id from a register). Plus corrected the stale `solveOutput` "build-time analysis" label in both user-guide glossary occurrences.
 - [ ] EP-47 M1 (design milestone + ratification gate): Research note + prototype + written analysis/recommendation proving recompute-and-verify preserves "event determines command"; STOP for maintainer go/no-go before M2 (no-go = keep #1 docs-only, EP-46 carries it).
 - [ ] EP-47 M2: Implement recompute-and-verify in `solveOutput`/`gatherInpEntries`; update `checkHiddenInputs`.
 - [ ] EP-47 M3: Round-trip, determinism-preservation, and negative (hidden-input still fails) tests.
@@ -361,6 +361,24 @@ against live source in `../rei-project/rei.keiro-migration` and `../keiro`:
 - **#6 confirmed positive.** Rei split Intention into small scalar aggregates (root keeps two
   scalar registers, no collection registers); the atomic dormancy auto-wake is a genuine
   multi-event edge replayed via keiki's `InFlight` machinery, proven by `RootKeiroSpec`.
+
+Discovered during EP-46 implementation (2026-05-21):
+
+- **The `solveOutput` "build-time analysis" mislabel appears TWICE in `docs/guide/user-guide.md`,
+  not once — affects EP-49.** The earlier Surprises note flagged the §10.3 glossary entry
+  (line 756). EP-46 M3 found a *second* identical mislabel in §10.7 "Naming origins" (line 885,
+  "The build-time analysis that *solves* for the input…") and fixed both: §10.3 now reads "The
+  *runtime* inverter on the replay path (called by `applyEvent`/`applyEventStreaming`/
+  `reconstitute`)…" and §10.7 "The *runtime* inverter that *solves* for the input…".
+  `checkHiddenInputs` keeps its (correct) "build-time analysis" label. EP-49 M3 also edits this
+  glossary region (the `#name`/`IndexN` read description near lines 320–321 that it owns) — it
+  must not re-introduce the old `solveOutput` wording. EP-46 deliberately left lines 320–321
+  untouched so the two plans do not conflict.
+- **EP-47's amendment surface is set up as planned.** The new page's "What inverts today" (§2)
+  opens with an explicit "as of this writing; EP-47 will relax it" admonition, and the §7.2 /
+  §4 forward pointers all name `docs/plans/47-…`. EP-47 M4 can amend §2 (and the §4/§7.2
+  forward pointers) as a localized edit rather than a rewrite, exactly as the integration point
+  intends.
 
 
 ## Decision Log
