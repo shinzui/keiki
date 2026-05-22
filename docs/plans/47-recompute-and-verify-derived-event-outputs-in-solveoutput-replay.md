@@ -117,11 +117,18 @@ This section must always reflect the actual current state of the work.
   no-collision), written WITHOUT touching `src/Keiki/Core.hs`. Recommendation: **GO** via
   whole-event `Eq co`. **The plan STOPS here per the gate; M2–M4 do not begin until a maintainer
   records a go decision in the Decision Log.** (`[~]` = deliverables done, decision pending.)
-- [ ] **M2.** Implement recompute-and-verify in `solveOutput`/`gatherInpEntries`/`stepOne`
-  in `src/Keiki/Core.hs`, threading the register file and the observed field values through
-  so derived fields take a recompute-verify path while invertible fields take the existing
-  fast path; update `checkHiddenInputs` for the precision refinement (redundant-derived
-  admitted, hidden-input still errors). Keep the change additive.
+- [x] **M2 (2026-05-21).** Implemented recompute-and-verify in `src/Keiki/Core.hs`:
+  `gatherInpEntries`/`stepOne` now *skip* derived fields (`TApp1`/`TApp2`/`TArith` → `Just []`)
+  instead of failing; `solveOutput` gained `Eq co`, recovers the command from invertible fields,
+  then verifies via a new `recomputeDerivedFields` helper (recompute only derived fields, keep
+  observed invertible values) and `wcBuild ctor … == co`. `checkHiddenInputs`'s `visitedSlotsOf`
+  (and the public twin `detectMissingInCtorFields`) refined to the *invertible-visited* set
+  (top-level `TInpCtorField` only; no descent into derived terms), so a slot read only inside a
+  derived field is correctly reported missing. `Eq co` propagated to `applyEvent` and
+  `outputAcceptor` (`toDecider`/`reconstitute`/`applyEvents`/`applyEventStreaming` already had
+  it). Additive: all-invertible fast path byte-identical; `cabal test all` green
+  (keiki-test 265, jitsurei 96, codec 40+7, 0 failures). The whole-event `evalOut` form was
+  corrected to derived-only recompute — see Surprises.
 - [ ] **M3.** Tests: (i) a derived-output aggregate round-tripping end-to-end through
   `applyEvents`/`reconstitute`; (ii) a property/enumeration test that "event determines
   command" still holds (two distinct commands cannot produce the same observed event on an
@@ -152,6 +159,25 @@ implementation. Provide concise evidence.
   pattern, and is *free* downstream (keiro already requires `Eq co`). So the plan's documented
   fallback is in fact the cleaner primary mechanism. Captured in the research note §3 and folded
   into the go recommendation. This is exactly the kind of correction the M1 gate exists to find.
+- **M2 finding: whole-event `evalOut … == co` OVER-verifies invertible `TReg` fields — corrected
+  to recompute *only* derived fields (2026-05-21).** The M1 note recommended verifying via
+  `evalOut o regs ci == co` (recompute the *whole* output, compare). Implementing that broke two
+  existing tests: (1) `DeciderSpec` "Settled Confirmed ⊢ AccountDeleted → Settled Deleted"
+  replays from a *synthetic* state with the **initial (empty) register file**; the
+  `AccountDeleted` edge emits `email = #email` (a `TReg` audit read), so whole-event recompute
+  produced `email = ""` ≠ the observed `"x@y"` and rejected a replay that must succeed; and
+  (2) `ProfunctorSpec` "raises a poisoned-icBuild error …" — whole-event `evalOut` *forces* the
+  recovered command `ci`, firing `lmapCi`'s deliberately-poisoned `icBuild` *inside* `solveOutput`
+  instead of lazily at the call site. Both are real semantic regressions: whole-event verify
+  re-checks `TReg`/`TLit`/`TInpCtorField` fields that the contract says are *not* verified
+  (EP-46 documents that a `TReg` audit field "already round-trips"), and it eagerly forces `ci`.
+  **Fix:** a new helper `recomputeDerivedFields` rebuilds the observed field tuple recomputing
+  *only* `TApp1`/`TApp2`/`TArith` fields and keeping invertible fields at their observed values;
+  `solveOutput` compares `wcBuild ctor (recomputeDerivedFields …) == co`. This verifies exactly
+  the derived fields, never the invertible ones, does not force `ci` for an all-invertible edge,
+  and still uses only `Eq co` (the maintainer-approved constraint — unchanged). All suites green
+  (keiki-test 265, jitsurei 96, codec 40+7, 0 failures). The research note's §1/§3 mechanism
+  description is amended accordingly (see its "M2 refinement" addendum).
 - **`solveOutput` already receives the pre-update register file (param `_regs`).** Confirmed: the
   recompute path needs *no* signature change — M2 just starts using the argument already in
   scope, threaded from the `applyEvent`/`applyEventStreaming` call sites that already pass the
@@ -235,8 +261,17 @@ Record every decision made while working on the plan.
   (`applyEvents` via `writeSnapshotIfNeeded`, `Command.hs` ~line 440).
   Date: 2026-05-21
 
-- Decision: **M1 ratification gate reached (2026-05-21) — recommendation GO, awaiting maintainer
-  decision.** The research note, prototype (5/5 green), and analysis are delivered. The M1
+- Decision: **GO — maintainer approved the relaxation, whole-event `Eq co` mechanism
+  (2026-05-21).** The maintainer ratified the M1 recommendation: proceed with M2–M4 implementing
+  recompute-and-verify via whole-event `Eq co` (recover the command from the invertible fields,
+  then `evalOut … == co`). Consequence accepted: `solveOutput` gains an `Eq co` constraint, which
+  propagates to its callers (`applyEvent` and any forward of it that lacked it); this is an added
+  constraint, not a weakened one, and every event type in the codebase already derives `Eq`
+  (keiro requires it). M2 begins now.
+  Date: 2026-05-21
+
+- Decision: **M1 ratification gate reached (2026-05-21) — recommendation GO, decision now
+  recorded above (GO).** The research note, prototype (5/5 green), and analysis are delivered. The M1
   investigation produced one substantive change to an earlier decision: the equality check should
   use **whole-event `Eq co`** (recover from invertible fields, then `evalOut … == co`), *not*
   field-level `Eq` — because field-level would require an invasive `Eq r` on the `TArith`/`TApp`

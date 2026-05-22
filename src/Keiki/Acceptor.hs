@@ -121,7 +121,7 @@ inputAcceptor t = Acceptor
 -- @(s, regs)@. The output acceptor /is/ the @evolve@ acceptor the
 -- foundations chapter derives.
 outputAcceptor
-  :: BoolAlg phi (RegFile rs, ci)
+  :: (BoolAlg phi (RegFile rs, ci), Eq co)
   => SymTransducer phi rs s ci co
   -> Acceptor co (s, RegFile rs)
 outputAcceptor t = Acceptor

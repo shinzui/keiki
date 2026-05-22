@@ -289,3 +289,50 @@ plus the prototype stand as the record for revisiting it later.
 
 **This is the ratification gate. M2 does not begin until a maintainer records a go decision in
 EP-47's Decision Log.**
+
+
+## M2 refinement (2026-05-21): recompute *only* derived fields, not the whole output
+
+The gate was approved **GO — whole-event `Eq co`**. Implementing the literal "recompute the
+whole output forward and compare (`evalOut o regs ci == co`)" form revealed it is **too
+strict**: it re-verifies the *invertible* fields too, which the contract says are not verified.
+Two concrete breakages surfaced (both real regressions, not test bugs):
+
+1. **`TReg` audit fields.** An edge that emits `email = #email` (a register read) must round-trip
+   even when replay starts from a state whose registers are not yet populated — EP-46 documents
+   exactly this ("a `TReg` audit field already round-trips"). Whole-event recompute reads the
+   register file and compares the recomputed value to the observed event field, so it rejects
+   such a replay when the register is empty (e.g. a streaming step from a synthetic mid-state).
+2. **Forcing `ci`.** `evalOut` forces the recovered command `ci`; for an `lmapCi`-rewritten
+   edge whose `icBuild` is deliberately poisoned, the poison then fires *inside* `solveOutput`
+   rather than lazily at the call site, changing observable behavior.
+
+The correction keeps the **same `Eq co` constraint** but verifies at field granularity: rebuild
+the observed field tuple recomputing **only** the derived (`TApp1`/`TApp2`/`TArith`) fields and
+leaving every invertible (`TLit`/`TReg`/`TInpCtorField`) field at its observed value, then
+compare the rebuilt event to the observed one:
+
+```haskell
+solveOutput (OPack ic@InCtor{} ctor fields) regs co = do
+  fs_obs  <- wcMatch ctor co
+  entries <- gatherInpEntries fields fs_obs ic          -- skips derived fields
+  rf      <- assemble entries
+  let ci      = icBuild ic rf
+      rebuilt = wcBuild ctor (recomputeDerivedFields fields fs_obs regs ci)
+  if rebuilt == co then Just ci else Nothing
+
+recomputeDerivedFields :: OutFields rs ci fs -> fs -> RegFile rs -> ci -> fs
+-- recompute TApp1/TApp2/TArith via evalTerm; keep observed value otherwise.
+```
+
+This is still "whole-event `Eq co`" in the sense that the comparison is on `co` and the
+constraint is `Eq co` (so §3's non-invasiveness argument and the keiro cost note are unchanged),
+but it verifies *exactly* the derived fields — equivalent to the field-level intent of §1's
+clause (b), without the over-verification. Because invertible fields are copied from the
+observed tuple, an all-invertible edge rebuilds the observed event by construction (a no-op
+check) and never forces `ci`, so both breakages above disappear and the fast path is unchanged.
+
+The §1 contract and the §2 proof are unaffected: command recovery still reads only the
+invertible fields (clause a); derived fields still only *verify* (clause b). Sections 1 and 3's
+prose that says "recompute the whole output / `evalOut … == co`" should be read as "rebuild the
+event recomputing only the derived fields", per this addendum.

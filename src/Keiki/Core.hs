@@ -880,7 +880,7 @@ step t (s, regs) ci = case delta t s regs ci of
 -- events in the chain must be matched against the expected tail of
 -- a prior edge's output list) use 'applyEventStreaming'.
 applyEvent
-  :: BoolAlg phi (RegFile rs, ci)
+  :: (BoolAlg phi (RegFile rs, ci), Eq co)
   => SymTransducer phi rs s ci co
   -> s -> RegFile rs -> co -> Maybe (s, RegFile rs)
 applyEvent t s regs co =
@@ -1033,24 +1033,90 @@ applyEvents t (s0, regs0) cos_ = go (Settled s0) regs0 cos_
 
 -- | Recover the input that produced a given output by walking
 -- 'OutFields' structurally against the input constructor named by the
--- 'OPack'. Gather '(Index, value)' pairs from every 'TInpCtorField'
--- read whose 'InCtor' matches by 'icName'; assemble a 'RegFile'
--- covering every slot of the 'InCtor'; call 'icBuild'.
-solveOutput :: OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
-solveOutput (OPack ic@InCtor{} ctor fields) _regs co = do
+-- 'OPack'. Gather '(Index, value)' pairs from every top-level
+-- 'TInpCtorField' read whose 'InCtor' matches by 'icName'; assemble a
+-- 'RegFile' covering every slot of the 'InCtor'; call 'icBuild'.
+--
+-- == Recompute-and-verify (EP-47)
+--
+-- The command is recovered from the /invertible/ fields alone
+-- (@TLit@\/@TReg@\/@TInpCtorField@); /derived/ fields (@TArith@\/@TApp1@\/
+-- @TApp2@) are skipped during recovery by 'gatherInpEntries'. After the
+-- command is rebuilt, the observed field tuple is rebuilt with each
+-- /derived/ field recomputed forward (via 'recomputeDerivedFields') and
+-- the resulting event is required to equal the observed event, so each
+-- derived field is /verified/ rather than trusted — a tampered derived
+-- value is rejected. Invertible fields are kept at their observed values
+-- and are /not/ re-verified (so a @TReg@ audit field still round-trips
+-- even when replay starts from a state whose registers are not yet
+-- populated). This generalizes, at field granularity, the
+-- forward-recompute-and-@Eq@-match that 'applyEventStreaming' already does
+-- for multi-event tails (see @docs/research/recompute-and-verify-derived-outputs.md@).
+--
+-- For an all-invertible edge no field is recomputed, so the rebuilt event
+-- equals the observed event by construction (the check is a no-op) and the
+-- result is identical to the pre-EP-47 behavior. The build-time net
+-- 'checkHiddenInputs' still rejects a schema whose command slot is read
+-- only inside a derived field (a hidden input), so the command remains
+-- recoverable from invertible fields alone — "the event determines the
+-- command" is preserved.
+solveOutput :: Eq co => OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
+solveOutput (OPack ic@InCtor{} ctor fields) regs co = do
   fs_obs  <- wcMatch ctor co
   entries <- gatherInpEntries fields fs_obs ic
   rf      <- assemble entries
-  pure (icBuild ic rf)
+  let ci      = icBuild ic rf
+      -- Rebuild the observed field tuple, recomputing ONLY the derived
+      -- fields (TApp/TArith) forward; invertible fields keep their observed
+      -- value. Comparing the rebuilt event to the observed one then verifies
+      -- exactly the derived fields — never the invertible ones, so a
+      -- register-read audit field is not re-checked against state and the
+      -- command thunk is not forced for an all-invertible edge.
+      rebuilt = wcBuild ctor (recomputeDerivedFields fields fs_obs regs ci)
+  if rebuilt == co
+    then Just ci
+    else Nothing
+
+
+-- | Rebuild an observed output-field tuple, recomputing each /derived/
+-- field ('TApp1'\/'TApp2'\/'TArith') forward via 'evalTerm' against the
+-- recovered command and the pre-update registers, while leaving every
+-- /invertible/ field ('TLit'\/'TReg'\/'TInpCtorField') at its observed
+-- value. Used by 'solveOutput' (EP-47 recompute-and-verify): comparing the
+-- rebuilt event to the observed one (via 'Eq' on @co@) then verifies
+-- exactly the derived fields. Invertible fields are deliberately /not/
+-- recomputed, so (a) a register-read audit field is not re-verified against
+-- the current register file — preserving the "@TReg@ round-trips" contract
+-- even when replay starts from a state whose registers are not yet
+-- populated — and (b) the recovered-command thunk is not forced for an
+-- all-invertible edge.
+recomputeDerivedFields
+  :: forall rs ci fs. OutFields rs ci fs -> fs -> RegFile rs -> ci -> fs
+recomputeDerivedFields OFNil           ()        _    _  = ()
+recomputeDerivedFields (OFCons t rest) (v, vs)   regs ci =
+  (recomputeOne t v, recomputeDerivedFields rest vs regs ci)
+  where
+    recomputeOne :: forall f. Term rs ci f -> f -> f
+    recomputeOne term@(TApp1 _ _)    _observed = evalTerm term regs ci
+    recomputeOne term@(TApp2 _ _ _)  _observed = evalTerm term regs ci
+    recomputeOne term@(TArith _ _ _) _observed = evalTerm term regs ci
+    recomputeOne _                   observed  = observed
 
 
 -- | Walk an 'OutFields' HList in lockstep with an observed-fields
--- tuple, gathering '(Index, value)' pairs for the named 'InCtor'.
--- Returns 'Nothing' on a malformed edge (a 'TInpCtorField' for a
--- different 'InCtor', or any opaque term such as 'TApp1' or
--- 'TApp2'). Returns @'Just' []@ for an 'OutFields' that carries no
--- input projection; 'assemble []' for an empty 'ifs' is 'Just RNil',
--- so empty-payload input constructors recover trivially.
+-- tuple, gathering '(Index, value)' pairs for the named 'InCtor' from
+-- the /invertible/ fields. 'TLit'\/'TReg' contribute nothing; a
+-- 'TInpCtorField' for the matching 'InCtor' contributes its
+-- '(Index, value)' pair. Since EP-47 the /derived/ fields
+-- ('TArith'\/'TApp1'\/'TApp2') are /skipped/ (they contribute no
+-- entries) rather than aborting the walk — 'solveOutput' verifies them
+-- forward afterwards. Returns 'Nothing' only on a genuinely malformed
+-- edge: a 'TInpCtorField' naming a /different/ 'InCtor'. 'assemble []'
+-- for an empty 'ifs' is 'Just RNil', so empty-payload input
+-- constructors recover trivially; and if a derived field is the /only/
+-- place a command slot is read, the skipped slot leaves 'assemble'
+-- short and 'solveOutput' fails — exactly the hidden-input case that
+-- 'checkHiddenInputs' flags at build time.
 gatherInpEntries
   :: forall rs ci ifs fs.
      OutFields rs ci fs -> fs -> InCtor ci ifs -> Maybe [ByIndex ifs]
@@ -1066,9 +1132,12 @@ gatherInpEntries (OFCons t rest) (v, fs)   ic  = do
     stepOne (TInpCtorField ic2 ix)    val  ic1
       | icName ic1 == icName ic2 = Just [ByIndex (unsafeCoerce ix) val]
       | otherwise                = Nothing
-    stepOne (TApp1 _ _)               _val _   = Nothing
-    stepOne (TApp2 _ _ _)             _val _   = Nothing
-    stepOne (TArith _ _ _)            _val _   = Nothing
+    -- Derived fields are skipped here and verified forward by
+    -- 'solveOutput' (EP-47 recompute-and-verify); they contribute no
+    -- command information of their own.
+    stepOne (TApp1 _ _)               _val _   = Just []
+    stepOne (TApp2 _ _ _)             _val _   = Just []
+    stepOne (TArith _ _ _)            _val _   = Just []
 
 
 -- | A diagnostic produced by 'checkHiddenInputs'.
@@ -1157,7 +1226,12 @@ checkHiddenInputs t =
           | otherwise = (n, sl, v) : extend rest icN allSl visited
 
     -- | Slots of an OPack's named 'InCtor' that the supplied
-    -- 'OutFields' walk visits via 'TInpCtorField'.
+    -- 'OutFields' walk recovers via a /top-level/ 'TInpCtorField' — the
+    -- "invertible-visited" set. Since EP-47 this deliberately does NOT
+    -- descend into derived ('TApp1'\/'TApp2'\/'TArith') terms: a slot read
+    -- only inside a derived field is a /hidden input/ ('solveOutput'
+    -- recovers the command from invertible fields alone), so it must be
+    -- reported missing rather than counted as covered.
     visitedSlotsOf
       :: forall ifs fs.
          InCtor ci ifs -> OutFields rs ci fs -> [String]
@@ -1174,10 +1248,7 @@ checkHiddenInputs t =
           | icName ic2 == icName ic =
               [allSlots !! indexPos ix]
           | otherwise = []
-        goTerm (TApp1 _ tt')  = goTerm tt'
-        goTerm (TApp2 _ a b)  = goTerm a ++ goTerm b
-        goTerm (TArith _ a b) = goTerm a ++ goTerm b
-        goTerm _              = []
+        goTerm _              = []   -- do not descend into derived terms
 
         indexPos :: forall rs' r. Index rs' r -> Int
         indexPos ZIdx     = 0
@@ -1266,10 +1337,10 @@ detectMissingInCtorFields ic@InCtor{} fields =
       | icName ic2 == icName ic =
           [allSlots !! indexPos ix]
       | otherwise = []
-    goTerm (TApp1 _ t')   = goTerm t'
-    goTerm (TApp2 _ a b)  = goTerm a ++ goTerm b
-    goTerm (TArith _ a b) = goTerm a ++ goTerm b
-    goTerm _              = []
+    goTerm _              = []   -- EP-47: top-level reads only; derived
+                                 -- (TApp/TArith) terms are not descended
+                                 -- into, so a slot read only inside one is
+                                 -- reported missing (a hidden input).
 
     indexPos :: forall rs' r. Index rs' r -> Int
     indexPos ZIdx     = 0
