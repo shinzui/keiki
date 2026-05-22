@@ -98,7 +98,7 @@ import Keiki.Core
 import qualified Keiki.Builder as B
 import Keiki.Builder ((.=))
 import Keiki.Generics (emptyRegFile)
-import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
+import Keiki.Generics.TH (deriveAggregate)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
 
 -- | EP-22 originally declared SBV-bound analyses out of scope for the
@@ -314,18 +314,13 @@ emptyOrderRegs = emptyRegFile
 
 -- * Per-constructor input projections + guards (TH-derived) --------------
 
-$(deriveAggregateCtors ''OrderCmd ''OrderCartRegs
-    [ ("AddItem",        "AddItem")
-    , ("RemoveItem",     "RemoveItem")
-    , ("ApplyDiscount",  "ApplyDiscount")
-    , ("Reserve",        "Reserve")
-    , ("ConfirmPayment", "ConfirmPayment")
-    , ("Ship",           "Ship")
-    , ("Deliver",        "Deliver")
-    , ("Cancel",         "Cancel")
-    , ("RequestRefund",  "RequestRefund")
-    , ("ProcessRefund",  "ProcessRefund")
-    ])
+-- One fused splice derives every command-side @inCtor@\/@inp@\/@is@
+-- declaration and every event-side @wire@ declaration in one go,
+-- defaulting each short-name suffix to the constructor's own name
+-- (which equals the short name everywhere in this aggregate). The
+-- event-side wire constructors it emits are documented under the
+-- "Wire constructors for events" heading below.
+$(deriveAggregate ''OrderCmd ''OrderCartRegs ''OrderEvent)
 
 
 -- | Enumerate the ten 'InCtor' values of 'OrderCmd' so the symbolic
@@ -351,18 +346,10 @@ instance KnownInCtors OrderCmd where
 
 -- * Wire constructors for events (TH-derived) ----------------------------
 
-$(deriveWireCtors ''OrderEvent
-    [ ("ItemAdded",        "ItemAdded")
-    , ("ItemRemoved",      "ItemRemoved")
-    , ("DiscountApplied",  "DiscountApplied")
-    , ("OrderReserved",    "OrderReserved")
-    , ("PaymentConfirmed", "PaymentConfirmed")
-    , ("OrderShipped",     "OrderShipped")
-    , ("OrderDelivered",   "OrderDelivered")
-    , ("OrderCancelled",   "OrderCancelled")
-    , ("RefundRequested",  "RefundRequested")
-    , ("OrderRefunded",    "OrderRefunded")
-    ])
+-- The @wireItemAdded@, @wireItemRemoved@, ... values (plus each
+-- @<Ctor>TermFields@ record and its 'ToOutFields' instance) are emitted
+-- by the fused 'deriveAggregate' splice above from 'OrderEvent', so no
+-- separate event-side splice is needed here.
 
 
 -- * The transducer ---------------------------------------------------------

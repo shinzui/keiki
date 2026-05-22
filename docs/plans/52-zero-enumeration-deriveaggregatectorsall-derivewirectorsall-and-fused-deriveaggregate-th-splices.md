@@ -78,8 +78,8 @@ This section must always reflect the actual current state of the work.
 - [x] M2: Add fused `deriveAggregate` to `src/Keiki/Generics/TH.hs`, export it, and document it in the module Haddock header. (2026-05-22)
 - [x] M2: Add toy `FusedCmd`/`FusedRegs`/`FusedEvent` types and a `deriveAggregate` splice plus assertions to `test/Keiki/Generics/THSpec.hs`. (2026-05-22)
 - [x] M2: `cabal test keiki-test` passes including the fused example. (2026-05-22 — 278 examples, 0 failures; the 3 fused examples pass under `--match "deriveAggregate (fused"`. No compiler warnings.)
-- [ ] M3: Migrate `jitsurei/src/Jitsurei/OrderCart.hs` to the single fused `deriveAggregate` splice and update its import list.
-- [ ] M3: `cabal test all` is green (in particular `jitsurei-test`, unchanged).
+- [x] M3: Migrate `jitsurei/src/Jitsurei/OrderCart.hs` to the single fused `deriveAggregate` splice and update its import list. (2026-05-22)
+- [x] M3: `cabal test all` is green (in particular `jitsurei-test`, unchanged). (2026-05-22 — jitsurei-test 96 examples, 0 failures, no test edits; keiki-codec-json-test 40, 0 failures; full build with zero compiler warnings.)
 - [ ] M4: Add a subsection 4.3 to `docs/guide/user-guide.md` covering the `*All` and fused forms and guidance on when the enumerated forms are still needed.
 - [ ] M4: Name the new splices in `docs/foundations/06-where-to-go-next.md` where it lists what `Keiki.Generics.TH` derives.
 - [ ] M4: Add a one-line note to `docs/guide/ast-drop-down.md` that the `*All`/fused forms produce identical declarations to the enumerated ones.
@@ -172,6 +172,29 @@ Record every decision made while working on the plan.
   explain unchanged event-codec behavior, so it needs no edit.
   Date: 2026-05-22
 
+
+- Decision: In the OrderCart migration, place the single fused
+  `$(deriveAggregate ''OrderCmd ''OrderCartRegs ''OrderEvent)` under the existing
+  `-- * Per-constructor input projections + guards (TH-derived)` section header, and
+  retain the `-- * Wire constructors for events (TH-derived)` section header below it
+  with a short comment noting the wire constructors are now emitted by the fused splice
+  above (rather than leaving a dangling header or deleting it).
+  Rationale: A fused splice can only live in one location, and it must appear *before* the
+  `instance KnownInCtors OrderCmd` block (lines 337–349) that references `inCtorAddItem`
+  etc., because Template Haskell only brings spliced names into scope textually after the
+  splice. Keeping both section headers preserves the document's command-side/event-side
+  orientation that the plan asked to retain; the explanatory comment under the second
+  header keeps it from being misleading now that no splice sits beneath it.
+  Date: 2026-05-22
+
+- Decision: Left the guide's running example (`docs/guide/user-guide.md` lines 44/97/100)
+  on the enumerated `deriveAggregateCtors`/`deriveWireCtors` forms rather than rewriting it
+  to the fused form (M4 Edit 2, marked optional in the plan).
+  Rationale: Keeping the running example enumerated lets the guide continue to show the
+  enumerated style end-to-end, while the new subsection 4.3 introduces and demonstrates the
+  `*All`/fused forms. Showing both styles serves readers better than converging the example
+  on one.
+  Date: 2026-05-22
 
 ## Outcomes & Retrospective
 
