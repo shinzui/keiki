@@ -52,13 +52,17 @@ import Keiki.Core
 import Keiki.Fixtures.EmailDelivery (emailDelivery)
 import Keiki.Fixtures.UserRegistration (userReg)
 import Keiki.Render.Mermaid
-  ( toMermaid
+  ( MermaidOptions (..)
+  , defaultMermaidOptions
+  , toMermaid
   , toMermaidAlternative
+  , toMermaidAtlas
   , toMermaidCompose3
   , toMermaidCompose3Nested
   , toMermaidComposite
   , toMermaidCompositeNested
   , toMermaidFeedback1
+  , toMermaidWith
   )
 
 
@@ -96,6 +100,30 @@ spec = do
     it "renders the toy1 ⨾ (toy2 ⨾ toy3) one-level nested block" $
       toMermaidCompose3Nested toy3deep `shouldBe` toy3deepNestedCanonical
 
+  -- EP-50 M3: the default must stay byte-identical to today (the
+  -- guard-free pedagogy in deriving-lifecycle-transitions.md depends on
+  -- it). The pre-existing "toMermaid (single SymTransducer)" golden above
+  -- is the primary proof; this guards against toMermaid and toMermaidWith
+  -- diverging under a future refactor.
+  describe "toMermaidWith defaultMermaidOptions (byte-identical default)" $
+    it "equals toMermaid userReg exactly" $
+      toMermaidWith defaultMermaidOptions userReg `shouldBe` toMermaid userReg
+
+  describe "toMermaidWith (annotated edge summary)" $
+    it "renders userReg with written-slot and guard-summary suffixes" $
+      toMermaidWith
+        (MermaidOptions { showWrittenSlots = True, showGuardSummary = True })
+        userReg
+        `shouldBe` userRegAnnotatedCanonical
+
+  describe "toMermaidAtlas (multi-diagram document)" $
+    it "assembles two labelled diagrams into one document" $
+      toMermaidAtlas
+        [ (T.pack "User registration", toMermaid userReg)
+        , (T.pack "Alert \x2A3E Email", toMermaidComposite (compose alertSource emailDelivery))
+        ]
+        `shouldBe` atlasCanonical
+
 
 -- | The canonical Mermaid block for @userReg@, mirrored verbatim from
 -- the aggregate's diagram in @docs/guide/diagrams/user-registration.md@.
@@ -117,6 +145,40 @@ userRegCanonical = unlinesNoTrail
   ]
   where
     unlinesNoTrail = T.intercalate (T.pack "\n")
+
+
+-- | EP-50: the canonical block for @userReg@ rendered with both summary
+-- flags on (@MermaidOptions True True@). Differs from 'userRegCanonical'
+-- only by the bracketed @[w: …; g: …]@ suffixes. Captured verbatim from
+-- the renderer (the slot order is the @UCombine@ nesting order, and each
+-- guard is the actual 'HsPred' shape @onCmd@ produced — a bare 'PInCtor'
+-- except where 'requireEq' added a 'PEq', giving @PAnd PInCtor PEq@).
+userRegAnnotatedCanonical :: Text
+userRegAnnotatedCanonical = T.intercalate (T.pack "\n")
+  [ "stateDiagram-v2"
+  , "    [*] --> PotentialCustomer"
+  , "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [w: registeredAt; confirmCode; email; g: PInCtor]"
+  , "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [w: confirmedAt; g: PAnd PInCtor PEq]"
+  , "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [w: registeredAt; confirmCode; g: PInCtor]"
+  , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [w: deletedAt; g: PInCtor]"
+  , "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [w: deletedAt; g: PInCtor]"
+  , "    Deleted --> [*]"
+  ]
+
+
+-- | EP-50: the canonical atlas document for @userReg@ + the
+-- @AlertSource ⨾ EmailDelivery@ composite. Built from the same canonical
+-- diagram blocks the other goldens pin, wrapped in the atlas format
+-- ('toMermaidAtlas': a @## @ heading then a fenced @mermaid@ block per
+-- section, sections joined by a blank line) — so this golden pins the
+-- atlas wrapping/joining independently of the diagram contents.
+atlasCanonical :: Text
+atlasCanonical = T.intercalate (T.pack "\n\n")
+  [ T.pack "## User registration\n\n```mermaid\n"
+      <> userRegCanonical <> T.pack "\n```"
+  , T.pack "## Alert \x2A3E Email\n\n```mermaid\n"
+      <> alertEmailCompositeCanonical <> T.pack "\n```"
+  ]
 
 
 -- | The canonical Mermaid block for the @AlertSource ⨾ EmailDelivery@

@@ -164,10 +164,10 @@ the solver. The promote direction is the mirror image from `NeedsReorder` on
 > command, which the sibling plan
 > `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`
 > removes the need for. Separately, the Mermaid default edge label is deliberately
-> guard-free (as noted near the top of this guide); the sibling plan
-> `docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md`
-> keeps that default guard-free — the diagram is not going to start showing the
-> guards that distinguish these two edges.
+> guard-free (as noted near the top of this guide); the renderer's opt-in
+> structural summary ([Mermaid rendering](mermaid-rendering.md)) keeps that default
+> guard-free — the diagram is not going to start showing the guards that
+> distinguish these two edges unless you ask for the summary explicitly.
 
 Here the single-valuedness gate does **real** work. The two `FulfillOrder`
 edges share an input constructor, so the gate must prove their guards never

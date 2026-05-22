@@ -136,7 +136,7 @@ invariant and must be designed and prototyped before code.
 | 47 | Recompute-and-verify derived event outputs in solveOutput replay | docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md | None | EP-46 | Not Started |
 | 48 | N-ary event-family codec composition and singleton-event support | docs/plans/48-n-ary-event-family-codec-composition-and-singleton-event-support.md | None | None | Not Started |
 | 49 | Builder ergonomics: assignment synonym and register-read label helper | docs/plans/49-builder-ergonomics-assignment-synonym-and-register-read-label-helper.md | None | None | Complete |
-| 50 | Mermaid renderer: atlas entry point and structural edge-summary annotations | docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md | None | EP-46 | Not Started |
+| 50 | Mermaid renderer: atlas entry point and structural edge-summary annotations | docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md | None | EP-46 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-46).
@@ -234,9 +234,9 @@ the authoritative, detailed version.)
 - [x] EP-49 M1 (2026-05-21): `=:` non-breaking synonym for `.=` in `Keiki.Builder` (same `infixr 6` fixity), exported + haddock. (Planned `:=` is impossible — colon-prefixed operators are data constructors in Haskell; maintainer chose `=:`.)
 - [x] EP-49 M2 (2026-05-21): `reg @"slot"` register-read helper mirroring `slot @"name"`, exported + haddock.
 - [x] EP-49 M3 (2026-05-21): Dogfood in `jitsurei` LoanApplication (guards→`reg`, one edge→`=:`); `(=:)`≡`(.=)` test; new generic-lens interop guide `docs/guide/generic-lens-and-label-reads.md` (new projects: don't import `Data.Generics.Labels ()` globally; helpers are the no-refactor path); doc notes + glossary rows in user-guide. Full `cabal test all` green.
-- [ ] EP-50 M1: Atlas entry point assembling N labelled diagrams into one document.
-- [ ] EP-50 M2: Opt-in structural edge summary (written-slot names + guard/`Cmp` summary); default unchanged.
-- [ ] EP-50 M3: Golden proving default is byte-identical + golden for annotated/atlas output; docs.
+- [x] EP-50 M1 (2026-05-21): Atlas entry point `toMermaidAtlas :: [(Text, Text)] -> Text` assembling N labelled diagrams into one Markdown document.
+- [x] EP-50 M2 (2026-05-21): Opt-in structural edge summary (`MermaidOptions`/`toMermaidWith`: written-slot names + guard/`Cmp` tag walk); default unchanged (guard-free).
+- [x] EP-50 M3 (2026-05-21): Goldens — default byte-identical (pre-existing golden unchanged, actively verified) + annotated + atlas (all captured, not hand-typed); new `docs/guide/mermaid-rendering.md` + cross-link. keiki-test 253/0.
 
 
 ## Surprises & Discoveries
@@ -396,6 +396,21 @@ Discovered during EP-49 implementation (2026-05-21):
   ~320–321 untouched; EP-49 M3 rewrote them to "`#name` resolves via `IsLabel s (Term rs ci r)`
   to a `TReg`" and added the `reg @"name"` form. No conflict occurred between the two plans on
   that region.
+
+Discovered during EP-50 implementation (2026-05-21):
+
+- **The `Edge.update` record selector can't be used as a function (escaped existential).**
+  EP-50's plan claimed `update e` works as a selector; it does not — `Edge`'s
+  `update :: Update rs w ci` existentially quantifies `w`, so GHC rejects the selector
+  (GHC-55876). The fix is pattern-matching the edge (`e@Edge { update = u, guard = g }`). This
+  is a general keiki fact for any future code reading an edge's update: pattern-match, never use
+  the selector. (`guard`, a non-existential field, is fine as a selector.)
+- **The EP-46↔EP-50 soft alignment held with no coordination.** EP-50 keeps `toMermaid`'s
+  default byte-identical and guard-free (pinned by the unchanged `userRegCanonical` golden,
+  actively verified by flipping a default), so the bug-spotting pedagogy in
+  `docs/guide/deriving-lifecycle-transitions.md` that EP-46 cross-links remains valid. EP-50
+  also repointed the note EP-46 left there (which forward-referenced the EP-50 *plan*) to the
+  now-shipped `docs/guide/mermaid-rendering.md`.
 
 
 ## Decision Log
