@@ -64,6 +64,16 @@ module Keiki.Composition
   , liftROutAlt
   , liftLOutFieldsAlt
   , liftROutFieldsAlt
+    -- * N-ary coproduct injectors (EP-48)
+  , wireCtor3At1
+  , wireCtor3At2
+  , wireCtor3At3
+  , inCtor3At1
+  , inCtor3At2
+  , inCtor3At3
+  , outTerm3At1
+  , outTerm3At2
+  , outTerm3At3
   ) where
 
 import Unsafe.Coerce (unsafeCoerce)
@@ -669,6 +679,87 @@ liftROutAlt (OPack ic wc fs) =
   OPack (rightInCtor ic)
         (rightWireCtor wc)
         (liftROutFieldsAlt @rs @ci1 @ci2 fs)
+
+
+-- * N-ary coproduct injectors (EP-48) ------------------------------------
+
+-- $naryInjectors
+--
+-- These inject one already-derived event family into a sum of /three/
+-- families, represented as the right-nested @'Either' co1 ('Either' co2
+-- co3)@ on the output side (and the analogous nest on the input side).
+-- They are nothing more than the shipped binary lifts
+-- ('leftWireCtor'\/'rightWireCtor', 'leftInCtor'\/'rightInCtor',
+-- 'liftLOutAlt'\/'liftROutAlt') composed the right number of times, so
+-- no new machinery — and no new @unsafeCoerce@ — is introduced.
+--
+-- == Beyond three families
+--
+-- The pattern generalizes to any arity by composing one more @right…@
+-- per extra family. For a right-nested sum of @N@ families, family @k@
+-- injects via @right…@ applied @k-1@ times then @left…@ once, and the
+-- /last/ family @N@ via @right…@ applied @N-1@ times (no trailing
+-- @left…@, since the innermost arm is the bare family type). The
+-- arity-3 helpers below are the worked common case; for larger @N@,
+-- compose 'leftWireCtor'\/'rightWireCtor' (etc.) directly.
+--
+-- == Name-uniqueness obligation
+--
+-- 'Keiki.Core.solveOutput' matches input constructors by @icName@
+-- /string equality/ (and groups outputs by @wcName@). When several
+-- families are summed into one alphabet, their constructor-name strings
+-- must be pairwise distinct, or inversion can silently recover the wrong
+-- command. The 'Either' wrapper keeps families structurally apart at the
+-- match step, but the names are the human-facing contract — keep them
+-- unique across summed families.
+
+-- | Inject a family-1 'WireCtor' into a 3-family output sum
+-- @'Either' co1 ('Either' co2 co3)@.
+wireCtor3At1 :: WireCtor co1 fs -> WireCtor (Either co1 (Either co2 co3)) fs
+wireCtor3At1 = leftWireCtor
+
+-- | Inject a family-2 'WireCtor' into a 3-family output sum.
+wireCtor3At2 :: WireCtor co2 fs -> WireCtor (Either co1 (Either co2 co3)) fs
+wireCtor3At2 = rightWireCtor . leftWireCtor
+
+-- | Inject a family-3 (last) 'WireCtor' into a 3-family output sum.
+wireCtor3At3 :: WireCtor co3 fs -> WireCtor (Either co1 (Either co2 co3)) fs
+wireCtor3At3 = rightWireCtor . rightWireCtor
+
+-- | Inject a family-1 'InCtor' into a 3-family input sum
+-- @'Either' ci1 ('Either' ci2 ci3)@.
+inCtor3At1 :: InCtor ci1 ifs -> InCtor (Either ci1 (Either ci2 ci3)) ifs
+inCtor3At1 = leftInCtor
+
+-- | Inject a family-2 'InCtor' into a 3-family input sum.
+inCtor3At2 :: InCtor ci2 ifs -> InCtor (Either ci1 (Either ci2 ci3)) ifs
+inCtor3At2 = rightInCtor . leftInCtor
+
+-- | Inject a family-3 (last) 'InCtor' into a 3-family input sum.
+inCtor3At3 :: InCtor ci3 ifs -> InCtor (Either ci1 (Either ci2 ci3)) ifs
+inCtor3At3 = rightInCtor . rightInCtor
+
+-- | Re-home a whole family-1 edge output term into the 3-family
+-- input/output sums. This is the function that lets an edge authored
+-- against family 1 participate in a transducer over the summed alphabet;
+-- 'Keiki.Core.solveOutput' inverts the summed event straight back to the
+-- (injected) command.
+outTerm3At1
+  :: OutTerm rs ci1 co1
+  -> OutTerm rs (Either ci1 (Either ci2 ci3)) (Either co1 (Either co2 co3))
+outTerm3At1 = liftLOutAlt
+
+-- | Re-home a whole family-2 edge output term into the 3-family sums.
+outTerm3At2
+  :: OutTerm rs ci2 co2
+  -> OutTerm rs (Either ci1 (Either ci2 ci3)) (Either co1 (Either co2 co3))
+outTerm3At2 = liftROutAlt . liftLOutAlt
+
+-- | Re-home a whole family-3 (last) edge output term into the 3-family sums.
+outTerm3At3
+  :: OutTerm rs ci3 co3
+  -> OutTerm rs (Either ci1 (Either ci2 ci3)) (Either co1 (Either co2 co3))
+outTerm3At3 = liftROutAlt . liftROutAlt
 
 
 -- * Multi-event composition (EP-19 M6) -----------------------------------

@@ -12,6 +12,7 @@ module Keiki.Generics
   , mkInCtorVia
     -- * Generic-derived WireCtor
   , mkWireCtor
+  , mkWireCtor0
   , mkWireCtorVia
   , FieldsOf
   , FieldsOfRep
@@ -280,6 +281,26 @@ mkWireCtor name match wrap = WireCtor
       Just d  -> Just (gToTuple (from d))
       Nothing -> Nothing
   , wcBuild = \fs -> wrap (to (gFromTuple fs))
+  }
+
+
+-- | Build a 'WireCtor' for a no-payload (singleton) event constructor —
+-- the event-side twin of 'mkInCtor0'. Its field tuple is @()@ (a
+-- payload-free event carries nothing), matching @'OutFields' rs ci ()@ /
+-- @OFNil@. 'wcMatch' compares against the named singleton via 'Eq';
+-- 'wcBuild' ignores the empty tuple and returns the singleton. The
+-- @'Eq' co@ constraint matches 'mkInCtor0'\'s @'Eq' ci@; event sums in
+-- this codebase already derive 'Eq', so it is not a new burden.
+--
+-- Example:
+--
+-- > wireOpened :: WireCtor DoorEvent ()
+-- > wireOpened = mkWireCtor0 "Opened" Opened
+mkWireCtor0 :: forall co. Eq co => String -> co -> WireCtor co ()
+mkWireCtor0 name singleton = WireCtor
+  { wcName  = name
+  , wcMatch = \co -> if co == singleton then Just () else Nothing
+  , wcBuild = \() -> singleton
   }
 
 

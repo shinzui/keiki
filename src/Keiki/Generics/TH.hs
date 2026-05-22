@@ -67,6 +67,7 @@ import Keiki.Generics
   , RegFieldsOf
   , mkInCtor0
   , mkInCtorVia
+  , mkWireCtor0
   , mkWireCtorVia
   )
 
@@ -387,9 +388,27 @@ genWire evtName ctorMap (ctorStr, shortStr) =
                      ]
         termRecDecs <- genTermFieldsRecord shortStr payTy
         pure ([wireSig, wireDef] ++ termRecDecs)
-      _ -> fail $ "deriveWireCtors: ctor " <> show ctorStr
-               <> " has unsupported payload shape (singleton or "
-               <> "multi-arg/record-syntax)"
+      Just Nothing ->
+        -- Zero-arg (singleton) event: emit only the wire<Short> binding
+        -- via mkWireCtor0 (no payload, so no <Short>TermFields record).
+        -- Mirrors the command side's singletonDecls/mkInCtor0.
+        case conNames con of
+          (cn : _) -> do
+            let wireN = mkName ("wire" <> shortStr)
+            wireSig <- sigD wireN
+                         [t| WireCtor $(conT evtName) () |]
+            wireDef <- funD wireN
+                         [ clause [] (normalB
+                             [| mkWireCtor0 $(litE (stringL ctorStr))
+                                            $(conE cn) |])
+                             []
+                         ]
+            pure [wireSig, wireDef]
+          [] -> fail $ "deriveWireCtors: could not extract ctor name for "
+                    <> show ctorStr
+      Nothing -> fail $ "deriveWireCtors: ctor " <> show ctorStr
+               <> " has unsupported payload shape "
+               <> "(multi-arg or record-syntax)"
 
 
 -- | Per-event field-keyed record for 'B.emit' (EP-21 M4).
