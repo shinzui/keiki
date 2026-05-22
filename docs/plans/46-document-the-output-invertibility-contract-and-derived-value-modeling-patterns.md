@@ -76,11 +76,16 @@ This section must always reflect the actual current state of the work.
   examples and a forward pointer to
   `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`); 7.3 a
   plain statement of what fails and why. Every cited snippet verified verbatim against source.
-- [ ] M3: Cross-link sweep plus the modeling redirects (a)–(e). Add short notes to
-  `docs/guide/user-guide.md`, `docs/guide/why-smt.md`,
-  `docs/guide/deriving-lifecycle-transitions.md`, and `docs/guide/symbolic-ci.md`, each
-  linking the new page; confirm the new page is reachable from the user guide and the
-  redirects point readers at structural answers.
+- [x] M3 (2026-05-21): Cross-link sweep plus the modeling redirects (a)–(e) on the new page
+  (§8) and a See-also section (§9). Added short notes linking the new page to
+  `docs/guide/user-guide.md` (§10.3 glossary rows for `solveOutput`/`applyEvent`/
+  `checkHiddenInputs` + a §12 pointer bullet), `docs/guide/why-smt.md` (§5 dual-concern note +
+  redirect (a)), `docs/guide/deriving-lifecycle-transitions.md` (§4 note: redirect (b) + the
+  `ReorderTriggered` derived-output non-round-trip + the guard-free Mermaid default per EP-50),
+  and `docs/guide/symbolic-ci.md` (§9 pointer framing `checkHiddenInputs` as the build-time
+  net). Corrected the stale "build-time analysis" label on `solveOutput` in *both* glossary
+  occurrences (§10.3 line 756 and §10.7 line 885). `grep -rln "output-invertibility" docs/guide/`
+  lists all four guides + the new page; `cabal build jitsurei` is Up to date.
 
 
 ## Surprises & Discoveries
@@ -88,16 +93,26 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **Confirmed and acted on (2026-05-21): the `solveOutput` "build-time analysis" mislabel
+  appears TWICE in `docs/guide/user-guide.md`, not once.** The pre-implementation note (below)
+  flagged the §10.3 entry (line 756). While doing M3 I found a *second* identical mislabel in
+  §10.7 ("Naming origins" → "Built locally", line 885), which also opened "The build-time
+  analysis that *solves* for the input…". Leaving it would have contradicted the corrected §10.3
+  entry. Both are now fixed: §10.3 reads "The *runtime* inverter on the replay path (called by
+  `applyEvent`/`applyEventStreaming`/`reconstitute`)…"; §10.7 reads "The *runtime* inverter that
+  *solves* for the input…". `checkHiddenInputs` keeps its (correct) "build-time analysis" label.
+- **`cabal build jitsurei` is `Up to date` (2026-05-21).** All cited example edges
+  (`AccountConfirmed`, `LegacyAssignmentCommanded`, `approvalGuard`, the OrderCart copies, the
+  `ReorderTriggered` arithmetic output) compile in the `jitsurei` package — the citations are
+  valid. No source was touched; this is purely a citation-validity confidence check.
 
-Note for the implementer (pre-implementation observation, to be confirmed and moved here as a
-proper entry once acted on): the existing `solveOutput` glossary entry in
-`docs/guide/user-guide.md` §10.3 describes `solveOutput` as "the build-time analysis that
+Pre-implementation observation (now confirmed above): the existing `solveOutput` glossary entry
+in `docs/guide/user-guide.md` §10.3 described `solveOutput` as "the build-time analysis that
 mechanically derives the inverse of `omega`". That role label is imprecise — `solveOutput` is
 the *runtime* inverter on the replay path (called by `applyEvent`/`applyEventStreaming`/
 `reconstitute`), while the *build-time* analysis is `checkHiddenInputs`. The same glossary's
-`checkHiddenInputs` entry already (correctly) calls itself "build-time analysis". M3 corrects
-the `solveOutput` wording while adding the cross-link.
+`checkHiddenInputs` entry already (correctly) calls itself "build-time analysis". M3 corrected
+the `solveOutput` wording (in both occurrences) while adding the cross-link.
 
 
 ## Decision Log
@@ -174,6 +189,25 @@ Record every decision made while working on the plan.
   faithful answer and round-trips.
   Date: 2026-05-21
 
+- Decision: Correct the stale `solveOutput` "build-time analysis" label in *both* glossary
+  occurrences in `docs/guide/user-guide.md` (§10.3 line 756 and §10.7 line 885), not only the
+  §10.3 one the plan named.
+  Rationale: M3 found a second identical mislabel in §10.7 ("Naming origins"). Fixing only §10.3
+  would have left the guide internally contradictory (one entry calling `solveOutput` the runtime
+  inverter, the other the build-time analysis). Both now describe it as the runtime inverter;
+  `checkHiddenInputs` retains the "build-time analysis" label, which is correct. This is an
+  in-scope tightening of the same stale-phrasing fix the plan authorized, recorded so the EP-49
+  M3 edit to the same glossary region does not re-introduce the old wording.
+  Date: 2026-05-21
+
+- Decision: Use code-span path references (e.g. `` `docs/guide/output-invertibility.md` ``) for
+  the cross-links rather than Markdown `[text](path)` links.
+  Rationale: the four edited guides (`user-guide.md` §12, `why-smt.md` §7, `symbolic-ci.md` §9,
+  `deriving-lifecycle-transitions.md`) reference sibling docs predominantly as code-span paths;
+  matching that house style keeps the additions visually consistent, and the M3 acceptance grep
+  (`grep -rln "output-invertibility"`) matches code-spans equally well.
+  Date: 2026-05-21
+
 - Decision: Add a consumer-facing note disambiguating keiro's three hydration failures. For a
   consumer reaching keiki through the keiro runtime, the inversion `Nothing` surfaces as keiro's
   `HydrationReplayFailed`; this is DISTINCT from `HydrationDecodeFailed` (a JSON codec failure)
@@ -192,7 +226,39 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-21): complete, all three milestones landed.** The original purpose — give the
+next consumer one canonical, linkable page stating the output-invertibility contract so they read
+it instead of rediscovering it in `solveOutput`'s source — is met:
+
+- `docs/guide/output-invertibility.md` exists (nine sections). It states the exact accept/reject
+  rule (mirrored verbatim from `stepOne`, with the source function/line cited so a reviewer can
+  diff), the `Nothing`-not-exception semantics with the `HydrationReplayFailed` attribution and
+  the keiro three-failure disambiguation, the all-or-nothing-per-edge failure, the output-only
+  scoping, and the `checkHiddenInputs` build-time net.
+- The worked recipes (§7) cover the audit/`previous*` register-read (round-trips today), the
+  Direction-A mirror-command escape (with the EP-47 forward pointer), and a plain what-fails-why.
+- The modeling redirects (§8) cover (a)–(e), each pointing at a structural answer, with redirect
+  (d) carefully framed as forward advice (not as guards Rei shipped) and re-anchored on the real
+  residual collection-register-update tuple-threading ergonomic.
+- The page is reachable from all four target guides (`user-guide.md`, `why-smt.md`,
+  `deriving-lifecycle-transitions.md`, `symbolic-ci.md`), confirmed by
+  `grep -rln "output-invertibility" docs/guide/`.
+
+**Validation:** documentation-only, no `src/` change. The prediction exercise in Validation &
+Acceptance holds: `AccountConfirmed` (register read + command copies) is predicted to round-trip
+and does; `LegacyAssignmentCommanded` (`TApp2`) is predicted not to and does not — both confirmed
+against `stepOne`. `cabal build jitsurei` is `Up to date`, so every cited snippet compiles.
+
+**Gaps / lessons:**
+- The stale "build-time analysis" label on `solveOutput` appeared twice, not once (see Surprises);
+  a glossary that repeats a definition in a "naming origins" section is a place to grep for
+  duplicates before declaring a phrasing fix done.
+- The integration with EP-47 is set up as intended: the "What inverts today" section (§2) carries
+  an explicit "as of this writing / EP-47 will relax it" admonition, so EP-47's amendment is a
+  localized edit rather than a rewrite.
+- Coordinate with EP-49 M3, which also edits the `docs/guide/user-guide.md` glossary region
+  (the `#name`/`IndexN` read description near lines 320–321 that EP-49 owns) — this plan
+  deliberately did *not* touch those lines to avoid a conflict.
 
 
 ## Context and Orientation

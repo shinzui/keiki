@@ -281,3 +281,7 @@ to production — the check belongs in CI.
 - `jitsurei/test/Jitsurei/UserRegistrationSymbolicSpec.hs` — the
   reference fixture: single-valuedness gate, sat smoke checks,
   `symSatExt` round-trip.
+- `docs/guide/output-invertibility.md` — the output-invertibility
+  contract. `checkHiddenInputs` is its build-time net — the replay-side
+  companion to the single-valuedness gate this guide wires up, flagging
+  edges whose event cannot recover its command on replay.

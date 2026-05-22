@@ -254,3 +254,83 @@ inverse keiki can compute — the wrapped function is a black box. An arithmetic
 (`TArith`) is not inverted either: subtraction or multiplication is not uniquely reversible from
 the result alone (`a - b = r` does not determine `a` and `b`). So `stepOne` rejects both
 outright, and — per §4 — that aborts the whole edge's inversion, not just the one field.
+
+---
+
+## 8. Modeling redirects — patterns that look like they need an escape hatch
+
+These are the patterns that motivate reaching for an opaque `TApp` in an output (or for a
+variadic apply, or a positional multi-argument command). Each has a *structural* answer that
+keeps the output invertible and the guard solver-visible. Reach for these before any escape
+hatch.
+
+**(a) Numeric or date bounds belong in an ordering guard, not a function.** A bound like
+"amount ≤ 1000" or "before this deadline" is a structural `PCmp` comparison over a curated
+ordered type — and `UTCTime` (the standard timestamp) *is* curated, so the solver understands
+its ordering. No escape hatch is needed; a bare or computed bound is structural. See
+`docs/guide/why-smt.md` §5 (the curated types and "no escape needed" note) and
+`docs/guide/symbolic-ci.md`.
+
+**(b) A multi-way (3-way, N-way) decision is multiple disjoint guarded edges,** not one opaque
+application that picks a branch. Author one edge per branch, keyed on the same input
+constructor, disambiguated by independent comparison guards; the single-valuedness gate then
+proves they never co-fire. See `docs/guide/deriving-lifecycle-transitions.md`, which works this
+split-into-disjoint-edges pattern in full.
+
+**(c) A computed operand (a weighted sum, a derived cap) is structural arithmetic** —
+`tadd`/`tsub`/`tmul`, written `.+`/`.-`/`.*` — which has been solver-visible since the EP-43
+work. In a *guard or update* it round-trips and the solver reads it; only in an *output* does
+arithmetic block inversion (§7.3). See `docs/guide/user-guide.md` §3.4.
+
+**(d) Collection membership is the on-roadmap structural collection-content guards, not a
+higher-arity `TApp`.** Membership and bounded-quantifier guards (`PMember` / `PAll`) are the
+faithful direction — *not* a `TApp3`/`TAppN`, which would re-introduce an opaque,
+non-invertible, solver-blind term. These guards are described in
+`docs/masterplans/12-symbolic-arithmetic-terms-translator-memoization-and-real-boolalg-sat-witnesses.md`
+and `docs/research/collection-registers-design.md`.
+
+> This is forward advice for the next consumer, not a description of something a consumer
+> shipped. Validation against Rei's ported transducers found that the date-bounds and
+> map-membership *guards* (and the 3-way conditional) once attributed to its Cycle aggregate
+> **do not exist** in the keiki transducers — Direction A moved them to a deferred application
+> layer. The one *real* residual ergonomic in this family is milder and different: a
+> **collection-register update** that threads a `(map, key, value)` triple via a nested
+> `TApp2 (,)` to a `Map.insert` helper. Its only two occurrences in Rei are register *updates*
+> (`B.slot @"dailyFocuses" .= TApp2 insertFocus … (TApp2 (,) …)` and
+> `B.slot @"values" .= TApp2 insertValue … (TApp2 (,) …)`), never a guard and never an output,
+> so they replay forward via `evalTerm` and never break inversion. The faithful fix for *that*
+> ergonomic is the collection-registers roadmap (a register that holds a collection and accepts
+> a structural insert), not a higher-arity `TApp`.
+
+**(e) A multi-argument command is one named-record payload, with the dropped id read back from
+a register.** keiki's symbolic alphabet projects command fields *by name* — an `InCtor`'s slots
+are `(Symbol, Type)` pairs — so splitting one logical command into several positional arguments
+fights that name-based projection. Model `UpdateFoo !FooId !FooData` as the single record
+command `UpdateFoo !FooData`, and *source the dropped id from a register on emit* via a register
+read. Rei's Focus aggregate does exactly this: the logical `UpdateFocus !FocusId !UpdateFocusData`
+is the single record `UpdateFocus !UpdateFocusData`
+(`rei-core/src/Rei/Modules/Focus/Domain/Command.hs`), and the `FocusUpdated` edge emits
+`focusId = curFocusId`, where `curFocusId = proj (indexOf @"focusId" @FocusRegs @FocusId)` reads
+the id back from the `FocusRegs` register
+(`rei-core/src/Rei/Modules/Focus/Domain/Transducer.hs`). Because the alphabet projects fields by
+name and a register read is an accepting output term, this round-trips.
+
+---
+
+## 9. See also
+
+- `src/Keiki/Core.hs` — the symbols this contract describes: `solveOutput` (~1039),
+  `gatherInpEntries`/`stepOne` (~1054–1071), `evalTerm` (~728–737),
+  `applyEvent`/`applyEventStreaming` (~882–966), `checkHiddenInputs` (~1104–1197).
+- `docs/guide/user-guide.md` §10.3 — glossary entries for `solveOutput`, `applyEvent`, and
+  `checkHiddenInputs`.
+- `docs/guide/why-smt.md` §5 — escape hatches and curated types, the dual concern to this page.
+- `docs/guide/symbolic-ci.md` — wiring `checkHiddenInputs` and the single-valuedness gate into
+  CI.
+- `docs/guide/deriving-lifecycle-transitions.md` — the disjoint-guarded-edges pattern for
+  multi-way decisions (and the guard-free Mermaid default).
+- `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md` — the
+  planned relaxation under which derived output fields round-trip by recompute-and-verify.
+- `docs/research/collection-registers-design.md` and
+  `docs/masterplans/12-symbolic-arithmetic-terms-translator-memoization-and-real-boolalg-sat-witnesses.md`
+  — the structural collection-content guards (`PMember`/`PAll`).

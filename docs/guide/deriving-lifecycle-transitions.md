@@ -151,6 +151,24 @@ i.e. `tsub`; see EP-43 and user-guide §3.4), so the whole guard is visible to
 the solver. The promote direction is the mirror image from `NeedsReorder` on
 `ReceiveStock`.
 
+> **On invertibility and the diagram.** This split-into-disjoint-edges shape is
+> also the structural answer to a multi-way decision: author one guarded edge per
+> branch, never an opaque function that picks a branch
+> (`docs/guide/output-invertibility.md` §8b). Note one subtlety in the demote edge:
+> the *same* term `#onHand .- d.quantity` is fine in the **guard** (it replays
+> forward via `evalTerm` and the solver reads it) but appears again in
+> `ReorderTriggered`'s **output** payload (`onHand = #onHand .- d.quantity`) — and
+> structural arithmetic *in an output* is not invertible, so that event does **not**
+> round-trip on replay today. See the output-invertibility contract
+> (`docs/guide/output-invertibility.md`); the portable workaround is a mirror
+> command, which the sibling plan
+> `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`
+> removes the need for. Separately, the Mermaid default edge label is deliberately
+> guard-free (as noted near the top of this guide); the sibling plan
+> `docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md`
+> keeps that default guard-free — the diagram is not going to start showing the
+> guards that distinguish these two edges.
+
 Here the single-valuedness gate does **real** work. The two `FulfillOrder`
 edges share an input constructor, so the gate must prove their guards never
 co-fire:
