@@ -48,6 +48,47 @@ toyRegs :: RegFile ToyRegs
 toyRegs = RCons (Proxy @"x") 0 (RCons (Proxy @"y") 0 RNil)
 
 
+-- A second toy aggregate with distinct constructor names, used to
+-- exercise the zero-spec @*All@ splices: 'deriveAggregateCtorsAll'
+-- enumerates every command constructor, 'deriveWireCtorsAll' every
+-- event constructor, each defaulting its short-name suffix to the
+-- constructor's own name. Distinct names keep the generated
+-- identifiers from colliding with the 'ToyCmd' splice output above.
+
+data WidgetData = WidgetData { wa :: Int, wb :: Int }
+  deriving (Eq, Show, Generic)
+
+
+data AutoCmd
+  = MakeWidget WidgetData
+  | Sweep
+  deriving (Eq, Show, Generic)
+
+
+type AutoRegs =
+  '[ '("wa", Int)
+   , '("wb", Int)
+   ]
+
+
+data GadgetData = GadgetData { gz :: Int }
+  deriving (Eq, Show, Generic)
+
+
+data AutoEvent
+  = WidgetMade GadgetData
+  | Swept
+  deriving (Eq, Show, Generic)
+
+
+$(deriveAggregateCtorsAll ''AutoCmd ''AutoRegs)
+$(deriveWireCtorsAll ''AutoEvent)
+
+
+autoRegs :: RegFile AutoRegs
+autoRegs = RCons (Proxy @"wa") 0 (RCons (Proxy @"wb") 0 RNil)
+
+
 spec :: Spec
 spec = do
   describe "deriveAggregateCtors on a record-payload constructor (DoIt)" $ do
@@ -93,3 +134,30 @@ spec = do
     it "evalPred isNoArgs agrees with constructor match" $ do
       evalPred isNoArgs toyRegs NoArgs               `shouldBe` True
       evalPred isNoArgs toyRegs (DoIt (ToyData 0 0)) `shouldBe` False
+
+  describe "deriveAggregateCtorsAll (no spec list)" $ do
+    it "discovers the record-payload command and names it after the ctor" $
+      icName inCtorMakeWidget `shouldBe` "MakeWidget"
+
+    it "matches MakeWidget and yields a populated RegFile" $
+      let regfile = case icMatch inCtorMakeWidget (MakeWidget (WidgetData 3 4)) of
+            Just rf -> rf
+            Nothing -> error "icMatch returned Nothing on MakeWidget"
+      in (regfile ! #wa, regfile ! #wb) `shouldBe` (3, 4)
+
+    it "evalTerm (inpMakeWidget #wa) reads the wa field" $
+      evalTerm (inpMakeWidget #wa) autoRegs (MakeWidget (WidgetData 5 9)) `shouldBe` 5
+
+    it "discovers the singleton command and its guard" $ do
+      icName inCtorSweep `shouldBe` "Sweep"
+      evalPred isSweep autoRegs Sweep                        `shouldBe` True
+      evalPred isSweep autoRegs (MakeWidget (WidgetData 0 0)) `shouldBe` False
+
+  describe "deriveWireCtorsAll (no spec list)" $ do
+    it "discovers the record-payload event and rebuilds it" $ do
+      wcName wireWidgetMade `shouldBe` "WidgetMade"
+      wcBuild wireWidgetMade (7, ()) `shouldBe` WidgetMade (GadgetData 7)
+
+    it "discovers the singleton event and rebuilds it" $ do
+      wcName wireSwept `shouldBe` "Swept"
+      wcBuild wireSwept () `shouldBe` Swept

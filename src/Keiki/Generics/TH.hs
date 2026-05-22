@@ -13,6 +13,14 @@
 -- 'deriveWireCtors' is the dual on the event side, emitting one
 -- 'WireCtor' value per spec entry.
 --
+-- 'deriveAggregateCtorsAll' and 'deriveWireCtorsAll' are the
+-- zero-spec variants: they enumerate every constructor of the named
+-- sum type and default each short-name suffix to the constructor's
+-- own name, so the common "short name == constructor name" case needs
+-- no hand-typed spec list. Keep the enumerated 'deriveAggregateCtors'
+-- \/ 'deriveWireCtors' when you need an abbreviated short name that
+-- differs from the constructor name.
+--
 -- Both splices read the constructor list of the named sum type via
 -- 'reify' and dispatch on the constructor's payload shape: zero-arg
 -- 'NormalC' is a singleton; one-arg 'NormalC' takes a record-payload
@@ -43,7 +51,9 @@
 -- (4 record ctors × 3 decls + 1 singleton × 2 decls).
 module Keiki.Generics.TH
   ( deriveAggregateCtors
+  , deriveAggregateCtorsAll
   , deriveWireCtors
+  , deriveWireCtorsAll
   , deriveView
   ) where
 
@@ -91,6 +101,25 @@ deriveAggregateCtors cmdName regsName specs = do
   fmap concat . mapM (genCtor cmdName regsName ctorMap) $ specs
 
 
+-- | Like 'deriveAggregateCtors', but enumerate every constructor of the
+-- command sum type automatically, using each constructor's own name as
+-- its short-name suffix. Equivalent to calling 'deriveAggregateCtors'
+-- with a spec list of @[(nameBase c, nameBase c) | c <- constructors]@,
+-- so it generates @inCtor\<Ctor\>@, @inp\<Ctor\>@, and @is\<Ctor\>@ for
+-- each constructor (singletons omit @inp\<Ctor\>@). Reach for the
+-- enumerated 'deriveAggregateCtors' when you need an abbreviated short
+-- name that differs from the constructor name.
+deriveAggregateCtorsAll
+  :: Name              -- ^ command sum type, e.g. @\'\'OrderCmd@
+  -> Name              -- ^ register-file slot list, e.g. @\'\'OrderCartRegs@
+  -> Q [Dec]
+deriveAggregateCtorsAll cmdName regsName = do
+  ctors <- reifyCtors cmdName "deriveAggregateCtorsAll"
+  let ctorMap = [ (nameBase n, c)          | c <- ctors, n <- conNames c ]
+      specs   = [ (nameBase n, nameBase n) | c <- ctors, n <- conNames c ]
+  fmap concat . mapM (genCtor cmdName regsName ctorMap) $ specs
+
+
 -- | Generate per-constructor @wire<Short>@ declarations from an event
 -- sum type. Spec entries are @(constructorName, shortName)@ pairs.
 -- Every event constructor must have a single record payload;
@@ -103,6 +132,23 @@ deriveWireCtors
 deriveWireCtors evtName specs = do
   ctors <- reifyCtors evtName "deriveWireCtors"
   let ctorMap = [ (nameBase n, c) | c <- ctors, n <- conNames c ]
+  fmap concat . mapM (genWire evtName ctorMap) $ specs
+
+
+-- | Like 'deriveWireCtors', but enumerate every constructor of the event
+-- sum type automatically, using each constructor's own name as its
+-- short-name suffix. Generates @wire\<Ctor\>@ (and, for record-payload
+-- events, a @\<Ctor\>TermFields@ record plus its 'ToOutFields' instance)
+-- for each constructor. Reach for the enumerated 'deriveWireCtors' when
+-- you need an abbreviated short name that differs from the constructor
+-- name.
+deriveWireCtorsAll
+  :: Name              -- ^ event sum type, e.g. @\'\'OrderEvent@
+  -> Q [Dec]
+deriveWireCtorsAll evtName = do
+  ctors <- reifyCtors evtName "deriveWireCtorsAll"
+  let ctorMap = [ (nameBase n, c)          | c <- ctors, n <- conNames c ]
+      specs   = [ (nameBase n, nameBase n) | c <- ctors, n <- conNames c ]
   fmap concat . mapM (genWire evtName ctorMap) $ specs
 
 
