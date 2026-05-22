@@ -105,7 +105,7 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Keiki.Core
 import qualified Keiki.Builder as B
-import Keiki.Builder ((.=))
+import Keiki.Builder ((.=), (=:), reg)
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveView, deriveWireCtors)
 import Keiki.Symbolic (KnownInCtors (..), SomeInCtor (..))
@@ -422,18 +422,17 @@ $(deriveView ''LoanAppVertex ''LoanAppRegs
 -- guard signatures use the 'Pred' synonym for @'HsPred' rs ci@.
 readyForReviewGuard :: Pred LoanAppRegs LoanCmd
 readyForReviewGuard =
-       proj (#appIncomeDocCount :: Index LoanAppRegs Int) .>= lit minimumIncomeDocs
-  .&&  proj (#appIdDocCount     :: Index LoanAppRegs Int) .>= lit minimumIdDocs
-  .&&  proj (#appCreditScore    :: Index LoanAppRegs Int) .>= lit 1
-  .&&  proj (#appEmploymentVerified :: Index LoanAppRegs Bool) .== lit True
+       reg @"appIncomeDocCount"     .>= lit minimumIncomeDocs
+  .&&  reg @"appIdDocCount"         .>= lit minimumIdDocs
+  .&&  reg @"appCreditScore"        .>= lit 1
+  .&&  reg @"appEmploymentVerified" .== lit True
 
 
 approvalGuard :: Pred LoanAppRegs LoanCmd
 approvalGuard =
-       proj (#appCreditScore :: Index LoanAppRegs Int) .>= lit approvalThresholdScore
-  .&&  proj (#appEmploymentVerified :: Index LoanAppRegs Bool) .== lit True
-  .&&  proj (#appRequestedAmount :: Index LoanAppRegs Money)
-         .<= proj (#appCreditScore :: Index LoanAppRegs Int) .* lit 1000
+       reg @"appCreditScore"        .>= lit approvalThresholdScore
+  .&&  reg @"appEmploymentVerified" .== lit True
+  .&&  reg @"appRequestedAmount"    .<= reg @"appCreditScore" .* lit 1000
 
 
 -- * The transducer (builder form) -----------------------------------------
@@ -443,14 +442,16 @@ loanApplication = B.buildTransducer Intake emptyLoanAppRegs
                     isFinalLoanApp do
 
   B.from Intake do
+    -- Authored with the (=:) synonym (an exact alias for (.=)) to
+    -- exercise it on real code; every other edge body keeps (.=).
     B.onCmd inCtorStart $ \d -> B.do
-      B.slot @"appApplicantId"        .= d.applicantId
-      B.slot @"appRequestedAmount"    .= d.requestedAmount
-      B.slot @"appPurpose"             .= d.purpose
-      B.slot @"appIncomeDocCount"      .= lit 0
-      B.slot @"appIdDocCount"          .= lit 0
-      B.slot @"appCreditScore"         .= lit 0
-      B.slot @"appEmploymentVerified"  .= lit False
+      B.slot @"appApplicantId"        =: d.applicantId
+      B.slot @"appRequestedAmount"    =: d.requestedAmount
+      B.slot @"appPurpose"             =: d.purpose
+      B.slot @"appIncomeDocCount"      =: lit 0
+      B.slot @"appIdDocCount"          =: lit 0
+      B.slot @"appCreditScore"         =: lit 0
+      B.slot @"appEmploymentVerified"  =: lit False
       B.emit wireApplicationStarted ApplicationStartedTermFields
         { applicantId     = d.applicantId
         , requestedAmount = d.requestedAmount

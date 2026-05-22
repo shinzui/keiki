@@ -14,7 +14,7 @@ import GHC.Generics (Generic)
 import Test.Hspec
 
 import qualified Keiki.Builder as B
-import Keiki.Builder ((.=))
+import Keiki.Builder ((.=), (=:))
 import Keiki.Core
   ( Edge (..)
   , HsPred (..)
@@ -357,3 +357,30 @@ spec = do
                             B.goto B
           cmd = Tick (TickData 5)
       omega trEmitWith A emptyR cmd `shouldBe` omega trEmit A emptyR cmd
+
+
+  describe "EP-49: (=:) is a synonym for (.=)" $
+
+    -- Authoring the same single-slot edge with `.=` and with `=:`
+    -- produces the identical register write. `Update` carries `Term`s
+    -- (which hold opaque functions) so it has no `Eq`; we compare the
+    -- observable instead — the register file `delta` produces.
+    it "produces the same register write as (.=) for the same slot+term" $ do
+      let withDot   = B.buildTransducer A emptyR (const False) do
+                        B.from A do
+                          B.onCmd inCtorTick $ \d -> B.do
+                            B.slot @"counter" .= d.count
+                            B.emit wireTicked (OFCons d.count OFNil)
+                            B.goto B
+          withColon = B.buildTransducer A emptyR (const False) do
+                        B.from A do
+                          B.onCmd inCtorTick $ \d -> B.do
+                            B.slot @"counter" =: d.count
+                            B.emit wireTicked (OFCons d.count OFNil)
+                            B.goto B
+          cmd = Tick (TickData 42)
+      case (delta withDot A emptyR cmd, delta withColon A emptyR cmd) of
+        (Just (_, r1), Just (_, r2)) ->
+          (r1 K.! (#counter :: Index Regs Int))
+            `shouldBe` (r2 K.! (#counter :: Index Regs Int))
+        _ -> expectationFailure "delta returned Nothing for one of the forms"
