@@ -150,6 +150,8 @@ module Keiki.Builder
     -- ** Slot writes
   , slot
   , (.=)
+  , (=:)
+  , reg
     -- ** Outputs
   , emit
   , emitWith
@@ -196,7 +198,7 @@ import Keiki.Core
   , OutTerm
   , RegFile
   , SymTransducer (..)
-  , Term
+  , Term (TReg)
   , Update (..)
   , WireCtor
   , combine
@@ -345,6 +347,36 @@ slot
 slot = indexN @name @rs @r
 
 
+-- | Read a register slot into a 'Keiki.Core.Term', the read-side
+-- mirror of 'slot'. The slot name is supplied via @TypeApplication@,
+-- so @reg \@\"appCreditScore\"@ needs no @:: 'Keiki.Core.Index' Regs
+-- Ty@ annotation:
+--
+-- > approvalGuard = reg \@\"appCreditScore\" .>= lit 650
+--
+-- == When to use @reg \@\"name\"@ versus @\#name@
+--
+-- A bare overloaded label @\#name@ already resolves to a register-read
+-- 'Keiki.Core.Term' through the @'GHC.OverloadedLabels.IsLabel' s
+-- ('Keiki.Core.Term' rs ci r)@ instance, and is the lighter form
+-- wherever GHC can infer the slot list @rs@ and value type @r@ — for
+-- example the right-hand side of '(.=)', or an argument of
+-- 'Keiki.Core.TApp1'. In positions where inference fails — notably a
+-- hand-written guard conjunction, or an 'OutFields' element — @\#name@
+-- needs the verbose @'Keiki.Core.proj' (\#name :: 'Keiki.Core.Index'
+-- Regs Ty)@ annotation. 'reg' removes exactly that annotation by
+-- pinning the name with a type application, the same way 'slot' does on
+-- the write side. A consumer whose prelude re-exports @generic-lens@
+-- (which ships its own @IsLabel@ instance that shadows keiki's) loses
+-- the bare-@\#name@ read path entirely; because 'reg' goes through a
+-- type application rather than an overloaded label, it is unaffected.
+reg
+  :: forall (name :: Symbol) rs ci r.
+     ( KnownSymbol name, HasIndexN name rs r )
+  => Term rs ci r
+reg = TReg (indexNToIndex (indexN @name @rs @r))
+
+
 -- | Slot assignment. The slot name is supplied by 'slot' (via
 -- TypeApplication); the value is a 'Term'. The
 -- @'Disjoint' '[name] w@ constraint inherits the type-level
@@ -365,6 +397,27 @@ slot = indexN @name @rs @r
 ix .= t = EdgeBuilder $ \pe ->
   ((), pe { peUpdate = USet ix t `combine` peUpdate pe })
 infixr 6 .=
+
+
+-- | Slot assignment, an exact synonym for '(.=)': @slot \@\"x\" =: t@
+-- is @slot \@\"x\" .= t@ and produces the identical 'Keiki.Core.Update'.
+-- It exists for one reason — to dodge the name clash with
+-- @Control.Lens.(.=)@. A module that authors edges /and/ imports
+-- "Control.Lens" would otherwise need @import Control.Lens hiding
+-- ((.=))@; with '(=:)' it can keep both imports unqualified and use
+-- '(=:)' for slot writes. Modules that do not import "Control.Lens"
+-- should keep using '(.=)', which matches the @.=@ spelling of @aeson@
+-- \/ @lens@ \/ @mtl@. (A colon-prefixed @:=@ is not available: GHC
+-- reserves operators beginning with a colon for data constructors, so a
+-- value-level synonym must start with another symbol — hence @=:@.)
+(=:)
+  :: forall name r rs ci co v w.
+     ( KnownSymbol name, Disjoint '[name] w )
+  => IndexN name rs r
+  -> Term rs ci r
+  -> EdgeBuilder rs ci co v w (Concat '[name] w) ()
+(=:) = (.=)
+infixr 6 =:
 
 
 -- * Termination -----------------------------------------------------------
