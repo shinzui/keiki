@@ -75,9 +75,9 @@ This section must always reflect the actual current state of the work.
 - [x] M1: Add `deriveAggregateCtorsAll` and `deriveWireCtorsAll` to `src/Keiki/Generics/TH.hs`, export them, and update the module Haddock header. (2026-05-22)
 - [x] M1: Add toy `AutoCmd`/`AutoRegs`/`AutoEvent` types and `deriveAggregateCtorsAll`/`deriveWireCtorsAll` splices plus assertions to `test/Keiki/Generics/THSpec.hs`. (2026-05-22)
 - [x] M1: `cabal test keiki-test` passes including the new `*All` examples. (2026-05-22 — 275 examples, 0 failures; the 6 new `*All` examples pass under `--match "no spec list"`.)
-- [ ] M2: Add fused `deriveAggregate` to `src/Keiki/Generics/TH.hs`, export it, and document it in the module Haddock header.
-- [ ] M2: Add toy `FusedCmd`/`FusedRegs`/`FusedEvent` types and a `deriveAggregate` splice plus assertions to `test/Keiki/Generics/THSpec.hs`.
-- [ ] M2: `cabal test keiki-test` passes including the fused example.
+- [x] M2: Add fused `deriveAggregate` to `src/Keiki/Generics/TH.hs`, export it, and document it in the module Haddock header. (2026-05-22)
+- [x] M2: Add toy `FusedCmd`/`FusedRegs`/`FusedEvent` types and a `deriveAggregate` splice plus assertions to `test/Keiki/Generics/THSpec.hs`. (2026-05-22)
+- [x] M2: `cabal test keiki-test` passes including the fused example. (2026-05-22 — 278 examples, 0 failures; the 3 fused examples pass under `--match "deriveAggregate (fused"`. No compiler warnings.)
 - [ ] M3: Migrate `jitsurei/src/Jitsurei/OrderCart.hs` to the single fused `deriveAggregate` splice and update its import list.
 - [ ] M3: `cabal test all` is green (in particular `jitsurei-test`, unchanged).
 - [ ] M4: Add a subsection 4.3 to `docs/guide/user-guide.md` covering the `*All` and fused forms and guidance on when the enumerated forms are still needed.

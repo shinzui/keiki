@@ -89,6 +89,42 @@ autoRegs :: RegFile AutoRegs
 autoRegs = RCons (Proxy @"wa") 0 (RCons (Proxy @"wb") 0 RNil)
 
 
+-- A third toy aggregate with fresh constructor names, derived through
+-- the single fused 'deriveAggregate' splice. The assertions below
+-- prove one splice produced both the command-side
+-- (@inCtorFoo@ / @inpFoo@ / @isTick@) and event-side (@wireFizzed@ /
+-- @FizzedTermFields@) declarations.
+
+data FooData = FooData { fa :: Int }
+  deriving (Eq, Show, Generic)
+
+
+data FusedCmd
+  = Foo FooData
+  | Tick
+  deriving (Eq, Show, Generic)
+
+
+type FusedRegs =
+  '[ '("fa", Int) ]
+
+
+data FizzData = FizzData { fb :: Int }
+  deriving (Eq, Show, Generic)
+
+
+data FusedEvent
+  = Fizzed FizzData
+  deriving (Eq, Show, Generic)
+
+
+$(deriveAggregate ''FusedCmd ''FusedRegs ''FusedEvent)
+
+
+fusedRegs :: RegFile FusedRegs
+fusedRegs = RCons (Proxy @"fa") 0 RNil
+
+
 spec :: Spec
 spec = do
   describe "deriveAggregateCtors on a record-payload constructor (DoIt)" $ do
@@ -161,3 +197,16 @@ spec = do
     it "discovers the singleton event and rebuilds it" $ do
       wcName wireSwept `shouldBe` "Swept"
       wcBuild wireSwept () `shouldBe` Swept
+
+  describe "deriveAggregate (fused command + event)" $ do
+    it "generates the command-side InCtor" $ do
+      icName inCtorFoo `shouldBe` "Foo"
+      evalTerm (inpFoo #fa) fusedRegs (Foo (FooData 11)) `shouldBe` 11
+
+    it "generates the command-side singleton guard" $ do
+      evalPred isTick fusedRegs Tick              `shouldBe` True
+      evalPred isTick fusedRegs (Foo (FooData 0)) `shouldBe` False
+
+    it "generates the event-side WireCtor" $ do
+      wcName wireFizzed `shouldBe` "Fizzed"
+      wcBuild wireFizzed (13, ()) `shouldBe` Fizzed (FizzData 13)

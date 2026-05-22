@@ -21,6 +21,10 @@
 -- \/ 'deriveWireCtors' when you need an abbreviated short name that
 -- differs from the constructor name.
 --
+-- 'deriveAggregate' is the fused all-in-one form: it bundles
+-- 'deriveAggregateCtorsAll' and 'deriveWireCtorsAll' so an aggregate's
+-- entire command- and event-side plumbing is a single splice.
+--
 -- Both splices read the constructor list of the named sum type via
 -- 'reify' and dispatch on the constructor's payload shape: zero-arg
 -- 'NormalC' is a singleton; one-arg 'NormalC' takes a record-payload
@@ -54,6 +58,7 @@ module Keiki.Generics.TH
   , deriveAggregateCtorsAll
   , deriveWireCtors
   , deriveWireCtorsAll
+  , deriveAggregate
   , deriveView
   ) where
 
@@ -150,6 +155,26 @@ deriveWireCtorsAll evtName = do
   let ctorMap = [ (nameBase n, c)          | c <- ctors, n <- conNames c ]
       specs   = [ (nameBase n, nameBase n) | c <- ctors, n <- conNames c ]
   fmap concat . mapM (genWire evtName ctorMap) $ specs
+
+
+-- | Fuse 'deriveAggregateCtorsAll' and 'deriveWireCtorsAll' into one
+-- splice covering an aggregate's command and event constructors. Given
+-- the command sum type, its register-file slot list, and the event sum
+-- type, this emits every declaration both @*All@ variants would, using
+-- each constructor's own name as its short-name suffix.
+--
+-- @
+-- $('deriveAggregate' \'\'OrderCmd \'\'OrderCartRegs \'\'OrderEvent)
+-- @
+deriveAggregate
+  :: Name              -- ^ command sum type, e.g. @\'\'OrderCmd@
+  -> Name              -- ^ register-file slot list, e.g. @\'\'OrderCartRegs@
+  -> Name              -- ^ event sum type, e.g. @\'\'OrderEvent@
+  -> Q [Dec]
+deriveAggregate cmdName regsName evtName = do
+  cmdDecs <- deriveAggregateCtorsAll cmdName regsName
+  evtDecs <- deriveWireCtorsAll evtName
+  pure (cmdDecs ++ evtDecs)
 
 
 -- | Generate the per-aggregate B-presentation view: a singletons GADT
