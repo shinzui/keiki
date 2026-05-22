@@ -143,15 +143,18 @@ This section must always reflect the actual current state of the work.
   Term rs ci r`, body `reg = TReg (indexNToIndex (indexN @name @rs @r))`. Added `TReg` to the
   `Keiki.Core` import (as `Term (TReg)` — the bundled-constructor form, since Core exports
   `Term (..)`). Exported with haddock. `cabal build keiki` clean.
-- [ ] M3: Dogfood and document — adopt `reg @"slot"` (and `:=` where natural) in
-  `jitsurei/src/Jitsurei/LoanApplication.hs`; confirm the existing
-  `Jitsurei.LoanApplicationBuilderSpec` golden/equivalence test still passes unchanged; add
-  a new unit test asserting `(:=)` yields the same `Update` as `(.=)`; add a short note to
-  the guard-authoring section of `docs/guide/user-guide.md` documenting both additions and
-  correcting the read-ergonomics framing; and author a new guide page
-  `docs/guide/generic-lens-and-label-reads.md` stating the import-scoping principle for new
-  projects (with a before/after) and the no-refactor helper path for existing ones, then
-  cross-link it from the builder/guard-authoring sections of `docs/guide/user-guide.md`.
+- [x] M3 (2026-05-21): Dogfooded and documented. Adopted `reg @"slot"` in
+  `LoanApplication.hs`'s `readyForReviewGuard`/`approvalGuard` and `=:` in the `inCtorStart`
+  edge body; the untouched AST form means `LoanApplicationBuilderSpec` still passes (96/0).
+  Added the `(=:)`-equals-`(.=)` unit test in `test/Keiki/BuilderSpec.hs` (compares register
+  writes via `delta`, since `Update` has no `Eq`); keiki-test 250/0. Documented both additions
+  in `docs/guide/user-guide.md` (Slot writes: `=:`; Terms: `reg @"name"` + corrected the
+  imprecise "`#name` is `proj` of an `IndexN`" claim to "resolves via `IsLabel s (Term rs ci r)`
+  to a `TReg`"; §10.4 glossary rows for `(=:)` and `reg @"name"`). Authored
+  `docs/guide/generic-lens-and-label-reads.md` (mechanism, new-project import-scoping principle,
+  before/after, no-refactor helper framing, parallel `.=`/`Control.Lens.(.=)` note) and
+  cross-linked it from the Terms and Slot-writes neighbourhoods. Note: every `:=` in this
+  plan's prose means `=:` (see Surprises/Decision Log). Full sweep `cabal test all` green.
 
 
 ## Surprises & Discoveries
@@ -284,7 +287,32 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-21): complete, all three milestones landed.** Against the original purpose —
+remove the two builder papercuts (the `.=`/`Control.Lens.(.=)` clash and verbose register
+reads) and ship the import-scoping guidance — the result is:
+
+- `Keiki.Builder` exports `(=:)` (an exact `.=` synonym) and `reg @"name"` (a TypeApplication
+  register read mirroring `slot @"name"`). Both compile and are dogfooded in
+  `jitsurei/src/Jitsurei/LoanApplication.hs`; the unchanged builder-vs-AST equivalence test
+  proves the rewrite is behavior-preserving, and a new unit test proves `(=:)` ≡ `(.=)`.
+- The user guide documents both helpers and the new
+  `docs/guide/generic-lens-and-label-reads.md` page states the principle, the before/after, and
+  the no-refactor framing; the page is cross-linked from the user guide.
+
+**The one substantive deviation — and the lesson:** the plan's headline `:=` operator is
+*impossible* in Haskell. Operators beginning with a colon are reserved for data constructors, so
+`(:=) = (.=)` does not compile (GHC-94426). This was not catchable by reading source — it is a
+language lexical rule — and it invalidated M1's exact spelling, the Plan-of-Work/Concrete-Steps
+snippets, and the End-of-M1 interface note. The maintainer chose `=:` as the replacement (a
+valid `=`-prefixed operator, no `lens`/`aeson` clash, same `infixr 6`/body). The lesson for
+future plans: validate a proposed *operator glyph* against Haskell's lexical rules (colon-prefix
+⇒ constructor) before committing it to a plan, the same way one validates a type signature.
+
+**Gaps / coordination:** the imprecise user-guide claim that `#name` is "`proj` of an `IndexN`"
+(lines ~320–321) — flagged by EP-46 as shared territory — was corrected here (EP-49 owns it);
+EP-46 deliberately left those lines alone, so there was no conflict. No other gaps; `reg`
+resolved without annotations everywhere it replaced `proj (#slot :: …)`, confirming the
+HasIndexN-driven `r` inference the plan assumed.
 
 
 ## Context and Orientation

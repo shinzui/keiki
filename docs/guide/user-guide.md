@@ -304,6 +304,16 @@ the indexed monad. **Writing twice to the same slot fails to
 compile** — the `Disjoint` constraint on `(.=)` raises a
 `TypeError` naming the duplicated slot.
 
+`(=:)` is an exact synonym for `(.=)` (same `infixr 6` fixity, same
+result) for modules that also import `Control.Lens`, whose own `.=`
+would otherwise force `import Control.Lens hiding ((.=))`. A
+colon-prefixed `:=` is *not* possible — GHC reserves colon-prefixed
+operators for data constructors — so the escape spelling is `=:`. If
+your project uses `generic-lens`, see
+[Generic-lens and label reads](generic-lens-and-label-reads.md) for the
+import discipline that keeps the `.=` clash (and bare `#slot` reads)
+from biting.
+
 #### Terms — what goes on the right of `.=` and inside `emit`
 
 A `Term rs ci r` is a small AST, not a Haskell function. The
@@ -312,13 +322,24 @@ constructors:
 | Term | Smart constructor | Meaning |
 |---|---|---|
 | `TLit r` | `lit r` | A literal value |
-| `TReg ix` | `proj ix` or `#name` | Read register slot |
+| `TReg ix` | `proj ix`, `#name`, or `reg @"name"` | Read register slot |
 | `TInpCtorField ic ix` | `inpCtor ic ix`, or `d.fieldName` | Read input ctor's field |
 | `TApp1 f t` / `TApp2 f a b` | (no helper) | Apply opaque Haskell fn (escape hatch) |
 
 In an `onCmd` body the `d.fieldName` form is the most readable.
-For register reads, `#name` is the OverloadedLabels form (resolves
-to `proj` of an `IndexN "name" rs r`).
+For register reads, `#name` is the OverloadedLabels form: it resolves
+through the `IsLabel s (Term rs ci r)` instance to a `TReg` (an
+`Index`-based read), and is the lightest form wherever GHC can infer the
+slot list `rs` and value type `r` (e.g. the right-hand side of `.=`).
+Where inference fails — a hand-written guard conjunction, or an output
+field — bare `#name` needs the verbose `proj (#name :: Index Regs Ty)`
+annotation; `reg @"name"` is the annotation-free form for those
+positions, pinning the name with a type application exactly as
+`slot @"name"` does on the write side. If your prelude re-exports
+`generic-lens`, its `IsLabel` instance *shadows* keiki's and the bare
+`#name` read path is unavailable — use `reg @"name"` (it goes through a
+type application, not an overloaded label, so it is unaffected). See
+[Generic-lens and label reads](generic-lens-and-label-reads.md).
 
 #### `emit` — two forms
 
@@ -782,6 +803,8 @@ this guide and in the haddocks.
 | **`onEpsilon body`** | Add an ε-edge (no `InCtor` match in the guard); `body` runs in `EdgeBuilder` with no payload handle. |
 | **`slot @"name"`** | Resolve a `IndexN "name" rs r` for use with `(.=)`. The `TypeApplication` pins the slot name unambiguously. |
 | **`(.=)`** | Slot write. `slot @"x" .= term` adds a register-write step to the edge body. Static distinct-targets check via `Disjoint`. |
+| **`(=:)`** | Exact synonym for `(.=)` (same fixity and result) to avoid the `Control.Lens.(.=)` clash without `hiding ((.=))`. A colon-prefixed `:=` is impossible — Haskell reserves colon-prefixed operators for data constructors. |
+| **`reg @"name"`** | Read a register slot as a `Term`, the read-side mirror of `slot @"name"`. The `TypeApplication` pins the name so no `:: Index Regs Ty` annotation is needed; unaffected by a `generic-lens` `IsLabel` that shadows bare `#name`. |
 | **`emit wc rec`** | Set the edge's output. `wc` is a `WireCtor`; `rec` is the field-keyed record (or a bare `OutFields`). The input-side `InCtor` is recovered from the enclosing `onCmd`. |
 | **`emitWith ic wc rec`** | Same as `emit` but with an explicit `InCtor`. Required inside `onEpsilon`. |
 | **`noEmit`** | Mark the edge as ε-output. Idempotent. |
