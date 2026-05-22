@@ -105,6 +105,7 @@ test-suite keiki-test
                         Keiki.NoThunksSpec
                         Keiki.OperatorsSpec
                         Keiki.ProfunctorSpec
+                        Keiki.RecomputeVerifySpec
                         Keiki.Render.MermaidSpec
                         Keiki.ShapeSpec
                         Keiki.StrongSpec
