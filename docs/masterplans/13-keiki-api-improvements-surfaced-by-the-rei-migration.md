@@ -133,7 +133,7 @@ invariant and must be designed and prototyped before code.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 46 | Document the output-invertibility contract and derived-value modeling patterns | docs/plans/46-document-the-output-invertibility-contract-and-derived-value-modeling-patterns.md | None | None | Complete |
-| 47 | Recompute-and-verify derived event outputs in solveOutput replay | docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md | None | EP-46 | In Progress (M1 gate) |
+| 47 | Recompute-and-verify derived event outputs in solveOutput replay | docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md | None | EP-46 | Complete (gate GO) |
 | 48 | N-ary event-family codec composition and singleton-event support | docs/plans/48-n-ary-event-family-codec-composition-and-singleton-event-support.md | None | None | Complete |
 | 49 | Builder ergonomics: assignment synonym and register-read label helper | docs/plans/49-builder-ergonomics-assignment-synonym-and-register-read-label-helper.md | None | None | Complete |
 | 50 | Mermaid renderer: atlas entry point and structural edge-summary annotations | docs/plans/50-mermaid-renderer-atlas-entry-point-and-structural-edge-summary-annotations.md | None | EP-46 | Complete |
@@ -224,9 +224,9 @@ the authoritative, detailed version.)
 - [x] EP-46 M2 (2026-05-21): Worked "derived value → do X" recipes (audit field via `TReg` already round-trips; computed total via mirror-command today + forward pointer to EP-47; the Direction-A mirror workaround).
 - [x] EP-46 M3 (2026-05-21): Cross-link sweep + modeling redirects — #3 general structural-guard guidance (bounds→`PCmp`, multi-way branching→disjoint edges, computed operands→`tadd`/`tsub`/`tmul`) with the note that the validated Rei residual is collection-register *update* tuple-threading, not guards; #2a single-record idiom (source the dropped id from a register). Plus corrected the stale `solveOutput` "build-time analysis" label in both user-guide glossary occurrences.
 - [~] EP-47 M1 (design milestone + ratification gate) — DELIVERABLES COMPLETE; STOPPED for maintainer go/no-go (2026-05-21): Research note `docs/research/recompute-and-verify-derived-outputs.md` + prototype `test/Keiki/RecomputeVerifySpec.hs` (5/5 green, no `src/` change) + written analysis. Recommendation **GO** via **whole-event `Eq co`** (the M1 investigation found field-level `Eq` invasive — `TApp` carries no `Typeable`; whole-event `Eq co` is non-invasive, equivalent, and already required by keiro). Decision pending; M2 blocked until a go is recorded (no-go = keep #1 docs-only, EP-46 carries it).
-- [ ] EP-47 M2: Implement recompute-and-verify in `solveOutput`/`gatherInpEntries`; update `checkHiddenInputs`.
-- [ ] EP-47 M3: Round-trip, determinism-preservation, and negative (hidden-input still fails) tests.
-- [ ] EP-47 M4: Amend the EP-46 contract page + user-guide to the relaxed contract; close.
+- [x] EP-47 M2 (2026-05-21): Implemented recompute-and-verify in `solveOutput`/`gatherInpEntries` (derived fields skipped in recovery, recomputed-and-verified via a new `recomputeDerivedFields` + `Eq co`); refined `checkHiddenInputs`/`detectMissingInCtorFields` to the invertible-visited set. `Eq co` propagated to `applyEvent`/`outputAcceptor`. (The whole-event `evalOut` form over-verified `TReg` fields; corrected to derived-only recompute — see EP-47 Surprises.)
+- [x] EP-47 M3 (2026-05-21): Round-trip (order-cart derived total via `applyEvents`, tampered rejected), determinism (grid through real `solveOutput`), and negative (`checkHiddenInputs` flags a hidden input) tests in `test/Keiki/RecomputeVerifySpec.hs`.
+- [x] EP-47 M4 (2026-05-21): Amended the EP-46 contract page `docs/guide/output-invertibility.md` + user-guide glossary to the relaxed recompute-and-verify contract; closed.
 - [x] EP-48 M1 (2026-05-21): N-ary `WireCtor`-sum design confirmed via ghci prototype — right-nested `Either`, family *k* = `rightX^(k-1) . leftX`, composed from the already-exported binary lifts. Decision: ship arity-3 wrappers + general recipe, no type-indexed witness.
 - [x] EP-48 M2 (2026-05-21): Implemented arity-3 injectors (`wireCtor3At{1,2,3}`/`inCtor3At{1,2,3}`/`outTerm3At{1,2,3}`) in `src/Keiki/Composition.hs`, additively (binary `alternative`/lifts untouched; `Keiki.Core` untouched; no new `unsafeCoerce`).
 - [x] EP-48 M3 (2026-05-21): Singleton-event support — `mkWireCtor0` in `src/Keiki/Generics.hs` + a `Just Nothing` arm in `genWire`; `deriveWireCtors` accepts zero-arg ctors. Existing derivations unchanged.
@@ -536,7 +536,44 @@ Discovered during EP-48 implementation (2026-05-21):
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare
 the result against the original vision.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-21): all five plans Complete; the initiative met its vision.** Every
+keiki-only finding from the Rei migration was addressed faithfully, and keiki's foundational
+output-invertibility invariant was preserved (and, for EP-47, deliberately relaxed only with a
+maintainer-ratified, proof-backed change).
+
+- **EP-46 (docs)** — `docs/guide/output-invertibility.md` now states the contract, the recipes,
+  and the (a)–(e) modeling redirects; cross-linked from four guides. Shipped value on day one
+  and became the page EP-47 later amended.
+- **EP-49 (builder ergonomics)** — `=:` (the `:=` the request named is impossible — colon
+  operators are constructors in Haskell) and `reg @"slot"`, dogfooded in jitsurei; plus the
+  generic-lens import-scoping guide.
+- **EP-50 (Mermaid)** — `toMermaidAtlas` and the opt-in `toMermaidWith`/`MermaidOptions`
+  structural edge summary, with the default kept byte-identical (guard-free) and actively
+  verified; new `docs/guide/mermaid-rendering.md`.
+- **EP-48 (codec composition)** — arity-3 N-ary coproduct injectors composed from the existing
+  binary lifts + singleton-event support (`mkWireCtor0`); name-uniqueness obligation tested.
+- **EP-47 (recompute-and-verify)** — the keystone. The M1 ratification gate produced a research
+  note + prototype + analysis; the maintainer approved GO; M2–M4 relaxed `solveOutput` so
+  *redundant* derived output fields round-trip via recompute-and-verify while a hidden input
+  still fails at build time. "The event determines the command, certified at build time" is
+  preserved.
+
+**Phasing held:** Phase 1 (EP-46/48/49/50) shipped independently; Phase 2 (EP-47) followed
+behind its gate. The two soft dependencies played out as designed (EP-46↔EP-47 share the
+contract page — EP-46 created it, EP-47 amended it; EP-46↔EP-50 share the guard-free default —
+preserved and golden-pinned). No hard dependency ever blocked progress.
+
+**Lessons (each recorded in the relevant plan):**
+- The plans were design-accurate but three concrete details only surfaced on contact with the
+  compiler/types, and the per-plan gates/tests caught them: `:=` is impossible (EP-49);
+  `Edge.update` can't be used as a record selector due to its existential write-set (EP-50);
+  and — most importantly — the M1 gate's value: EP-47's `Eq` mechanism flipped from field-level
+  to whole-event `Eq co`, and then the whole-event `evalOut` form was found (in M2, by the
+  existing suite) to over-verify `TReg` audit fields, requiring the final derived-only-recompute
+  design. Ratification gates and a real regression suite earned their keep.
+- Every change stayed additive: no existing fixture's behavior changed, the all-invertible
+  `solveOutput` fast path is byte-identical, and `cabal test all` is green
+  (keiki-test 266, jitsurei 96, codec 40+7).
 
 
 ## Revision Notes

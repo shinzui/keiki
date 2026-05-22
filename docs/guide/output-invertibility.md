@@ -7,15 +7,20 @@ and it is **not total** — only certain shapes of output expression can be inve
 
 The contract a reader can apply immediately:
 
-> An event round-trips on replay **if and only if** every field of its payload is a
-> literal, a register read, or a copy of a field from the *same* command constructor. If
-> any payload field applies a Haskell function (`TApp1`/`TApp2`) or does structural
-> arithmetic (`TArith`), `solveOutput` returns `Nothing` and that event cannot be replayed
-> from the log alone.
+> An event round-trips on replay **if and only if** the command can be recovered from its
+> *invertible* payload fields — literals, register reads, and copies of fields from the *same*
+> command constructor. A payload field that applies a Haskell function (`TApp1`/`TApp2`) or does
+> structural arithmetic (`TArith`) is a **derived** field: since EP-47 it round-trips too, by
+> being *recomputed and verified* on replay — as long as every command field it reads is also
+> read by an invertible field (so the command is recoverable without it). An event fails to
+> round-trip only when a command field is read **only** inside a derived field (a *hidden
+> input*); `solveOutput` then returns `Nothing`, and `checkHiddenInputs` flags it at build time.
 
 This page states the rule, names the symbols that implement it (all in `src/Keiki/Core.hs`),
 and gives worked recipes for the "this event stores a derived value" situations that motivate
-it. The contract already governs the code today; nothing here asks you to change an aggregate.
+it. The contract governs the code as of EP-47 (the relaxation is recorded in
+`docs/research/recompute-and-verify-derived-outputs.md`); nothing here asks you to change an
+aggregate.
 
 ---
 
@@ -43,47 +48,64 @@ Look at each `Term` on the right of a field in the edge's `B.emit`:
 
 - If they are **all** `lit …`, `#slot` / `proj …` register reads, or `d.field` reads of the
   command this `onCmd` matches — the event round-trips.
-- If **any** is an opaque application (`TApp1`/`TApp2`) or uses structural arithmetic
-  (`.+` / `.-` / `.*`, i.e. `TArith`) — it does not round-trip today.
+- A **derived** field (an opaque application `TApp1`/`TApp2`, or structural arithmetic
+  `.+` / `.-` / `.*` i.e. `TArith`) also round-trips **as long as every command field it reads
+  is *also* read by an invertible field elsewhere in the same edge** (a *redundant* derived
+  field). The derived value is recomputed and verified on replay (see §2).
+- It only **fails** to round-trip if a command field is read **only** inside a derived field
+  (a *hidden input*) — then the command cannot be recovered, and the build-time check
+  `checkHiddenInputs` flags it (§6).
+
+> **Since EP-47** (`docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`),
+> derived output fields round-trip via *recompute-and-verify*. Before EP-47 a derived field of
+> any kind aborted replay for the whole edge; that earlier, stricter rule is described as
+> historical context where relevant below.
 
 ---
 
-## 2. What inverts today
+## 2. What inverts — recover, then recompute-and-verify
 
-> This section describes keiki's behavior as of this writing. The sibling plan
-> `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md` will
-> *relax* it so derived output fields round-trip by being recomputed and verified on replay.
-> Until that lands, the rule below is exact.
-
-The per-field accept/reject decision is made by the helper `gatherInpEntries` and its inner
-`stepOne` (`src/Keiki/Core.hs`, around lines 1054–1071). The accept/reject list on this page
-mirrors `stepOne` verbatim, so a reviewer can diff the two:
+`solveOutput` works in two phases. **Phase 1 (recover)** rebuilds the command from the
+*invertible* fields alone. `gatherInpEntries`/`stepOne` (`src/Keiki/Core.hs`, around lines
+1054–1071) walk the output fields; a derived field is *skipped* (it contributes no command
+information):
 
 ```haskell
 stepOne (TLit _)                  _val _   = Just []        -- literal: nothing to recover
-stepOne (TReg _)                  _val _   = Just []        -- register read: recovered from replayed regs
+stepOne (TReg _)                  _val _   = Just []        -- register read: nothing to recover
 stepOne (TInpCtorField ic2 ix)    val  ic1
   | icName ic1 == icName ic2 = Just [ByIndex (unsafeCoerce ix) val]  -- field of THIS command ctor
   | otherwise                = Nothing                              -- field of a DIFFERENT ctor
-stepOne (TApp1 _ _)               _val _   = Nothing        -- opaque application
-stepOne (TApp2 _ _ _)             _val _   = Nothing        -- opaque application
-stepOne (TArith _ _ _)            _val _   = Nothing        -- structural arithmetic in an OUTPUT
+stepOne (TApp1 _ _)               _val _   = Just []        -- derived: skipped, verified in Phase 2
+stepOne (TApp2 _ _ _)             _val _   = Just []        -- derived: skipped, verified in Phase 2
+stepOne (TArith _ _ _)            _val _   = Just []        -- derived: skipped, verified in Phase 2
 ```
 
-Read in plain language:
+**Phase 2 (recompute-and-verify)** then recomputes each *derived* field forward against the
+recovered command and the pre-update registers and checks it equals the observed value; an
+all-invertible edge has nothing to recompute and behaves exactly as before. Read in plain
+language:
 
-| Output field shape | Smart-constructor / surface form | Inverts? | Why |
+| Output field shape | Smart-constructor / surface form | Round-trips? | How |
 |---|---|---|---|
-| `TLit r` | `lit r` | ✅ | A literal carries no command data, so there is nothing to recover. |
-| `TReg ix` | `#slot` / `proj ix` | ✅ | The value is recovered from the register file replay has already rebuilt. |
-| `TInpCtorField ic ix`, matching ctor | `d.field` | ✅ | The event field *is* a copy of a command field, so the observed value is the recovered value. |
-| `TInpCtorField`, non-matching ctor | — | ❌ | The field belongs to a different command constructor; `solveOutput` returns `Nothing`. |
-| `TApp1 f t` / `TApp2 f a b` | (no helper; escape hatch) | ❌ | An opaque Haskell function has no inverse keiki can compute. |
-| `TArith op a b` | `tadd`/`tsub`/`tmul`, `.+`/`.-`/`.*` | ❌ | Arithmetic is not uniquely reversible from the result alone. |
+| `TLit r` | `lit r` | ✅ | A literal carries no command data; recovered trivially, not verified. |
+| `TReg ix` | `#slot` / `proj ix` | ✅ | Recovered from the register file; the observed value is kept, not re-verified (so an audit field round-trips even if the register is not yet populated on a partial replay). |
+| `TInpCtorField ic ix`, matching ctor | `d.field` | ✅ | The event field *is* a copy of a command field — Phase 1 recovers the command from it. |
+| `TInpCtorField`, non-matching ctor | — | ❌ | The field belongs to a different command constructor; `solveOutput` returns `Nothing` (a malformed edge). |
+| `TApp1 f t` / `TApp2 f a b` (**redundant**) | (no helper; escape hatch) | ✅ | Skipped in Phase 1; **recomputed forward and verified** in Phase 2. Requires every command field it reads to be read by an invertible field too. Even an *opaque* function is fine — it is only run forward, never inverted. |
+| `TArith op a b` (**redundant**) | `tadd`/`tsub`/`tmul`, `.+`/`.-`/`.*` | ✅ | Skipped in Phase 1; recomputed and verified in Phase 2. |
+| any derived field that **hides** a command input | — | ❌ | If a command field is read *only* inside a derived field, Phase 1 cannot recover it → `solveOutput` returns `Nothing`. `checkHiddenInputs` flags this at build time (§6). |
 
-So a literal, a register read, and a command-field copy from the *same* constructor all
-round-trip. Any opaque application or structural-arithmetic term in an output field makes
-`solveOutput` return `Nothing`.
+So literals, register reads, and same-constructor command-field copies round-trip by recovery;
+derived fields round-trip by recompute-and-verify **provided they are redundant** (every command
+field they read is also read invertibly). The command is therefore *always* recovered from the
+invertible fields alone — derived fields are a cross-check, never a source of command bits — so
+"the event uniquely determines the command, certified at build time" is preserved. The full
+argument is in `docs/research/recompute-and-verify-derived-outputs.md`.
+
+> **Tampering is rejected.** Because Phase 2 recomputes each derived field and compares it to
+> the observed value, an event whose derived field has been altered (a `lineTotal` that is not
+> `quantity * unitPrice`) fails to replay — `solveOutput` returns `Nothing`.
 
 ---
 
@@ -113,21 +135,23 @@ documented here) before applying any of the recipes below.
 
 ---
 
-## 4. One non-invertible field poisons the whole edge
+## 4. A redundant derived field no longer poisons the edge
 
-The inversion is **all-or-nothing per edge**. `gatherInpEntries` folds `stepOne` across
-*every* output field; if a *single* field returns `Nothing`, the whole fold collapses to
-`Nothing` and `solveOutput` fails for the **entire** edge — including the fields that *do*
-invert, and even fields that are not command slots at all. There is no partial recovery.
+**Historical note (pre-EP-47):** the inversion used to be *all-or-nothing per edge* — a single
+derived (`TApp`/`TArith`) field made `gatherInpEntries` return `Nothing` and killed the whole
+edge on replay, even fields that did invert. An aggregate with one state-resolved derived
+field (an audit value computed on the write path) was dragged *wholesale* into a
+mirror-command workaround. Rei's Reminder (`ReminderRescheduled`) and Disruption
+(`DisruptionDescriptionUpdated`) aggregates hit exactly this.
 
-The practical consequence is severe. An aggregate with even one state-resolved `previous*`
-field — an event field carrying a register's prior value, resolved on the write path rather
-than copied from the user command — is dragged *wholesale* into the mirror-command workaround
-(§7.2), because that one field cannot be inverted from the command. Rei's Reminder aggregate
-(whose `ReminderRescheduled` event carries `previousScheduledFor`) and Disruption aggregate
-(whose `DisruptionDescriptionUpdated` event carries `previousDescription`) are exactly this
-case: each is event-mirrored through a dedicated stream command *precisely because one
-`previous*` field cannot round-trip*.
+**Since EP-47**, that penalty is gone for *redundant* derived fields. A derived field is
+skipped during command recovery and then recomputed-and-verified, so it no longer poisons the
+edge — provided every command field it reads is also read by an invertible field (so the
+command is still recoverable). The only remaining all-or-nothing failure is a **hidden input**:
+a command field read *only* inside a derived field. Then Phase 1 cannot recover that field, so
+`solveOutput` returns `Nothing` for the edge — and `checkHiddenInputs` flags it at build time
+(§6). In short: a derived field that *adds* a computed value round-trips; a derived field that
+*hides* a command input still fails (loudly, and early).
 
 The sibling plan
 `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md` removes
@@ -178,11 +202,13 @@ in production.
 
 You have an event that needs to record a value. Find the matching recipe.
 
-### 7.1 An audit / `previous*` field → use a register read (round-trips today)
+### 7.1 An audit / `previous*` field → use a register read (round-trips with no verification)
 
 An event field that records a register's *prior* value — a `previousStatus`, a
-`previousBalance`, a `previousScheduledFor` — round-trips **today, with no special handling**,
-*provided you write it as a plain register read*. Two facts make this work:
+`previousBalance`, a `previousScheduledFor` — round-trips **with no special handling**,
+*provided you write it as a plain register read*. (A register read is an invertible field: its
+observed value is kept as-is and is *not* re-verified against state, so the field round-trips
+even on a partial replay where the register is not yet populated.) Two facts make this work:
 
 1. `solveOutput` is handed the register file *as it was before the edge's update ran*. You can
    see this at the `applyEvent` call site (`src/Keiki/Core.hs`, around line 886): it calls
@@ -210,11 +236,11 @@ invert, so the event round-trips.
 > function. Rei hit the invertibility wall only because it wrote such fields as *derived*
 > expressions (a `TApp` over the register) instead of a plain read.
 
-### 7.2 A genuinely derived value → the Direction-A mirror command (today's escape)
+### 7.2 A computed value → store it directly (recompute-and-verify)
 
-First, the wall. An event whose payload field is a *derived* value does **not** round-trip
-today, and — because the failure is all-or-nothing per edge (§4) — that one field poisons the
-whole edge. Two real shapes:
+Since EP-47, an event field that stores a *derived* value round-trips on its own, **provided
+the command is still recoverable from the other (invertible) fields**. You no longer need a
+mirror command. Two real shapes:
 
 - An opaque application, as in `jitsurei/src/Jitsurei/CoreBankingSync.hs`'s
   `LegacyAssignmentCommanded` edge (around line 208):
@@ -224,36 +250,43 @@ whole edge. Two real shapes:
     { assignment = TApp2 buildAssign d.loanId d.legacyLoanId }
   ```
 
-  `TApp2` is opaque → `stepOne (TApp2 _ _ _) = Nothing`.
-
 - Arithmetic, as in the `ReorderTriggered` event of
   `docs/guide/deriving-lifecycle-transitions.md` §4, whose payload is
-  `onHand = #onHand .- d.quantity` — a `TArith` (`tsub`) → `stepOne (TArith _ _ _) = Nothing`.
+  `onHand = #onHand .- d.quantity` — a `TArith` (`tsub`).
 
-Because the inversion is per-edge, an aggregate with even a *single* state-resolved `previous*`
-field is dragged into this workaround wholesale — which is exactly what Rei's Reminder
-(`previousScheduledFor`) and Disruption (`previousDescription`) aggregates do: each mirrors the
-*entire* event through a dedicated stream command because one field cannot invert.
+On replay, `solveOutput` recovers the command from the invertible fields, then recomputes the
+derived field forward (running the same `TApp2`/`TArith` it would have run on emit) and checks
+it equals the observed value. A worked example: an order-cart `LineItemAdded` event with
+`lineTotal = d.quantity .* d.unitPrice` round-trips through `applyEvents`, and a tampered
+`lineTotal` is rejected (see `test/Keiki/RecomputeVerifySpec.hs`).
 
-The portable workaround today is what the master plan calls **Direction A**: introduce a
-command that *mirrors the event's payload verbatim*, so the edge emits a plain `d.field` copy (a
-`TInpCtorField`) that inverts. The value is computed before the command is issued and carried in
-the command. The cost is a **doubled command vocabulary** — you add a carry-only command whose
-only job is to ferry the already-computed value.
+**The one caveat** is redundancy: every command field the derived term reads must *also* be
+read by an invertible field, so Phase 1 can still recover the command. The
+`CoreBankingSync` example above is the counter-case — `loanId`/`legacyLoanId` are read **only**
+inside the `TApp2`, so they are *hidden inputs* and the edge still does **not** round-trip;
+`checkHiddenInputs` flags it (§6). The fix there is to also emit those ids as plain `d.field`
+copies (or read them from registers), making the derived `assignment` redundant.
 
-> This is *today's* escape. The sibling plan
-> `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md` will let
-> derived fields round-trip by *recomputing and verifying* them on replay — removing the need
-> for the mirror command, and with it the all-or-nothing penalty (a single derived field would
-> no longer kill the edge).
+> **Historical (pre-EP-47):** a derived field of any kind aborted replay for the whole edge
+> (the "all-or-nothing per edge" rule, §4). The portable workaround was *Direction A* — a
+> mirror command carrying the already-computed value verbatim, at the cost of a doubled command
+> vocabulary. Recompute-and-verify removes that need for *redundant* derived fields; a mirror
+> command is now only relevant if you genuinely cannot make the derived field redundant.
 
-### 7.3 What fails, and why
+### 7.3 What still fails, and why
 
-The inversion is structural and per-field. An opaque application (`TApp1`/`TApp2`) has no
-inverse keiki can compute — the wrapped function is a black box. An arithmetic output term
-(`TArith`) is not inverted either: subtraction or multiplication is not uniquely reversible from
-the result alone (`a - b = r` does not determine `a` and `b`). So `stepOne` rejects both
-outright, and — per §4 — that aborts the whole edge's inversion, not just the one field.
+After EP-47 two cases still make `solveOutput` return `Nothing`:
+
+- **A hidden input** — a command field read *only* inside a derived (`TApp`/`TArith`) field.
+  Phase 1 recovers the command from invertible fields alone, so a field that appears nowhere
+  invertible cannot be recovered. `checkHiddenInputs` flags this at build time (§6).
+- **A non-matching `TInpCtorField`** — an output field projecting a *different* command
+  constructor than the edge consumes (a malformed edge).
+
+A *redundant* derived field does **not** fail: it is recomputed forward and verified. Note that
+the recompute only ever runs the term *forward* (via `evalTerm`), so even an opaque `TApp` works
+— invertibility of the wrapped function is never required; only that recomputing it reproduces
+the observed value.
 
 ---
 

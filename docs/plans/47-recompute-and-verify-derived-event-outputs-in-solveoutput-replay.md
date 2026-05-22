@@ -138,8 +138,15 @@ This section must always reflect the actual current state of the work.
   `quantity` is read only inside the derived field is flagged by `checkHiddenInputs` (naming
   `AddLineItem`/`quantity`), while the well-formed `cart` reports `[]`. `cabal test all` green
   (keiki-test 266, jitsurei 96, codec 40+7, 0 failures); no new warnings.
-- [ ] **M4.** Amend the shared contract page `docs/guide/output-invertibility.md` and the
-  glossary in `docs/guide/user-guide.md` to document the relaxed contract; close the plan.
+- [x] **M4 (2026-05-21).** Amended the shared contract page `docs/guide/output-invertibility.md`
+  to the relaxed contract: the headline statement, the §1 prediction recipe, §2 (now
+  "recover, then recompute-and-verify" with the two-phase `stepOne` + the round-trip table
+  including redundant-derived ✅ and hidden-input ❌), §4 (a redundant derived field no longer
+  poisons the edge; only a hidden input fails), and §7.2/§7.3 (store a computed value directly;
+  Direction-A mirror demoted to historical). Amended the `docs/guide/user-guide.md` §10.3
+  `solveOutput` glossary entry to note recompute-and-verify (`Eq co`) and link the research
+  note. Docs-only; the test suite is unchanged from M3 (green). EP-46 had already created the
+  page, so M4 amended rather than created it.
 
 
 ## Surprises & Discoveries
@@ -306,7 +313,38 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Outcome (2026-05-21): complete (gate GO), all four milestones landed.** Against the original
+purpose — let an event store a derived field and still round-trip, without surrendering "the
+event determines the command, certified at build time" — the result is:
+
+- `solveOutput` admits *redundant* derived output fields via recompute-and-verify: it recovers
+  the command from the invertible fields, recomputes only the derived fields forward, and
+  verifies them against the observed event (`Eq co`). A tampered derived value is rejected.
+- `checkHiddenInputs` (and `detectMissingInCtorFields`) were sharpened to the *invertible-visited*
+  set, so a command field read only inside a derived field (a hidden input) still fails at build
+  time. The build-time half of the invariant is preserved.
+- The "one derived field poisons the whole edge" failure is gone for redundant fields — the
+  concrete win the Rei migration asked for (#1).
+- Contract docs (`docs/guide/output-invertibility.md`, user-guide glossary) and the research
+  note document the relaxed behavior. `cabal test all` green throughout (keiki-test 266).
+
+**Lessons / surprises (recorded in full above):**
+- The M1 gate did its job twice over. First, it inverted the plan's tentative *field-level Eq*
+  preference: reading the live `Term` constructors showed field-level Eq is the *invasive*
+  option (no `Typeable` on `TApp`), and **whole-event `Eq co`** is non-invasive and equivalent.
+  Second — and only caught in M2 — the literal whole-event `evalOut … == co` form *over-verifies*
+  invertible `TReg` audit fields and eagerly forces the (poisoned, under `lmapCi`) command. The
+  correct implementation recomputes **only derived fields** (keeping observed invertible values)
+  and compares via `Eq co`. Same constraint, correct semantics.
+- The lesson: "recompute-and-verify" must verify *exactly the derived fields*, never the
+  invertible ones — verifying a `TReg` audit field against the current register file breaks
+  legitimate partial replays (EP-46's "`TReg` already round-trips" contract). A prototype that
+  exercises register-reading edges from a non-initial state would have caught this at M1; the
+  M1 prototype's derived field read only command fields, so it surfaced at M2 instead (the
+  existing `DeciderSpec`/`ProfunctorSpec` suite caught it — the regression guard worked).
+- Blast radius held: `Eq co` propagated only to `applyEvent` and `outputAcceptor` (the
+  streaming/snapshot/decider paths already required it); all event types derive `Eq`. The
+  all-invertible fast path is byte-identical (existing fixtures unchanged).
 
 
 ## Context and Orientation
