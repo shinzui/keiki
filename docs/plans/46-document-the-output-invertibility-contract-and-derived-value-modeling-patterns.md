@@ -68,11 +68,14 @@ This section must always reflect the actual current state of the work.
   symbols (`solveOutput` ~1039, `gatherInpEntries`/`stepOne` ~1054–1071, `evalTerm` ~728–737,
   `applyEvent`/`applyEventStreaming` ~882–966, `checkHiddenInputs` ~1104–1197); `stepOne`
   block on the page is verbatim from source (incl. `unsafeCoerce ix`).
-- [ ] M2: Add the worked "derived value → do X" recipes to that page: the audit/`previous*`
-  field via a register read (round-trips today), the computed total via the Direction-A
-  mirror command (today's escape, with a forward pointer to
-  `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`), and a
-  plain statement of what fails and why.
+- [x] M2 (2026-05-21): Added the worked "derived value → do X" recipes (page §7): 7.1 the
+  audit/`previous*` field via a register read (round-trips today, with the pre-update timing
+  cited to the `applyEvent` call site ~line 886 and the `AccountConfirmed` edge snippet from
+  `jitsurei/src/Jitsurei/UserRegistration.hs`); 7.2 the computed total via the Direction-A
+  mirror command (today's escape, with the `TApp2 buildAssign` and `onHand .- d.quantity`
+  examples and a forward pointer to
+  `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`); 7.3 a
+  plain statement of what fails and why. Every cited snippet verified verbatim against source.
 - [ ] M3: Cross-link sweep plus the modeling redirects (a)–(e). Add short notes to
   `docs/guide/user-guide.md`, `docs/guide/why-smt.md`,
   `docs/guide/deriving-lifecycle-transitions.md`, and `docs/guide/symbolic-ci.md`, each

@@ -171,3 +171,86 @@ unvisited, or when an ε-edge (one that emits no event) reads the command in its
 on the per-event runtime path. `docs/guide/symbolic-ci.md` shows how teams wire such checks into
 CI. Treat `checkHiddenInputs` as the net that catches the mistake before any event is replayed
 in production.
+
+---
+
+## 7. Recipes
+
+You have an event that needs to record a value. Find the matching recipe.
+
+### 7.1 An audit / `previous*` field → use a register read (round-trips today)
+
+An event field that records a register's *prior* value — a `previousStatus`, a
+`previousBalance`, a `previousScheduledFor` — round-trips **today, with no special handling**,
+*provided you write it as a plain register read*. Two facts make this work:
+
+1. `solveOutput` is handed the register file *as it was before the edge's update ran*. You can
+   see this at the `applyEvent` call site (`src/Keiki/Core.hs`, around line 886): it calls
+   `solveOutput o regs co` and only *afterwards* applies the edge's update to `regs`. So a
+   register read in the output resolves to the pre-update value — exactly what an audit field
+   wants.
+2. A register read is an accepting term: `stepOne (TReg _) = Just []`.
+
+The real example is `jitsurei/src/Jitsurei/UserRegistration.hs`'s `AccountConfirmed` edge
+(around line 309):
+
+```haskell
+B.emit wireAccountConfirmed AccountConfirmedTermFields
+  { email       = #email
+  , confirmCode = d.confirmCode
+  , at          = d.at
+  }
+```
+
+`email = #email` is a `TReg` read (the registered email, recovered from the register file on
+replay); `confirmCode = d.confirmCode` and `at = d.at` are command-field copies. All three
+invert, so the event round-trips.
+
+> Reach for a register read (`#slot` / `proj`) first for audit fields — do **not** wrap it in a
+> function. Rei hit the invertibility wall only because it wrote such fields as *derived*
+> expressions (a `TApp` over the register) instead of a plain read.
+
+### 7.2 A genuinely derived value → the Direction-A mirror command (today's escape)
+
+First, the wall. An event whose payload field is a *derived* value does **not** round-trip
+today, and — because the failure is all-or-nothing per edge (§4) — that one field poisons the
+whole edge. Two real shapes:
+
+- An opaque application, as in `jitsurei/src/Jitsurei/CoreBankingSync.hs`'s
+  `LegacyAssignmentCommanded` edge (around line 208):
+
+  ```haskell
+  B.emit wireLegacyAssignmentCommanded LegacyAssignmentCommandedTermFields
+    { assignment = TApp2 buildAssign d.loanId d.legacyLoanId }
+  ```
+
+  `TApp2` is opaque → `stepOne (TApp2 _ _ _) = Nothing`.
+
+- Arithmetic, as in the `ReorderTriggered` event of
+  `docs/guide/deriving-lifecycle-transitions.md` §4, whose payload is
+  `onHand = #onHand .- d.quantity` — a `TArith` (`tsub`) → `stepOne (TArith _ _ _) = Nothing`.
+
+Because the inversion is per-edge, an aggregate with even a *single* state-resolved `previous*`
+field is dragged into this workaround wholesale — which is exactly what Rei's Reminder
+(`previousScheduledFor`) and Disruption (`previousDescription`) aggregates do: each mirrors the
+*entire* event through a dedicated stream command because one field cannot invert.
+
+The portable workaround today is what the master plan calls **Direction A**: introduce a
+command that *mirrors the event's payload verbatim*, so the edge emits a plain `d.field` copy (a
+`TInpCtorField`) that inverts. The value is computed before the command is issued and carried in
+the command. The cost is a **doubled command vocabulary** — you add a carry-only command whose
+only job is to ferry the already-computed value.
+
+> This is *today's* escape. The sibling plan
+> `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md` will let
+> derived fields round-trip by *recomputing and verifying* them on replay — removing the need
+> for the mirror command, and with it the all-or-nothing penalty (a single derived field would
+> no longer kill the edge).
+
+### 7.3 What fails, and why
+
+The inversion is structural and per-field. An opaque application (`TApp1`/`TApp2`) has no
+inverse keiki can compute — the wrapped function is a black box. An arithmetic output term
+(`TArith`) is not inverted either: subtraction or multiplication is not uniquely reversible from
+the result alone (`a - b = r` does not determine `a` and `b`). So `stepOne` rejects both
+outright, and — per §4 — that aborts the whole edge's inversion, not just the one field.
