@@ -129,11 +129,15 @@ This section must always reflect the actual current state of the work.
   it). Additive: all-invertible fast path byte-identical; `cabal test all` green
   (keiki-test 265, jitsurei 96, codec 40+7, 0 failures). The whole-event `evalOut` form was
   corrected to derived-only recompute — see Surprises.
-- [ ] **M3.** Tests: (i) a derived-output aggregate round-tripping end-to-end through
-  `applyEvents`/`reconstitute`; (ii) a property/enumeration test that "event determines
-  command" still holds (two distinct commands cannot produce the same observed event on an
-  admitted edge); (iii) a negative test that a genuine hidden input still fails the
-  build-time `checkHiddenInputs` check.
+- [x] **M3 (2026-05-21).** Rewrote `test/Keiki/RecomputeVerifySpec.hs` to exercise the real
+  (relaxed) `solveOutput`/`applyEvents` (subsuming the M1 prototype's local function): (i) an
+  order-cart aggregate whose `LineItemAdded` event stores a derived `lineTotal = quantity *
+  unitPrice` round-trips through `applyEvents` and reconstructs the registers, and a tampered
+  total is rejected; (ii) an enumeration over a 6×6 grid where every command round-trips through
+  `solveOutput` to itself and distinct commands never collide; (iii) a malformed `badCart` where
+  `quantity` is read only inside the derived field is flagged by `checkHiddenInputs` (naming
+  `AddLineItem`/`quantity`), while the well-formed `cart` reports `[]`. `cabal test all` green
+  (keiki-test 266, jitsurei 96, codec 40+7, 0 failures); no new warnings.
 - [ ] **M4.** Amend the shared contract page `docs/guide/output-invertibility.md` and the
   glossary in `docs/guide/user-guide.md` to document the relaxed contract; close the plan.
 
