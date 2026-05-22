@@ -109,6 +109,9 @@ aggregates the test suite drives.
 | `docs/research/` | Design notes for the library itself. Assume foundations vocabulary. The current baseline is `synthesis-c-foundation-b-presentation-with-worked-examples.md`. |
 | `docs/plans/` and `docs/masterplans/` | Execution plans for in-flight work. |
 
+For a status snapshot — what's implemented, what's next, and what's intentionally
+out of scope — see [`ROADMAP.md`](ROADMAP.md).
+
 Recommended shortest path:
 
 1. `docs/foundations/00-reading-guide.md` — orientation.
