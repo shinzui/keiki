@@ -80,11 +80,11 @@ This section must always reflect the actual current state of the work.
 - [x] M2: `cabal test keiki-test` passes including the fused example. (2026-05-22 — 278 examples, 0 failures; the 3 fused examples pass under `--match "deriveAggregate (fused"`. No compiler warnings.)
 - [x] M3: Migrate `jitsurei/src/Jitsurei/OrderCart.hs` to the single fused `deriveAggregate` splice and update its import list. (2026-05-22)
 - [x] M3: `cabal test all` is green (in particular `jitsurei-test`, unchanged). (2026-05-22 — jitsurei-test 96 examples, 0 failures, no test edits; keiki-codec-json-test 40, 0 failures; full build with zero compiler warnings.)
-- [ ] M4: Add a subsection 4.3 to `docs/guide/user-guide.md` covering the `*All` and fused forms and guidance on when the enumerated forms are still needed.
-- [ ] M4: Name the new splices in `docs/foundations/06-where-to-go-next.md` where it lists what `Keiki.Generics.TH` derives.
-- [ ] M4: Add a one-line note to `docs/guide/ast-drop-down.md` that the `*All`/fused forms produce identical declarations to the enumerated ones.
-- [ ] M4: Add an `### Added` entry under `[Unreleased]` in `CHANGELOG.md` describing `deriveAggregateCtorsAll`, `deriveWireCtorsAll`, and `deriveAggregate`.
-- [ ] M4: Confirm no historical docs (`docs/research/`, `docs/masterplans/`, `docs/plans/`) were edited.
+- [x] M4: Add a subsection 4.3 to `docs/guide/user-guide.md` covering the `*All` and fused forms and guidance on when the enumerated forms are still needed. (2026-05-22 — new 4.3; existing `deriveView` subsection renumbered 4.3 → 4.4; section-4 intro updated.)
+- [x] M4: Name the new splices in `docs/foundations/06-where-to-go-next.md` where it lists what `Keiki.Generics.TH` derives. (2026-05-22 — both the line-28 onboarding entry and the line-132 `TermFields` note.)
+- [x] M4: Add a one-line note to `docs/guide/ast-drop-down.md` that the `*All`/fused forms produce identical declarations to the enumerated ones. (2026-05-22 — blockquote after the `isConfirm`/`deriveAggregateCtors` attribution.)
+- [x] M4: Add an `### Added` entry under `[Unreleased]` in `CHANGELOG.md` describing `deriveAggregateCtorsAll`, `deriveWireCtorsAll`, and `deriveAggregate`. (2026-05-22)
+- [x] M4: Confirm no historical docs (`docs/research/`, `docs/masterplans/`, `docs/plans/`) were edited. (2026-05-22 — `git diff --stat docs/ CHANGELOG.md` touches only `docs/guide/`, `docs/foundations/`, `CHANGELOG.md`; no `docs/research/` or `docs/masterplans/` changes; the only `docs/plans/` change is this plan file.)
 
 
 ## Surprises & Discoveries
@@ -201,7 +201,36 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+All four milestones landed as planned, each in its own commit with both trailers:
+
+- **M1** (`300d078`) — `deriveAggregateCtorsAll` / `deriveWireCtorsAll` added to
+  `src/Keiki/Generics/TH.hs` and exported; 6 new `THSpec` examples on the `AutoCmd` /
+  `AutoEvent` toy aggregate (record-payload + singleton on both sides). `keiki-test`: 275
+  examples, 0 failures.
+- **M2** (`3e44d9c`) — fused `deriveAggregate` added (composes the two `*All` variants);
+  3 new `THSpec` examples on the `FusedCmd` / `FusedEvent` toy aggregate. `keiki-test`: 278
+  examples, 0 failures.
+- **M3** (`bb4121d`) — `jitsurei/src/Jitsurei/OrderCart.hs` migrated: two enumerated
+  splices (24 lines of `("Name","Name")` pairs) collapsed to one
+  `$(deriveAggregate ''OrderCmd ''OrderCartRegs ''OrderEvent)`, import narrowed.
+  `jitsurei-test`: 96 examples, 0 failures, **no test edits** — the strongest evidence the
+  fused splice is byte-for-byte name- and behavior-preserving.
+- **M4** — docs + changelog: new `user-guide.md` §4.3 (deriveView renumbered to §4.4),
+  signposts in `06-where-to-go-next.md`, a note in `ast-drop-down.md`, and a `[Unreleased]`
+  `### Added` block in `CHANGELOG.md`. No historical doc touched.
+
+Result vs. purpose: the headline goal — letting a user write one line instead of two
+hand-typed spec lists — is delivered and demonstrated end-to-end on a real aggregate. The
+enumerated forms remain for abbreviated short names (still exercised by the
+`UserRegistration` fixture). Full `cabal build all` is warning-free; `cabal test all` is
+green across `keiki-test`, `jitsurei-test`, and `keiki-codec-json-test`.
+
+Lessons: (1) Because TH splices only bring generated names into scope *textually after* the
+splice, the fused splice in OrderCart had to sit before the `KnownInCtors OrderCmd`
+instance that consumes `inCtor*`; the two original section headers were retained with an
+explanatory comment under the now-spliceless event header (see Decision Log). (2) The
+`user-guide.md` already had a §4.3 (`deriveView`), so the new subsection forced a renumber
+to §4.4 — a reminder to check existing numbering before inserting.
 
 
 ## Context and Orientation

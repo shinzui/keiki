@@ -403,8 +403,10 @@ typechecks alone but duplicates are no longer flagged).
 
 ## 4. The TH derivations
 
-Three splices replace what would otherwise be ~14 hand-written
-declarations per aggregate.
+A handful of splices replace what would otherwise be ~14
+hand-written declarations per aggregate. Sections 4.1–4.2 cover the
+enumerated command/event forms, 4.3 the zero-spec and fused
+shortcuts, and 4.4 the B-presentation view.
 
 ### 4.1 `deriveAggregateCtors ''Cmd ''Regs [ ("Ctor", "Short"), … ]`
 
@@ -444,7 +446,40 @@ B.emit wireRegistrationStarted RegistrationStartedTermFields
 
 A wrong-field-order or missing-field bug becomes a compile error.
 
-### 4.3 `deriveView ''Vertex ''Regs "SVertex" "View" "view" [ … ]`
+### 4.3 Zero-spec and fused forms (`*All` / `deriveAggregate`)
+
+In the common case the short name *is* the constructor name, so the
+`(constructorName, shortName)` spec list in 4.1/4.2 is pure
+boilerplate that repeats what the compiler already knows. Three
+splices remove it by enumerating the sum type's constructors and
+defaulting each short-name suffix to the constructor's own name:
+
+| Splice | Replaces | Emits |
+|---|---|---|
+| `deriveAggregateCtorsAll ''Cmd ''Regs` | `deriveAggregateCtors` (no spec list) | `inCtor<Ctor>` / `inp<Ctor>` / `is<Ctor>` per command ctor (singletons omit `inp<Ctor>`) |
+| `deriveWireCtorsAll ''Event` | `deriveWireCtors` (no spec list) | `wire<Ctor>` plus, for record-payload events, `<Ctor>TermFields` + its `ToOutFields` instance |
+| `deriveAggregate ''Cmd ''Regs ''Event` | both of the above, fused | everything the two `*All` variants emit, in one splice |
+
+So an aggregate's entire command- and event-side plumbing collapses
+to a single line:
+
+```haskell
+$(deriveAggregate ''OrderCmd ''OrderCartRegs ''OrderEvent)
+```
+
+The generated declarations are byte-for-byte the ones the enumerated
+forms produce when every short name equals its constructor name — see
+`jitsurei/src/Jitsurei/OrderCart.hs`, which uses exactly this line.
+
+**Rule of thumb.** Reach for the `*All` / fused forms whenever the
+short name equals the constructor name (the overwhelmingly common
+case). Keep the enumerated `deriveAggregateCtors` / `deriveWireCtors`
+only when you want an *abbreviated* short name that differs from the
+constructor name — for example `test/Keiki/Fixtures/UserRegistration.hs`
+maps `StartRegistration -> Start`, `FulfillGDPRRequest -> Gdpr`, which
+auto-enumeration cannot express.
+
+### 4.4 `deriveView ''Vertex ''Regs "SVertex" "View" "view" [ … ]`
 
 Emits the **B-presentation view** — a per-vertex projection that
 exposes only the slots the vertex actually uses:
