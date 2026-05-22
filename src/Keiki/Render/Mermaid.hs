@@ -31,6 +31,10 @@ module Keiki.Render.Mermaid
   , toMermaidCompose3
   , toMermaidCompose3Nested
   , toMermaidFeedback1
+  , toMermaidAtlas
+  , toMermaidWith
+  , MermaidOptions (..)
+  , defaultMermaidOptions
   , vertexLabel
   , compositeLabel
   , compose3Label
@@ -52,9 +56,33 @@ import Keiki.Core
   , Names
   , OutTerm (..)
   , SymTransducer (..)
+  , Update (..)
   , WireCtor (..)
   )
 import Keiki.Generics (Append)
+import Keiki.Internal.Slots (indexNName)
+
+
+-- | Rendering options for the structural edge-summary suffix. All
+-- fields default to 'False' in 'defaultMermaidOptions', so the default
+-- rendering is byte-identical to 'toMermaid'.
+data MermaidOptions = MermaidOptions
+  { showWrittenSlots :: Bool
+    -- ^ When 'True', append the update's written-slot names, e.g.
+    -- @[w: email; confirmCode; registeredAt]@.
+  , showGuardSummary :: Bool
+    -- ^ When 'True', append a structural guard summary listing the
+    -- guard's constructor / comparison tags, e.g. @[g: PAnd PInCtor PEq]@.
+  }
+
+
+-- | The default: no summary suffix. @'toMermaid' t@ equals
+-- @'toMermaidWith' 'defaultMermaidOptions' t@.
+defaultMermaidOptions :: MermaidOptions
+defaultMermaidOptions = MermaidOptions
+  { showWrittenSlots = False
+  , showGuardSummary = False
+  }
 
 
 -- | Render a 'SymTransducer' to a Mermaid @stateDiagram-v2@ block.
@@ -70,7 +98,23 @@ toMermaid
   :: (Enum s, Bounded s, Show s)
   => SymTransducer (HsPred rs ci) rs s ci co
   -> Text
-toMermaid = renderTopology vertexLabel
+toMermaid = toMermaidWith defaultMermaidOptions
+
+
+-- | Like 'toMermaid', but takes 'MermaidOptions' controlling the
+-- structural edge-summary suffix. @'toMermaidWith' 'defaultMermaidOptions'@
+-- is byte-identical to 'toMermaid'. With 'showWrittenSlots' and/or
+-- 'showGuardSummary' enabled, each edge label gains a compact bracketed
+-- suffix, e.g. @… [w: email; confirmCode; registeredAt; g: PAnd PInCtor PTop]@.
+--
+-- Only the single-transducer path is annotated; the composite renderers
+-- ('toMermaidComposite' and relatives) keep the guard-free default.
+toMermaidWith
+  :: (Enum s, Bounded s, Show s)
+  => MermaidOptions
+  -> SymTransducer (HsPred rs ci) rs s ci co
+  -> Text
+toMermaidWith opts = renderTopologyWith opts vertexLabel
 
 
 -- | Render a composite 'SymTransducer' (a 'Keiki.Composition.compose'
@@ -460,7 +504,21 @@ renderTopology
   => (s -> Text)
   -> SymTransducer (HsPred rs ci) rs s ci co
   -> Text
-renderTopology label t =
+renderTopology = renderTopologyWith defaultMermaidOptions
+
+
+-- | The options-aware rendering core. Identical to 'renderTopology'
+-- except the per-edge line calls 'edgeLabelWith' so the structural
+-- summary suffix appears when 'MermaidOptions' requests it. With
+-- 'defaultMermaidOptions' the output is byte-identical to the original
+-- 'renderTopology', which is what keeps 'toMermaid' guard-free.
+renderTopologyWith
+  :: (Enum s, Bounded s)
+  => MermaidOptions
+  -> (s -> Text)
+  -> SymTransducer (HsPred rs ci) rs s ci co
+  -> Text
+renderTopologyWith opts label t =
   let vertices  = [minBound .. maxBound]
       header    = T.pack "stateDiagram-v2"
       ind       = T.pack "    "
@@ -469,7 +527,7 @@ renderTopology label t =
       initLine  = ind <> T.pack "[*]" <> arrow <> label (initial t)
       edgeLines =
         [ ind <> label s <> arrow
-              <> label (target e) <> colon <> edgeLabel e
+              <> label (target e) <> colon <> edgeLabelWith opts e
         | s <- vertices
         , e <- edgesOut t s
         ]
@@ -553,3 +611,86 @@ edgeLabel e =
   let inp = maybe (T.pack "?") id (edgeInputName e)
       out = maybe (T.pack "\x03B5") id (edgeOutputName e)
   in inp <> T.pack " / " <> out
+
+
+-- | The options-aware edge label: 'edgeLabel' plus an optional
+-- structural suffix @[w: …; g: …]@. When neither flag is set this is
+-- exactly 'edgeLabel' (no trailing space, no brackets), which is what
+-- keeps the 'toMermaid' default byte-identical. The written-slots part
+-- is omitted entirely when the edge writes nothing (an empty @w:@ would
+-- be noise); the guard part renders the full structural tag walk.
+edgeLabelWith
+  :: MermaidOptions
+  -> Edge (HsPred rs ci) rs ci co s
+  -> Text
+edgeLabelWith opts e@Edge { update = u, guard = g } =
+  -- The whole edge @e@ is reused for 'edgeLabel'; @u@ and @g@ are bound
+  -- by the pattern so the existential write-set in @update@ does not
+  -- escape (the record selector cannot be used as a function for it).
+  let base  = edgeLabel e
+      ws    = if showWrittenSlots opts then writtenSlots u else []
+      wPart = if null ws
+                then []
+                else [ T.pack "w: " <> T.intercalate (T.pack "; ") ws ]
+      gPart = if showGuardSummary opts
+                then [ T.pack "g: " <> guardSummary g ]
+                else []
+      parts = wPart ++ gPart
+  in if null parts
+       then base
+       else base <> T.pack " [" <> T.intercalate (T.pack "; ") parts <> T.pack "]"
+
+
+-- | Recover the names of the slots an edge's 'Update' writes, by
+-- structural recursion over the 'Update' value. 'USet's @KnownSymbol s@
+-- constraint (brought into scope by the pattern match) lets
+-- 'indexNName' read the slot name off the index; no type-level
+-- write-set machinery is needed.
+writtenSlots :: Update rs w ci -> [Text]
+writtenSlots UKeep          = []
+writtenSlots (USet ix _)    = [T.pack (indexNName ix)]
+writtenSlots (UCombine a b) = writtenSlots a ++ writtenSlots b
+
+
+-- | A structural, total summary of a guard predicate: its constructor
+-- tags in left-to-right (prefix) order, with 'PCmp' carrying its 'Cmp'
+-- direction. It deliberately does NOT print the operand 'Term's — those
+-- can hold opaque Haskell functions ('TApp1'\/'TApp2'), and the
+-- input-constructor inside 'PInCtor' carries unprintable match\/build
+-- functions. This is the faithful renderable projection of an otherwise
+-- unprintable AST.
+guardSummary :: HsPred rs ci -> Text
+guardSummary = T.intercalate (T.pack " ") . go
+  where
+    go :: HsPred rs ci -> [Text]
+    go PTop         = [T.pack "PTop"]
+    go PBot         = [T.pack "PBot"]
+    go (PAnd a b)   = T.pack "PAnd" : go a ++ go b
+    go (POr  a b)   = T.pack "POr"  : go a ++ go b
+    go (PNot p)     = T.pack "PNot" : go p
+    go (PEq _ _)    = [T.pack "PEq"]
+    go (PInCtor _)  = [T.pack "PInCtor"]
+    go (PCmp c _ _) = [T.pack "PCmp " <> T.pack (show c)]
+
+
+-- | Assemble several already-rendered Mermaid diagrams into one
+-- document, each under a labelled section. Each input pair is
+-- @(sectionLabel, renderedDiagram)@ where @renderedDiagram@ is the
+-- 'Text' produced by any single-transducer or composite renderer in
+-- this module (e.g. 'toMermaid', 'toMermaidComposite'). The label is
+-- emitted as a Markdown level-2 heading; the diagram is emitted inside
+-- a fenced @mermaid@ code block so it renders inline in GitHub \/
+-- Notion \/ Markdown previewers.
+--
+-- Transducers are heterogeneously typed (each has its own vertex,
+-- register, input and output types), so a single list of transducers
+-- would not type-check; taking already-rendered 'Text' lets each caller
+-- pick the matching renderer for its own transducer. An empty list
+-- yields the empty 'Text'.
+toMermaidAtlas :: [(Text, Text)] -> Text
+toMermaidAtlas sections =
+  T.intercalate (T.pack "\n\n")
+    [ T.pack "## " <> label <> T.pack "\n\n"
+        <> T.pack "```mermaid\n" <> diagram <> T.pack "\n```"
+    | (label, diagram) <- sections
+    ]
