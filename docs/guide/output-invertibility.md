@@ -107,6 +107,18 @@ argument is in `docs/research/recompute-and-verify-derived-outputs.md`.
 > the observed value, an event whose derived field has been altered (a `lineTotal` that is not
 > `quantity * unitPrice`) fails to replay — `solveOutput` returns `Nothing`.
 
+> **One caveat — a derived field that reads a register.** Recomputing a derived field runs it
+> forward, so a derived field that reads a *register* (e.g. `amountDue = #rate .* d.qty`) is
+> verified against the register file. That is correct whenever the registers hold their
+> emit-time values — a full `reconstitute` and a replay from a valid snapshot both satisfy this
+> — but a replay from a *synthetic mid-state with stale/empty registers* would recompute the
+> field to a different value and reject the event. A derived field over **command fields only**
+> (`d.quantity .* d.unitPrice`) recomputes from the recovered command alone and is unaffected;
+> and a plain register **read** (`previousBalance = #balance`) is *invertible*, so it is kept
+> as-is and **not** verified (preferring a plain read for an audit field avoids the caveat
+> entirely). The full discussion is in
+> `docs/research/recompute-and-verify-derived-outputs.md`.
+
 ---
 
 ## 3. The failure is a plain `Nothing`, not an exception

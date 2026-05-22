@@ -336,3 +336,41 @@ The §1 contract and the §2 proof are unaffected: command recovery still reads 
 invertible fields (clause a); derived fields still only *verify* (clause b). Sections 1 and 3's
 prose that says "recompute the whole output / `evalOut … == co`" should be read as "rebuild the
 event recomputing only the derived fields", per this addendum.
+
+
+## Limitation: a derived field that reads a register is verified against the registers
+
+Recomputing a derived field runs its `Term` forward with `evalTerm`, so a derived field that
+reads a **register** (e.g. `amountDue = #rate .* d.qty`, a `TArith` over a `TReg` and a command
+field) is verified against the register file `solveOutput` is handed. This is correct whenever
+the registers hold their **emit-time** values:
+
+- a full `reconstitute`/`applyEvents` from the initial state rebuilds the registers as it
+  replays, so each edge sees the same pre-update registers it saw on emit; and
+- a replay from a **valid snapshot** carries the correct registers.
+
+It is *not* correct for a replay started from a **synthetic / inconsistent mid-state** whose
+registers do not reflect the emit-time values: the derived field then recomputes to a different
+value and `solveOutput` returns `Nothing` (the command's *invertible* fields are still
+recovered; only the derived field's forward recompute mismatches). This is the same
+register-state dependence that made the *whole-event* form over-verify plain `TReg` fields —
+except here it is unavoidable, because a derived field **must** be recomputed to be verified.
+
+Two consequences worth stating:
+
+- **Asymmetry with plain `TReg`.** A plain register-read audit field (`previousBalance =
+  #balance`) is *invertible* — it is kept at its observed value and **not** verified, so it
+  round-trips regardless of register state (the EP-46 "`TReg` round-trips" contract). The
+  *same read wrapped in a derived term* (`#balance .+ lit 0`) is *derived*, so it **is**
+  verified and gains the register-state dependence above. Prefer a plain register read for an
+  audit field; reach for a derived term only when you genuinely need a computed value.
+- **The common case is unaffected.** A derived field over **command fields only**
+  (`lineTotal = d.quantity .* d.unitPrice`) recomputes from the recovered command alone and is
+  *independent* of register state — it round-trips against any register file. This is the
+  motivating "computed value" case and the one EP-47's headline tests cover.
+
+Both behaviors are pinned in `test/Keiki/RecomputeVerifySpec.hs` (group "EP-47 (iv)"): a
+register-reading derived field round-trips when the register is correct and is rejected against
+an inconsistent register file, while a command-field-only derived field is register-independent.
+No soundness impact: "the event determines the command" depends only on the invertible fields
+(§2), which this limitation does not touch.

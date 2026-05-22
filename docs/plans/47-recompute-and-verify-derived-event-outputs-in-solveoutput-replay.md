@@ -193,6 +193,21 @@ implementation. Provide concise evidence.
   recompute path needs *no* signature change — M2 just starts using the argument already in
   scope, threaded from the `applyEvent`/`applyEventStreaming` call sites that already pass the
   pre-update registers.
+- **Post-M4 hardening (2026-05-21): a derived field that reads a *register* keeps a narrower,
+  unavoidable version of the register-state dependence.** The M2 fix stopped over-verifying
+  *invertible* `TReg` fields, but a *derived* field that reads a register (e.g.
+  `amountDue = #rate .* d.qty`) must be recomputed to be verified, and recomputing it touches
+  `regs`. So it round-trips only when the registers hold their emit-time values — true for a full
+  `reconstitute` and a valid snapshot, but a synthetic mid-state with stale/empty registers would
+  reject it. This is inherent (you cannot verify a derived field without recomputing it) and
+  low-risk: the motivating computed-value case reads *command* fields (register-independent), and
+  audit fields should use a plain `TReg` read (invertible, not verified). M3 had only covered the
+  command-field-derived case, so this was an untested/undocumented gap. Hardened: added
+  `RecomputeVerifySpec` group "EP-47 (iv)" (register-reading derived field round-trips with correct
+  registers; rejected against an inconsistent register file; command-field-only derived field is
+  register-independent), and documented the limitation in the research note ("Limitation"
+  section) and the contract page §2. No soundness impact — "event determines command" depends only
+  on the invertible fields.
 
 
 ## Decision Log
