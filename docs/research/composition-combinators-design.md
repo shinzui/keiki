@@ -121,7 +121,10 @@ Rationale, in order:
 5. **`Kleisli` requires multi-event edges.** keiki edges produce
    at most one event per step (per synthesis §5's MultiDecider
    discussion, generalisation is out of v2 scope). Without
-   multi-event edges, `Kleisli` collapses to `compose`.
+   multi-event edges, `Kleisli` collapses to `compose`. *(Stale as
+   of EP-19: edges are now multi-event and `compose` performs the
+   chaining `Kleisli` would have. See the "`Kleisli` — subsumed by
+   `compose`" record below.)*
 
 6. **Profunctor hierarchy.** Replicating the
    profunctors/Strong/Choice/Costrong/Cochoice/Closed instances on
@@ -658,6 +661,12 @@ criteria). Each re-deferred combinator gets a "Re-deferred" record
 naming the deferral conditions and pointing to the sibling research
 that covers the same need.
 
+Status as of EP-19 (2026-05-16): `alternative` and `feedback1` are
+admitted; `parallel` remains re-deferred (its blocker is a
+runtime/use-case gap, not edge arity); `Kleisli` is **no longer
+deferred** — EP-19's multi-event edge widening dissolved its
+blocker and `compose` now subsumes it (see its record below).
+
 
 ### `alternative` — admitted
 
@@ -1160,42 +1169,56 @@ MP-9 ships `Strong` only if `parallel` is admitted, but `Choice`
 `alternative` alone.
 
 
-### `Kleisli` — re-deferred
+### `Kleisli` — subsumed by `compose` (EP-19)
 
-#### Why re-deferred
+> **Status update (EP-19, 2026-05-16):** the blocker described below
+> as the re-deferral condition has been removed. This record is
+> retained for history; the current verdict is in "Why no longer
+> deferred."
+
+#### Original re-deferral reasoning (superseded)
 
 Crem's `Kleisli :: StateMachineT m a (n b) -> StateMachineT m b (n
 c) -> StateMachineT m a (n c)` lifts sequential composition over a
-`Foldable` of inner events. keiki's edge form
-(`Edge.output :: Maybe (OutTerm rs ci co)`, defined at
-`src/Keiki/Core.hs:458`) emits at most one event per step. Lifting
-to multi-event edges requires Approach 3 ("MultiDecider") from
-`docs/research/multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md`,
-which would widen `Edge.output` to `[OutTerm rs ci co]` and is
-explicitly out of MP-8's scope per its Out-of-Scope item 4.
+`Foldable` of inner events. At MP-8's design time keiki's edge form
+emitted at most one event per step (`Edge.output :: Maybe (OutTerm
+rs ci co)`), so lifting to multi-event edges was treated as a
+prerequisite that was out of MP-8's scope. Within that scope
+`Kleisli` collapsed to `compose` for the single-event case keiki
+supported; admitting it would have duplicated `compose` without
+adding capability. The original deferral condition was: re-evaluate
+`Kleisli` iff a future MasterPlan promotes a multi-event edge form
+to ship status.
 
-Within MP-8's scope, `Kleisli` collapses to `compose` for the
-single-event case keiki actually supports; admitting it would
-duplicate `compose` without adding capability.
+#### Why no longer deferred
 
-#### Deferral conditions and redirect
+That condition has been met — by Approach 2 (GSM widening), not the
+Approach 3 the original reasoning anticipated. EP-19 (2026-05-16)
+shipped:
 
-Re-evaluate `Kleisli` if and only if a future MasterPlan promotes
-Approach 3 to ship status. Until then, multi-event commands within
-one transducer are written via Approach 1 (state refinement, per
-MP-7 / EP-20). The relevant ergonomics are:
+- **`Keiki.Core.Edge.output :: [OutTerm rs ci co]`**
+  (`src/Keiki/Core.hs:573`) — the multi-event edge form. `[]` is the
+  ε-edge, `[o]` a letter edge, `[o₁,…,oₙ]` a multi-event edge.
+- **`compose`'s library-side chain expansion** — `composeEdge`
+  (`src/Keiki/Composition.hs:845-854`) handles a length-N first-edge
+  output by walking T2's state through each mid-symbol via
+  `expandPaths` (`Composition.hs:922-931`) and re-collapsing into a
+  composite edge.
 
-- `Keiki.Builder.chainTo` for syntactic compression of multi-event
-  edge authoring.
-- `Keiki.Decider.toMultiDecider` (with `DriverConfig`) for a
-  decider façade that drives multi-event chains end-to-end without
-  exposing intermediate vertices.
-- `Keiki.Core.applyEvents` for chunk replay over a list of events.
+`expandPaths` *is* the "lift sequential composition over a `Foldable`
+of inner events" semantics that distinguishes `Kleisli` from crem's
+`Sequential`. So in keiki `compose` now subsumes **both** crem's
+`Sequential` and `Kleisli`; there is no capability `Kleisli` would
+add. The collapse the original reasoning predicted for the
+single-event case now holds in the multi-event case too.
 
-Cross-transducer multi-event composition (the use case `Kleisli`
-would unlock) has no documented authoring need yet. If one surfaces,
-a successor MasterPlan can reopen the question with a v3-class
-multi-event edge proposal.
+No separate combinator is warranted. A named `Kleisli` would be a
+redundant alias for `compose`; it is not planned. Multi-event
+commands within one transducer are authored directly via multiple
+`emit` calls in one `Keiki.Builder.onCmd` body (EP-19 also retired
+EP-20's `toMultiDecider` / `chainTo` façade). Replay of an event
+chain uses `Keiki.Core.applyEventStreaming` (InFlight-aware) or
+`Keiki.Core.applyEvents` (chunked).
 
 
 ### Profunctor / Strong / Choice instances — out of scope
@@ -1244,10 +1267,10 @@ sections above.
 
 | Question                                                       | Decision                                            |
 |----------------------------------------------------------------|-----------------------------------------------------|
-| Which of the four MP-8 combinators are admitted?               | `alternative` and `feedback1`. `parallel` and `Kleisli` are re-deferred. |
+| Which of the four MP-8 combinators are admitted?               | `alternative` and `feedback1`. `parallel` and `Kleisli` were re-deferred at MP-8 time; EP-19 later subsumed `Kleisli` into `compose` (see row below). |
 | `feedback`'s iteration model                                   | Single-step `feedback1 t f`. Pure trivially; multi-round patterns nest `feedback1`s. |
 | `alternative`'s mutual-exclusion check                         | None new. The `Either ci1 ci2` input alphabet makes the cross-transducer check vacuous; `isSingleValuedSym` on the composite suffices. |
-| `Kleisli`'s status                                             | Re-deferred. Requires the multi-event edge form (Approach 3 in the multi-event note); MP-7's state-refinement covers the in-aggregate case. |
+| `Kleisli`'s status                                             | No longer deferred (EP-19, 2026-05-16). EP-19 widened `Edge.output` to a list (via Approach 2, GSM widening, not the Approach 3 originally anticipated) and `compose`'s `composeEdge`/`expandPaths` now performs the multi-event chaining `Kleisli` would have. `compose` subsumes both `Sequential` and `Kleisli`; no separate combinator is warranted. |
 | `parallel`'s status                                            | Re-deferred. The strict-tuple shape doesn't fit keiki's queue-driven runtime; `alternative` covers the bounded-context use case. |
 | Module shape for new combinators                               | Extend `Keiki.Composition`. New combinators reuse `WeakenR` / `weakenL*` / `subst*`. |
 | Composite vertex type for `alternative`                        | Reuses `Composite s1 s2` (product). Originally specified `CompositeSum` (sum); EP-25 M4 surfaced the sum-vertex degeneracy and switched to product. |

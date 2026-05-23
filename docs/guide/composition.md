@@ -241,8 +241,12 @@ result. The vertex type stacks: `Composite (Composite s1 s2) s3`,
 which `Bounded`/`Enum` derive cleanly.
 
 keiki ships sequential `compose`, disjoint-input `alternative`
-(§8), and single-step `feedback1` (§9). `parallel` and `Kleisli`
-are deferred; the rationale is in
+(§8), and single-step `feedback1` (§9). There is no separate
+`Kleisli`: since EP-19 widened edges to multi-event, `compose`
+chains multi-event edges through T2 and so subsumes crem's
+`Kleisli` as well as `Sequential`. `parallel` remains deferred (no
+paired-input use case fits keiki's queue-driven runtime;
+`alternative` covers the bounded-context case). The rationale is in
 `docs/research/composition-combinators-design.md` under
 "Combinators beyond `compose`".
 
