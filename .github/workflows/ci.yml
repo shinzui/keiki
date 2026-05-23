@@ -34,6 +34,15 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: 'latest'
 
+      # keiki:keiki-test runs the Keiki.Symbolic specs (single-valuedness
+      # / sat gates), which shell out to z3 via SBV. Without it on PATH the
+      # symbolic specs fail loudly. The codec/bench jobs don't need it.
+      - name: Install z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3
+          z3 --version
+
       - name: Configure
         run: |
           cabal update
