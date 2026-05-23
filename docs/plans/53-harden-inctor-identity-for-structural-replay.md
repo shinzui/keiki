@@ -27,16 +27,16 @@ Scope, stated precisely: this change buys *type soundness* — after it, the ind
 
 ### Active milestones (structural re-indexing)
 
-- [ ] M-A: Add an `ifs :: [Slot]` parameter to `Term` in `src/Keiki/Core.hs`; pin it on `TInpCtorField`, leave it free on `TLit`/`TReg`, thread it through `TApp1`/`TApp2`/`TArith`.
-- [ ] M-B: Add the `ifs` parameter to `OutFields` (exposed) and tie it to the `InCtor`'s `ifs` on `OPack`; update `(*:)`, `oNil`, `pack`.
-- [ ] M-C: Existentially hide the term's `ifs` in `Update` (`USet`) and `HsPred` (`PEq`/`PCmp`) so `Edge`/`SymTransducer` kinds are unchanged.
-- [ ] M-D: Update all `Term`/`OutFields` walkers + smart constructors in `src/Keiki/Core.hs` (`evalTerm`, `evalOutFields`, `gatherInpEntries`, `recomputeDerivedFields`, `visitedSlotsOf`, `detectMissingInCtorFields`, `outFieldsHaveInpCtorField`, `termReadsInput`, `inpCtor`/`lit`/`proj`, etc.). `gatherInpEntries` drops `unsafeCoerce` (index is now `Index ifs r` by construction); keep the `icName` check as a runtime diagnostic.
-- [ ] M-E: Thread `ifs` through `src/Keiki/Composition.hs` (`weaken*`, `subst*`, `liftL/RTermAlt`, `liftL/ROutFieldsAlt`).
-- [ ] M-F: Thread `ifs` through `src/Keiki/Symbolic.hs` (`translateTermSym` and the OutTerm/OutFields walks).
-- [ ] M-G: Thread `ifs` through `src/Keiki/Profunctor.hs` contravariant rewriters; rework `firstSym` to a combined `InCtor (ci,c)` so the threaded-`c` projection and the original fields share one `ifs`.
-- [ ] M-H: Thread `ifs` through `src/Keiki/Builder.hs` (`ToOutFields` class gains `ifs`) and `src/Keiki/Generics/TH.hs` (`inp<Short>` signature, the `<Short>TermFields` generated record gains an `ifs` param, `ToOutFields` instance head).
-- [ ] M-I: Fix test/jitsurei type annotations that name `OutFields`/`Term`/`OutTerm` to carry the new `ifs` param; add a regression test demonstrating the collision is now a *compile error* (the prior runtime `== Nothing` test is no longer expressible).
-- [ ] M-J: Run targeted + full validation (`cabal test all`); confirm no `unsafeCoerce` in `gatherInpEntries`.
+- [x] M-A (2026-05-23): Added `ifs :: [Slot]` to `Term` in `src/Keiki/Core.hs`; pinned on `TInpCtorField`, free on `TLit`/`TReg`, threaded through `TApp1`/`TApp2`/`TArith`.
+- [x] M-B (2026-05-23): Added the `ifs` parameter to `OutFields` (exposed) and tied it to the `InCtor`'s `ifs` on `OPack`; updated `(*:)`, `oNil`, `pack`, and the `IsLabel`/smart-constructor (`proj`/`inpCtor`/`lit`/`tadd`/operators) signatures.
+- [x] M-C (2026-05-23): Existentially hid the term's `ifs` in `Update` (`USet`) and `HsPred` (`PEq`/`PCmp`, two independent existentials) — `Edge`/`SymTransducer` kinds unchanged.
+- [x] M-D (2026-05-23): Updated all `Term`/`OutFields` walkers in `src/Keiki/Core.hs`. `gatherInpEntries` now returns `ByIndex ix val` with no `unsafeCoerce` (the import is removed); the `icName` check is kept as a runtime diagnostic. Updated Haddock on `Term`/`OutFields`/`InCtor`/`gatherInpEntries`.
+- [x] M-E (2026-05-23): Threaded `ifs` through `src/Keiki/Composition.hs` (`weaken*Term`/`weaken*OutFields`, `substTerm`/`substOutFields` (input `ifs2`, polymorphic result `ifsR`), `unsafeCoerceTerm` extended to realign `ifs`, `liftL/RTermAlt`, `liftL/ROutFieldsAlt`, `nthTerm`, `SomeTerm`).
+- [x] M-F (2026-05-23): Threaded `ifs` through `src/Keiki/Symbolic.hs` (`translateTermSym`, and `goEq`/`goCmp` now take two independent `ifs`).
+- [x] M-G (2026-05-23): Threaded `ifs` through `src/Keiki/Profunctor.hs` contravariant rewriters; reworked `firstSym` to a combined `InCtor (ci,c)` (schema `'( "snd", c) ': ifs`) with an index-shifting re-home walk; removed the now-unused `pairSndInCtor`.
+- [x] M-H (2026-05-23): Threaded `ifs` through `src/Keiki/Builder.hs` (`ToOutFields` gains `ifs`; `emitWith` ties cleanly; `emit` bridges the existential `PeInCtor` to the record's `ifs` via a documented `reIndexPinnedInCtor`; `reg`/`(.=)`/`(=:)`/`require*`/`PayloadProj` updated) and `src/Keiki/Generics/TH.hs` (`inp<Short>` and the `<Short>TermFields` record + `ToOutFields` instance gain the `ifs` param).
+- [x] M-I (2026-05-23): Fixed `Term`/`OutFields` annotations in `test/Keiki/CoreSpec.hs` and `test/Keiki/OperatorsSpec.hs` (`OutTerm` annotations needed no change). jitsurei/codec needed no changes (inference). Added the EP-53 regression test "rejects a same-schema TInpCtorField whose icName differs" plus a comment recording that the schema collision is now a compile error.
+- [x] M-J (2026-05-23): `cabal test all` passes — keiki-test 279, jitsurei-test 96, keiki-codec-json-test 40, keiki-codec-json-test-test 7 (0 failures). `rg unsafeCoerce src/Keiki/Core.hs` finds only comments.
 
 ### Superseded milestones (runtime `Typeable` comparison — not implemented)
 
@@ -108,7 +108,58 @@ Scope, stated precisely: this change buys *type soundness* — after it, the ind
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implemented 2026-05-23. The type-unsound `unsafeCoerce` in
+`Keiki.Core.gatherInpEntries` is gone, replaced by a structural guarantee:
+`Term` and `OutFields` are indexed by the input field schema `ifs`, and
+`OPack` ties the `OutFields`' `ifs` to its `InCtor`. A top-level
+`TInpCtorField` inside an `OutFields` is therefore an `Index` into the
+`OPack`'s constructor schema by construction, so the recovered index is
+provably valid and the original collision hazard is now a **compile
+error** rather than a runtime `Nothing`.
+
+What landed:
+
+- `src/Keiki/Core.hs`: `Term rs ci ifs r`, `OutFields rs ci ifs fs`,
+  `OPack` ties the schemas, `USet`/`PEq`/`PCmp` existentially hide `ifs`.
+  `gatherInpEntries` returns `ByIndex ix val` with no coercion; the
+  `Unsafe.Coerce` import is removed. `icName` is documented as a stable
+  human-readable label + runtime diagnostic, not type evidence.
+- Threaded `ifs` through `Composition`, `Symbolic`, `Profunctor`,
+  `Builder`, and `Generics/TH`. `firstSym` reworked to a combined
+  `InCtor (ci, c)`.
+- `test/Keiki/CoreSpec.hs`: positive structural-replay tests preserved;
+  added the EP-53 diagnostic test. `test/Keiki/OperatorsSpec.hs`: one
+  annotation made `ifs`-polymorphic.
+
+Validation: `cabal test all` — 279 + 96 + 40 + 7 examples, 0 failures.
+
+How the outcome differed from both plans:
+
+- The original runtime-`Typeable` plan was **unimplementable** (Profunctor
+  instance wall; forging `Typeable` would be unsound). Recorded in
+  Surprises and the Decision Log.
+- The redesign was *less* invasive than the deferred-alternative framing
+  feared: re-indexing `Term` (not just `OutFields`) and existentially
+  hiding `ifs` in `Update`/`HsPred` kept `Edge`/`SymTransducer` and the
+  authoring API unchanged. No `Typeable` is needed anywhere, and the
+  Profunctor phantom `InCtor`s did not need touching.
+- Residual `unsafeCoerce` uses outside the replay path: the pre-existing
+  ones in `Composition` (`unsafeCoerceTerm` — extended to also realign
+  `ifs`; `unsafeCoerceInCtor`) and `Profunctor` (dictionary fabrication),
+  plus one new documented `reIndexPinnedInCtor` in `Builder.emit` that
+  bridges the existential `PeInCtor` to the record's `ifs` (justified by
+  `onCmd` storing one and the same `InCtor` in both places; it does not
+  weaken replay soundness, which is now carried by the types).
+
+Follow-up worth considering (out of scope here): thread the pinned
+`InCtor`'s `ifs` through `EdgeBuilder` so `emit` needs no
+`reIndexPinnedInCtor` — a fully-typed alternative to the one documented
+builder-side coercion. Correctness-neutral relative to this change.
+
+Note: two unrelated docs files (`docs/guide/composition.md`,
+`docs/research/composition-combinators-design.md`) were found modified in
+the working tree at session start (EP-19 `Kleisli` content, not EP-53);
+they were deliberately **left out** of the EP-53 commit.
 
 
 ## Context and Orientation
@@ -345,6 +396,8 @@ The exact names may differ, but the implementation must have that type-safety pr
 - 2026-05-23 — Validation pass. Verified every codebase reference against the working tree (all accurate: the `unsafeCoerce` at `src/Keiki/Core.hs:1133`, the `InCtor` GADT, the `CoreSpec` test vocabulary, the generics helpers, GHC 9.12.2 / GHC2024, and the four `cabal test all` suites). Made the plan compile-correct and more self-contained: (1) the `sameInCtorReplaySchema` sketch now shows the explicit `forall` and the `InCtor{}` pattern matches that the type-only version omitted — without these the helper does not compile, because `@ifs1`/`@ifs2` need scoped variables and `typeRep` needs the GADT-packed `Typeable` evidence; (2) pinned the import to the exact `Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))` line already used in `src/Keiki/Symbolic.hs`, and noted `Typeable` is already imported from `Data.Typeable`; (3) Milestone 4 now enumerates all five `InCtor` construction sites — `mkInCtor` and `mkInCtorVia` need the new `Typeable ifs` constraint, while `mkInCtor0`, `inCtorUnit` (`src/Keiki/Symbolic.hs`), and `leftInCtor`/`rightInCtor` (`src/Keiki/Composition.hs`) need none; (4) widened the Concrete Steps `Generics.hs` inspection range to include `mkInCtorVia`; (5) recorded the regression-fixture nuance (same field types ⇒ the pre-fix coercion is value-safe, so the test asserts the schema-identity rule via `== Nothing`). Decision Log, Surprises & Discoveries, and Idempotence updated accordingly.
 
 - 2026-05-23 — Scoping clarification (follow-up to the validation discussion). Added a Decision Log entry recording that this plan deliberately implements a runtime schema comparison, and tightened the Purpose section to state precisely that the change delivers type soundness, not semantic constructor identity. No change to the implementation steps, milestones, or acceptance criteria — framing and future-work guidance only.
+
+- 2026-05-23 — **Implementation complete.** Structural re-indexing landed in commit `30c89fa` (`feat(core)!: re-index Term/OutFields by input schema for sound replay`). All milestones M-A…M-J done; `cabal test all` green (279 + 96 + 40 + 7, 0 failures); no `unsafeCoerce` remains in `Keiki.Core`. Filled in Outcomes & Retrospective and checked off Progress. The collision hazard is now prevented at compile time.
 
 - 2026-05-23 — **Major pivot during implementation: runtime `Typeable` comparison → type-level structural re-indexing.** The runtime approach failed to compile because two polymorphic phantom `InCtor`s in `src/Keiki/Profunctor.hs` flow through fixed-signature `Profunctor`/`Strong`/`Arrow`/`Choice` instances that cannot carry a `Typeable` constraint, and forging the dictionary would be unsound. The plan's prior "exactly five construction sites / near-zero risk / no API churn" validation claim was therefore wrong (there are seven sites). When asked, the user chose the larger redesign that the earlier Decision Log had deferred. Updated Progress (new milestones M-A…M-J, old ones marked superseded), Surprises (the seven sites, the Profunctor instance wall, the unsoundness of forging `Typeable`, `TInpCtorField` being a general `Term`, the `firstSym`/`compose` mixing, and the no-`Typeable`/minimal-authoring-change payoff), Decision Log (abandon `Typeable`; adopt Design A-refined; keep `icName` as a diagnostic; rework `firstSym`), and the Plan of Work (revised narrative). Implementation in progress.
 
