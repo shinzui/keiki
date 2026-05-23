@@ -78,34 +78,34 @@ spec = do
     it "evaluates TLit" $
       evalTerm (TLit (42 :: Int)) RNil () `shouldBe` 42
     it "evaluates TApp1" $
-      evalTerm (TApp1 (+1) (TLit (5 :: Int)) :: Term '[] () Int) RNil () `shouldBe` 6
+      evalTerm (TApp1 (+1) (TLit (5 :: Int)) :: Term '[] () '[] Int) RNil () `shouldBe` 6
     it "evaluates TApp2" $
       evalTerm
-        (TApp2 (+) (TLit (5 :: Int)) (TLit 10) :: Term '[] () Int)
+        (TApp2 (+) (TLit (5 :: Int)) (TLit 10) :: Term '[] () '[] Int)
         RNil () `shouldBe` 15
 
   describe "TInpCtorField (structural input projection)" $ do
     it "evaluates field #a on the matching constructor" $
       evalTerm
         (TInpCtorField inCtorTinyFoo (#a :: Index '[ '("a", Int), '("b", Int) ] Int)
-           :: Term '[] TinyCmd Int)
+           :: Term '[] TinyCmd '[ '("a", Int), '("b", Int) ] Int)
         RNil (TinyFoo 7 9) `shouldBe` 7
     it "evaluates field #b on the matching constructor" $
       evalTerm
         (TInpCtorField inCtorTinyFoo (#b :: Index '[ '("a", Int), '("b", Int) ] Int)
-           :: Term '[] TinyCmd Int)
+           :: Term '[] TinyCmd '[ '("a", Int), '("b", Int) ] Int)
         RNil (TinyFoo 7 9) `shouldBe` 9
     it "errors with the icName when the input is the wrong constructor" $
       evaluate
         (evalTerm
            (TInpCtorField inCtorTinyFoo (#a :: Index '[ '("a", Int), '("b", Int) ] Int)
-              :: Term '[] TinyCmd Int)
+              :: Term '[] TinyCmd '[ '("a", Int), '("b", Int) ] Int)
            RNil (TinyBar 0))
         `shouldThrow` errorCall "evalTerm: TInpCtorField guard violation: TinyFoo"
     it "termReadsInput is True for a TInpCtorField term" $
       termReadsInput
         (TInpCtorField inCtorTinyFoo (#a :: Index '[ '("a", Int), '("b", Int) ] Int)
-           :: Term '[] TinyCmd Int)
+           :: Term '[] TinyCmd '[ '("a", Int), '("b", Int) ] Int)
         `shouldBe` True
 
   describe "evalPred" $ do
@@ -167,6 +167,34 @@ spec = do
           (OFCons (TInpCtorField inCtorTinyFoo
                      (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
             (OFCons (TLit (0 :: Int)) OFNil))
+        -- EP-53: an InCtor with the SAME field schema as inCtorTinyFoo but
+        -- a different icName. Because 'OutFields' is now indexed by the
+        -- input field schema and 'OPack' ties it to the InCtor, a field
+        -- projection whose *schema* differs from the OPack's InCtor is a
+        -- compile error (un-representable) — the old runtime collision
+        -- hazard is gone. The icName is retained only as a runtime
+        -- diagnostic: a same-schema projection naming a different
+        -- constructor is a clean replay failure ('Nothing'), never a
+        -- type-unsound coercion.
+        inCtorTinyFooOther :: InCtor TinyCmd '[ '("a", Int), '("b", Int) ]
+        inCtorTinyFooOther = InCtor
+          { icName  = "OtherName"
+          , icMatch = \case
+              TinyFoo a b -> Just (RCons (Proxy @"a") a
+                                  $ RCons (Proxy @"b") b
+                                  $ RNil)
+              _ -> Nothing
+          , icBuild = \(RCons _ a (RCons _ b RNil)) -> TinyFoo a b
+          }
+        outNameMismatch :: OutTerm '[] TinyCmd TinyCmdOut
+        outNameMismatch = OPack
+          inCtorTinyFoo
+          wireTinyFoo
+          (OFCons (TInpCtorField inCtorTinyFooOther
+                     (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
+            (OFCons (TInpCtorField inCtorTinyFooOther
+                       (#b :: Index '[ '("a", Int), '("b", Int) ] Int))
+              OFNil))
 
     it "evalOut produces TinyFooOut on a matching ci" $
       evalOut outComplete RNil (TinyFoo 7 11) `shouldBe` TinyFooOut 7 11
@@ -174,11 +202,13 @@ spec = do
       solveOutput outComplete RNil (TinyFooOut 7 11) `shouldBe` Just (TinyFoo 7 11)
     it "solveOutput returns Nothing on incomplete coverage" $
       solveOutput outIncomplete RNil (TinyFooOut 7 0) `shouldBe` Nothing
+    it "rejects a same-schema TInpCtorField whose icName differs (EP-53 diagnostic)" $
+      solveOutput outNameMismatch RNil (TinyFooOut 7 11) `shouldBe` Nothing
     it "detectMissingInCtorFields names the missing slot" $
       let fs = OFCons (TInpCtorField inCtorTinyFoo
                         (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
                  (OFCons (TLit (0 :: Int)) OFNil)
-                 :: OutFields '[] TinyCmd (Int, (Int, ()))
+                 :: OutFields '[] TinyCmd '[ '("a", Int), '("b", Int) ] (Int, (Int, ()))
       in detectMissingInCtorFields inCtorTinyFoo fs
            `shouldBe` Just (MissingInCtorFields "TinyFoo" ["b"])
     it "detectMissingInCtorFields is Nothing on complete coverage" $
@@ -186,12 +216,12 @@ spec = do
                         (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
                 (OFCons (TInpCtorField inCtorTinyFoo
                           (#b :: Index '[ '("a", Int), '("b", Int) ] Int))
-                  OFNil) :: OutFields '[] TinyCmd (Int, (Int, ()))
+                  OFNil) :: OutFields '[] TinyCmd '[ '("a", Int), '("b", Int) ] (Int, (Int, ()))
       in detectMissingInCtorFields inCtorTinyFoo fs `shouldBe` Nothing
     it "outFieldsHaveInpCtorField is True when at least one TInpCtorField appears" $
       let fs = OFCons (TInpCtorField inCtorTinyFoo
                         (#a :: Index '[ '("a", Int), '("b", Int) ] Int))
-                OFNil :: OutFields '[] TinyCmd (Int, ())
+                OFNil :: OutFields '[] TinyCmd '[ '("a", Int), '("b", Int) ] (Int, ())
       in outFieldsHaveInpCtorField fs `shouldBe` True
 
   where

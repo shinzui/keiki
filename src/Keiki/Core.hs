@@ -139,7 +139,6 @@ import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
-import Unsafe.Coerce (unsafeCoerce)
 
 import Keiki.Internal.Slots
   ( Concat
@@ -220,9 +219,9 @@ instance forall s rs r.
 -- 'Index' (e.g. 'inpFoo'\'s argument) selects the 'Index' instance; a
 -- context expecting a 'Term' (e.g. 'requireEq'\'s arguments) selects
 -- this one.
-instance forall s rs ci r.
+instance forall s rs ci ifs r.
          HasIndex s rs r
-      => IsLabel s (Term rs ci r) where
+      => IsLabel s (Term rs ci ifs r) where
   fromLabel = TReg (indexOf @s @rs @r)
 
 -- The @IsLabel s (IndexN s rs r)@ instance lives next to 'IndexN' in
@@ -242,23 +241,35 @@ data NumOp = OpAdd | OpSub | OpMul
 
 -- | A pure expression over the register file and the input symbol,
 -- yielding a value of type @r@.
-data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
-  TLit      :: r -> Term rs ci r
-  TReg      :: Index rs r -> Term rs ci r
+--
+-- The @ifs :: [Slot]@ parameter is the /input field schema/ this term
+-- may project from: it is pinned by 'TInpCtorField' (whose 'Index' is
+-- into @ifs@) and left free by terms that do not read an input field
+-- ('TLit', 'TReg'). Threading @ifs@ through the AST is what lets an
+-- 'OutFields' (and hence an 'OPack') guarantee /by construction/ that
+-- every top-level input projection reads the same constructor schema as
+-- the 'OPack''s 'InCtor' — so 'solveOutput' recovers a command field
+-- with no @unsafeCoerce@. Terms that do not appear in an invertible
+-- output position ('Update' right-hand sides, 'HsPred' operands)
+-- existentially hide @ifs@, so it never leaks into the 'Edge' /
+-- 'SymTransducer' surface. See @docs/research/tinpproj-design.md@.
+data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
+  TLit      :: r -> Term rs ci ifs r
+  TReg      :: Index rs r -> Term rs ci ifs r
   -- | Structural input projection: read field @ix@ of the input
   -- constructor described by @ic@. The 'InCtor' value names the
   -- expected constructor and supplies the round-trip
   -- ('icMatch'/'icBuild') so that 'solveOutput' can mechanically
-  -- recover @ci@ from an observed output. See
-  -- @docs/research/tinpproj-design.md@.
-  TInpCtorField :: InCtor ci ifs -> Index ifs r -> Term rs ci r
+  -- recover @ci@ from an observed output. Pins the term's @ifs@ to the
+  -- constructor's field schema. See @docs/research/tinpproj-design.md@.
+  TInpCtorField :: InCtor ci ifs -> Index ifs r -> Term rs ci ifs r
   TApp1     :: (a -> r)
-            -> Term rs ci a
-            -> Term rs ci r
+            -> Term rs ci ifs a
+            -> Term rs ci ifs r
   TApp2     :: (a -> b -> r)
-            -> Term rs ci a
-            -> Term rs ci b
-            -> Term rs ci r
+            -> Term rs ci ifs a
+            -> Term rs ci ifs b
+            -> Term rs ci ifs r
   -- | Structural arithmetic over a numeric operand type. Unlike the
   -- opaque 'TApp1'\/'TApp2' escape hatches, the SBV translator reads
   -- 'TArith' for real (on a 'Keiki.Symbolic.discoverSymNum' hit), so a
@@ -268,9 +279,9 @@ data Term (rs :: [Slot]) (ci :: Type) (r :: Type) where
   -- translator dispatch on @r@. Build with 'tadd'\/'tsub'\/'tmul'.
   TArith    :: (Num r, Typeable r)
             => NumOp
-            -> Term rs ci r
-            -> Term rs ci r
-            -> Term rs ci r
+            -> Term rs ci ifs r
+            -> Term rs ci ifs r
+            -> Term rs ci ifs r
 
 
 -- | Per-constructor input projection. An 'InCtor' value names one
@@ -373,8 +384,12 @@ instance (KnownSymbol s, AssembleRegFile rs)
 -- exclusively.
 data Update (rs :: [Slot]) (w :: [Symbol]) (ci :: Type) where
   UKeep    :: Update rs '[] ci
+  -- The right-hand-side 'Term''s input field schema @ifs@ is
+  -- existentially hidden: updates are never inverted, so @ifs@ need not
+  -- escape into the 'Update' kind (keeping 'Edge' / 'SymTransducer'
+  -- unchanged).
   USet     :: KnownSymbol s
-           => IndexN s rs r -> Term rs ci r -> Update rs '[s] ci
+           => IndexN s rs r -> Term rs ci ifs r -> Update rs '[s] ci
   UCombine :: Update rs w1 ci
            -> Update rs w2 ci
            -> Update rs (Concat w1 w2) ci
@@ -411,11 +426,17 @@ data WireCtor co fields = WireCtor
 -- | An HList of 'Term's, one per field of the wire constructor. The
 -- field-tuple type @fs@ is built up nested-pair style so that
 -- 'solveOutput' can walk the HList structurally.
-data OutFields rs ci fs where
-  OFNil  :: OutFields rs ci ()
-  OFCons :: Term rs ci f
-         -> OutFields rs ci fs
-         -> OutFields rs ci (f, fs)
+--
+-- The @ifs :: [Slot]@ parameter is the shared input field schema of
+-- every 'Term' in the list (see 'Term'). 'OPack' ties it to the
+-- 'OPack''s 'InCtor', so a top-level 'TInpCtorField' inside an
+-- 'OutFields' is statically an 'Index' into the 'OPack''s constructor
+-- schema — 'gatherInpEntries' recovers it with no coercion.
+data OutFields rs ci ifs fs where
+  OFNil  :: OutFields rs ci ifs ()
+  OFCons :: Term rs ci ifs f
+         -> OutFields rs ci ifs fs
+         -> OutFields rs ci ifs (f, fs)
 
 
 -- | Right-associative HList constructor synonym for 'OFCons'. Lets
@@ -428,13 +449,13 @@ data OutFields rs ci fs where
 -- value as @OFCons t1 (OFCons t2 OFNil)@. Available at the AST
 -- layer (here) so authors who skip the builder can use it; also
 -- re-exported by "Keiki.Builder" for builder-form call sites.
-(*:) :: Term rs ci f -> OutFields rs ci fs -> OutFields rs ci (f, fs)
+(*:) :: Term rs ci ifs f -> OutFields rs ci ifs fs -> OutFields rs ci ifs (f, fs)
 (*:) = OFCons
 infixr 5 *:
 
 
 -- | The empty 'OutFields' HList. Synonym for 'OFNil'.
-oNil :: OutFields rs ci ()
+oNil :: OutFields rs ci ifs ()
 oNil = OFNil
 
 
@@ -450,7 +471,7 @@ data OutTerm (rs :: [Slot]) (ci :: Type) (co :: Type) where
   -- as @icBuild ic RNil@.
   OPack :: InCtor ci ifs
         -> WireCtor co fields
-        -> OutFields rs ci fields
+        -> OutFields rs ci ifs fields
         -> OutTerm rs ci co
 
 
@@ -466,7 +487,7 @@ data HsPred (rs :: [Slot]) (ci :: Type) where
   POr     :: HsPred rs ci -> HsPred rs ci -> HsPred rs ci
   PNot    :: HsPred rs ci -> HsPred rs ci
   PEq     :: (Eq r, Typeable r)
-          => Term rs ci r -> Term rs ci r -> HsPred rs ci
+          => Term rs ci ifs1 r -> Term rs ci ifs2 r -> HsPred rs ci
   -- | Structural input-constructor guard: @True@ iff the input symbol
   -- is the constructor named by the carried 'InCtor'. The SBV-backed
   -- 'BoolAlg' instance recognises constructor mutual exclusion
@@ -485,7 +506,7 @@ data HsPred (rs :: [Slot]) (ci :: Type) where
   -- Equality is intentionally left to 'PEq' — 'Cmp' has no "equal"
   -- case. Added by EP-41.
   PCmp :: (Ord r, Typeable r)
-       => Cmp -> Term rs ci r -> Term rs ci r -> HsPred rs ci
+       => Cmp -> Term rs ci ifs1 r -> Term rs ci ifs2 r -> HsPred rs ci
 
 
 -- | A four-way ordering relation carried by 'PCmp'. @Lt@\/@Le@\/@Gt@\/
@@ -624,18 +645,20 @@ matchInCtor = PInCtor
 
 
 -- | Read a register slot into a 'Term'.
-proj :: Index rs r -> Term rs ci r
+proj :: Index rs r -> Term rs ci ifs r
 proj = TReg
 
 
 -- | Structural input projection: read field @ix@ of the input
--- constructor described by @ic@.
-inpCtor :: InCtor ci ifs -> Index ifs r -> Term rs ci r
+-- constructor described by @ic@. The result 'Term''s @ifs@ is the
+-- constructor's field schema, so an 'OutFields' built from these is
+-- statically tied to the 'OPack''s 'InCtor'.
+inpCtor :: InCtor ci ifs -> Index ifs r -> Term rs ci ifs r
 inpCtor = TInpCtorField
 
 
 -- | A constant 'Term'.
-lit :: r -> Term rs ci r
+lit :: r -> Term rs ci ifs r
 lit = TLit
 
 
@@ -646,14 +669,14 @@ lit = TLit
 -- escape hatches.
 tadd, tsub, tmul
   :: (Num r, Typeable r)
-  => Term rs ci r -> Term rs ci r -> Term rs ci r
+  => Term rs ci ifs r -> Term rs ci ifs r -> Term rs ci ifs r
 tadd = TArith OpAdd
 tsub = TArith OpSub
 tmul = TArith OpMul
 
 
 -- | Equality predicate sugar.
-(.==) :: (Eq r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
+(.==) :: (Eq r, Typeable r) => Term rs ci ifs1 r -> Term rs ci ifs2 r -> HsPred rs ci
 (.==) = PEq
 infix 4 .==
 
@@ -666,7 +689,7 @@ infix 4 .==
 -- relational operators do not chain, sit below the arithmetic operators
 -- ('.+'/'.-'/'.*'), and above the logical ones ('.&&'/'.||').
 (.<), (.<=), (.>), (.>=)
-  :: (Ord r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
+  :: (Ord r, Typeable r) => Term rs ci ifs1 r -> Term rs ci ifs2 r -> HsPred rs ci
 (.<)  = PCmp CmpLt
 (.<=) = PCmp CmpLe
 (.>)  = PCmp CmpGt
@@ -676,7 +699,7 @@ infix 4 .<, .<=, .>, .>=
 -- | Inequality guard. @a ./= b@ is @'pnot' (a '.==' b)@, i.e.
 -- @'PNot' ('PEq' a b)@. Mirrors 'Prelude.(/=)' against the existing
 -- '(.==)'.
-(./=) :: (Eq r, Typeable r) => Term rs ci r -> Term rs ci r -> HsPred rs ci
+(./=) :: (Eq r, Typeable r) => Term rs ci ifs1 r -> Term rs ci ifs2 r -> HsPred rs ci
 a ./= b = PNot (PEq a b)
 infix 4 ./=
 
@@ -701,7 +724,7 @@ pnot = PNot
 -- structural 'TArith' node (not an opaque 'TApp'), arithmetic written
 -- with them is visible to the SBV translator in "Keiki.Symbolic".
 (.+), (.-), (.*)
-  :: (Num r, Typeable r) => Term rs ci r -> Term rs ci r -> Term rs ci r
+  :: (Num r, Typeable r) => Term rs ci ifs r -> Term rs ci ifs r -> Term rs ci ifs r
 (.+) = tadd
 (.-) = tsub
 (.*) = tmul
@@ -717,7 +740,7 @@ infixl 7 .*
 -- (e.g. a singleton 'Continue' command).
 pack :: InCtor ci ifs
      -> WireCtor co fields
-     -> OutFields rs ci fields
+     -> OutFields rs ci ifs fields
      -> OutTerm rs ci co
 pack = OPack
 
@@ -725,7 +748,7 @@ pack = OPack
 -- * Evaluators -------------------------------------------------------------
 
 -- | Evaluate a 'Term' against a register file and an input symbol.
-evalTerm :: Term rs ci r -> RegFile rs -> ci -> r
+evalTerm :: Term rs ci ifs r -> RegFile rs -> ci -> r
 evalTerm (TLit r)              _    _  = r
 evalTerm (TReg ix)             regs _  = regs ! ix
 evalTerm (TInpCtorField ic ix) _    ci = case icMatch ic ci of
@@ -754,7 +777,7 @@ evalOut (OPack _ic ctor fields) regs ci =
   wcBuild ctor (evalOutFields fields regs ci)
 
 
-evalOutFields :: OutFields rs ci fs -> RegFile rs -> ci -> fs
+evalOutFields :: OutFields rs ci ifs fs -> RegFile rs -> ci -> fs
 evalOutFields OFNil           _    _  = ()
 evalOutFields (OFCons t rest) regs ci =
   (evalTerm t regs ci, evalOutFields rest regs ci)
@@ -1091,12 +1114,12 @@ solveOutput (OPack ic@InCtor{} ctor fields) regs co = do
 -- populated — and (b) the recovered-command thunk is not forced for an
 -- all-invertible edge.
 recomputeDerivedFields
-  :: forall rs ci fs. OutFields rs ci fs -> fs -> RegFile rs -> ci -> fs
+  :: forall rs ci ifs fs. OutFields rs ci ifs fs -> fs -> RegFile rs -> ci -> fs
 recomputeDerivedFields OFNil           ()        _    _  = ()
 recomputeDerivedFields (OFCons t rest) (v, vs)   regs ci =
   (recomputeOne t v, recomputeDerivedFields rest vs regs ci)
   where
-    recomputeOne :: forall f. Term rs ci f -> f -> f
+    recomputeOne :: forall f. Term rs ci ifs f -> f -> f
     recomputeOne term@(TApp1 _ _)    _observed = evalTerm term regs ci
     recomputeOne term@(TApp2 _ _ _)  _observed = evalTerm term regs ci
     recomputeOne term@(TArith _ _ _) _observed = evalTerm term regs ci
@@ -1111,26 +1134,39 @@ recomputeDerivedFields (OFCons t rest) (v, vs)   regs ci =
 -- ('TArith'\/'TApp1'\/'TApp2') are /skipped/ (they contribute no
 -- entries) rather than aborting the walk — 'solveOutput' verifies them
 -- forward afterwards. Returns 'Nothing' only on a genuinely malformed
--- edge: a 'TInpCtorField' naming a /different/ 'InCtor'. 'assemble []'
--- for an empty 'ifs' is 'Just RNil', so empty-payload input
+-- edge: a 'TInpCtorField' naming a /different/ 'InCtor' (a runtime
+-- diagnostic; soundness no longer depends on it — see below). 'assemble
+-- []' for an empty 'ifs' is 'Just RNil', so empty-payload input
 -- constructors recover trivially; and if a derived field is the /only/
 -- place a command slot is read, the skipped slot leaves 'assemble'
 -- short and 'solveOutput' fails — exactly the hidden-input case that
 -- 'checkHiddenInputs' flags at build time.
+--
+-- == Type-safe index recovery (EP-53)
+--
+-- Because 'OutFields' is indexed by the same input field schema @ifs@ as
+-- the 'OPack''s 'InCtor', a top-level 'TInpCtorField' inside this
+-- 'OutFields' carries an @'Index' ifs r@ /into the @OPack@'s schema by
+-- construction/. So @'ByIndex' ix val@ type-checks directly — no
+-- @unsafeCoerce@ — and a constructor whose field schema differs from the
+-- 'OPack''s 'InCtor' is rejected at compile time rather than coerced at
+-- run time. The @'icName' ic1 == 'icName' ic2@ guard is retained only as
+-- a defensive runtime diagnostic for an 'OutFields' that names a
+-- different (but same-schema) constructor.
 gatherInpEntries
   :: forall rs ci ifs fs.
-     OutFields rs ci fs -> fs -> InCtor ci ifs -> Maybe [ByIndex ifs]
+     OutFields rs ci ifs fs -> fs -> InCtor ci ifs -> Maybe [ByIndex ifs]
 gatherInpEntries OFNil           ()        _ic = Just []
 gatherInpEntries (OFCons t rest) (v, fs)   ic  = do
   here <- stepOne t v ic
   more <- gatherInpEntries rest fs ic
   pure (here ++ more)
   where
-    stepOne :: forall f. Term rs ci f -> f -> InCtor ci ifs -> Maybe [ByIndex ifs]
+    stepOne :: forall f. Term rs ci ifs f -> f -> InCtor ci ifs -> Maybe [ByIndex ifs]
     stepOne (TLit _)                  _val _   = Just []
     stepOne (TReg _)                  _val _   = Just []
     stepOne (TInpCtorField ic2 ix)    val  ic1
-      | icName ic1 == icName ic2 = Just [ByIndex (unsafeCoerce ix) val]
+      | icName ic1 == icName ic2 = Just [ByIndex ix val]
       | otherwise                = Nothing
     -- Derived fields are skipped here and verified forward by
     -- 'solveOutput' (EP-47 recompute-and-verify); they contribute no
@@ -1234,16 +1270,16 @@ checkHiddenInputs t =
     -- reported missing rather than counted as covered.
     visitedSlotsOf
       :: forall ifs fs.
-         InCtor ci ifs -> OutFields rs ci fs -> [String]
+         InCtor ci ifs -> OutFields rs ci ifs fs -> [String]
     visitedSlotsOf ic@InCtor{} fields = goFields fields
       where
         allSlots = slotNamesOf ic
 
-        goFields :: forall fs'. OutFields rs ci fs' -> [String]
+        goFields :: forall fs'. OutFields rs ci ifs fs' -> [String]
         goFields OFNil           = []
         goFields (OFCons tt rest) = goTerm tt ++ goFields rest
 
-        goTerm :: forall r. Term rs ci r -> [String]
+        goTerm :: forall r. Term rs ci ifs r -> [String]
         goTerm (TInpCtorField ic2 ix)
           | icName ic2 == icName ic =
               [allSlots !! indexPos ix]
@@ -1276,7 +1312,7 @@ updateReadsInput (UCombine a b) = updateReadsInput a || updateReadsInput b
 
 
 -- | Does the 'Term' read the input symbol via 'TInpCtorField'?
-termReadsInput :: Term rs ci r -> Bool
+termReadsInput :: Term rs ci ifs r -> Bool
 termReadsInput (TLit _)              = False
 termReadsInput (TReg _)              = False
 termReadsInput (TInpCtorField _ _)   = True
@@ -1286,12 +1322,12 @@ termReadsInput (TArith _ a b)        = termReadsInput a || termReadsInput b
 
 
 -- | Do the 'OutFields' contain a 'TInpCtorField' read anywhere?
-outFieldsHaveInpCtorField :: OutFields rs ci fs -> Bool
+outFieldsHaveInpCtorField :: OutFields rs ci ifs fs -> Bool
 outFieldsHaveInpCtorField OFNil           = False
 outFieldsHaveInpCtorField (OFCons t rest) =
   termHasInpCtorField t || outFieldsHaveInpCtorField rest
   where
-    termHasInpCtorField :: Term rs ci r -> Bool
+    termHasInpCtorField :: Term rs ci ifs r -> Bool
     termHasInpCtorField (TLit _)              = False
     termHasInpCtorField (TReg _)              = False
     termHasInpCtorField (TInpCtorField _ _)   = True
@@ -1318,7 +1354,7 @@ data MissingInCtorFields = MissingInCtorFields
 detectMissingInCtorFields
   :: forall rs ci ifs fs.
      InCtor ci ifs
-  -> OutFields rs ci fs
+  -> OutFields rs ci ifs fs
   -> Maybe MissingInCtorFields
 detectMissingInCtorFields ic@InCtor{} fields =
   case allSlots \\ nub visited of
@@ -1328,11 +1364,11 @@ detectMissingInCtorFields ic@InCtor{} fields =
     allSlots = slotNamesOf ic
     visited  = goFields fields
 
-    goFields :: forall fs'. OutFields rs ci fs' -> [String]
+    goFields :: forall fs'. OutFields rs ci ifs fs' -> [String]
     goFields OFNil           = []
     goFields (OFCons t rest) = goTerm t ++ goFields rest
 
-    goTerm :: forall r. Term rs ci r -> [String]
+    goTerm :: forall r. Term rs ci ifs r -> [String]
     goTerm (TInpCtorField ic2 ix)
       | icName ic2 == icName ic =
           [allSlots !! indexPos ix]

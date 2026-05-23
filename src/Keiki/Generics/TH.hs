@@ -422,7 +422,7 @@ recordDecls cmdName regsName ctorStr shortStr payTy = do
                  ]
   inpSig    <- sigD inpN
                  [t| Index $slotsT $(varT r)
-                       -> Term $(conT regsName) $(conT cmdName) $(varT r) |]
+                       -> Term $(conT regsName) $(conT cmdName) $slotsT $(varT r) |]
   inpDef    <- funD inpN
                  [ clause [] (normalB
                      [| TInpCtorField $(varE inCtorN) |])
@@ -516,21 +516,26 @@ genTermFieldsRecord shortStr payTy = do
              <> "a single record-syntax constructor on payload "
              <> show payName <> ", got " <> show payInfo
   let recName = mkName (shortStr <> "TermFields")
-  rsN <- newName "rs"
-  ciN <- newName "ci"
+  rsN  <- newName "rs"
+  ciN  <- newName "ci"
+  ifsN <- newName "ifs"
   let lazyBang = Bang NoSourceUnpackedness NoSourceStrictness
+      -- EP-53: 'Term' is indexed by the input field schema @ifs@, so the
+      -- generated record carries an @ifs@ parameter shared by every
+      -- field 'Term'. 'pack' / 'emit' ties it to the 'OPack''s 'InCtor'.
       mkField (selN, _, ty) =
         ( mkName (nameBase selN)
         , lazyBang
-        , ConT ''Term `AppT` VarT rsN `AppT` VarT ciN `AppT` ty
+        , ConT ''Term `AppT` VarT rsN `AppT` VarT ciN `AppT` VarT ifsN `AppT` ty
         )
       recCtor   = RecC recName (map mkField fields)
       recDataDec = DataD [] recName
-                          [ PlainTV rsN BndrReq
-                          , PlainTV ciN BndrReq
+                          [ PlainTV rsN  BndrReq
+                          , PlainTV ciN  BndrReq
+                          , PlainTV ifsN BndrReq
                           ]
                           Nothing [recCtor] []
-      recTy = ConT recName `AppT` VarT rsN `AppT` VarT ciN
+      recTy = ConT recName `AppT` VarT rsN `AppT` VarT ciN `AppT` VarT ifsN
       -- The 'OutFields' type's @fs@ parameter is the same nested-
       -- pair tuple @FieldsOf <Pay>@ reduces to. Compute it
       -- explicitly so the instance head does not carry a type-
@@ -540,6 +545,7 @@ genTermFieldsRecord shortStr payTy = do
                   `AppT` recTy
                   `AppT` VarT rsN
                   `AppT` VarT ciN
+                  `AppT` VarT ifsN
                   `AppT` fsTy
   vars <- mapM (\(selN, _, _) -> newName ("v_" <> nameBase selN)) fields
   let recPat   = RecP recName

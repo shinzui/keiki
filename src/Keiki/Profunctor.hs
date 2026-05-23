@@ -563,25 +563,6 @@ rightWrap t =
 
 -- * Strong instance ----------------------------------------------------
 
--- | An 'InCtor' that projects the second component of a pair input.
--- @'icMatch' (a, c) = Just (RCons _ c RNil)@ for every pair; the
--- phantom one-slot register file @'[ '("snd", c) ]@ surfaces @c@ to
--- 'TInpCtorField' / 'evalTerm'.
---
--- 'icBuild' is poisoned (the @firstSym@ rewrite cannot reconstruct
--- the @ci@ component from a single @c@), matching the standard lossy
--- variance contract for combinators that drop information.
-pairSndInCtor :: forall ci c. InCtor (ci, c) '[ '("snd", c) ]
-pairSndInCtor = InCtor
-  { icName  = "FirstSnd"
-  , icMatch = \(_ci, c) -> Just (RCons (Proxy @"snd") c RNil)
-  , icBuild = \_ -> error
-      "Keiki.Profunctor.pairSndInCtor.icBuild: firstSym-produced \
-      \transducers cannot reconstruct the (ci, c) input from the wire \
-      \event via solveOutput. See Keiki.Profunctor.firstSym haddock."
-  }
-
-
 -- | Thread an unrelated value @c@ through a transducer that only
 -- knows about @ci -> co@. Implemented from primitives because MP-8
 -- declined the general 'parallel' combinator (see
@@ -625,11 +606,19 @@ firstSym t = SymTransducer
       , target = tgt
       }
 
+    -- EP-53: 'OutFields' is now indexed by a single input field schema,
+    -- so the threaded-@c@ projection and the original fields must share
+    -- one schema. We build a /combined/ 'InCtor' for @(ci, c)@ whose
+    -- schema prepends a @"snd"@ slot (carrying @c@) onto the original
+    -- constructor's @ifs@, then re-home the original fields' reads into
+    -- it (shifting each index past the new head slot). 'firstSym''s
+    -- 'solveOutput' stays dead ('firstWireCtor''s @wcMatch@ is
+    -- @const Nothing@), so this is correctness-neutral for forward
+    -- processing while making the lossy edge well-typed.
     firstOutTerm :: OutTerm rs ci co -> OutTerm rs (ci, c) (co, c)
     firstOutTerm (OPack ic wc fields) =
-      OPack (contraInCtor fst ic)
-            (firstWireCtor wc)
-            (firstOutFields fields)
+      let cic = firstInCtor ic
+      in OPack cic (firstWireCtor wc) (firstOutFields cic fields)
 
     firstWireCtor :: forall fs. WireCtor co fs -> WireCtor (co, c) (c, fs)
     firstWireCtor WireCtor { wcName = n, wcBuild = b } = WireCtor
@@ -638,10 +627,46 @@ firstSym t = SymTransducer
       , wcBuild = \(cv, fs) -> (b fs, cv)
       }
 
-    firstOutFields :: forall fs. OutFields rs ci fs -> OutFields rs (ci, c) (c, fs)
-    firstOutFields fields =
-      OFCons (TInpCtorField (pairSndInCtor @ci @c) ZIdx)
-             (contraOutFields fst fields)
+    -- | Combine an @(ci)@ input constructor with the threaded @c@ into a
+    -- @(ci, c)@ constructor whose field schema is @"snd"@ (for @c@)
+    -- prepended to the original @ifs@.
+    firstInCtor
+      :: forall ifs. InCtor ci ifs -> InCtor (ci, c) ('( "snd", c) ': ifs)
+    firstInCtor ic@InCtor{} = InCtor
+      { icName  = icName ic
+      , icMatch = \(civ, cv) -> case icMatch ic civ of
+          Just rf -> Just (RCons (Proxy @"snd") cv rf)
+          Nothing -> Nothing
+      , icBuild = \(RCons _ cv rf) -> (icBuild ic rf, cv)
+      }
+
+    firstOutFields
+      :: forall ifs fs.
+         InCtor (ci, c) ('( "snd", c) ': ifs)
+      -> OutFields rs ci ifs fs
+      -> OutFields rs (ci, c) ('( "snd", c) ': ifs) (c, fs)
+    firstOutFields cic fields =
+      OFCons (TInpCtorField cic ZIdx) (goFields fields)
+      where
+        goFields
+          :: forall fs'. OutFields rs ci ifs fs'
+          -> OutFields rs (ci, c) ('( "snd", c) ': ifs) fs'
+        goFields OFNil           = OFNil
+        goFields (OFCons tm fs') = OFCons (goTerm tm) (goFields fs')
+
+        -- Re-home each read into the combined constructor, shifting the
+        -- index past the new @"snd"@ head slot. The original reads name
+        -- the edge's one input constructor, so reusing @cic@ (built from
+        -- the OPack's 'InCtor') preserves forward semantics.
+        goTerm
+          :: forall a. Term rs ci ifs a
+          -> Term rs (ci, c) ('( "snd", c) ': ifs) a
+        goTerm (TLit r)             = TLit r
+        goTerm (TReg ix)            = TReg ix
+        goTerm (TInpCtorField _ ix) = TInpCtorField cic (SIdx ix)
+        goTerm (TApp1 h a)          = TApp1 h (goTerm a)
+        goTerm (TApp2 h a b)        = TApp2 h (goTerm a) (goTerm b)
+        goTerm (TArith op a b)      = TArith op (goTerm a) (goTerm b)
 
 
 -- | Standard 'Data.Profunctor.Strong.Strong' instance. Threads an
@@ -811,10 +836,10 @@ mapWireCtor g WireCtor { wcName = n, wcBuild = b } = WireCtor
 
 -- ** Term ---------------------------------------------------------------
 
-contraTerm :: forall ci ci' rs r. (ci' -> ci) -> Term rs ci r -> Term rs ci' r
+contraTerm :: forall ci ci' rs ifs r. (ci' -> ci) -> Term rs ci ifs r -> Term rs ci' ifs r
 contraTerm f = go
   where
-    go :: forall a. Term rs ci a -> Term rs ci' a
+    go :: forall a. Term rs ci ifs a -> Term rs ci' ifs a
     go (TLit r)              = TLit r
     go (TReg ix)             = TReg ix
     go (TInpCtorField ic ix) = TInpCtorField (contraInCtor f ic) ix
@@ -823,10 +848,10 @@ contraTerm f = go
     go (TArith op a b)       = TArith op (go a) (go b)
 
 
-contraMaybeTerm :: forall ci ci' rs r. (ci' -> Maybe ci) -> Term rs ci r -> Term rs ci' r
+contraMaybeTerm :: forall ci ci' rs ifs r. (ci' -> Maybe ci) -> Term rs ci ifs r -> Term rs ci' ifs r
 contraMaybeTerm f = go
   where
-    go :: forall a. Term rs ci a -> Term rs ci' a
+    go :: forall a. Term rs ci ifs a -> Term rs ci' ifs a
     go (TLit r)              = TLit r
     go (TReg ix)             = TReg ix
     go (TInpCtorField ic ix) = TInpCtorField (contraMaybeInCtor f ic) ix
@@ -892,10 +917,10 @@ contraOutTerm f (OPack ic wc fields) =
   OPack (contraInCtor f ic) wc (contraOutFields f fields)
 
 
-contraOutFields :: forall ci ci' rs fs. (ci' -> ci) -> OutFields rs ci fs -> OutFields rs ci' fs
+contraOutFields :: forall ci ci' rs ifs fs. (ci' -> ci) -> OutFields rs ci ifs fs -> OutFields rs ci' ifs fs
 contraOutFields f = go
   where
-    go :: forall fs'. OutFields rs ci fs' -> OutFields rs ci' fs'
+    go :: forall fs'. OutFields rs ci ifs fs' -> OutFields rs ci' ifs fs'
     go OFNil          = OFNil
     go (OFCons t fs)  = OFCons (contraTerm f t) (go fs)
 
@@ -905,10 +930,10 @@ contraMaybeOutTerm f (OPack ic wc fields) =
   OPack (contraMaybeInCtor f ic) wc (contraMaybeOutFields f fields)
 
 
-contraMaybeOutFields :: forall ci ci' rs fs. (ci' -> Maybe ci) -> OutFields rs ci fs -> OutFields rs ci' fs
+contraMaybeOutFields :: forall ci ci' rs ifs fs. (ci' -> Maybe ci) -> OutFields rs ci ifs fs -> OutFields rs ci' ifs fs
 contraMaybeOutFields f = go
   where
-    go :: forall fs'. OutFields rs ci fs' -> OutFields rs ci' fs'
+    go :: forall fs'. OutFields rs ci ifs fs' -> OutFields rs ci' ifs fs'
     go OFNil          = OFNil
     go (OFCons t fs)  = OFCons (contraMaybeTerm f t) (go fs)
 

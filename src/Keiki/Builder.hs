@@ -185,6 +185,7 @@ module Keiki.Builder
 import Data.Typeable (Typeable)
 import GHC.Records (HasField (..))
 import GHC.TypeLits (KnownSymbol, Symbol)
+import Unsafe.Coerce (unsafeCoerce)
 import Prelude hiding ((>>), (>>=), pure, return)
 import qualified Prelude
 
@@ -371,9 +372,9 @@ slot = indexN @name @rs @r
 -- the bare-@\#name@ read path entirely; because 'reg' goes through a
 -- type application rather than an overloaded label, it is unaffected.
 reg
-  :: forall (name :: Symbol) rs ci r.
+  :: forall (name :: Symbol) rs ci ifs r.
      ( KnownSymbol name, HasIndexN name rs r )
-  => Term rs ci r
+  => Term rs ci ifs r
 reg = TReg (indexNToIndex (indexN @name @rs @r))
 
 
@@ -389,10 +390,10 @@ reg = TReg (indexNToIndex (indexN @name @rs @r))
 -- 'Keiki.Core.lit' / 'Keiki.Core.proj' / 'Keiki.Core.inpCtor' or
 -- @d.fieldName@ via 'PayloadProj' to construct it.
 (.=)
-  :: forall name r rs ci co v w.
+  :: forall name r rs ci ifs co v w.
      ( KnownSymbol name, Disjoint '[name] w )
   => IndexN name rs r
-  -> Term rs ci r
+  -> Term rs ci ifs r
   -> EdgeBuilder rs ci co v w (Concat '[name] w) ()
 ix .= t = EdgeBuilder $ \pe ->
   ((), pe { peUpdate = USet ix t `combine` peUpdate pe })
@@ -411,10 +412,10 @@ infixr 6 .=
 -- reserves operators beginning with a colon for data constructors, so a
 -- value-level synonym must start with another symbol — hence @=:@.)
 (=:)
-  :: forall name r rs ci co v w.
+  :: forall name r rs ci ifs co v w.
      ( KnownSymbol name, Disjoint '[name] w )
   => IndexN name rs r
-  -> Term rs ci r
+  -> Term rs ci ifs r
   -> EdgeBuilder rs ci co v w (Concat '[name] w) ()
 (=:) = (.=)
 infixr 6 =:
@@ -453,18 +454,36 @@ goto v = EdgeBuilder $ \pe ->
 -- accumulated by '(.=)' apply once at the edge level, not per
 -- emitted event.
 emit
-  :: forall co fs rs ci v w rec.
-     ToOutFields rec rs ci fs
+  :: forall co fs rs ci ifs v w rec.
+     ToOutFields rec rs ci ifs fs
   => WireCtor co fs
   -> rec
   -> EdgeBuilder rs ci co v w w ()
 emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
   Just (PeInCtor ic) ->
-    ((), pe { peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)] })
+    -- 'onCmd' pins the same 'InCtor' into 'peInCtor' /and/ into the
+    -- 'PayloadProj' the body projects through, so the record's input
+    -- field schema 'ifs' (from 'ToOutFields') equals the pinned
+    -- 'InCtor''s schema. The existential 'PeInCtor' hides that
+    -- equality; 'reIndexPinnedInCtor' re-establishes it. This does not
+    -- weaken replay soundness: the resulting 'OPack''s 'InCtor' and
+    -- 'OutFields' share 'ifs', so 'solveOutput' recovers fields with no
+    -- coercion (EP-53). Mirrors 'Keiki.Composition.unsafeCoerceInCtor'.
+    ((), pe { peOutput = peOutput pe
+                ++ [pack (reIndexPinnedInCtor @ci @_ @ifs ic) wc (toOutFields rec)] })
   Nothing ->
     error "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
           \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
           \emit inside an 'onCmd' block."
+
+
+-- | Re-establish the (existentially hidden) equality between a pinned
+-- 'InCtor''s field schema and the schema the enclosing 'onCmd''s
+-- 'PayloadProj' exposes. Unsound in general; justified at the single
+-- 'emit' call site by 'onCmd' storing one and the same 'InCtor' in both
+-- places (see 'emit'). The runtime representation is identical.
+reIndexPinnedInCtor :: forall ci ifs0 ifs. InCtor ci ifs0 -> InCtor ci ifs
+reIndexPinnedInCtor = unsafeCoerce
 
 
 -- | Emit an event with an explicit 'InCtor'. The escape hatch for
@@ -475,7 +494,7 @@ emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
 -- calls produce a multi-event edge.
 emitWith
   :: forall co fs rs ci v w ifs rec.
-     ToOutFields rec rs ci fs
+     ToOutFields rec rs ci ifs fs
   => InCtor ci ifs
   -> WireCtor co fs
   -> rec
@@ -516,14 +535,14 @@ noEmit = EdgeBuilder $ \pe -> ((), pe)
 -- uniquely determines all of @rs@, @ci@, and @fs@, so type
 -- inference at call sites is local: GHC propagates them from the
 -- record's type alone.
-class ToOutFields rec rs ci fs | rec -> rs ci fs where
-  toOutFields :: rec -> OutFields rs ci fs
+class ToOutFields rec rs ci ifs fs | rec -> rs ci ifs fs where
+  toOutFields :: rec -> OutFields rs ci ifs fs
 
 
 -- | Passthrough: a bare 'OutFields' is its own conversion. Lets
 -- 'B.emit' accept either a per-event record or an
 -- @(t1 *: t2 *: oNil)@ chain through the same overload.
-instance ToOutFields (OutFields rs ci fs) rs ci fs where
+instance ToOutFields (OutFields rs ci ifs fs) rs ci ifs fs where
   toOutFields = id
 
 
@@ -542,8 +561,8 @@ requireGuard p = EdgeBuilder $ \pe ->
 -- existing guard.
 requireEq
   :: (Eq r, Typeable r)
-  => Term rs ci r
-  -> Term rs ci r
+  => Term rs ci ifs1 r
+  -> Term rs ci ifs2 r
   -> EdgeBuilder rs ci co v w w ()
 requireEq a b = requireGuard (PEq a b)
 
@@ -557,8 +576,8 @@ requireEq a b = requireGuard (PEq a b)
 requireCmp
   :: (Ord r, Typeable r)
   => Cmp
-  -> Term rs ci r
-  -> Term rs ci r
+  -> Term rs ci ifs1 r
+  -> Term rs ci ifs2 r
   -> EdgeBuilder rs ci co v w w ()
 requireCmp op a b = requireGuard (PCmp op a b)
 
@@ -566,8 +585,8 @@ requireCmp op a b = requireGuard (PCmp op a b)
 -- | Require @a < b@. See 'requireCmp'.
 requireLt, requireLe, requireGt, requireGe
   :: (Ord r, Typeable r)
-  => Term rs ci r
-  -> Term rs ci r
+  => Term rs ci ifs1 r
+  -> Term rs ci ifs2 r
   -> EdgeBuilder rs ci co v w w ()
 requireLt = requireCmp CmpLt
 requireLe = requireCmp CmpLe
@@ -591,7 +610,7 @@ data PayloadProj rs ci ifs = PayloadProj (InCtor ci ifs)
 -- builds a 'TInpCtorField' term that projects the named field of the
 -- input symbol's payload.
 instance ( HasIndexN name ifs r )
-      => HasField name (PayloadProj rs ci ifs) (Term rs ci r) where
+      => HasField name (PayloadProj rs ci ifs) (Term rs ci ifs r) where
   getField (PayloadProj ic) =
     inpCtor ic (indexNToIndex (indexN @name @ifs @r))
 

@@ -430,9 +430,9 @@ mkSymEnv = do
 -- have no 'Eq', so two applications cannot be recognized as equal);
 -- their values are not part of the extracted witness.
 translateTermSym
-  :: forall rs ci r. Sym r
+  :: forall rs ci ifs r. Sym r
   => SymEnv
-  -> Term rs ci r
+  -> Term rs ci ifs r
   -> SBV.Symbolic (SBV.SBV (SymRep r))
 translateTermSym _env  (TLit r)              = pure (symLit r)
 translateTermSym env   (TReg ix)             =
@@ -517,8 +517,8 @@ translatePred env = go
     go (PInCtor ic)  = pure (seInputCtor env SBV..== SBV.literal (icName ic))
     go (PCmp op a b) = goCmp op a b
 
-    goEq :: forall r. Typeable r
-         => Term rs ci r -> Term rs ci r -> SBV.Symbolic SBV.SBool
+    goEq :: forall r ifs1 ifs2. Typeable r
+         => Term rs ci ifs1 r -> Term rs ci ifs2 r -> SBV.Symbolic SBV.SBool
     goEq a b = case discoverSym @r of
       Nothing      -> SBV.free "neq"
       Just SymDict -> do
@@ -526,8 +526,8 @@ translatePred env = go
         sb <- translateTermSym env b
         pure (sa SBV..== sb)
 
-    goCmp :: forall r. Typeable r
-          => Cmp -> Term rs ci r -> Term rs ci r -> SBV.Symbolic SBV.SBool
+    goCmp :: forall r ifs1 ifs2. Typeable r
+          => Cmp -> Term rs ci ifs1 r -> Term rs ci ifs2 r -> SBV.Symbolic SBV.SBool
     goCmp op a b = case discoverSymOrd @r of
       Nothing         -> SBV.free "cmp"  -- sound opaque fallback
       Just SymOrdDict -> do

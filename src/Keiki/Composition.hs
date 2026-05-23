@@ -164,8 +164,8 @@ weakenL (SIdx i) = SIdx (weakenL @_ @rs2 i)
 -- suffix. 'TInpCtorField' / 'TLit' do not touch the register file,
 -- so they pass through unchanged.
 weakenLTerm
-  :: forall rs1 rs2 ci r.
-     Term rs1 ci r -> Term (Append rs1 rs2) ci r
+  :: forall rs1 rs2 ci ifs r.
+     Term rs1 ci ifs r -> Term (Append rs1 rs2) ci ifs r
 weakenLTerm (TLit r)              = TLit r
 weakenLTerm (TReg ix)             = TReg (weakenL @rs1 @rs2 ix)
 weakenLTerm (TInpCtorField ic ix) = TInpCtorField ic ix
@@ -222,9 +222,9 @@ weakenLIndexN (IS i) = IS (weakenLIndexN @_ @rs2 i)
 -- read across an rs1 prefix using 'weakenR'. The input alphabet @ci@
 -- is preserved.
 weakenRTerm
-  :: forall rs1 rs2 ci r.
+  :: forall rs1 rs2 ci ifs r.
      WeakenR rs1
-  => Term rs2 ci r -> Term (Append rs1 rs2) ci r
+  => Term rs2 ci ifs r -> Term (Append rs1 rs2) ci ifs r
 weakenRTerm (TLit r)              = TLit r
 weakenRTerm (TReg ix)             = TReg (weakenR @rs1 ix)
 weakenRTerm (TInpCtorField ic ix) = TInpCtorField ic ix
@@ -272,9 +272,9 @@ weakenRUpdate (UCombine a b) = UCombine (weakenRUpdate @rs1 @rs2 a)
 -- | Walk an 'OutFields' chain on a tail-side register file and lift
 -- every term across an rs1 prefix.
 weakenROutFields
-  :: forall rs1 rs2 ci fs.
+  :: forall rs1 rs2 ci ifs fs.
      WeakenR rs1
-  => OutFields rs2 ci fs -> OutFields (Append rs1 rs2) ci fs
+  => OutFields rs2 ci ifs fs -> OutFields (Append rs1 rs2) ci ifs fs
 weakenROutFields OFNil           = OFNil
 weakenROutFields (OFCons t rest) = OFCons (weakenRTerm @rs1 @rs2 t)
                                             (weakenROutFields @rs1 @rs2 rest)
@@ -297,8 +297,8 @@ weakenROut (OPack ic wc fs) =
 -- | Walk an 'OutFields' chain on a head-side register file and lift
 -- every term across an rs2 suffix.
 weakenLOutFields
-  :: forall rs1 rs2 ci fs.
-     OutFields rs1 ci fs -> OutFields (Append rs1 rs2) ci fs
+  :: forall rs1 rs2 ci ifs fs.
+     OutFields rs1 ci ifs fs -> OutFields (Append rs1 rs2) ci ifs fs
 weakenLOutFields OFNil           = OFNil
 weakenLOutFields (OFCons t rest) = OFCons (weakenLTerm @rs1 @rs2 t)
                                             (weakenLOutFields @rs1 @rs2 rest)
@@ -325,14 +325,14 @@ indexInt (SIdx i) = 1 + indexInt i
 -- | Existential wrapper around a 'Term' so 'nthTerm' can return one
 -- without exposing the field's type at the call site.
 data SomeTerm rs ci where
-  SomeTerm :: Term rs ci r -> SomeTerm rs ci
+  SomeTerm :: Term rs ci ifs r -> SomeTerm rs ci
 
 
 -- | Walk an 'OutFields' chain to position @n@. Returns @Nothing@
 -- when @n@ overshoots the chain (a bug in the caller; the design's
 -- structural-alignment assumption guarantees @n@ is in range when
 -- the constructor names match).
-nthTerm :: Int -> OutFields rs ci fs -> Maybe (SomeTerm rs ci)
+nthTerm :: Int -> OutFields rs ci ifs fs -> Maybe (SomeTerm rs ci)
 nthTerm _  OFNil           = Nothing
 nthTerm 0  (OFCons t _)    = Just (SomeTerm t)
 nthTerm n  (OFCons _ rest)
@@ -348,11 +348,11 @@ nthTerm n  (OFCons _ rest)
 -- propagate t1's input @ci1@); rs2 reads come from t2's term
 -- weakened across the rs1 prefix.
 substTerm
-  :: forall rs1 rs2 ci1 mid r.
+  :: forall rs1 rs2 ci1 mid ifs2 ifsR r.
      WeakenR rs1
-  => Term rs2 mid r
+  => Term rs2 mid ifs2 r
   -> OutTerm rs1 ci1 mid
-  -> Term (Append rs1 rs2) ci1 r
+  -> Term (Append rs1 rs2) ci1 ifsR r
 substTerm (TLit r)              _o1 = TLit r
 substTerm (TReg ix2)            _o1 = TReg (weakenR @rs1 ix2)
 substTerm (TInpCtorField ic2 ix2) o1 =
@@ -362,9 +362,12 @@ substTerm (TInpCtorField ic2 ix2) o1 =
           let n = indexInt ix2
           in case nthTerm n of1 of
                Just (SomeTerm tm) ->
-                 -- tm :: Term rs1 ci1 r' (r' ~ r structurally;
-                 -- the slot list of ic2 mirrors of1's tuple shape
-                 -- via the GRecord/GTuple Generic derivations).
+                 -- tm :: Term rs1 ci1 ifsTm r' (r' ~ r and ifsTm ~ ifsR
+                 -- structurally; the slot list of ic2 mirrors of1's tuple
+                 -- shape via the GRecord/GTuple Generic derivations, and
+                 -- of1's elements all read t1's input at the OPack's
+                 -- schema). 'unsafeCoerceTerm' realigns both the result
+                 -- type and the input field schema.
                  weakenLTerm @rs1 @rs2 (unsafeCoerceTerm tm)
                Nothing -> error
                  ("Keiki.Composition.compose: nthTerm overflow at\
@@ -389,12 +392,16 @@ substTerm (TApp2 f a b) o1 = TApp2 f (substTerm @rs1 @rs2 a o1)
                                        (substTerm @rs1 @rs2 b o1)
 
 
--- | Existentially-coerce a 'Term''s result type. Unsound in general;
--- justified here by the structural-alignment invariant the design
--- note documents: when @icName ic2 == wcName wc1@, the slot list of
--- @ic2@ and the field tuple of @wc1@ are derived from the same
--- 'Generic' representation, so positional reads agree on type.
-unsafeCoerceTerm :: forall rs ci r r'. Term rs ci r' -> Term rs ci r
+-- | Existentially-coerce a 'Term''s result type /and/ input field
+-- schema. Unsound in general; justified here by the structural-
+-- alignment invariant the design note documents: when
+-- @icName ic2 == wcName wc1@, the slot list of @ic2@ and the field
+-- tuple of @wc1@ are derived from the same 'Generic' representation, so
+-- positional reads agree on type; and the substituted term reads t1's
+-- input at t1's 'OPack' schema, which is the schema the composite
+-- 'OPack' is rebuilt at (see 'substOut').
+unsafeCoerceTerm
+  :: forall rs ci ifs ifs' r r'. Term rs ci ifs' r' -> Term rs ci ifs r
 unsafeCoerceTerm = unsafeCoerce
 
 
@@ -445,11 +452,11 @@ substUpdate (UCombine a b)    o1 = UCombine (substUpdate @rs1 @rs2 a o1)
 
 -- | Substitute a t2-side 'OutFields' chain against t1's edge output.
 substOutFields
-  :: forall rs1 rs2 ci1 mid fs.
+  :: forall rs1 rs2 ci1 mid ifs2 ifsR fs.
      WeakenR rs1
-  => OutFields rs2 mid fs
+  => OutFields rs2 mid ifs2 fs
   -> OutTerm rs1 ci1 mid
-  -> OutFields (Append rs1 rs2) ci1 fs
+  -> OutFields (Append rs1 rs2) ci1 ifsR fs
 substOutFields OFNil           _o1 = OFNil
 substOutFields (OFCons t rest)  o1 = OFCons (substTerm @rs1 @rs2 t o1)
                                               (substOutFields @rs1 @rs2 rest o1)
@@ -544,8 +551,8 @@ rightWireCtor WireCtor { wcName = n, wcMatch = m, wcBuild = b } = WireCtor
 -- to read through 'leftInCtor'. 'TLit' / 'TReg' don't depend on
 -- @ci@ and pass through unchanged.
 liftLTermAlt
-  :: forall rs ci1 ci2 r.
-     Term rs ci1 r -> Term rs (Either ci1 ci2) r
+  :: forall rs ci1 ci2 ifs r.
+     Term rs ci1 ifs r -> Term rs (Either ci1 ci2) ifs r
 liftLTermAlt (TLit r)              = TLit r
 liftLTermAlt (TReg ix)             = TReg ix
 liftLTermAlt (TInpCtorField ic ix) = TInpCtorField (leftInCtor ic) ix
@@ -559,8 +566,8 @@ liftLTermAlt (TApp2 f a b)         =
 -- | Lift a 'Term' from the right side's input alphabet to
 -- @Either ci1 ci2@. Symmetric to 'liftLTermAlt'.
 liftRTermAlt
-  :: forall rs ci1 ci2 r.
-     Term rs ci2 r -> Term rs (Either ci1 ci2) r
+  :: forall rs ci1 ci2 ifs r.
+     Term rs ci2 ifs r -> Term rs (Either ci1 ci2) ifs r
 liftRTermAlt (TLit r)              = TLit r
 liftRTermAlt (TReg ix)             = TReg ix
 liftRTermAlt (TInpCtorField ic ix) = TInpCtorField (rightInCtor ic) ix
@@ -634,8 +641,8 @@ liftRUpdateAlt (UCombine a b)   = UCombine (liftRUpdateAlt a) (liftRUpdateAlt b)
 -- | Lift an 'OutFields' chain from the left side's input alphabet to
 -- @Either ci1 ci2@. Recurses on each 'Term' via 'liftLTermAlt'.
 liftLOutFieldsAlt
-  :: forall rs ci1 ci2 fs.
-     OutFields rs ci1 fs -> OutFields rs (Either ci1 ci2) fs
+  :: forall rs ci1 ci2 ifs fs.
+     OutFields rs ci1 ifs fs -> OutFields rs (Either ci1 ci2) ifs fs
 liftLOutFieldsAlt OFNil          = OFNil
 liftLOutFieldsAlt (OFCons t rest) =
   OFCons (liftLTermAlt @rs @ci1 @ci2 t)
@@ -645,8 +652,8 @@ liftLOutFieldsAlt (OFCons t rest) =
 -- | Lift an 'OutFields' chain from the right side's input alphabet
 -- to @Either ci1 ci2@. Symmetric to 'liftLOutFieldsAlt'.
 liftROutFieldsAlt
-  :: forall rs ci1 ci2 fs.
-     OutFields rs ci2 fs -> OutFields rs (Either ci1 ci2) fs
+  :: forall rs ci1 ci2 ifs fs.
+     OutFields rs ci2 ifs fs -> OutFields rs (Either ci1 ci2) ifs fs
 liftROutFieldsAlt OFNil          = OFNil
 liftROutFieldsAlt (OFCons t rest) =
   OFCons (liftRTermAlt @rs @ci1 @ci2 t)

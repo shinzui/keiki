@@ -11,7 +11,7 @@ p :: HsPred '[] NoCmd -> Bool
 p pr = evalPred pr RNil NoCmd
 
 -- Evaluate an Int term the same way.
-n :: Term '[] NoCmd Int -> Int
+n :: Term '[] NoCmd ifs Int -> Int
 n t = evalTerm t RNil NoCmd
 
 -- A guard written at the aliased type Pred…
