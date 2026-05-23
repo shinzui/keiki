@@ -11,7 +11,8 @@
 -- @'Index' '[]@ is uninhabited.
 --
 -- 'deriveWireCtors' is the dual on the event side, emitting one
--- 'WireCtor' value per spec entry.
+-- 'WireCtor' value per spec entry and, for record-payload events, a
+-- field-keyed @\<CtorName\>TermFields@ helper record.
 --
 -- 'deriveAggregateCtorsAll' and 'deriveWireCtorsAll' are the
 -- zero-spec variants: they enumerate every constructor of the named
@@ -127,8 +128,9 @@ deriveAggregateCtorsAll cmdName regsName = do
 
 -- | Generate per-constructor @wire<Short>@ declarations from an event
 -- sum type. Spec entries are @(constructorName, shortName)@ pairs.
--- Every event constructor must have a single record payload;
--- singleton events are not currently supported.
+-- A record-payload event also gets a @\<Short\>TermFields@ helper
+-- record plus its 'ToOutFields' instance. A singleton event gets only
+-- the @wire\<Short\>@ binding, because its field tuple is @()@.
 deriveWireCtors
   :: Name              -- ^ event sum type, e.g. @\'\'UserEvent@
   -> [(String, String)]

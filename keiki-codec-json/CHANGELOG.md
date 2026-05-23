@@ -38,8 +38,8 @@ package depends on `keiki ^>= 0.1`.
 
 ### Validated against
 
-- GHC 9.12.2 on macOS aarch64 and Linux x86_64 (CI matrix; see
-  `.github/workflows/ci.yml`).
+- GHC 9.12.2 locally on macOS aarch64 and in CI on Ubuntu Linux
+  x86_64 (see `.github/workflows/ci.yml`).
 - 40 hspec assertions, including 4 QuickCheck properties (100
   samples each), 9 schema-evolution sensitivity assertions
   (EP-36 §4 cases #1–9), a pinned golden shape hash, and 10

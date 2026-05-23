@@ -47,10 +47,10 @@ silently; treating the test as advisory defeats the design (see EP-36
 `bench/baseline.csv` is committed alongside the source. CI runs the
 bench on every PR but does NOT block merges on drift. Reviewers should
 look at the bench job output for unexpected slowdowns; > 20 % drift on
-any single fixture × path pair is worth a comment. The cross-GHC hash
-gate is the release blocker, not the bench, because (a) bench numbers
-are noisier than hash determinism, and (b) the meaningful unit of
-latency budget belongs to the consumer (keiro), not to keiki itself.
+any single fixture × path pair is worth a comment. The GHC-9.12 golden
+hash gate is the release blocker, not the bench, because (a) bench
+numbers are noisier than hash determinism, and (b) the meaningful unit
+of latency budget belongs to the consumer (keiro), not to keiki itself.
 
 ## Releasing
 

@@ -88,12 +88,12 @@ symbolic-register transducer formalism described in
 
 ### Validated against
 
-- GHC 9.12.2 on macOS aarch64 and Linux x86_64 (CI matrix; see
-  `.github/workflows/ci.yml`).
-- 201 hspec assertions in the in-tree test suite, including 11
+- GHC 9.12.2 locally on macOS aarch64 and in CI on Ubuntu Linux
+  x86_64 (see `.github/workflows/ci.yml`).
+- 278 hspec assertions in the in-tree test suite, including 11
   `Keiki.ShapeSpec` golden assertions for the shape hash, 10
   `Keiki.CoreInFlightSpec` assertions for the GSM streaming
   replay path, and 3 `Keiki.CompositionMultiEventSpec`
   assertions for multi-event composition. The downstream
-  `jitsurei` package adds 88 more assertions exercising eight
+  `jitsurei` package adds 96 more assertions exercising eight
   worked-example aggregates against the public surface.

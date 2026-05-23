@@ -97,10 +97,12 @@ emailDelivery = B.buildTransducer EmailPending emptyRegFile
 ```
 
 `Decider`, `Acceptor`, replay, and the per-vertex view are all derived
-from this one declaration. See `src/Keiki/Examples/` for the full
-aggregates the test suite drives.
+from this one declaration. See the sibling `jitsurei/` package for the
+full worked aggregates the test suite drives.
 
-## Documentation
+## Repository documentation
+
+The repository carries the longer guides and design notes:
 
 | Folder | Audience |
 |---|---|

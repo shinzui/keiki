@@ -106,10 +106,11 @@ Four fixtures condensed from EP-36 §10:
 Per fixture: `encode-via-Value`, `encode-via-Encoding`, `decode`, `hash`.
 
 `bench/baseline.csv` carries the reference numbers from a GHC 9.12.2
-run on macOS aarch64. CI runs the bench on every push and flags drift
-(>20%) as a PR comment but does NOT block merges. The cross-GHC hash
-gate (EP-36 M5) is the release-blocking gate; the bench is a tracked
-metric.
+run on macOS aarch64. CI runs the bench on pull requests as a tracked,
+non-blocking job; reviewers compare the output against the committed
+baseline and treat >20% drift on any fixture/path pair as worth
+investigating. The GHC-9.12 golden hash gate is the release-blocking
+check; the bench is a tracked metric.
 
 ## Test toolkit for downstream consumers
 

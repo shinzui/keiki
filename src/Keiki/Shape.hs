@@ -167,8 +167,8 @@ regFileShapeHash p = sha256Hex (regFileShapeCanonical p)
 -- Examples (the exact module names depend on the GHC base layout; the
 -- shape is what's guaranteed):
 --
--- > renderStableTypeRep (someTypeRep (Proxy @Int))         = "GHC.Internal.Types.Int"
--- > renderStableTypeRep (someTypeRep (Proxy @(Maybe Int))) = "GHC.Internal.Maybe.Maybe(GHC.Internal.Types.Int)"
+-- > renderStableTypeRep (someTypeRep (Proxy @Int))         = "GHC.Types.Int"
+-- > renderStableTypeRep (someTypeRep (Proxy @(Maybe Int))) = "GHC.Internal.Maybe.Maybe(GHC.Types.Int)"
 --
 -- The implementation uses only 'tyConModule', 'tyConName', and
 -- 'splitApps' — never 'tyConPackage' (which varies with cabal version

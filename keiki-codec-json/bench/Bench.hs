@@ -13,8 +13,8 @@
 -- Run with @cabal bench keiki-codec-json:keiki-codec-json-bench@. The
 -- baseline numbers are checked in at @bench/baseline.csv@; CI compares
 -- new runs against the baseline and flags drift, but DOES NOT block
--- merges. The cross-GHC hash gate (M5) is the release-blocking gate;
--- the bench is a tracked metric.
+-- merges. The GHC-9.12 golden hash gate (M5) is the release-blocking
+-- gate; the bench is a tracked metric.
 module Main (main) where
 
 import Control.DeepSeq (NFData (..))

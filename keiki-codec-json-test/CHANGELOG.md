@@ -38,8 +38,8 @@ Initial Hackage release. Co-released with `keiki-0.1.0.0` and
 
 ### Validated against
 
-- GHC 9.12.2 on macOS aarch64 and Linux x86_64 (CI matrix; see
-  `.github/workflows/ci.yml`).
+- GHC 9.12.2 locally on macOS aarch64 and in CI on Ubuntu Linux
+  x86_64 (see `.github/workflows/ci.yml`).
 - 7 self-test assertions exercising every public helper against a
   toy `Email` slot type and `DemoSlots` / `DemoSlotsRenamed`
   baseline + mutation pair.
