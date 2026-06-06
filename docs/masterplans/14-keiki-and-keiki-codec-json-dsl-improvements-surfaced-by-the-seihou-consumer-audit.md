@@ -127,7 +127,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 56 | Build-time validation and diagnostics: validateTransducer, determinism, and dead-edge analysis | docs/plans/56-build-time-validation-and-diagnostics-validatetransducer-determinism-and-dead-edge-analysis.md | None | EP-55 | Complete |
 | 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Complete |
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Not Started |
-| 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | In Progress |
+| 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
 | 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -219,9 +219,9 @@ authoritative, detailed version.
 - [x] EP-57 M2: event-side `deriveWireCtorsWith` + tests; shared codegen helpers (`genAggregateCtors`/`genWireCtors`) and sum-type-agnostic `resolveCtorSpecs` validator extracted; negative-case error text verified verbatim. (2026-06-06)
 - [ ] EP-58 M1: `src/Keiki/Operators.hs` (qualified-import re-export, fixities preserved) + cabal + qualified-path spec.
 - [ ] EP-58 M2: user-guide recipe (`hiding ((.>))` / qualified / `requireGt` vs `requireGuard (x .> y)`); cross-linked.
-- [ ] EP-59 M1: event-sum reflection + `kind`-discriminated encode/decode skeleton with per-field override hooks (`keiki-codec-json`).
-- [ ] EP-59 M2: no-silent-fallback safety mechanism (Q-fail or named TODO bindings) + compile-time event-type list for Keiro `eventTypes`.
-- [ ] EP-59 M3: round-trip + override + missing-override tests in `keiki-codec-json-test`; dogfood.
+- [x] EP-59 M1: event-sum reflection + `kind`-discriminated encode/decode skeleton with per-field override hooks in new `Keiki.Codec.JSON.Event` (`keiki-codec-json`). (2026-06-06)
+- [x] EP-59 M2: no-silent-fallback safety mechanism (`FailAtCompileTime` Q-fail or `EmitTodoBindings` named `_todo_*` bindings) + `<prefix>EventTypes :: [Text]` / `<prefix>KindMap` for Keiro `eventTypes`. (2026-06-06)
+- [x] EP-59 M3: round-trip + override-used + error-path + EventTypes/KindMap tests in `keiki-codec-json-test` (50 examples, 0 failures); both negative cases verified by hand; README worked example; haddock clean. In-repo demonstration only (the jitsurei dogfood is in a sibling repo, out of scope here). (2026-06-06)
 - [ ] EP-60 M1 (ratification gate): prototype + FR6 (Option A/B) analysis + Seihou-consumer reconciliation; STOP for maintainer go/no-go.
 - [ ] EP-60 M2–M5 (gated behind GO): collection slot kinds + structural updates (FR1/FR2, INV1/INV6); structural guards + `TLookupField` (FR3/FR4, INV2/INV3); FR6 symbolic per chosen option; builder verbs + `BlockerBoard` acceptance suite (INV5).
 
@@ -255,6 +255,20 @@ between child plans. Provide concise evidence.
   coverage is additive: a new `TransducerValidationWarning` arm, or a new
   `HiddenInputReason`/clause in the top-level `hiddenInputReasons` walk (`src/Keiki/Core.hs`),
   with no change to `EdgeRef`, `ValidationOptions`, or the `validateTransducer` umbrella shape.
+- **EP-59: treefmt mangles `-- |` haddock that embeds `@...@` code blocks; use
+  `{- | -}` block comments for module headers.** The `treefmt` pre-commit hook
+  (fourmolu) split EP-59's `Keiki.Codec.JSON.Event` line-comment module header into
+  a detached comment plus a truncated block, breaking the docs. Rewriting it as a
+  single `{- | ... -}` block comment with `>` bird-track code (not `@...@` blocks
+  spanning lines) survived the formatter and kept haddock at 100%. Any later
+  TH-heavy plan (EP-60) writing module-level haddock should prefer block comments.
+  (2026-06-06)
+- **EP-59: TH quotation keeps generated code's import surface at zero.** Building
+  the generated `[Dec]` with `[| ... |]` quotation resolves every referenced name
+  (aeson functions, the runtime helpers, the sum's constructors/selectors) to its
+  origin hygienically, so a consumer module needs only `TemplateHaskell` + the
+  splice — it imports neither `aeson` nor the codec module's helpers. This makes
+  the aeson-free-core boundary structural, not conventional. (2026-06-06)
 - **EP-57: `keiki-test` did not transitively expose `containers` to spec modules.**
   Importing `Data.Map.Strict`/`Data.Set` in `test/Keiki/Generics/THSpec.hs` failed until
   `containers >=0.6 && <0.9` was added to the `test-suite keiki-test` `build-depends`
