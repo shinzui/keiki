@@ -222,7 +222,7 @@ authoritative, detailed version.
 - [x] EP-59 M1: event-sum reflection + `kind`-discriminated encode/decode skeleton with per-field override hooks in new `Keiki.Codec.JSON.Event` (`keiki-codec-json`). (2026-06-06)
 - [x] EP-59 M2: no-silent-fallback safety mechanism (`FailAtCompileTime` Q-fail or `EmitTodoBindings` named `_todo_*` bindings) + `<prefix>EventTypes :: [Text]` / `<prefix>KindMap` for Keiro `eventTypes`. (2026-06-06)
 - [x] EP-59 M3: round-trip + override-used + error-path + EventTypes/KindMap tests in `keiki-codec-json-test` (50 examples, 0 failures); both negative cases verified by hand; README worked example; haddock clean. In-repo demonstration only (the jitsurei dogfood is in a sibling repo, out of scope here). (2026-06-06)
-- [ ] EP-60 M1 (ratification gate): prototype + FR6 (Option A/B) analysis + Seihou-consumer reconciliation; STOP for maintainer go/no-go.
+- [x] EP-60 M1 (ratification gate): prototype (`test/Keiki/CollectionSpike.hs`, 18 hspec examples in the 322-example run) + FR6 analysis (recommend **Option B**) + Seihou-consumer reconciliation (flat-list ergonomics, not the symbolic story; only in-keiki guard is whole-list emptiness, already structural) + INV1–INV6 satisfiability argument. **STOPPED for maintainer GO/NO-GO** (see EP-60 "M1 Ratification Analysis" + Decision Log). (2026-06-06)
 - [ ] EP-60 M2–M5 (gated behind GO): collection slot kinds + structural updates (FR1/FR2, INV1/INV6); structural guards + `TLookupField` (FR3/FR4, INV2/INV3); FR6 symbolic per chosen option; builder verbs + `BlockerBoard` acceptance suite (INV5).
 
 
@@ -259,6 +259,16 @@ between child plans. Provide concise evidence.
   Points is now slightly stale: the locator carries `s` directly and `Show s` is only used by
   the *display* layer (detail strings). Any later plan (EP-60) that emits validation warnings
   must use the same typed `EdgeRef s` and parameterize over `s`.
+- **EP-60 M1 gate reached: the committed consumer is not actually blocked.** The ratification
+  spike + analysis (2026-06-06) found that all three Seihou collection cases are flat `[a]`
+  value-lists stored wholesale via `=:`, and their *only* in-keiki collection guard is
+  whole-list emptiness (`reg .== lit []`) — already structural today as a scalar `PEq`. So the
+  collection feature is an ergonomics/correctness-surface improvement for Seihou, not a current
+  blocker, which both supports the cheaper FR6 **Option B** and gives a NO-GO/deferral a low
+  consumer cost. Also corrected a stale design-note claim: current `stepOne` returns `Just []`
+  (not `Nothing`) for `TApp` (EP-47 recompute-and-verify), so the real INV2 distinction is
+  *visibility* (register-recoverable vs analysis-blind), which `TLookupField` must join on the
+  recoverable side. EP-60 M2+ remain gated behind a maintainer GO. (2026-06-06)
 - **EP-56 left its warning machinery extensible for EP-60 (INV3).** Adding collection-update
   coverage is additive: a new `TransducerValidationWarning` arm, or a new
   `HiddenInputReason`/clause in the top-level `hiddenInputReasons` walk (`src/Keiki/Core.hs`),
