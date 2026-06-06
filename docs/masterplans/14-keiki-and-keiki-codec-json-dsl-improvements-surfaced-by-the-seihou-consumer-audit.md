@@ -125,7 +125,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 |----|-------|------|-----------|-----------|--------|
 | 55 | Explainable step result: stepEither and StepFailure | docs/plans/55-explainable-step-result-stepeither-and-stepfailure.md | None | None | Complete |
 | 56 | Build-time validation and diagnostics: validateTransducer, determinism, and dead-edge analysis | docs/plans/56-build-time-validation-and-diagnostics-validatetransducer-determinism-and-dead-edge-analysis.md | None | EP-55 | Complete |
-| 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | In Progress |
+| 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Complete |
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Not Started |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Not Started |
 | 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Not Started |
@@ -215,8 +215,8 @@ authoritative, detailed version.
 - [x] EP-56 M1: `validateTransducer` umbrella + `ValidationOptions`/`defaultValidationOptions` + structured `TransducerValidationWarning` (enriched hidden-input warnings). (2026-06-06)
 - [x] EP-56 M2: `checkTransitionDeterminism` on the `isSingleValuedSym` pairing (pure default + sym variant via `withSymPred`). (2026-06-06)
 - [x] EP-56 M3: `checkDeadEdges` (structural reachability, "possibly dead" labeling) + optional `checkDeadEdgesSym`; tests including the FieldResource motivation. (2026-06-06)
-- [ ] EP-57 M1: command-side `deriveAggregateCtorsWith` + `DeriveCtorOptions` + duplicate/unknown compile-time validation.
-- [ ] EP-57 M2: event-side `deriveWireCtorsWith` + dogfood/tests; shared codegen helper extracted.
+- [x] EP-57 M1: command-side `deriveAggregateCtorsWith` + `DeriveCtorOptions` + duplicate/unknown compile-time validation. (2026-06-06)
+- [x] EP-57 M2: event-side `deriveWireCtorsWith` + tests; shared codegen helpers (`genAggregateCtors`/`genWireCtors`) and sum-type-agnostic `resolveCtorSpecs` validator extracted; negative-case error text verified verbatim. (2026-06-06)
 - [ ] EP-58 M1: `src/Keiki/Operators.hs` (qualified-import re-export, fixities preserved) + cabal + qualified-path spec.
 - [ ] EP-58 M2: user-guide recipe (`hiding ((.>))` / qualified / `requireGt` vs `requireGuard (x .> y)`); cross-linked.
 - [ ] EP-59 M1: event-sum reflection + `kind`-discriminated encode/decode skeleton with per-field override hooks (`keiki-codec-json`).
@@ -255,6 +255,12 @@ between child plans. Provide concise evidence.
   coverage is additive: a new `TransducerValidationWarning` arm, or a new
   `HiddenInputReason`/clause in the top-level `hiddenInputReasons` walk (`src/Keiki/Core.hs`),
   with no change to `EdgeRef`, `ValidationOptions`, or the `validateTransducer` umbrella shape.
+- **EP-57: `keiki-test` did not transitively expose `containers` to spec modules.**
+  Importing `Data.Map.Strict`/`Data.Set` in `test/Keiki/Generics/THSpec.hs` failed until
+  `containers >=0.6 && <0.9` was added to the `test-suite keiki-test` `build-depends`
+  (it was only in the *library* stanza). Any later plan whose tests import `containers`
+  (e.g. EP-60's collection-register specs) no longer needs that cabal edit — it is now
+  in place. (verified 2026-06-06)
 - `RegFile` has **no** `Eq`/`Show` instance, not even for the empty slot list `'[]` (verified
   while implementing EP-55: `grep -rn "instance .*(Eq|Show) (RegFile" src/Keiki/*.hs` is empty;
   `CoreSpec` only ever inspects step results by pattern match, never `shouldBe` on a whole
