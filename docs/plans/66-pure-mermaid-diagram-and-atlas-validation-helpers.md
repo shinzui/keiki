@@ -18,7 +18,7 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 keiki renders state-machine ("transducer") topologies into Mermaid `stateDiagram-v2` text and
 assembles many such diagrams into a single Markdown "atlas" document. Downstream projects (the
-disaster-response runtime "Seihou" at `../keiro-runtime-jitsurei`) check those rendered documents
+disaster-response runtime "keiro-runtime-jitsurei" at `../keiro-runtime-jitsurei`) check those rendered documents
 into their repositories. Today there is no cheap way for a downstream **unit test** to assert that
 a freshly rendered diagram is well-formed before it is committed: a typo in a state label, an
 accidentally empty diagram, or a label containing a character that Mermaid chokes on slips through
@@ -187,7 +187,7 @@ with no IO/SMT and no new dependency.
   MasterPlan's out-of-scope list); the module header and this plan say so plainly. Known limitation:
   false negatives and false positives are possible — they are a cheap first line of defense for
   downstream unit tests, not a validity guarantee.
-- **Gap (out of scope, unchanged):** wiring these checks into Seihou's own diagram-regeneration test
+- **Gap (out of scope, unchanged):** wiring these checks into keiro-runtime-jitsurei's own diagram-regeneration test
   is downstream work in `keiro-runtime-jitsurei`. EP-66 completes MasterPlan 15.
 
 

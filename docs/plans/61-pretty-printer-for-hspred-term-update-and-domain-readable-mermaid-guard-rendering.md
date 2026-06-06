@@ -20,7 +20,7 @@ Today, when you render a keiki workflow to a Mermaid diagram and ask for a guard
 annotation, you get a *structural* summary like `[g: PAnd PInCtor PEq]`. That tells you the
 shape of the guard's syntax tree (an "and" of an input-constructor check and an equality)
 but says nothing a domain reader cares about: *which* constructor, *which* register, *what*
-is being compared. The Seihou disaster-response team, who consume keiki diagrams in
+is being compared. The keiro-runtime-jitsurei disaster-response team, who consume keiki diagrams in
 `../keiro-runtime-jitsurei/docs/diagrams/keiki.md`, asked for a **domain-readable** rendering
 mode where that same guard renders as something like `(ConfirmAccount && confirmCode == confirmCode)`.
 
@@ -105,7 +105,7 @@ implementation. Provide concise evidence.
   pinned golden text `userRegAnnotatedCanonical` is *unchanged*, so byte-identity of
   the output is preserved; only the construction site changed. This matters for the
   sibling plan `docs/plans/63-…md` (which appends more `MermaidOptions` fields) and
-  for the downstream Seihou consumer: any caller that builds `MermaidOptions` as a
+  for the downstream keiro-runtime-jitsurei consumer: any caller that builds `MermaidOptions` as a
   full record literal must switch to record-update on `defaultMermaidOptions`, or add
   the new field. The MasterPlan's Integration Points rule "extend additively" should
   be read as "and construct via record-update on `defaultMermaidOptions`".
@@ -117,10 +117,10 @@ Record every decision made while working on the plan.
 
 - Decision: Evolve `MermaidOptions` **additively** — keep `showWrittenSlots :: Bool` and
   `showGuardSummary :: Bool`, and ADD `guardMode :: MermaidGuardMode` — rather than replacing
-  `showGuardSummary` with `guardMode` as the Seihou audit literally proposed.
+  `showGuardSummary` with `guardMode` as the keiro-runtime-jitsurei audit literally proposed.
   Rationale: there is a byte-identity golden in `test/Keiki/Render/MermaidSpec.hs`
   (`test/Keiki/Render/MermaidSpec.hs:108-117`, the `toMermaidWith (MermaidOptions { showWrittenSlots = True, showGuardSummary = True })`
-  case) and downstream callers (Seihou) construct `MermaidOptions` by field name. Dropping a
+  case) and downstream callers (keiro-runtime-jitsurei) construct `MermaidOptions` by field name. Dropping a
   field is a breaking change with no payoff here. The MasterPlan records the same decision
   (`docs/masterplans/15-...md` Decision Log, 2026-06-06).
   Date: 2026-06-06
@@ -190,7 +190,7 @@ EP-61 is complete. Both milestones landed and the full suite is green (343 examp
   the pre-existing default and annotated goldens both pass unchanged — and the new
   golden pins the readable rendering, e.g. the `ConfirmAccount` edge now reads
   `[g: (ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)]` instead of
-  `[g: PAnd PInCtor PEq]`. That contrast is the user-visible payoff the Seihou audit
+  `[g: PAnd PInCtor PEq]`. That contrast is the user-visible payoff the keiro-runtime-jitsurei audit
   asked for.
 
 - **Lessons.** Two implementation realities the plan's prose only partly anticipated,

@@ -129,7 +129,7 @@ Record every decision made while working on the plan.
   So we can show the output *constructor* name (`wcName`) and the *input* constructor name
   (`icName` of the `OPack`'s `InCtor`), and we can pretty-print each field's `Term`, but we can only
   label fields by position ("field 0", "field 1", …), never by a wire field name. This corrects the
-  Seihou audit's Req 3 assumption that fields could be named. (MasterPlan 15 records the same finding
+  keiro-runtime-jitsurei audit's Req 3 assumption that fields could be named. (MasterPlan 15 records the same finding
   in its Surprises section, lines 263-265.)
   Date: 2026-06-06
 

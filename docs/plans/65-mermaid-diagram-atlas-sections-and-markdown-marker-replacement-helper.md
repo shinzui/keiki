@@ -198,7 +198,7 @@ Both milestones landed as designed and the load-bearing byte-identity invariant 
   produces `<!-- ns: sectionId begin/end -->` markers whose id is exactly the `blockId` a later
   `MarkdownDiagramBlock` supplies — so the Req 4 (atlas) and Req 5 (marker replacement) surfaces
   compose with no glue, which was the design intent.
-- **Gap (by design, out of scope):** wiring Seihou's own `docs/diagrams/keiki.md` to use these
+- **Gap (by design, out of scope):** wiring keiro-runtime-jitsurei's own `docs/diagrams/keiki.md` to use these
   helpers is downstream work in `keiro-runtime-jitsurei`, not keiki. The only keiki-side caveat is
   the `MultiWayIf` pragma noted in Surprises.
 
@@ -548,7 +548,7 @@ typed atlas distinguishing kinds and wraps one section in markers:
     it "distinguishes kinds and emits markers keyed by sectionId" $
       toMermaidAtlasWith
         (defaultMermaidAtlasOptions
-           { atlasTitle           = Just (T.pack "Seihou diagrams")
+           { atlasTitle           = Just (T.pack "keiro-runtime-jitsurei diagrams")
            , atlasShowSectionKind = KindAsComment
            , atlasWrapMarkers     = Just (T.pack "seihou")
            })
@@ -707,7 +707,7 @@ The new behavior is shown by the `toMermaidAtlasWith (typed sections)` example. 
 `atlasTitle`, the produced document looks like this (the diagram bodies are elided with `…`):
 
 ```text
-# Seihou diagrams
+# keiro-runtime-jitsurei diagrams
 
 ## Incident Command
 

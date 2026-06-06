@@ -1,13 +1,13 @@
 ---
 id: 15
 slug: keiki-mermaid-diagram-and-documentation-rendering-improvements-surfaced-by-the-seihou-diagram-audit
-title: "Keiki Mermaid diagram and documentation-rendering improvements surfaced by the Seihou diagram audit"
+title: "Keiki Mermaid diagram and documentation-rendering improvements surfaced by the keiro-runtime-jitsurei diagram audit"
 kind: master-plan
 created_at: 2026-06-06T15:47:26Z
 intention: "intention_01ktes9wvkekw8nbb69st0naj8"
 ---
 
-# Keiki Mermaid diagram and documentation-rendering improvements surfaced by the Seihou diagram audit
+# Keiki Mermaid diagram and documentation-rendering improvements surfaced by the keiro-runtime-jitsurei diagram audit
 
 This MasterPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
@@ -15,11 +15,12 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 ## Vision & Scope
 
-Seihou — the disaster-response runtime at `../keiro-runtime-jitsurei` (Incident Command and
-Hospital Capacity services) — generates Mermaid diagrams from its service-owned keiki
-transducers into a checked-in `docs/diagrams/keiki.md`. The diagrams are structurally correct as
+The **keiro-runtime-jitsurei** consumer (the disaster-response runtime at
+`../keiro-runtime-jitsurei`, with Incident Command and Hospital Capacity services) generates
+Mermaid diagrams from its service-owned keiki transducers into a checked-in
+`docs/diagrams/keiki.md`. The diagrams are structurally correct as
 a topology snapshot (states, command and event constructors, initial and final states), but the
-Seihou team found them weak as *explanatory* material and wrote up eight diagram-renderer
+keiro-runtime-jitsurei team found them weak as *explanatory* material and wrote up eight diagram-renderer
 improvements in `../keiro-runtime-jitsurei/docs/keiki-diagram-feature-requirements.md`. This
 MasterPlan addresses all eight. It is a sibling to MasterPlan 14 (which addresses the *DSL/codec*
 requirements from the same audit team); this one is scoped entirely to the diagram and
@@ -76,8 +77,8 @@ behavior, `showGuardSummary` preserved) rather than redesigned as the audit lite
   and inspectors *consume* the existing structure. No constructor is added, removed, or changed.
 - Adding a real Mermaid parser. Req 6's validation is structural heuristics over the rendered
   `Text`, not parsing (see Decision Log).
-- Generating the process-manager diagrams *into Seihou's document*. Keiki's deliverable for Req 4
-  is the atlas/section vocabulary; wiring Seihou's process managers into its own
+- Generating the process-manager diagrams *into keiro-runtime-jitsurei's document*. Keiki's deliverable for Req 4
+  is the atlas/section vocabulary; wiring keiro-runtime-jitsurei's process managers into its own
   `docs/diagrams/keiki.md` is downstream work in the `keiro-runtime-jitsurei` repo (the
   requirement itself acknowledges this is "partly a downstream documentation gap").
 - Adding any dependency to `keiki.cabal` beyond what the renderer already uses (`text`,
@@ -89,7 +90,7 @@ behavior, `showGuardSummary` preserved) rather than redesigned as the audit lite
 The eight requirements were grouped by functional concern into six child plans, following the same
 principles MasterPlans 13 and 14 used: each stream produces an independently verifiable behavior,
 cross-plan coupling is minimized, and natural ordering (a consumed artifact precedes its
-consumers) is respected. The grouping deliberately tracks the Seihou team's own priority
+consumers) is respected. The grouping deliberately tracks the keiro-runtime-jitsurei team's own priority
 recommendation, which puts the pretty-printer first, the inspector second, and the
 label/layout/atlas/validation work after.
 
@@ -265,7 +266,7 @@ between child plans. Provide concise evidence.
 - `WireCtor` has no field names. `WireCtor` carries only `wcName :: String`, `wcMatch`, `wcBuild`
   (`Core.hs:478-482`) — there is no list of output-field names. So EP-62's `includeOutputFields`
   can pretty-print each output field's *term* positionally but cannot label fields by name. The
-  Seihou team's Req 3 assumed otherwise.
+  keiro-runtime-jitsurei team's Req 3 assumed otherwise.
 - The current multi-event output default is NOT pure-semicolon. `edgeOutputName`
   (`Mermaid.hs:595-604`) emits `;` for exactly two events and `<br/>` for three or more
   (length-based). Req 8's claim that "default semicolon output remains unchanged" only holds if
@@ -289,7 +290,7 @@ between child plans. Provide concise evidence.
   field in `defaultMermaidOptions`; and (c) ensure any test or downstream caller that constructs
   `MermaidOptions` uses record-update on `defaultMermaidOptions`, not a full record literal. The
   Integration Points "extend additively" rule should be read as "extend additively **and**
-  construct via record-update on `defaultMermaidOptions`." The downstream Seihou consumer must do
+  construct via record-update on `defaultMermaidOptions`." The downstream keiro-runtime-jitsurei consumer must do
   the same for any full-literal `MermaidOptions` it builds.
 - **EP-63 landed after EP-61, so `MermaidOptions`'s field order is now fixed as**
   `showWrittenSlots`, `showGuardSummary`, `guardMode` (EP-61), `labelLayout`,
@@ -336,7 +337,7 @@ between child plans. Provide concise evidence.
 ## Decision Log
 
 - Decision: Create this as a new MasterPlan (15), separate from MasterPlan 14.
-  Rationale: MasterPlan 14 is scoped to the *DSL/codec* requirements from the Seihou audit
+  Rationale: MasterPlan 14 is scoped to the *DSL/codec* requirements from the keiro-runtime-jitsurei audit
   (`keiki-dsl-feature-requirements.md`: `stepEither`, `validateTransducer`, TH, operators, codec,
   collections). This work addresses a *separate* requirements file
   (`keiki-diagram-feature-requirements.md`), a *separate* concern (diagram and documentation
@@ -345,7 +346,7 @@ between child plans. Provide concise evidence.
   Date: 2026-06-06
 
 - Decision: Validate all eight requirements against the actual ASTs before planning, because they
-  were authored by the Seihou team from rendered output. Verdict: all eight feasible and
+  were authored by the keiro-runtime-jitsurei team from rendered output. Verdict: all eight feasible and
   keiki-appropriate; five need adjustment (recorded as Surprises). Adjustments: (1) literal values
   render opaquely as `<lit>` at baseline (`<lit::T>` only where `Typeable` is in scope) (Req 1); (2) `MermaidOptions` extended additively, not redesigned
   (Reqs 1/2/8); (3) `MermaidOutputSemicolon` reproduces the current length-based `;`/`<br/>`
@@ -362,7 +363,7 @@ between child plans. Provide concise evidence.
   the record as the audit literally wrote it (which drops `showGuardSummary :: Bool` in favor of
   `guardMode :: MermaidGuardMode`).
   Rationale: the user chose the additive path. There is a golden byte-identity test in
-  `test/Keiki/Render/MermaidSpec.hs` and existing callers (in tests and in Seihou) that construct
+  `test/Keiki/Render/MermaidSpec.hs` and existing callers (in tests and in keiro-runtime-jitsurei) that construct
   `MermaidOptions` by field name. Keeping `defaultMermaidOptions` byte-identical and treating
   `showGuardSummary` as the legacy spelling of `guardMode = MermaidGuardStructuralSummary` honors
   each requirement's own "default remains unchanged" acceptance criterion while avoiding a breaking
@@ -372,7 +373,7 @@ between child plans. Provide concise evidence.
 - Decision: Make the pretty-printer (`src/Keiki/Render/Pretty.hs`, EP-61) a shared foundation
   consumed by the inspector (EP-62) and the multiline label renderer (EP-63), rather than letting
   each define its own.
-  Rationale: the Seihou team's own priority recommendation puts "structural pretty-printers" first
+  Rationale: the keiro-runtime-jitsurei team's own priority recommendation puts "structural pretty-printers" first
   and the inspector/guard-mode after; one printer keeps readable-guard output identical across the
   topology renderer and the inspector. EP-62/EP-63 soft-depend on EP-61 for this reason.
   Date: 2026-06-06
@@ -392,13 +393,26 @@ between child plans. Provide concise evidence.
   `validateTransducer` pure-warnings house style from MasterPlan 14's EP-56.
   Date: 2026-06-06
 
+- Decision: Correct the consumer's name throughout this MasterPlan and its child plans from
+  "Seihou" to **keiro-runtime-jitsurei** (the disaster-response runtime at
+  `../keiro-runtime-jitsurei`).
+  Rationale: "Seihou" is the name of the *planning toolkit* (the `seihou:` master-plan /
+  exec-plan skills), not the consumer; it was mistakenly applied as the consumer's name when this
+  MasterPlan was authored. The actual consumer that drove the diagram audit is
+  keiro-runtime-jitsurei. Prose, title, and heading are corrected here and in EP-61/EP-62/EP-65/EP-66
+  (EP-63/EP-64 had no occurrences); the file slug/filename is left unchanged to keep the child
+  plans' `master_plan:` frontmatter links and prior commits' `MasterPlan:` git trailers (which
+  reference the original path) valid. The lowercase `seihou:` skill markers are untouched. This
+  mirrors the same correction made to MasterPlan 14.
+  Date: 2026-06-06
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare the
 result against the original vision.
 
-**Complete.** All eight Seihou diagram-audit requirements shipped across six child plans
+**Complete.** All eight keiro-runtime-jitsurei diagram-audit requirements shipped across six child plans
 (EP-61..EP-66), every one of which is Complete. The full test suite is green at **372 examples, 0
 failures**, and every pre-existing renderer/atlas golden in `test/Keiki/Render/MermaidSpec.hs` is
 byte-identical — the load-bearing invariant ("default `toMermaid`/`toMermaidWith
@@ -440,6 +454,6 @@ house style is to tolerate it (matching `TransducerValidationWarning`) in exchan
 warnings.
 
 Gaps (all pre-declared out of scope, none surprising): wiring these renderer capabilities into
-Seihou's own `docs/diagrams/keiki.md` (process-manager diagrams, marker-based regeneration, a
+keiro-runtime-jitsurei's own `docs/diagrams/keiki.md` (process-manager diagrams, marker-based regeneration, a
 validation test) is downstream work in `keiro-runtime-jitsurei`. Keiki's deliverable — the
 vocabulary and the pure helpers — is done.
