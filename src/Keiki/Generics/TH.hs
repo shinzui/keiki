@@ -63,6 +63,9 @@ module Keiki.Generics.TH (
     defaultDeriveCtorOptions,
     deriveWireCtors,
     deriveWireCtorsAll,
+    deriveWireCtorsWith,
+    DeriveWireOptions (..),
+    defaultDeriveWireOptions,
     deriveAggregate,
     deriveView,
 ) where
@@ -212,7 +215,7 @@ deriveWireCtors ::
 deriveWireCtors evtName specs = do
     ctors <- reifyCtors evtName "deriveWireCtors"
     let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
-    fmap concat . mapM (genWire evtName ctorMap) $ specs
+    genWireCtors evtName ctorMap specs
 
 {- | Like 'deriveWireCtors', but enumerate every constructor of the event
 sum type automatically, using each constructor's own name as its
@@ -230,7 +233,59 @@ deriveWireCtorsAll evtName = do
     ctors <- reifyCtors evtName "deriveWireCtorsAll"
     let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
         specs = [(nameBase n, nameBase n) | c <- ctors, n <- conNames c]
-    fmap concat . mapM (genWire evtName ctorMap) $ specs
+    genWireCtors evtName ctorMap specs
+
+{- | Options for 'deriveWireCtorsWith'. Same semantics as
+'DeriveCtorOptions' but for the event side: 'suffixOverridesW' maps an
+event constructor name to its short-name suffix (used for @wire<Short>@
+and, for record-payload events, the @<Short>TermFields@ record);
+'excludeCtorsW' names event constructors to skip.
+-}
+data DeriveWireOptions = DeriveWireOptions
+    { suffixOverridesW :: Map String String
+    , excludeCtorsW :: Set String
+    }
+
+{- | Default event options: no overrides, no exclusions. With this,
+behaviour is identical to 'deriveWireCtorsAll'.
+-}
+defaultDeriveWireOptions :: DeriveWireOptions
+defaultDeriveWireOptions =
+    DeriveWireOptions
+        { suffixOverridesW = Map.empty
+        , excludeCtorsW = Set.empty
+        }
+
+{- | Derive event-constructor helpers for every constructor of the event
+sum type, like 'deriveWireCtorsAll', but honouring per-constructor
+short-name overrides and an exclude set carried in 'DeriveWireOptions'.
+A constructor in 'suffixOverridesW' uses the mapped short name;
+otherwise it defaults to its own name; a constructor in 'excludeCtorsW'
+is skipped entirely.
+
+Unknown override\/exclude keys and duplicate resolved short names both
+abort the splice at compile time with a precise message (via the same
+'resolveCtorSpecs' machinery the command side uses). For a constructor
+present in 'suffixOverridesW', the generated declarations are
+byte-for-byte identical to what 'deriveWireCtors' produces for the same
+@(constructor, short)@ pair.
+-}
+deriveWireCtorsWith ::
+    -- | event sum type, e.g. @\'\'OverEvent@
+    Name ->
+    DeriveWireOptions ->
+    Q [Dec]
+deriveWireCtorsWith evtName opts = do
+    ctors <- reifyCtors evtName "deriveWireCtorsWith"
+    let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
+        allCtors = map fst ctorMap
+    specs <-
+        resolveCtorSpecs
+            "deriveWireCtorsWith"
+            allCtors
+            (suffixOverridesW opts)
+            (excludeCtorsW opts)
+    genWireCtors evtName ctorMap specs
 
 {- | Fuse 'deriveAggregateCtorsAll' and 'deriveWireCtorsAll' into one
 splice covering an aggregate's command and event constructors. Given
@@ -702,6 +757,15 @@ recordDecls cmdName regsName ctorStr shortStr payTy = do
                 []
             ]
     pure [inCtorSig, inCtorDef, inpSig, inpDef, isSig, isDef]
+
+{- | Shared event-side codegen: given the reified constructor map and a
+resolved @(constructorName, shortName)@ spec list, emit the wire
+declarations. All event-side entry points route through this so the
+generated output is identical for identical resolved specs.
+-}
+genWireCtors :: Name -> [(String, Con)] -> [(String, String)] -> Q [Dec]
+genWireCtors evtName ctorMap specs =
+    fmap concat . mapM (genWire evtName ctorMap) $ specs
 
 genWire ::
     Name ->

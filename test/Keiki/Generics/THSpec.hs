@@ -143,6 +143,27 @@ $( deriveAggregateCtorsWith
 overRegs :: RegFile OverRegs
 overRegs = RCons (Proxy @"oa") 0 RNil
 
+-- A fifth toy aggregate exercising 'deriveWireCtorsWith' on the event
+-- side: one constructor is overridden to an abbreviated short name, one
+-- keeps its own name, and one is excluded. Mirrors the OverCmd fixture.
+
+data EvtData = EvtData {ea :: Int}
+    deriving (Eq, Show, Generic)
+
+data OverEvent
+    = SomethingHappenedAtLength EvtData -- override -> "Happened"
+    | Routine EvtData -- default -> "Routine"
+    | Ignored -- excluded
+    deriving (Eq, Show, Generic)
+
+$( deriveWireCtorsWith
+    ''OverEvent
+    defaultDeriveWireOptions
+        { suffixOverridesW = Map.fromList [("SomethingHappenedAtLength", "Happened")]
+        , excludeCtorsW = Set.fromList ["Ignored"]
+        }
+ )
+
 spec :: Spec
 spec = do
     describe "deriveAggregateCtors on a record-payload constructor (DoIt)" $ do
@@ -244,6 +265,20 @@ spec = do
             evalPred isBrief overRegs (LongCommandName (OverData 0)) `shouldBe` True
             evalPred isBrief overRegs (Plain (OverData 0)) `shouldBe` False
 
--- The excluded constructor 'Skipped' generates no helpers: there is
--- no inCtorSkipped / isSkipped in scope. Referencing one would fail
--- to compile, which is the intended behaviour.
+    -- The excluded constructor 'Skipped' generates no helpers: there is
+    -- no inCtorSkipped / isSkipped in scope. Referencing one would fail
+    -- to compile, which is the intended behaviour.
+
+    describe "deriveWireCtorsWith (overrides + excludes)" $ do
+        it "uses the override short name for the event identifier" $
+            wcName wireHappened `shouldBe` "SomethingHappenedAtLength"
+
+        it "rebuilds the overridden event through the abbreviated helper" $
+            wcBuild wireHappened (5, ()) `shouldBe` SomethingHappenedAtLength (EvtData 5)
+
+        it "defaults the non-overridden event to its own name" $ do
+            wcName wireRoutine `shouldBe` "Routine"
+            wcBuild wireRoutine (9, ()) `shouldBe` Routine (EvtData 9)
+
+-- The excluded event constructor 'Ignored' generates no helper: there
+-- is no wireIgnored in scope. Referencing it would fail to compile.

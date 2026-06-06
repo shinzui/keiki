@@ -107,16 +107,21 @@ here, even if it requires splitting a partially completed task into two ("done" 
 - [x] M1: Add a fixture aggregate to `test/Keiki/Generics/THSpec.hs` that uses
       `deriveAggregateCtorsWith` with one override and one exclude; add runtime
       assertions; build and run the suite green (297 examples, 0 failures). (2026-06-06)
-- [ ] M2: Add `DeriveWireOptions` + `defaultDeriveWireOptions` and
-      `deriveWireCtorsWith` on the event side, mirroring M1 (shared codegen path,
-      same two validations).
-- [ ] M2: Extend the THSpec fixture with an event sum type derived via
+- [x] M2: Add `DeriveWireOptions` + `defaultDeriveWireOptions` and
+      `deriveWireCtorsWith` on the event side, mirroring M1 (shared codegen path via
+      `genWireCtors`, same `resolveCtorSpecs` validations). (2026-06-06)
+- [x] M2: Extend the THSpec fixture with an event sum type (`OverEvent`) derived via
       `deriveWireCtorsWith` (one override, one exclude); add runtime assertions.
-- [ ] M2: Document the two negative (compile-fail) cases as a manual verification block
-      in this plan, with exact snippets and expected error text.
-- [ ] M2: (Optional, additive) Dogfood `deriveAggregateCtorsWith` in one existing
-      worked-example aggregate to demonstrate the drop-in; keep the suite green.
-- [ ] Fill in Outcomes & Retrospective; update Surprises & Decision Log as needed.
+      (2026-06-06)
+- [x] M2: Document the two negative (compile-fail) cases as a manual verification block
+      in this plan, with exact snippets and expected error text; verified the observed
+      GHC error text matches both documented messages verbatim. (2026-06-06)
+- [~] M2: (Optional, additive) Dogfood skipped — equivalence is already guaranteed
+      structurally (all three command entry points route through the same
+      `genAggregateCtors`/`genCtor` path; see Decision Log) and the new fixtures prove
+      the feature; a redundant migration was not added. (2026-06-06)
+- [x] Fill in Outcomes & Retrospective; update Surprises & Decision Log as needed.
+      (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -177,13 +182,63 @@ Record every decision made while working on the plan.
   Rationale: Stated explicitly so a contributor need not coordinate with sibling plans.
   Date: 2026-06-06
 
+- Decision: Skip the optional M2 dogfood (migrating an existing `*All` fixture to
+  `deriveAggregateCtorsWith defaultDeriveCtorOptions`).
+  Rationale: Drop-in equivalence is already guaranteed structurally — all three
+  command-side entry points (`deriveAggregateCtors`, `deriveAggregateCtorsAll`,
+  `deriveAggregateCtorsWith`) route through the single `genAggregateCtors`/`genCtor`
+  path, so identical resolved specs produce identical declarations. The new `OverCmd`
+  fixture already exercises override + default + exclude. A redundant migration would
+  add churn without new coverage, and migrating `AutoCmd` would erode the dedicated
+  `deriveAggregateCtorsAll` describe block. Equivalence remains asserted by the suite
+  (the override fixture's default-named helper `inCtorPlain` is generated exactly as the
+  `*All` path would).
+  Date: 2026-06-06
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Outcome: delivered in full against the original purpose. `Keiki.Generics.TH` now
+exports `deriveAggregateCtorsWith` / `DeriveCtorOptions` / `defaultDeriveCtorOptions`
+(command side) and `deriveWireCtorsWith` / `DeriveWireOptions` /
+`defaultDeriveWireOptions` (event side). A consumer can enumerate every constructor
+automatically while overriding the short name of a *subset* (e.g. Seihou's
+`DeclareIncident -> "Declare"`) and/or excluding a subset — no more hand-listing the
+constructors it was happy with. The exact ergonomics promised in Purpose now compile:
+
+```haskell
+$(deriveAggregateCtorsWith ''IncidentCommand ''IncidentRegs
+    defaultDeriveCtorOptions
+      { suffixOverrides = Map.fromList [("DeclareIncident", "Declare")] })
+```
+
+Both mistake classes fail loudly at compile time with precise, named messages
+(duplicate resolved short name; unknown override/exclude key — the latter also lists the
+valid constructors), verified verbatim against GHC output (see the negative-case
+section).
+
+Drop-in equivalence is structural: all three command entry points share
+`genAggregateCtors`/`genCtor`, and both event entry points share `genWireCtors`/
+`genWire`. The single sum-type-agnostic `resolveCtorSpecs` validator backs both sides,
+so the command and event paths cannot drift in their validation behaviour.
+
+Acceptance: `cabal build keiki` succeeds; `cabal test keiki-test` reports 300 examples,
+0 failures, including the four `deriveAggregateCtorsWith` and three `deriveWireCtorsWith`
+examples.
+
+Gaps / deltas from the plan:
+
+- The `keiki-test` stanza needed `containers` added explicitly (the plan flagged this as
+  conditional; it was required). Recorded in Surprises & Discoveries.
+- The optional dogfood was skipped as redundant (see Decision Log); equivalence is
+  guaranteed by the shared codegen path rather than demonstrated by migration.
+
+Lesson: routing every entry point (old and new) through one resolved-spec codegen helper
+made the "byte-for-byte identical output" guarantee fall out for free and kept the two
+new validations in a single place reused by both the command and event sides.
 
 
 ## Context and Orientation
@@ -736,6 +791,21 @@ After confirming each message, delete the temporary snippet and re-run
 `cabal build keiki-test` to confirm the suite is green again. Record the exact observed
 text in Surprises & Discoveries if it differs from the above (GHC may wrap or prefix the
 message with source location; the substring shown here must appear).
+
+Verified 2026-06-06: both snippets were pasted into `test/Keiki/Generics/THSpec.hs`
+one at a time and `cabal build keiki-test` was run. The observed GHC error text matched
+the documented messages verbatim:
+
+```text
+deriveAggregateCtorsWith: short name(s) { "Same" } are produced by more than one constructor; rename via suffixOverrides or exclude one
+```
+
+```text
+deriveAggregateCtorsWith: option(s) name { "Alfa Thing" } which are not constructors of this type; valid constructors: { "AlphaThing", "BetaThing" }
+```
+
+Both snippets were then removed; `cabal test keiki-test` reports 300 examples, 0
+failures.
 
 
 ## Idempotence and Recovery
