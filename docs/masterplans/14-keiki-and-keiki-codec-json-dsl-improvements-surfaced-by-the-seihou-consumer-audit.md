@@ -124,7 +124,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | #  | Title | Path | Hard Deps | Soft Deps | Status |
 |----|-------|------|-----------|-----------|--------|
 | 55 | Explainable step result: stepEither and StepFailure | docs/plans/55-explainable-step-result-stepeither-and-stepfailure.md | None | None | Complete |
-| 56 | Build-time validation and diagnostics: validateTransducer, determinism, and dead-edge analysis | docs/plans/56-build-time-validation-and-diagnostics-validatetransducer-determinism-and-dead-edge-analysis.md | None | EP-55 | Not Started |
+| 56 | Build-time validation and diagnostics: validateTransducer, determinism, and dead-edge analysis | docs/plans/56-build-time-validation-and-diagnostics-validatetransducer-determinism-and-dead-edge-analysis.md | None | EP-55 | Complete |
 | 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Not Started |
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Not Started |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Not Started |
@@ -212,9 +212,9 @@ authoritative, detailed version.
 
 - [x] EP-55 M1: `StepFailure`/`EdgeRef`/summary types + `stepEither` in `src/Keiki/Core.hs`, `step` unchanged, success payload byte-identical to `step`. (2026-06-06)
 - [x] EP-55 M2: `test/Keiki/StepEitherSpec.hs` (finite-enumeration) covering no-outgoing / no-match / ambiguous / accepting cases; registered in `keiki.cabal` + `test/Spec.hs`. (2026-06-06)
-- [ ] EP-56 M1: `validateTransducer` umbrella + `ValidationOptions`/`defaultValidationOptions` + structured `TransducerValidationWarning` (enriched hidden-input warnings).
-- [ ] EP-56 M2: `checkTransitionDeterminism` on the `isSingleValuedSym` pairing (pure default + sym variant via `withSymPred`).
-- [ ] EP-56 M3: `checkDeadEdges` (structural reachability, "possibly dead" labeling) + optional `checkDeadEdgesSym`; tests including the FieldResource motivation.
+- [x] EP-56 M1: `validateTransducer` umbrella + `ValidationOptions`/`defaultValidationOptions` + structured `TransducerValidationWarning` (enriched hidden-input warnings). (2026-06-06)
+- [x] EP-56 M2: `checkTransitionDeterminism` on the `isSingleValuedSym` pairing (pure default + sym variant via `withSymPred`). (2026-06-06)
+- [x] EP-56 M3: `checkDeadEdges` (structural reachability, "possibly dead" labeling) + optional `checkDeadEdgesSym`; tests including the FieldResource motivation. (2026-06-06)
 - [ ] EP-57 M1: command-side `deriveAggregateCtorsWith` + `DeriveCtorOptions` + duplicate/unknown compile-time validation.
 - [ ] EP-57 M2: event-side `deriveWireCtorsWith` + dogfood/tests; shared codegen helper extracted.
 - [ ] EP-58 M1: `src/Keiki/Operators.hs` (qualified-import re-export, fixities preserved) + cabal + qualified-path spec.
@@ -243,6 +243,18 @@ between child plans. Provide concise evidence.
   selector cannot be used as a function (GHC-55876, a fact already recorded in MasterPlan 13).
   Any plan here that walks an edge's update (EP-56's analyses, EP-60's collection updates) must
   pattern-match the `Edge`, never use the selector. The child plans note this.
+- **EdgeRef convergence resolved in EP-55's favor.** EP-55 landed before EP-56, so the shared
+  edge-locator is EP-55's typed `EdgeRef s = EdgeRef { edgeSource :: s, edgeIndex :: Int }`
+  (carries the real vertex, not `show s`). EP-56 adopted it and parameterized *all* its warning
+  types over `s` (`TransducerValidationWarning s`, `DeterminismWarning s`, `DeadEdgeWarning s`).
+  The MasterPlan's "locate an edge by source vertex (via `Show s`)" wording in Integration
+  Points is now slightly stale: the locator carries `s` directly and `Show s` is only used by
+  the *display* layer (detail strings). Any later plan (EP-60) that emits validation warnings
+  must use the same typed `EdgeRef s` and parameterize over `s`.
+- **EP-56 left its warning machinery extensible for EP-60 (INV3).** Adding collection-update
+  coverage is additive: a new `TransducerValidationWarning` arm, or a new
+  `HiddenInputReason`/clause in the top-level `hiddenInputReasons` walk (`src/Keiki/Core.hs`),
+  with no change to `EdgeRef`, `ValidationOptions`, or the `validateTransducer` umbrella shape.
 - `RegFile` has **no** `Eq`/`Show` instance, not even for the empty slot list `'[]` (verified
   while implementing EP-55: `grep -rn "instance .*(Eq|Show) (RegFile" src/Keiki/*.hs` is empty;
   `CoreSpec` only ever inspects step results by pattern match, never `shouldBe` on a whole

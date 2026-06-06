@@ -26,6 +26,7 @@ import Keiki.ShapeSpec qualified
 import Keiki.StepEitherSpec qualified
 import Keiki.StrongSpec qualified
 import Keiki.SymbolicSpec qualified
+import Keiki.ValidationSpec qualified
 import Test.Hspec
 
 main :: IO ()
@@ -56,3 +57,4 @@ main = hspec $ do
     describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
     describe "Keiki.Shape (EP-36 M1)" Keiki.ShapeSpec.spec
     describe "Keiki.Symbolic" Keiki.SymbolicSpec.spec
+    describe "Keiki.Core.validateTransducer (EP-56)" Keiki.ValidationSpec.spec

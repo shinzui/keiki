@@ -146,6 +146,20 @@ module Keiki.Core (
     HiddenInputWarning (..),
     checkHiddenInputs,
 
+    -- * Build-time validation umbrella (EP-56)
+    TransducerValidationWarning (..),
+    ValidationOptions (..),
+    defaultValidationOptions,
+    validateTransducer,
+    hiddenInputWarnings,
+    DeterminismWarning (..),
+    checkTransitionDeterminism,
+    checkTransitionDeterminismPure,
+    DeadEdgeOptions (..),
+    defaultDeadEdgeOptions,
+    DeadEdgeWarning (..),
+    checkDeadEdges,
+
     -- * Internals exposed for testing
     termReadsInput,
     updateReadsInput,
@@ -157,6 +171,7 @@ module Keiki.Core (
 import Data.Kind (Type)
 import Data.List (nub, (\\))
 import Data.Proxy (Proxy (..))
+import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
@@ -1382,38 +1397,55 @@ checkHiddenInputs ::
 checkHiddenInputs t =
     [ HiddenInputWarning
         { hiwEdgeSource = show s
-        , hiwReason = reason
+        , hiwReason = formatHiddenInputReason n r
         }
     | s <- [minBound .. maxBound]
     , (n, e) <- zip [(0 :: Int) ..] (edgesOut t s)
-    , reason <- edgeReasons n e
+    , r <- hiddenInputReasons e
     ]
+
+{- | A structured reason an edge's output cannot mechanically recover its
+input on replay. This is the single source of truth behind both
+'checkHiddenInputs' (which formats these into the legacy 'HiddenInputWarning'
+strings via 'formatHiddenInputReason') and 'hiddenInputWarnings' (which lifts
+each into a structured 'TransducerValidationWarning' carrying the typed source
+vertex, the input-constructor name, and the missing slot names).
+-}
+data HiddenInputReason
+    = {- | An ε-edge (empty @output@) whose @update@ reads the input symbol,
+      so the read information is silent on the wire.
+      -}
+      HirEpsilonReadsInput
+    | {- | The named input constructor has declared slots the edge's output
+      never recovers (after unioning every same-constructor 'OPack').
+      Carries the constructor name and the missing slot names.
+      -}
+      HirUnionMiss String [String]
+    deriving (Eq, Show)
+
+{- | The per-edge hidden-input analysis, factored out of 'checkHiddenInputs'
+so the legacy string warnings and the structured 'hiddenInputWarnings' share
+one implementation. For an ε-edge it reports 'HirEpsilonReadsInput' iff the
+update reads the input; for a non-empty output it groups 'OPack's by input
+constructor name, unions the recovered slots, and reports a 'HirUnionMiss' for
+any constructor with uncovered slots (first-seen order, deterministic).
+-}
+hiddenInputReasons ::
+    forall phi rs ci co s. Edge phi rs ci co s -> [HiddenInputReason]
+hiddenInputReasons e = case output e of
+    []
+        | edgeReadsInput e -> [HirEpsilonReadsInput]
+        | otherwise -> []
+    outs ->
+        [ HirUnionMiss icN missing
+        | (icN, allSlots, visitedUnion) <- groupByInCtorName outs
+        , let missing = allSlots \\ nub visitedUnion
+        , not (null missing)
+        ]
   where
-    edgeReasons :: Int -> Edge phi rs ci co s -> [String]
-    edgeReasons n e = case output e of
-        []
-            | edgeReadsInput e ->
-                ["edge #" <> show n <> ": ε-edge with input read in update"]
-            | otherwise -> []
-        outs -> unionMisses n outs
-
-    -- \| For an edge's non-empty output list, group OPacks by InCtor
-    -- name; for each group, compute the union of visited slots; flag
-    -- any InCtor whose slot list is not fully covered by the union.
-    -- The grouping preserves first-seen order so warning messages
-    -- are deterministic.
-    unionMisses :: Int -> [OutTerm rs ci co] -> [String]
-    unionMisses n outs =
-        let groups = groupByInCtorName outs
-         in [ formatMiss n icN missing
-            | (icN, allSlots, visitedUnion) <- groups
-            , let missing = allSlots \\ nub visitedUnion
-            , not (null missing)
-            ]
-
-    -- \| Walk the output list, accumulating per-InCtor (slot list,
-    -- visited slots). First seen wins on the slot list; subsequent
-    -- OPacks with the same InCtor name extend the visited list.
+    -- Walk the output list, accumulating per-InCtor (slot list, visited
+    -- slots). First seen wins on the slot list; subsequent OPacks with the
+    -- same InCtor name extend the visited list.
     groupByInCtorName ::
         [OutTerm rs ci co] -> [(String, [String], [String])]
     groupByInCtorName = foldl add []
@@ -1429,13 +1461,11 @@ checkHiddenInputs t =
             | n == icN = (n, sl, v ++ visited) : rest
             | otherwise = (n, sl, v) : extend rest icN allSl visited
 
-    -- \| Slots of an OPack's named 'InCtor' that the supplied
-    -- 'OutFields' walk recovers via a /top-level/ 'TInpCtorField' — the
-    -- "invertible-visited" set. Since EP-47 this deliberately does NOT
+    -- Slots of an OPack's named 'InCtor' that the supplied 'OutFields' walk
+    -- recovers via a /top-level/ 'TInpCtorField'. Since EP-47 this does NOT
     -- descend into derived ('TApp1'\/'TApp2'\/'TArith') terms: a slot read
-    -- only inside a derived field is a /hidden input/ ('solveOutput'
-    -- recovers the command from invertible fields alone), so it must be
-    -- reported missing rather than counted as covered.
+    -- only inside a derived field is a /hidden input/, so it is reported
+    -- missing rather than counted as covered.
     visitedSlotsOf ::
         forall ifs fs.
         InCtor ci ifs -> OutFields rs ci ifs fs -> [String]
@@ -1457,18 +1487,24 @@ checkHiddenInputs t =
         indexPos ZIdx = 0
         indexPos (SIdx i) = 1 + indexPos i
 
-    formatMiss :: Int -> String -> [String] -> String
-    formatMiss n icN missing =
-        "edge #"
-            <> show n
-            <> ": OPack walk for InCtor \""
-            <> icN
-            <> "\" leaves field"
-            <> (if length missing == 1 then " " else "s ")
-            <> "{"
-            <> showMissing missing
-            <> "} unrecovered"
-
+{- | Format a 'HiddenInputReason' into the legacy 'HiddenInputWarning' reason
+string. The output is byte-identical to the pre-refactor 'checkHiddenInputs'
+text so existing consumers and tests are unaffected.
+-}
+formatHiddenInputReason :: Int -> HiddenInputReason -> String
+formatHiddenInputReason n HirEpsilonReadsInput =
+    "edge #" <> show n <> ": ε-edge with input read in update"
+formatHiddenInputReason n (HirUnionMiss icN missing) =
+    "edge #"
+        <> show n
+        <> ": OPack walk for InCtor \""
+        <> icN
+        <> "\" leaves field"
+        <> (if length missing == 1 then " " else "s ")
+        <> "{"
+        <> showMissing missing
+        <> "} unrecovered"
+  where
     showMissing :: [String] -> String
     showMissing [] = ""
     showMissing [x] = "\"" <> x <> "\""
@@ -1555,3 +1591,330 @@ detectMissingInCtorFields ic@InCtor{} fields =
 -}
 slotNamesOf :: forall ci ifs. InCtor ci ifs -> [String]
 slotNamesOf InCtor{} = slotNames @ifs
+
+-- * Build-time validation umbrella (EP-56) --------------------------------
+
+{- | A structured build-time validation warning, parameterized over the
+vertex type @s@ so it carries the real source vertex rather than a
+pre-stringified one. It reuses the canonical 'EdgeRef' locator owned by EP-55
+(the runtime explainer 'stepEither'), so the runtime and build-time
+diagnostics speak one vocabulary.
+
+Produced by 'validateTransducer'. The three kinds correspond to the three
+authoring mistakes the consumer audit flagged: hidden replay inputs,
+nondeterministic (overlapping) guards, and edges that can never fire.
+-}
+data TransducerValidationWarning s
+    = {- | An edge consumes command information that its output does not
+      emit, so the command cannot be reconstructed on replay.
+      -}
+      HiddenInput
+        { tvwEdge :: EdgeRef s
+        , tvwInCtor :: Maybe String
+        -- ^ input constructor name, when known
+        , tvwMissingSlots :: [String]
+        -- ^ slot/field names left off the wire
+        , tvwDetail :: String
+        -- ^ human-readable summary
+        }
+    | {- | Two outgoing edges of the same vertex whose guards can both hold
+      for one command — a runtime nondeterminism / single-valuedness
+      violation (its dynamic witness is EP-55's @AmbiguousEdges@).
+      -}
+      NondeterministicPair
+        { tvwSource :: s
+        , tvwEdgeA :: Int
+        , tvwEdgeB :: Int
+        , tvwInCtor :: Maybe String
+        , tvwDetail :: String
+        }
+    | {- | An edge that can never fire: its source vertex is unreachable
+      from 'initial', or its guard is statically unsatisfiable. Labelled
+      "possibly" because the structural pass is conservative.
+      -}
+      PossiblyDeadEdge
+        { tvwEdge :: EdgeRef s
+        , tvwDetail :: String
+        }
+    deriving stock (Eq, Show)
+
+{- | Which checks 'validateTransducer' runs. All default to 'True' (see
+'defaultValidationOptions').
+-}
+data ValidationOptions = ValidationOptions
+    { failOnEpsilonReadsInput :: Bool
+    -- ^ run the hidden-input check
+    , checkDeterminism :: Bool
+    -- ^ run the (pure, structural) determinism check
+    , checkReachability :: Bool
+    -- ^ run the (structural) dead-edge check
+    }
+    deriving stock (Eq, Show)
+
+-- | All checks enabled.
+defaultValidationOptions :: ValidationOptions
+defaultValidationOptions =
+    ValidationOptions
+        { failOnEpsilonReadsInput = True
+        , checkDeterminism = True
+        , checkReachability = True
+        }
+
+{- | The build-time validation umbrella. Runs the enabled checks over the
+'HsPred' (syntactic, /no solver/) carrier and concatenates their structured
+warnings, so a project can put @validateTransducer defaultValidationOptions t
+== []@ directly in a unit test and have it pass or fail in microseconds with
+no external z3 process.
+
+The default path is deliberately specialised to the 'HsPred' carrier and is
+/cheap and pure/: the determinism component flags only structurally-provable
+overlaps (never a false positive, but it can miss overlaps it cannot prove
+syntactically), and the dead-edge component is structural reachability plus a
+literal-'PBot' check. For the exact, solver-backed answers use
+'Keiki.Symbolic.checkTransitionDeterminismSym' and
+'Keiki.Symbolic.checkDeadEdgesSym' directly.
+-}
+validateTransducer ::
+    (Bounded s, Enum s, Ord s, Show s) =>
+    ValidationOptions ->
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    [TransducerValidationWarning s]
+validateTransducer opts t =
+    concat
+        [ if failOnEpsilonReadsInput opts then hiddenInputWarnings t else []
+        , if checkDeterminism opts then determinismWarnings t else []
+        , if checkReachability opts
+            then
+                [ PossiblyDeadEdge (dewEdge w) (dewReason w)
+                | w <- checkDeadEdges defaultDeadEdgeOptions t
+                ]
+            else []
+        ]
+
+{- | Structured form of the hidden-input check, additive over
+'checkHiddenInputs'. Reuses the same per-edge analysis ('hiddenInputReasons')
+and lifts each result into a 'TransducerValidationWarning' carrying the typed
+source vertex (via 'EdgeRef'), the input-constructor name, and the missing
+slot names — data a downstream project can pattern-match on rather than parse
+out of a string.
+-}
+hiddenInputWarnings ::
+    (Bounded s, Enum s) =>
+    SymTransducer phi rs s ci co ->
+    [TransducerValidationWarning s]
+hiddenInputWarnings t =
+    [ HiddenInput
+        { tvwEdge = EdgeRef{edgeSource = s, edgeIndex = n}
+        , tvwInCtor = inCtorOf r
+        , tvwMissingSlots = missingSlotsOf r
+        , tvwDetail = formatHiddenInputReason n r
+        }
+    | s <- [minBound .. maxBound]
+    , (n, e) <- zip [(0 :: Int) ..] (edgesOut t s)
+    , r <- hiddenInputReasons e
+    ]
+  where
+    inCtorOf (HirUnionMiss icN _) = Just icN
+    inCtorOf HirEpsilonReadsInput = Nothing
+    missingSlotsOf (HirUnionMiss _ ms) = ms
+    missingSlotsOf HirEpsilonReadsInput = []
+
+-- ** Determinism diagnostics
+
+{- | A determinism warning: two outgoing edges of the same vertex whose guards
+can both hold. Carries both edge indices and the (typed) source vertex.
+-}
+data DeterminismWarning s = DeterminismWarning
+    { dwSource :: s
+    , dwEdgeA :: Int
+    -- ^ first overlapping edge index
+    , dwEdgeB :: Int
+    -- ^ second overlapping edge index
+    , dwDetail :: String
+    }
+    deriving stock (Eq, Show)
+
+{- | Per-vertex, per-pair determinism diagnostic. Reuses the exact pairing
+structure of 'Keiki.Symbolic.isSingleValuedSym': for every vertex, for every
+pair @(i,e1),(j,e2)@ with @i<j@, the pair is ambiguous when
+@guard e1 \`conj\` guard e2@ is /not/ 'isBot'. So
+@checkTransitionDeterminism t == []@ iff @isSingleValuedSym t@ under the same
+carrier.
+
+Soundness direction: with the pure 'HsPred' carrier, 'isBot' only recognises
+the literal 'PBot', so @not (isBot (a \`conj\` b))@ holds for /every/ non-'PBot'
+pair — i.e. this polymorphic check over-approximates overlap on the 'HsPred'
+carrier (it would flag almost every multi-edge vertex). It is intended to be
+run over the /symbolic/ 'SymPred' carrier (via
+'Keiki.Symbolic.checkTransitionDeterminismSym'), whose 'isBot' is exact. For
+the pure path 'validateTransducer' uses the under-approximating
+'checkTransitionDeterminismPure' instead, which flags only true positives.
+-}
+checkTransitionDeterminism ::
+    forall phi rs s ci co.
+    (BoolAlg phi (RegFile rs, ci), Bounded s, Enum s, Show s) =>
+    SymTransducer phi rs s ci co ->
+    [DeterminismWarning s]
+checkTransitionDeterminism t =
+    [ DeterminismWarning
+        { dwSource = s
+        , dwEdgeA = i
+        , dwEdgeB = j
+        , dwDetail = overlapDetail i j s
+        }
+    | s <- [minBound .. maxBound]
+    , let ies = zip [(0 :: Int) ..] (edgesOut t s)
+    , (i, e1) <- ies
+    , (j, e2) <- ies
+    , i < j
+    , not (isBot (guard e1 `conj` guard e2))
+    ]
+
+{- | Over-approximation-free determinism check for the pure 'HsPred' carrier:
+emits a warning only when overlap is structurally provable (both guards are
+'PTop', or both name the same input constructor). Used by 'validateTransducer'
+so the pure path yields no false positives. Every warning it emits is a true
+positive; the absence of a warning does NOT prove determinism — run
+'Keiki.Symbolic.checkTransitionDeterminismSym' for the exact answer.
+-}
+checkTransitionDeterminismPure ::
+    forall rs s ci co.
+    (Bounded s, Enum s, Show s) =>
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    [DeterminismWarning s]
+checkTransitionDeterminismPure t =
+    [ DeterminismWarning
+        { dwSource = s
+        , dwEdgeA = i
+        , dwEdgeB = j
+        , dwDetail = overlapDetail i j s
+        }
+    | s <- [minBound .. maxBound]
+    , let ies = zip [(0 :: Int) ..] (edgesOut t s)
+    , (i, e1) <- ies
+    , (j, e2) <- ies
+    , i < j
+    , provablyOverlap (guard e1) (guard e2)
+    ]
+
+overlapDetail :: (Show s) => Int -> Int -> s -> String
+overlapDetail i j s =
+    "edges #"
+        <> show i
+        <> " and #"
+        <> show j
+        <> " out of "
+        <> show s
+        <> " have overlapping guards"
+
+{- | Structurally-provable guard overlap for the pure 'HsPred' carrier: 'True'
+only when overlap is certain (both 'PTop', or the same input constructor).
+Conservative — never a false positive; misses overlaps it cannot prove
+syntactically (those are left to the symbolic variant).
+-}
+provablyOverlap :: HsPred rs ci -> HsPred rs ci -> Bool
+provablyOverlap PTop PTop = True
+provablyOverlap (PInCtor a) (PInCtor b) = icName a == icName b
+provablyOverlap _ _ = False
+
+{- | Internal: the determinism component of 'validateTransducer'. Like
+'checkTransitionDeterminismPure' but emits the richer 'NondeterministicPair'
+directly, populating 'tvwInCtor' with the overlapping command constructor when
+both guards name the same one (and 'Nothing' for the 'PTop' case).
+-}
+determinismWarnings ::
+    (Bounded s, Enum s, Show s) =>
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    [TransducerValidationWarning s]
+determinismWarnings t =
+    [ NondeterministicPair
+        { tvwSource = s
+        , tvwEdgeA = i
+        , tvwEdgeB = j
+        , tvwInCtor = overlapCtor (guard e1) (guard e2)
+        , tvwDetail = overlapDetail i j s
+        }
+    | s <- [minBound .. maxBound]
+    , let ies = zip [(0 :: Int) ..] (edgesOut t s)
+    , (i, e1) <- ies
+    , (j, e2) <- ies
+    , i < j
+    , provablyOverlap (guard e1) (guard e2)
+    ]
+  where
+    overlapCtor (PInCtor a) (PInCtor b)
+        | icName a == icName b = Just (icName a)
+    overlapCtor _ _ = Nothing
+
+-- ** Dead-edge diagnostics
+
+{- | Options for 'checkDeadEdges'. 'deoFlagBotGuards' additionally flags edges
+whose guard is literally 'PBot' (statically unsatisfiable), beyond edges
+leaving unreachable vertices.
+-}
+data DeadEdgeOptions = DeadEdgeOptions
+    { deoFlagBotGuards :: Bool
+    }
+    deriving stock (Eq, Show)
+
+-- | Flag both unreachable-source edges and literal-'PBot' guards.
+defaultDeadEdgeOptions :: DeadEdgeOptions
+defaultDeadEdgeOptions = DeadEdgeOptions{deoFlagBotGuards = True}
+
+{- | A dead-edge warning: an edge locator and a human-readable reason it is
+/possibly/ (never certainly) dead.
+-}
+data DeadEdgeWarning s = DeadEdgeWarning
+    { dewEdge :: EdgeRef s
+    , dewReason :: String
+    }
+    deriving stock (Eq, Show)
+
+{- | The set of vertices reachable from 'initial' by following 'target'
+pointers. A finite fixpoint over the 'Bounded'\/'Enum' vertex set.
+-}
+reachableVertices ::
+    (Bounded s, Enum s, Ord s) =>
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    Set.Set s
+reachableVertices t = go (Set.singleton (initial t)) [initial t]
+  where
+    go seen [] = seen
+    go seen (s : rest) =
+        let succs = [target e | e <- edgesOut t s]
+            new = filter (`Set.notMember` seen) succs
+         in go (foldr Set.insert seen new) (new ++ rest)
+
+{- | Structural, conservative dead-edge analysis. Flags an edge as possibly
+dead when its source vertex is unreachable from 'initial' (so the edge can
+never fire) or, optionally, when its guard is the literal 'PBot' (statically
+unsatisfiable).
+
+This is purely structural: it follows 'target' pointers and inspects guards
+syntactically. It CANNOT reason about register values. A self-loop guarded
+@available == True@ whose @available@ is set 'False' on entry is NOT catchable
+here (its guard is not literal 'PBot' and its source vertex is reachable) —
+only 'Keiki.Symbolic.checkDeadEdgesSym' (or a future full reachable-state
+analysis) could. Therefore every result is labelled "possibly dead".
+-}
+checkDeadEdges ::
+    (Bounded s, Enum s, Ord s, Show s) =>
+    DeadEdgeOptions ->
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    [DeadEdgeWarning s]
+checkDeadEdges opts t =
+    let reach = reachableVertices t
+     in [ DeadEdgeWarning (EdgeRef{edgeSource = s, edgeIndex = i}) reason
+        | s <- [minBound .. maxBound]
+        , (i, e) <- zip [(0 :: Int) ..] (edgesOut t s)
+        , reason <- deadReasons reach s e
+        ]
+  where
+    deadReasons reach s e
+        | s `Set.notMember` reach =
+            ["source vertex " <> show s <> " is unreachable from initial"]
+        | deoFlagBotGuards opts && isBotGuard (guard e) =
+            ["guard is statically unsatisfiable (PBot)"]
+        | otherwise = []
+    isBotGuard PBot = True
+    isBotGuard _ = False

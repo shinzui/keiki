@@ -118,6 +118,7 @@ test-suite keiki-test
     Keiki.StepEitherSpec
     Keiki.StrongSpec
     Keiki.SymbolicSpec
+    Keiki.ValidationSpec
 
   build-depends:
     , base         ^>=4.21

@@ -87,36 +87,39 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Add the structured warning vocabulary to `src/Keiki/Core.hs`: `EdgeRef`,
-      `ValidationKind`, `TransducerValidationWarning`, `ValidationOptions`,
-      `defaultValidationOptions`.
-- [ ] M1: Add a structured hidden-input adapter that turns each `HiddenInputWarning` into a
-      `TransducerValidationWarning` (carrying the input-constructor name and missing field
-      names as structured data, not just a string).
-- [ ] M1: Add the `validateTransducer` umbrella that runs the enabled checks and returns the
-      unified list; wire the hidden-input component in first.
-- [ ] M1: Export the new names from `Keiki.Core`; confirm `checkHiddenInputs` is unchanged
-      and still exported.
-- [ ] M1: Create `test/Keiki/ValidationSpec.hs`, register it in `keiki.cabal` and
-      `test/Spec.hs`; prove the clean transducer yields `[]` and the hidden-input case
-      yields a structured warning.
-- [ ] M2: Add `checkTransitionDeterminism` (pure, `BoolAlg`-polymorphic) to
-      `src/Keiki/Core.hs`, reusing the exact pairing structure of `isSingleValuedSym`.
-- [ ] M2: Wire the determinism component into `validateTransducer` (pure `HsPred` path by
-      default).
-- [ ] M2: Add `checkTransitionDeterminismSym` to `src/Keiki/Symbolic.hs` (lift via
-      `withSymPred`).
-- [ ] M2: Extend `ValidationSpec` to prove the overlapping pair yields a
-      `NondeterministicPair` naming both edge indices and the source vertex; prove the
-      mutually-exclusive pair yields nothing under the symbolic path.
-- [ ] M3: Add `DeadEdgeOptions`, `checkDeadEdges` (structural reachability via `containers`
-      Set) to `src/Keiki/Core.hs`; wire into `validateTransducer`.
-- [ ] M3: Extend `ValidationSpec` to prove an edge leaving an unreachable vertex yields a
-      `PossiblyDeadEdge`, and a literal-`PBot` guard yields a `PossiblyDeadEdge`.
-- [ ] M3: Sketch and (optionally) implement `checkDeadEdgesSym` in `src/Keiki/Symbolic.hs`;
-      document the FieldResource-style limit of the structural variant.
-- [ ] Final: run `cabal build keiki` and `cabal test keiki-test`; capture transcripts; fill
-      Outcomes & Retrospective.
+- [x] M1: Add the structured warning vocabulary to `src/Keiki/Core.hs`:
+      `TransducerValidationWarning`, `ValidationOptions`, `defaultValidationOptions`. (2026-06-06)
+      Reused EP-55's already-landed `EdgeRef s` (typed) instead of defining a parallel
+      String-based `EdgeRef`; warning types are parameterized over `s`. See Decision Log.
+- [x] M1: Add a structured hidden-input adapter (`hiddenInputWarnings`) that lifts the
+      analysis into `TransducerValidationWarning` carrying the typed source vertex, the
+      input-constructor name, and the missing field names. Took the "stronger route":
+      factored `checkHiddenInputs` onto a shared `hiddenInputReasons`/`formatHiddenInputReason`
+      (single source of truth), output byte-identical. (2026-06-06)
+- [x] M1: Add the `validateTransducer` umbrella that runs the enabled checks and returns the
+      unified list. (2026-06-06)
+- [x] M1: Export the new names from `Keiki.Core`; `checkHiddenInputs` output unchanged and
+      still exported (existing `CoreHiddenInputsGSMSpec` still green). (2026-06-06)
+- [x] M1: Create `test/Keiki/ValidationSpec.hs`, register in `keiki.cabal` and `test/Spec.hs`;
+      clean transducer yields `[]` and the hidden-input case yields a structured warning. (2026-06-06)
+- [x] M2: Add `checkTransitionDeterminism` (pure, `BoolAlg`-polymorphic) to
+      `src/Keiki/Core.hs`, mirroring `isSingleValuedSym`'s pairing. (2026-06-06)
+- [x] M2: Wire the determinism component into `validateTransducer` via internal
+      `determinismWarnings` (structural, true-positives-only; also exposed
+      `checkTransitionDeterminismPure`). (2026-06-06)
+- [x] M2: Add `checkTransitionDeterminismSym` to `src/Keiki/Symbolic.hs` (lift via
+      `withSymPred`). (2026-06-06)
+- [x] M2: `ValidationSpec` proves the overlapping pair yields a `NondeterministicPair` naming
+      both indices + source; mutually-exclusive PInCtor yields nothing under the sym path; and
+      a PTop-vs-PInCtor overlap the pure path misses IS caught by the sym path. (2026-06-06)
+- [x] M3: Add `DeadEdgeOptions`/`defaultDeadEdgeOptions`/`DeadEdgeWarning`, `reachableVertices`,
+      `checkDeadEdges` (structural reachability via `Data.Set`); wire into `validateTransducer`. (2026-06-06)
+- [x] M3: `ValidationSpec` proves an edge leaving an unreachable vertex yields a
+      `PossiblyDeadEdge`, and a literal-`PBot` guard yields a `PossiblyDeadEdge`. (2026-06-06)
+- [x] M3: Implemented `checkDeadEdgesSym` in `src/Keiki/Symbolic.hs` (in-isolation `symIsBot`);
+      FieldResource-style limit documented at the function and in the spec. (2026-06-06)
+- [x] Final: `cabal build keiki` clean; `cabal test keiki-test` green (293 examples, 0
+      failures; EP-56 group all passing). Outcomes & Retrospective filled. (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -124,7 +127,38 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **EP-55 landed first, so its `EdgeRef s` is the canonical locator — not the plan's
+  String-based `EdgeRef`.** EP-55's type is `data EdgeRef s = EdgeRef { edgeSource :: s,
+  edgeIndex :: Int }` (carries the *typed* vertex, not `show s`). Per the convergence
+  obligation in both this plan's Interfaces section and the MasterPlan integration points,
+  EP-56 (landing second) adopted EP-55's type. Consequence: every EP-56 warning type is now
+  parameterized over `s` — `TransducerValidationWarning s`, `DeterminismWarning s`,
+  `DeadEdgeWarning s` — and carries the real vertex (`tvwSource :: s`, `EdgeRef s`) instead of
+  a pre-stringified one. This is strictly more useful (consumers can pattern-match on the
+  vertex) and matches EP-55's philosophy. The plan's sample test code (`EdgeRef "Orphan" 0`,
+  `tvwSource = "Start"`) was rewritten to use the typed form (`EdgeRef Orphan 0`,
+  `tvwSource = Start`).
+- **`HsPred` has no `Eq`/`Show` instance** (it is a GADT with existential constructors
+  `PEq`/`PInCtor`; verified: `grep -n "instance.*Eq (HsPred" src/Keiki/Core.hs` is empty). So
+  the plan's `provablyOverlap g1 g2 = g1 == g2 && g1 /= PBot` does not type-check. Rewrote
+  `provablyOverlap` to pattern-match the structurally-provable cases instead: both `PTop`, or
+  two `PInCtor` with equal `icName`. Likewise `checkDeadEdges`'s `guard e == PBot` became a
+  pattern-match (`isBotGuard PBot = True; isBotGuard _ = False`). This is sound (true positives
+  only) and passes all acceptance tests.
+- **The structured hidden-input warning cannot be produced by parsing `checkHiddenInputs`'s
+  reason strings** — because EP-55's `EdgeRef s` needs the *typed* `s`, and there is no
+  `Read s` to recover a vertex from `show s`. So the plan's "minimal, lowest-risk" string-parse
+  route was infeasible; took the "stronger route" the plan recommended: factored the per-edge
+  analysis into a top-level `hiddenInputReasons :: Edge … -> [HiddenInputReason]` (a structured
+  reason: `HirEpsilonReadsInput` | `HirUnionMiss ctorName missingSlots`), and defined both
+  `checkHiddenInputs` (formatting via `formatHiddenInputReason`, byte-identical output) and
+  `hiddenInputWarnings` (structured) on top of it. The existing `CoreHiddenInputsGSMSpec`
+  remains green, confirming the output strings are unchanged.
+- **`-Wpartial-fields` warnings are inherent to `TransducerValidationWarning`'s design.** The
+  shared record fields (`tvwEdge`, `tvwInCtor`, `tvwDetail`) do not appear in every
+  constructor, so GHC warns about partial selectors. This is the warning shape the plan
+  specified (a single sum with per-kind structured fields); the build is not `-Werror`, so it
+  is left as-is. Consumers should pattern-match rather than use the partial selectors.
 
 
 ## Decision Log
@@ -193,13 +227,75 @@ Record every decision made while working on the plan.
   in Interfaces and Dependencies, so whichever plan lands second adopts the other's type.
   Date: 2026-06-06
 
+- Decision (SUPERSEDES the previous one): EP-55 landed first, so EP-56 reuses EP-55's
+  `EdgeRef s` verbatim and does NOT define its own. All EP-56 warning types are parameterized
+  over the vertex type `s` and carry the real vertex (`EdgeRef s`, `tvwSource :: s`,
+  `DeterminismWarning s`, `DeadEdgeWarning s`) rather than a `show s` String.
+  Rationale: the convergence obligation (this plan's Interfaces + the MasterPlan integration
+  points) mandates the second-landing plan adopt the first's locator. EP-55's typed `EdgeRef s`
+  is strictly more useful and keeps the runtime/build-time vocabularies identical.
+  Date: 2026-06-06
+
+- Decision: `provablyOverlap` (pure determinism) and the `PBot` dead-edge test are written by
+  pattern-matching `HsPred` constructors, not via `Eq`.
+  Rationale: `HsPred` has no `Eq` instance (GADT with existentials). The structurally-provable
+  overlap cases are: both guards `PTop`, or both `PInCtor` with equal `icName`. The `PBot`
+  test is `isBotGuard PBot = True; isBotGuard _ = False`. Both are sound (true positives only),
+  matching the plan's "every pure-path warning is a true positive" requirement.
+  Date: 2026-06-06
+
+- Decision: Refactor `checkHiddenInputs` onto a shared top-level `hiddenInputReasons` +
+  `formatHiddenInputReason`, rather than parsing its reason strings, to produce the structured
+  `hiddenInputWarnings`.
+  Rationale: the string-parse route is infeasible with EP-55's typed `EdgeRef s` (no `Read s`
+  to recover the vertex). The "stronger route" the plan recommended gives a single source of
+  truth; `checkHiddenInputs`'s output strings are byte-identical (verified: existing
+  `CoreHiddenInputsGSMSpec` stays green), so the change is behaviorally additive.
+  Date: 2026-06-06
+
+- Decision: `validateTransducer`'s determinism component uses an internal `determinismWarnings`
+  (emits `NondeterministicPair` directly, populating `tvwInCtor` with the overlapping
+  constructor when both guards name the same one), while `checkTransitionDeterminism`
+  (polymorphic) and `checkTransitionDeterminismPure` (structural) remain exposed per the
+  Interfaces section.
+  Rationale: mapping `checkTransitionDeterminismPure`'s `DeterminismWarning` to
+  `NondeterministicPair` would lose the guard info needed to fill `tvwInCtor`. The dedicated
+  internal producer satisfies the audit's "name the overlapping command constructor if known"
+  while keeping the public `DeterminismWarning` shape simple.
+  Date: 2026-06-06
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Delivered the full purpose. `Keiki.Core` now exports `validateTransducer defaultValidationOptions t`
+returning `[TransducerValidationWarning s]` covering all three audit classes — `HiddenInput`
+(typed source vertex + input-constructor name + missing slot names), `NondeterministicPair`
+(both edge indices + source vertex + overlapping constructor when known), and `PossiblyDeadEdge`
+(edge locator + reason). The default path is pure and z3-free: a project can assert
+`validateTransducer defaultValidationOptions t == []` in a unit test with no external process.
+The solver-backed `checkTransitionDeterminismSym` / `checkDeadEdgesSym` live in `Keiki.Symbolic`
+for callers who want exactness. `cabal build keiki` is clean and `cabal test keiki-test` is green
+(293 examples, 0 failures); the 9 new `Keiki.Core.validateTransducer (EP-56)` examples all pass,
+and the refactored `checkHiddenInputs` keeps its pre-existing tests green (output unchanged).
+
+What matched the plan: the `isSingleValuedSym` pairing reuse, the pure/symbolic split across
+`Keiki.Core`/`Keiki.Symbolic`, structural reachability over `Data.Set`, and the
+"possibly dead" honesty. What deviated (all recorded in the Decision Log): adopting EP-55's typed
+`EdgeRef s` (so all warning types are parameterized over `s`); writing `provablyOverlap` and the
+`PBot` check by pattern-match because `HsPred` has no `Eq`; and refactoring `checkHiddenInputs`
+onto a shared structured analysis rather than parsing strings.
+
+Gaps / future work:
+- `checkDeadEdgesSym` catches only guards unsatisfiable *in isolation*, not register-context
+  dependent dead edges (the FieldResource case). A full reachable-register-configuration
+  fixpoint is left as future work, documented at the function and demonstrated as a non-goal.
+- For EP-60 (collection registers): the warning union and the per-edge walk are deliberately
+  extensible — a new `TransducerValidationWarning` arm or a new `HiddenInputReason`/clause in
+  `hiddenInputReasons` suffices, with no change to `EdgeRef`, `ValidationOptions`, or the
+  `validateTransducer` umbrella shape. INV3 coverage is an additive extension point.
 
 
 ## Context and Orientation
