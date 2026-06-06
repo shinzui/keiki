@@ -129,7 +129,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Complete |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
 | 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Complete (NO-GO at gate) |
-| 67 | Collection-slot opaque-mutation signpost: validateTransducer warning and guidance | docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md | None | EP-56 | In Progress |
+| 67 | Collection-slot opaque-mutation signpost: validateTransducer warning and guidance | docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md | None | EP-56 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-55).
@@ -225,8 +225,8 @@ authoritative, detailed version.
 - [x] EP-59 M3: round-trip + override-used + error-path + EventTypes/KindMap tests in `keiki-codec-json-test` (50 examples, 0 failures); both negative cases verified by hand; README worked example; haddock clean. In-repo demonstration only (the jitsurei dogfood is in a sibling repo, out of scope here). (2026-06-06)
 - [x] EP-60 M1 (ratification gate): prototype (`test/Keiki/CollectionSpike.hs`, 18 hspec examples in the 322-example run) + FR6 analysis (recommend **Option B**) + Seihou-consumer reconciliation (flat-list ergonomics, not the symbolic story; only in-keiki guard is whole-list emptiness, already structural) + INV1–INV6 satisfiability argument. **STOPPED for maintainer GO/NO-GO** (see EP-60 "M1 Ratification Analysis" + Decision Log). (2026-06-06)
 - [~] EP-60 M2–M5: **NOT pursued** — NO-GO at the M1 gate (signpost-first chosen). Deferred until a real keyed-collection consumer appears.
-- [ ] EP-67 M1: opt-in `OpaqueGuard` `validateTransducer` warning (new `TransducerValidationWarning` arm + `warnOpaqueGuards` option, default off) + walkers + `ValidationSpec` cases.
-- [ ] EP-67 M2: user-guide recipe (structural storage is fine; opaque guards silently degrade; the three options; EP-60 deferral pointer) + cross-link.
+- [x] EP-67 M1: opt-in `OpaqueGuard` `validateTransducer` warning (new `TransducerValidationWarning` arm + `warnOpaqueGuards` option, default off) + `termHasOpaqueApp`/`predHasOpaqueTerm` walkers + `opaqueGuardWarnings` producer + 3 `ValidationSpec` cases (325 examples, 0 failures; backward-compat `== []` under defaults verified). (2026-06-06)
+- [x] EP-67 M2: user-guide §8 recipe (structural storage is fine; opaque guards silently degrade; `warnOpaqueGuards` audit; the three options + EP-60 deferral pointer) + §3.4 cross-link. (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -394,4 +394,49 @@ between child plans. Provide concise evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare the
 result against the original vision.
 
-(To be filled during and after implementation.)
+**Status at completion (2026-06-06): all seven child plans resolved.** EP-55, EP-56, EP-57,
+EP-58, EP-59, and EP-67 are Complete; EP-60 is Complete at its ratification gate with a recorded
+NO-GO (its M2–M5 deferred). Every requirement the MasterPlan scoped (Reqs 1–7) has landed or been
+deliberately resolved, with `keiki-test` green at 325 examples and `keiki-codec-json-test` green.
+
+Against the original vision:
+
+- **Reqs 1–3 (diagnostics).** Delivered as designed: `stepEither`/`StepFailure` (EP-55) make
+  runtime rejection explainable; `validateTransducer` + the determinism and dead-edge checks
+  (EP-56) make the build-time analyses callable in a pure unit test. The shared `EdgeRef s`
+  locator unified the runtime and build-time vocabularies, as intended.
+- **Req 5 (TH overrides) and Req 7 (operators).** Delivered additively (EP-57, EP-58) with
+  compile-time validation and a qualified-import escape, no formalism impact.
+- **Req 6 (event codec).** Delivered in the `keiki-codec-json` sibling (EP-59) with no silent
+  fallback and the aeson-free core preserved.
+- **Req 4 (collections) — the substantive surprise.** The vision anticipated a possible
+  formalism extension behind a ratification gate. The gate's prototype + analysis (EP-60 M1)
+  produced a *different, better-grounded* outcome than "build it or don't": it found that the
+  committed consumer (Seihou) is **not actually blocked** — its collection cases store whole
+  lists structurally and its only in-keiki guard is whole-list emptiness, already verifiable —
+  and that the real, recurring hazard is the *silent* under-verification when an opaque `TApp`
+  guard branches on collection contents. So the maintainer chose **NO-GO on the core change**
+  and a **signpost-first** resolution (EP-67): an opt-in `OpaqueGuard` `validateTransducer`
+  warning plus a documentation recipe that routes authors to the sound options (application-layer
+  invariant, sub-entity-as-aggregate split, or the deferred first-class registers). This kills
+  the footgun at a fraction of the cost and risk, keeps the formalism untouched, and leaves the
+  full feature deferred-not-rejected with a runnable prototype and a complete design on record.
+
+Lessons:
+
+- **The ratification gate paid off exactly as intended.** Forcing a prototype + written analysis
+  *before* any core edit turned a speculative "should we add collections?" into a precise finding
+  that reframed the problem and produced a cheaper, reversible answer. The EP-47 pattern
+  (MasterPlan 13) generalizes well to any formalism-touching change.
+- **Faithfulness analysis catches mis-aimed features.** The instinct (and the audit's literal
+  ask) was "opaque collection *mutation* is the problem." Grounding it in the code showed the
+  mutation is sound and it's the *guard* opacity that silently degrades verification — so the
+  shipped signpost is both correct and more general than the original framing.
+- **Cross-repo boundaries held.** Req 8 stayed in keiro; the aeson-free-core constraint held
+  (EP-59); EP-56 left its warning machinery extensible, which let EP-67 add `OpaqueGuard` as a
+  one-arm additive change.
+
+Gaps / follow-ups: first-class collection registers remain deferred (EP-60 M2–M5) pending a real
+keyed-collection consumer; if one appears, revisit the gate with that concrete shape and prefer
+the flat-list variants the Seihou reconciliation identified. The `OpaqueGuard` audit ships
+opt-in; if experience shows default-on is wanted, that is a small, evidence-driven follow-up.
