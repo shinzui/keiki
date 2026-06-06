@@ -137,10 +137,105 @@ The fixes are parallel to the read side:
 for data constructors, so a value-level synonym must start with another symbol — hence `=:`.)
 
 
-## 6. Pointers
+## 6. The parallel `(.>)` operator-name collision
+
+The `#slot` (§1–§4) and `.=` (§5) problems are both *one* name being claimed by two libraries.
+The same shape bites a third name — and this one is the sharpest in practice — keiki's
+comparison operators, above all `(.>)`.
+
+**What clashes and why.** `lens` defines `(.>)` as *optic composition* (compose two optics,
+keeping the right one's focus). keiki defines `(.>)` as the *greater-than* comparison that
+builds a guard predicate (`someTerm .> lit 0 :: HsPred rs ci`). A service prelude that
+re-exports `lens` (or `Control.Lens`) puts the lens `(.>)` in scope in *every* module that
+imports the prelude — including transducer modules that want keiki's `(.>)`. With both in
+scope, the bare `(.>)` is ambiguous and the module will not compile. (keiki's other comparison
+operators `(.<)`, `(.<=)`, `(.>=)` and the arithmetic `(.+)`/`(.-)`/`(.*)` can collide the same
+way; `(.>)` is just the one that bites first because it is also a `lens` operator.)
+
+There are three ways to resolve it. The first two are import-level; the third avoids the
+operator entirely and is the best choice for guards authored inside a builder block.
+
+### Recipe A — hide and re-import (the existing workaround, shown honestly)
+
+Hide the clashing name out of the service prelude (or out of `Prelude`), then re-import keiki's
+operators explicitly:
+
+```haskell
+-- Hide the clashing name out of the service prelude (or out of Prelude),
+-- then re-import keiki's operators explicitly.
+import MyApp.Prelude hiding ((.>))
+import Keiki.Core (lit, (.>), (.>=), (.+), (.-))
+```
+
+This works, and it is fine for a module that uses only a handful of keiki operators. Its cost
+is maintenance: you must remember to extend the `hiding` list *every* time you reach for another
+clashing operator, and if you forget you get a confusing ambiguity error with no signposted fix.
+This is the pattern a real downstream service uses today — the hospital-capacity transducer opens
+with `import HospitalCapacity.Prelude hiding (Index, (.>))` followed by an explicit
+`Keiki.Core` re-import.
+
+### Recipe B — qualified `Keiki.Operators` (the no-`hiding` path)
+
+`Keiki.Operators` re-exports exactly the keiki predicate/term operators and nothing else,
+designed for *qualified* import. The bare `(.>)` stays with `lens`; keiki's lives under the
+qualifier:
+
+```haskell
+-- No hiding clause: the bare (.>) belongs to lens; keiki's lives under K.
+import MyApp.Prelude               -- lens (.>) etc. in scope, untouched
+import Keiki.Core (lit)
+import qualified Keiki.Operators as K
+
+guard = lit threshold K..< someTerm K..&& lit 0 K..<= otherTerm
+```
+
+Be honest: `K..>` is visually noisy ("K dot dot greater"). But it needs *zero* changes to the
+unqualified import list — no `hiding` to maintain — which makes it the most robust choice when a
+module uses many keiki operators, or when you would rather not babysit a `hiding` list.
+`Keiki.Operators` exports `(.<)`, `(.<=)`, `(.>)`, `(.>=)`, `(.==)`, `(./=)`, `(.&&)`, `(.||)`,
+`pnot`, `(.+)`, `(.-)`, `(.*)`, and the function-style arithmetic aliases `tadd`/`tsub`/`tmul`.
+
+### Recipe C — function-style guard verbs (the best choice *inside a builder block*)
+
+When the predicate is being conjoined into an edge's guard inside a `B.do` block, you do not
+need the operator at all: the builder already exposes clash-free verbs.
+
+```haskell
+import qualified Keiki.Builder as B
+
+-- Operator form (needs Recipe A or B to dodge the (.>) clash):
+--   B.requireGuard (someTerm .> lit 0)
+-- Function-style verb (no operator, so no clash, ever):
+edge = B.do
+  B.requireGt someTerm (lit 0)     -- a > 0
+  B.requireGe other    (lit 1)     -- other >= 1
+```
+
+The rule, plainly: **prefer `B.requireGt` / `B.requireGe` / `B.requireLt` / `B.requireLe` /
+`B.requireEq` when you are authoring a guard inside a builder block** — they read well, never
+clash, and need no import gymnastics. Reach for `B.requireGuard (x .> y)` (with Recipe A or B)
+only when you must build a *compound* predicate value first — for example combining several
+comparisons with `.&&`/`.||` into one `HsPred` before handing it to `requireGuard`, or when
+constructing an `HsPred` value outside any builder block. In that raw-predicate case the
+qualified `Keiki.Operators` import (Recipe B) is the cleanest.
+
+### Why no `greaterThan`-style aliases
+
+Function-style *comparison* aliases (a hypothetical `greaterThan`/`lessOrEqual`) were considered
+and deliberately not added: for the common case — a guard inside a builder block — they would be
+almost entirely redundant with the `requireGt`/`requireGe`/… verbs above, and they would expand
+the API surface for little gain. The residual case (building a raw `HsPred` value with the
+operators) is served by the qualified `Keiki.Operators` import. If a concrete need for
+function-style comparison aliases shows up later, that decision can be revisited.
+
+
+## 7. Pointers
 
 - `docs/guide/user-guide.md` — the "Terms" and "Slot writes" subsections (`#name`, `reg @"name"`,
   `.=`, `=:`).
 - `src/Keiki/Core.hs` — the `IsLabel s (Index rs r)` and `IsLabel s (Term rs ci r)` instances
   (around lines 207–210 and 223–226) and `proj = TReg`.
-- `src/Keiki/Builder.hs` — the `reg` and `=:` helpers.
+- `src/Keiki/Builder.hs` — the `reg` and `=:` helpers, and the function-style guard verbs
+  `requireGt`/`requireGe`/`requireLt`/`requireLe`/`requireEq`/`requireCmp`/`requireGuard`.
+- `src/Keiki/Operators.hs` — the qualified-import re-export module for the predicate/term
+  operators (Recipe B in §6).

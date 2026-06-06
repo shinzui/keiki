@@ -290,6 +290,14 @@ field access, not an operator. And if you import `Data.SBV` alongside
 same operator names (`Keiki.Symbolic` already does this internally, so
 the operators are unambiguous when you import only `Keiki.Symbolic`).
 
+If your project re-exports `lens`/`generic-lens` and the bare `(.>)`
+clashes (in `lens`, `(.>)` is optic composition; in keiki it is
+greater-than), see
+[Generic-lens and label reads](generic-lens-and-label-reads.md) §6 for
+the import recipe — `hiding ((.>))`, the qualified `Keiki.Operators`
+module, or the clash-free `B.requireGt` guard verb — and the
+`requireGt`-vs-`requireGuard (x .> y)` guidance.
+
 The verbose carrier signatures also have synonyms: `Pred rs ci` for
 `HsPred rs ci`, `Guarded rs s ci co` for
 `SymTransducer (HsPred rs ci) rs s ci co`, and `SymGuarded rs s ci co`

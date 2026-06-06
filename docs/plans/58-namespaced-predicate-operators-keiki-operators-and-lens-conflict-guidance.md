@@ -66,9 +66,9 @@ This section must always reflect the actual current state of the work.
 - [x] M1: Create `test/Keiki/OperatorsQualifiedSpec.hs` (qualified-import + simulated-clash spec). (2026-06-06)
 - [x] M1: Register `Keiki.OperatorsQualifiedSpec` in `keiki.cabal` test `other-modules` and in `test/Spec.hs` (import + `describe`). (2026-06-06)
 - [x] M1: `cabal build keiki` and `cabal test keiki-test` both pass (304 examples, 0 failures; the 4 EP-58 examples pass). (2026-06-06)
-- [ ] M2: Extend `docs/guide/generic-lens-and-label-reads.md` with a new operator-collision section (hiding recipe, qualified recipe, `requireGt` vs `requireGuard (x .> y)` guidance).
-- [ ] M2: Cross-link the new section from `docs/guide/user-guide.md`.
-- [ ] Final: Update Surprises/Decision Log/Outcomes; verify all acceptance criteria.
+- [x] M2: Extend `docs/guide/generic-lens-and-label-reads.md` with a new operator-collision section (§6: hiding recipe, qualified recipe, Recipe C builder verbs, `requireGt` vs `requireGuard (x .> y)` guidance, "why no aliases"); Pointers renumbered to §7 and extended. (2026-06-06)
+- [x] M2: Cross-link the new section from `docs/guide/user-guide.md` (in the "Two cautions" paragraph under "Writing guards with operators"). (2026-06-06)
+- [x] Final: Updated Surprises/Decision Log/Outcomes; all acceptance criteria verified. (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -144,6 +144,21 @@ Record every decision made while working on the plan.
   comparison aliases, revisit this and record the new evidence.
   Date: 2026-06-06
 
+- Decision: Place the new operator-collision section as §6 and renumber the existing Pointers
+  section from §6 to §7 (rather than appending the operator section *after* Pointers as a literal
+  §7).
+  Rationale: the plan said "pick the next free section number, currently §7", but Pointers reads
+  best as the final section. Inserting the substantive content before Pointers and bumping
+  Pointers keeps the page's conventional shape. The Pointers section lists files, not section
+  numbers, so nothing internal needed renumbering beyond its own heading.
+  Date: 2026-06-06
+
+- Decision: Drop `Term`/`evalTerm` from the spec's `Keiki.Core` import list (the plan draft
+  named them) and import only `HsPred`, `RegFile(..)`, `evalPred`, `lit`.
+  Rationale: the spec never references `Term`/`evalTerm` directly; under `-Wall` the unused
+  imports would warn. The minimal set compiles cleanly.
+  Date: 2026-06-06
+
 - Decision: Name the new test spec `Keiki.OperatorsQualifiedSpec` (not `OperatorsSpec`).
   Rationale: `Keiki.OperatorsSpec` already exists for EP-45's Core-operator tests; reusing the
   name would collide. See Surprises & Discoveries.
@@ -163,7 +178,28 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Both milestones landed as specified, with one toolchain correction.
+
+- **M1 (module + proving spec).** `src/Keiki/Operators.hs` now re-exports the fifteen
+  predicate/term operators/aliases from `Keiki.Core`, exposed via `keiki.cabal`. The proving
+  spec `Keiki.OperatorsQualifiedSpec` imports it qualified while a clashing unqualified local
+  `(.>)` (integer addition) coexists in the same module with **no** `hiding` clause; its four
+  examples evaluate keiki's operators through `K..>`/`K..<=`/`K..*`/`K..&&` and separately assert
+  the local `(.>)` still computes its own value. `cabal build keiki` succeeds and
+  `cabal test keiki-test` passes (304 examples, 0 failures). This is the audit's third acceptance
+  criterion demonstrated end-to-end: structural predicates without giving up the lens operator.
+- **M2 (docs).** `docs/guide/generic-lens-and-label-reads.md` §6 documents the `(.>)` clash and
+  all three resolutions — Recipe A (`hiding ((.>))`), Recipe B (qualified `Keiki.Operators`),
+  Recipe C (builder verbs `B.requireGt` etc.) — with the plain rule for choosing between
+  `B.requireGt` and `B.requireGuard (x .> y)` and a note on why no `greaterThan`-style aliases
+  were added. `docs/guide/user-guide.md` cross-links it from the operator section.
+
+The one deviation from the plan: the plan asserted that restating the operator fixities in the
+re-export module was "harmless"; on GHC 9.12 / GHC2024 it is a hard error (GHC-44432, a fixity
+signature needs a binding in the same module). The fixities were omitted instead — correct,
+because a re-exported operator carries its fixity from the defining module automatically. See
+Surprises & Discoveries. No gaps; the plan is fully delivered and purely additive (nothing that
+compiled before stopped compiling).
 
 
 ## Context and Orientation
