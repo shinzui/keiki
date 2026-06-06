@@ -51,13 +51,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1.1 Create `src/Keiki/Render/Pretty.hs` with module header and exports `indexName`, `prettyTerm`, `prettyPred`, `prettyUpdate`.
-- [ ] M1.2 Implement `indexName :: Index rs r -> String` (walk `SIdx` to `ZIdx`, return `symbolVal`).
-- [ ] M1.3 Implement `prettyTerm`, `prettyPred`, `prettyUpdate` with the exact rendering rules in this plan.
-- [ ] M1.4 Register `Keiki.Render.Pretty` in `keiki.cabal` `library: exposed-modules`.
-- [ ] M1.5 Create `test/Keiki/Render/PrettySpec.hs` with hand-built values covering slot reads, input-field reads, `==`, `< <= > >=`, arithmetic, boolean structure, `<fn>(...)`, `<lit>`, and `prettyUpdate`.
-- [ ] M1.6 Register `Keiki.Render.PrettySpec` in `keiki.cabal` `test-suite: other-modules` and wire it into `test/Spec.hs`.
-- [ ] M1.7 `cabal build keiki` and `cabal test keiki-test` pass; new describe block green.
+- [x] M1.1 Create `src/Keiki/Render/Pretty.hs` with module header and exports `indexName`, `prettyTerm`, `prettyPred`, `prettyUpdate`. (2026-06-06)
+- [x] M1.2 Implement `indexName :: Index rs r -> String` (walk `SIdx` to `ZIdx`, return `symbolVal`). (2026-06-06)
+- [x] M1.3 Implement `prettyTerm`, `prettyPred`, `prettyUpdate` with the exact rendering rules in this plan. (2026-06-06)
+- [x] M1.4 Register `Keiki.Render.Pretty` in `keiki.cabal` `library: exposed-modules`. (2026-06-06)
+- [x] M1.5 Create `test/Keiki/Render/PrettySpec.hs` with hand-built values covering slot reads, input-field reads, `==`, `< <= > >=`, arithmetic, boolean structure, `<fn>(...)`, `<lit>`, and `prettyUpdate`. (2026-06-06)
+- [x] M1.6 Register `Keiki.Render.PrettySpec` in `keiki.cabal` `test-suite: other-modules` and wire it into `test/Spec.hs`. (2026-06-06)
+- [x] M1.7 `cabal build keiki` and `cabal test keiki-test` pass; new describe block green (342 examples, 0 failures). (2026-06-06)
 - [ ] M2.1 Add `data MermaidGuardMode = MermaidGuardHidden | MermaidGuardStructuralSummary | MermaidGuardPretty` (derive `Eq`, `Show`) to `src/Keiki/Render/Mermaid.hs` and export it.
 - [ ] M2.2 Add `guardMode :: MermaidGuardMode` field to `MermaidOptions`, set its default in `defaultMermaidOptions`.
 - [ ] M2.3 Add `renderGuardSegment :: MermaidOptions -> HsPred rs ci -> Maybe Text` and route the guard segment of `edgeLabelWith` through it.
@@ -70,7 +70,21 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The `indexName (ZIdx @s) = symbolVal (Proxy @s)` form compiles on GHC 9.12.4 but
+  emits a `-Wdeprecated-type-abstractions` warning: "Type applications in constructor
+  patterns will require the TypeAbstractions extension starting from GHC 9.14." The
+  project has no `-Werror`, so this is non-fatal, but it is real noise and a 9.14
+  breakage waiting to happen. Resolved by adding `{-# LANGUAGE TypeAbstractions #-}`
+  to `src/Keiki/Render/Pretty.hs` (the extension exists since GHC 9.8, so it is safe
+  on 9.12). Evidence:
+
+  ```text
+  src/Keiki/Render/Pretty.hs:39:12: warning: [GHC-69797] [-Wdeprecated-type-abstractions]
+      Type applications in constructor patterns will require
+      the TypeAbstractions extension starting from GHC 9.14.
+  ```
+
+  After the pragma, `cabal build keiki` is warning-free for this module.
 
 
 ## Decision Log

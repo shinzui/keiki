@@ -148,7 +148,7 @@ namespace is their natural home.
 
 | #  | Title | Path | Hard Deps | Soft Deps | Status |
 |----|-------|------|-----------|-----------|--------|
-| 61 | Pretty-printer for HsPred/Term/Update and domain-readable Mermaid guard rendering | docs/plans/61-pretty-printer-for-hspred-term-update-and-domain-readable-mermaid-guard-rendering.md | None | None | Not Started |
+| 61 | Pretty-printer for HsPred/Term/Update and domain-readable Mermaid guard rendering | docs/plans/61-pretty-printer-for-hspred-term-update-and-domain-readable-mermaid-guard-rendering.md | None | None | In Progress |
 | 62 | Edge inspector Markdown renderer for SymTransducer | docs/plans/62-edge-inspector-markdown-renderer-for-symtransducer.md | None | EP-61 | Not Started |
 | 63 | Multiline Mermaid edge labels and multi-event output layout controls | docs/plans/63-multiline-mermaid-edge-labels-and-multi-event-output-layout-controls.md | None | EP-61 | Not Started |
 | 64 | Stable human-friendly Mermaid state IDs and display labels | docs/plans/64-stable-human-friendly-mermaid-state-ids-and-display-labels.md | None | None | Not Started |

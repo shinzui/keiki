@@ -24,6 +24,7 @@ import Keiki.OperatorsSpec qualified
 import Keiki.ProfunctorSpec qualified
 import Keiki.RecomputeVerifySpec qualified
 import Keiki.Render.MermaidSpec qualified
+import Keiki.Render.PrettySpec qualified
 import Keiki.ShapeSpec qualified
 import Keiki.StepEitherSpec qualified
 import Keiki.StrongSpec qualified
@@ -58,6 +59,7 @@ main = hspec $ do
     describe "Keiki.Profunctor (Arrow, EP-29 M3)" Keiki.ArrowSpec.spec
     describe "Keiki.RecomputeVerify (EP-47)" Keiki.RecomputeVerifySpec.spec
     describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
+    describe "Keiki.Render.Pretty (EP-61)" Keiki.Render.PrettySpec.spec
     describe "Keiki.Shape (EP-36 M1)" Keiki.ShapeSpec.spec
     describe "Keiki.Symbolic" Keiki.SymbolicSpec.spec
     describe "Keiki.CollectionSpike (EP-60 M1 ratification gate)" Keiki.CollectionSpike.spec
