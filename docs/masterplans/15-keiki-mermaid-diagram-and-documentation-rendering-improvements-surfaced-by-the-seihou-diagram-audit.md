@@ -153,7 +153,7 @@ namespace is their natural home.
 | 63 | Multiline Mermaid edge labels and multi-event output layout controls | docs/plans/63-multiline-mermaid-edge-labels-and-multi-event-output-layout-controls.md | None | EP-61 | Complete |
 | 64 | Stable human-friendly Mermaid state IDs and display labels | docs/plans/64-stable-human-friendly-mermaid-state-ids-and-display-labels.md | None | None | Complete |
 | 65 | Mermaid diagram atlas sections and Markdown marker replacement helper | docs/plans/65-mermaid-diagram-atlas-sections-and-markdown-marker-replacement-helper.md | None | None | Complete |
-| 66 | Pure Mermaid diagram and atlas validation helpers | docs/plans/66-pure-mermaid-diagram-and-atlas-validation-helpers.md | None | EP-64 | In Progress |
+| 66 | Pure Mermaid diagram and atlas validation helpers | docs/plans/66-pure-mermaid-diagram-and-atlas-validation-helpers.md | None | EP-64 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-61).
@@ -242,8 +242,8 @@ authoritative, detailed version.
 - [x] EP-64 M2: pure total `duplicateStateIds` (AST-level duplicate-ID check, the shared-id contract for EP-66); colliding + clean unit tests. (2026-06-06)
 - [x] EP-65 M1: `MermaidSection` + `MermaidSectionKind` + `toMermaidAtlasWith` (typed sections, stable section IDs); default `toMermaidAtlas` byte-identical. (2026-06-06)
 - [x] EP-65 M2: `src/Keiki/Render/Markdown.hs` with `replaceMarkdownDiagramBlock` + `MarkdownDiagramBlock`/`MarkdownDiagramError`; begin/end/duplicate-marker errors; content-preservation tests. (2026-06-06)
-- [ ] EP-66 M1: `validateMermaidDiagram` + `MermaidValidationOptions`/`MermaidValidationWarning` (missing header, empty, over-length labels, suspicious unescaped chars).
-- [ ] EP-66 M2: duplicate-state-ID detection (aligned with EP-64) + `validateMermaidAtlas`; pure unit tests.
+- [x] EP-66 M1: `validateMermaidDiagram` + `MermaidValidationOptions`/`MermaidValidationWarning` (missing header, empty, over-length labels, suspicious unescaped chars). (2026-06-06)
+- [x] EP-66 M2: duplicate-state-ID detection (aligned with EP-64) + `validateMermaidAtlas`; pure unit tests. (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -318,6 +318,19 @@ between child plans. Provide concise evidence.
   `{-# LANGUAGE MultiWayIf #-}` pragma for its four-way marker-count validation. Any later plan that
   wants `if | … ` in a new module must add the pragma itself; the project does not enable it
   globally.
+- **EP-66 landed; MasterPlan 15 is complete (all six plans).** EP-66 added the pure
+  `src/Keiki/Render/Validate.hs` (`validateMermaidDiagram`/`validateMermaidAtlas`,
+  `MermaidValidationOptions`, `MermaidValidationWarning`). Its duplicate-state-ID check keys off
+  exactly the `state "<display>" as <id>` declaration lines EP-64's `toMermaidWithLabels` emits and
+  ignores endpoint recurrence — the shared-id contract held with no rework because EP-64 was done
+  first (the soft dependency paid off as planned). Two cross-plan notes for any downstream/future
+  work: (1) `MermaidValidationWarning`'s per-constructor record fields trip `-Wpartial-fields`;
+  this is *accepted, not suppressed*, matching EP-56's `TransducerValidationWarning`
+  (`src/Keiki/Core.hs:1608`), which uses the same sum-of-records shape — the house style is to
+  tolerate the warning in exchange for `shouldBe`-assertable warnings. (2) The suspicious-char check
+  emits one warning per denylisted `Char` and exempts the literal `<br/>` substring; a fixture like
+  `Cmd / "quoted"` yields *two* warnings, not one. Final suite state: **372 examples, 0 failures**,
+  every pre-existing renderer/atlas golden byte-identical.
 
 
 ## Decision Log
@@ -385,4 +398,48 @@ between child plans. Provide concise evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare the
 result against the original vision.
 
-(To be filled during and after implementation.)
+**Complete.** All eight Seihou diagram-audit requirements shipped across six child plans
+(EP-61..EP-66), every one of which is Complete. The full test suite is green at **372 examples, 0
+failures**, and every pre-existing renderer/atlas golden in `test/Keiki/Render/MermaidSpec.hs` is
+byte-identical — the load-bearing invariant ("default `toMermaid`/`toMermaidWith
+defaultMermaidOptions`/`toMermaidAtlas` output unchanged; all new behavior opt-in") held end to
+end.
+
+What now exists that did not before, mapped to the vision:
+
+- **Readable guards (Req 1, EP-61):** `src/Keiki/Render/Pretty.hs` (`prettyPred`/`prettyTerm`/
+  `prettyUpdate` + `indexName`) and `MermaidGuardMode` (`Hidden`/`StructuralSummary`/`Pretty`) wired
+  into `toMermaidWith`. Literal values render opaquely (`<lit>` / `<lit::T>`) exactly as the
+  validation predicted.
+- **Edge inspector (Req 3, EP-62):** `renderEdgeInspector` + `EdgeInspectorOptions` Markdown detail
+  block grouped by source state; output fields render positionally (no field names, per validation).
+- **Label & output layout (Reqs 2 + 8, EP-63):** multiline `<br/>` labels, `+N more` written-slot
+  truncation, guard-width truncation, and `MermaidOutputLayout`
+  (`Semicolon`/`Multiline`/`Counted`) — `Semicolon` reproduces the historical length-based default.
+- **Stable state IDs (Req 7, EP-64):** `MermaidStateLabels` + `toMermaidWithLabels` (ASCII id vs.
+  friendly display) and the total `duplicateStateIds` AST check.
+- **Atlas sections + marker replacement (Reqs 4 + 5, EP-65):** typed `toMermaidAtlasWith`
+  (`MermaidSection`/`MermaidSectionKind`/`AtlasKindDisplay`) and `src/Keiki/Render/Markdown.hs`'s
+  `replaceMarkdownDiagramBlock`, which compose via `sectionId == blockId`.
+- **Validation helpers (Req 6, EP-66):** pure `validateMermaidDiagram`/`validateMermaidAtlas`
+  returning structured `MermaidValidationWarning`s — heuristics, not a parser.
+
+Decomposition assessment: the planned ordering worked. EP-61's `Keiki.Render.Pretty` was the one
+widely-shared artifact (consumed by EP-62 and EP-63) and defining it first kept readable-guard
+output identical across surfaces. `MermaidOptions` was the one widely-touched type; the additive
+discipline (append fields, default in `defaultMermaidOptions`, construct via record-update — see the
+EP-61 M2 `RecConError` discovery) preserved byte-identity through EP-61 and EP-63. EP-64-before-EP-66
+let the duplicate-id contract land with no rework. No child plan needed to be split, merged, or
+cancelled.
+
+Lessons / house-style reaffirmations captured in Surprises for future plans: (1) `MermaidOptions`
+must be constructed via record-update on `defaultMermaidOptions`, never a full record literal, or a
+new field becomes a `RecConError` bottom thunk. (2) `MultiWayIf` needs a per-module pragma (not in
+GHC2024, not enabled globally). (3) Sum-of-records warning types trip `-Wpartial-fields` and the
+house style is to tolerate it (matching `TransducerValidationWarning`) in exchange for assertable
+warnings.
+
+Gaps (all pre-declared out of scope, none surprising): wiring these renderer capabilities into
+Seihou's own `docs/diagrams/keiki.md` (process-manager diagrams, marker-based regeneration, a
+validation test) is downstream work in `keiro-runtime-jitsurei`. Keiki's deliverable — the
+vocabulary and the pure helpers — is done.
