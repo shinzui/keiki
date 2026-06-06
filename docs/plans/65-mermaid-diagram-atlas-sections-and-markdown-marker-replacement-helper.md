@@ -73,12 +73,12 @@ This section must always reflect the actual current state of the work.
 - [x] M1: Extend the module export list in `src/Keiki/Render/Mermaid.hs` with the new names.
 - [x] M1: Add a new multi-section atlas golden to `test/Keiki/Render/MermaidSpec.hs`; leave the existing `atlasCanonical` golden untouched. (`typedAtlasCanonical`.)
 - [x] M1: Run `cabal build keiki` and `cabal test keiki-test`; confirm the pre-existing atlas golden still passes. (357 examples, 0 failures.)
-- [ ] M2: Create `src/Keiki/Render/Markdown.hs` with `MarkdownDiagramBlock`, `MarkdownDiagramError`, and `replaceMarkdownDiagramBlock`.
-- [ ] M2: Add `Keiki.Render.Markdown` to `keiki.cabal` `library: exposed-modules`.
-- [ ] M2: Create `test/Keiki/Render/MarkdownSpec.hs`; add it to the test-suite `other-modules` and wire it into `test/Spec.hs`.
-- [ ] M2: Run `cabal test keiki-test`; confirm the missing-begin, missing-end, duplicate-marker, outside-preservation, and normalized-output cases pass.
-- [ ] M2: Confirm idempotence: replacing twice yields the same document.
-- [ ] Commit with the MasterPlan / ExecPlan / Intention trailers.
+- [x] M2: Create `src/Keiki/Render/Markdown.hs` with `MarkdownDiagramBlock`, `MarkdownDiagramError`, and `replaceMarkdownDiagramBlock`. (Also exports `beginMarker`/`endMarker`; needs `{-# LANGUAGE MultiWayIf #-}` — see Surprises.)
+- [x] M2: Add `Keiki.Render.Markdown` to `keiki.cabal` `library: exposed-modules`.
+- [x] M2: Create `test/Keiki/Render/MarkdownSpec.hs`; add it to the test-suite `other-modules` and wire it into `test/Spec.hs`.
+- [x] M2: Run `cabal test keiki-test`; confirm the missing-begin, missing-end, duplicate-marker, outside-preservation, and normalized-output cases pass. (364 examples, 0 failures.)
+- [x] M2: Confirm idempotence: replacing twice yields the same document. (Tested: applying to `expectedDoc` reproduces it.)
+- [x] Commit with the MasterPlan / ExecPlan / Intention trailers. (M1 + M2 committed.)
 
 
 ## Surprises & Discoveries
@@ -86,7 +86,18 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- `MultiWayIf` is not in the GHC2024 default extension set, and keiki's `shared-extensions`
+  cabal stanza does not enable it project-wide. The `if | … ` form in `replaceMarkdownDiagramBlock`
+  therefore needs a per-module `{-# LANGUAGE MultiWayIf #-}` pragma at the top of
+  `src/Keiki/Render/Markdown.hs`. The plan's source sketch flagged this as the implementer's
+  choice ("enable `{-# LANGUAGE MultiWayIf #-}` … or rewrite as nested guards"); the pragma was
+  the smaller change and reads cleanly against the four-way marker-count validation.
+- The new types and the general `toMermaidAtlasWith` were placed *after* the existing
+  `toMermaidAtlas` (which keeps its original haddock) rather than above it, so the legacy
+  function's documentation stays attached to it; the wrapper now forward-references
+  `toMermaidAtlasWith`/`MermaidSection`/`defaultMermaidAtlasOptions`, which Haskell's
+  order-independent top-level scoping handles with no issue. Byte-identity of `atlasCanonical`
+  was confirmed by a green run rather than by reasoning alone.
 
 
 ## Decision Log
@@ -166,7 +177,30 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Both milestones landed as designed and the load-bearing byte-identity invariant held.
+
+- **M1 — typed atlas.** `Keiki.Render.Mermaid` now exports `MermaidSection`,
+  `MermaidSectionKind` (`AggregateDiagram`/`ProcessManagerDiagram`/`WorkflowDiagram`/`CustomDiagram`),
+  `MermaidAtlasOptions`, `AtlasKindDisplay` (`KindHidden`/`KindAsLabel`/`KindAsComment`),
+  `defaultMermaidAtlasOptions`, and `toMermaidAtlasWith`. `toMermaidAtlas` is a thin wrapper over
+  `toMermaidAtlasWith defaultMermaidAtlasOptions`; the pre-existing `atlasCanonical` golden passes
+  unchanged, so the generalization moved no bytes. The new `typedAtlasCanonical` golden pins a
+  two-section atlas (aggregate + process-manager) with HTML-comment kind lines and `seihou`
+  begin/end markers keyed by `sectionId` under a top-level title.
+- **M2 — marker replacement.** New module `src/Keiki/Render/Markdown.hs` exports
+  `MarkdownDiagramBlock`, `MarkdownDiagramError` (`MissingBeginMarker`/`MissingEndMarker`/`DuplicateMarker`),
+  and `replaceMarkdownDiagramBlock`, plus `beginMarker`/`endMarker`. The helper rewrites exactly the
+  span between a matched marker pair with a normalized fenced block, preserves every byte outside,
+  reports the expected marker text on absence and the count on duplication, and is idempotent (the
+  trailing-newline strip makes a normalized block re-normalize to itself). `MarkdownSpec` covers all
+  five acceptance cases plus idempotence; the full suite is green at 364 examples.
+- **Composition contract realized.** An atlas section emitted with `atlasWrapMarkers = Just ns`
+  produces `<!-- ns: sectionId begin/end -->` markers whose id is exactly the `blockId` a later
+  `MarkdownDiagramBlock` supplies — so the Req 4 (atlas) and Req 5 (marker replacement) surfaces
+  compose with no glue, which was the design intent.
+- **Gap (by design, out of scope):** wiring Seihou's own `docs/diagrams/keiki.md` to use these
+  helpers is downstream work in `keiro-runtime-jitsurei`, not keiki. The only keiki-side caveat is
+  the `MultiWayIf` pragma noted in Surprises.
 
 
 ## Context and Orientation

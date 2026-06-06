@@ -69,6 +69,7 @@ library
     Keiki.Operators
     Keiki.Profunctor
     Keiki.Render.Inspector
+    Keiki.Render.Markdown
     Keiki.Render.Mermaid
     Keiki.Render.Pretty
     Keiki.Shape
@@ -119,6 +120,7 @@ test-suite keiki-test
     Keiki.ProfunctorSpec
     Keiki.RecomputeVerifySpec
     Keiki.Render.InspectorSpec
+    Keiki.Render.MarkdownSpec
     Keiki.Render.MermaidSpec
     Keiki.Render.PrettySpec
     Keiki.ShapeSpec
