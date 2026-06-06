@@ -484,13 +484,51 @@ The generated declarations are byte-for-byte the ones the enumerated
 forms produce when every short name equals its constructor name — see
 `jitsurei/src/Jitsurei/OrderCart.hs`, which uses exactly this line.
 
-**Rule of thumb.** Reach for the `*All` / fused forms whenever the
-short name equals the constructor name (the overwhelmingly common
-case). Keep the enumerated `deriveAggregateCtors` / `deriveWireCtors`
-only when you want an *abbreviated* short name that differs from the
-constructor name — for example `test/Keiki/Fixtures/UserRegistration.hs`
-maps `StartRegistration -> Start`, `FulfillGDPRRequest -> Gdpr`, which
-auto-enumeration cannot express.
+**Rule of thumb.** Reach for the `*All` / fused forms whenever every
+short name equals its constructor name (the overwhelmingly common case).
+When *most* names match but a few need an abbreviation — or you want to
+skip a constructor entirely — use the `*With` forms below rather than
+hand-listing every `(ctor, ctor)` identity pair in the enumerated
+`deriveAggregateCtors` / `deriveWireCtors`.
+
+### 4.3.1 Overrides and excludes: the `*With` forms
+
+`deriveAggregateCtorsWith` / `deriveWireCtorsWith` enumerate the sum type
+like `*All`, but take an options record so you can override the short-name
+suffix for individual constructors and exclude others — without spelling
+out the identity mappings:
+
+```haskell
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
+
+$(deriveAggregateCtorsWith ''IncidentCommand ''IncidentRegs
+    defaultDeriveCtorOptions
+      { suffixOverrides = Map.fromList [("DeclareIncident", "Declare")]
+      })   -- every ctor enumerated; only DeclareIncident → inCtorDeclare / inpDeclare / isDeclare
+
+$(deriveWireCtorsWith ''IncidentEvent
+    defaultDeriveWireOptions
+      { suffixOverridesW = Map.fromList [("IncidentDeclared", "Declared")]
+      , excludeCtorsW    = Set.fromList ["LegacyMigratedEvent"]
+      })
+```
+
+The options:
+
+| Field | Type | Effect |
+|---|---|---|
+| `suffixOverrides` / `suffixOverridesW` | `Map String String` | constructor name → short-name suffix for its helpers; absent ctors default to their own name |
+| `excludeCtors` / `excludeCtorsW` | `Set String` | constructors to skip entirely (no helpers generated) |
+
+Every key in either field **must** be an actual constructor of the named
+sum type, and the resolved short names must be unique — an unknown key or a
+duplicate aborts the splice at compile time with a precise message. For a
+constructor present in the overrides, the generated declarations are
+byte-for-byte identical to the enumerated `deriveAggregateCtors` /
+`deriveWireCtors` for the same `(ctor, short)` pair. `defaultDeriveCtorOptions`
+/ `defaultDeriveWireOptions` (empty overrides, empty excludes) make the
+`*With` forms behave exactly like the `*All` forms.
 
 ### 4.4 `deriveView ''Vertex ''Regs "SVertex" "View" "view" [ … ]`
 
@@ -508,6 +546,29 @@ record selectors are guaranteed to be live slots. The view is
 **opt-in** — the transducer doesn't reference it; consumer code
 (serialisers, UI) does.
 
+### 4.5 JSON event codecs (sibling package)
+
+keiki core is intentionally **codec-free** — the pure layer talks only
+typed Haskell values, and `keiki.cabal` has no `aeson` dependency. When
+you need to persist your event sum as JSON, the sibling package
+`keiki-codec-json` derives a `kind`-discriminated codec skeleton:
+
+```haskell
+import Keiki.Codec.JSON.Event (deriveEventCodecSkeleton, defaultEventCodecOptions)
+
+$(deriveEventCodecSkeleton defaultEventCodecOptions ''OrderEvent)
+-- emits orderEventToJSON / orderEventFromJSON / orderEventEventTypes / orderEventKindMap
+```
+
+Its key property is **no silent generic fallback**: a payload field is
+handled by an explicit override, a passthrough instance, or it forces a
+compile-time decision (`FailAtCompileTime`) — so the stored JSON cannot
+drift from the event shape. It consumes no keiki-core symbols and the
+generated code, built by TH quotation, keeps `aeson` out of your module's
+import surface. See the `keiki-codec-json` package's
+`Keiki.Codec.JSON.Event` haddock for the full options and a worked
+example. Do **not** hand-write event JSON in keiki core.
+
 ---
 
 ## 5. Running a transducer
@@ -519,12 +580,34 @@ operations are in `Keiki.Core`:
 |---|---|---|
 | `delta t s regs ci` | `Maybe (s, RegFile rs)` | Forward step on a command (control + register update) |
 | `omega t s regs ci` | `Maybe co` | The event emitted by the firing edge (or `Nothing` for ε) |
-| `step t s regs ci` | `Maybe ((s, RegFile rs), Maybe co)` | `delta` and `omega` paired |
+| `step t (s, regs) ci` | `Maybe (s, RegFile rs, [co])` | `delta` and `omega` paired; the event list is `[]` for an ε-edge and length-2+ for a multi-event edge |
+| `stepEither t (s, regs) ci` | `Either (StepFailure s) (s, RegFile rs, [co])` | like `step`, but on rejection returns *why* instead of `Nothing` |
 | `applyEvent t s regs co` | `Maybe (s, RegFile rs)` | The inverse: replay an event (used by `evolve`) |
 | `reconstitute t events` | `Maybe (s, RegFile rs)` | Fold `applyEvent` over an event log |
 
 `delta`, `omega`, and `applyEvent` use **concrete predicate
 evaluation** (`evalPred`) — there is no solver in this path.
+
+#### Explaining a rejection with `stepEither`
+
+`step` collapses every failure into `Nothing`. When you need to know *why*
+a command was rejected — for a command processor's error response, a log,
+or a test — use `stepEither`, which returns the identical success triple on
+the `Right` and a `StepFailure s` on the `Left`:
+
+```haskell
+data StepFailure s
+  = NoOutgoingEdges s                          -- the vertex has no outgoing edges
+  | NoMatchingEdge  s [RejectedEdgeSummary s]  -- edges exist, none matched the command
+  | AmbiguousEdges  s [MatchedEdgeSummary s]   -- two or more guards matched (nondeterminism!)
+```
+
+`AmbiguousEdges` is the one to watch: it means two outgoing guards both
+held for one command — a single-valuedness violation that `step` would
+hide. It is the runtime witness of the same property `validateTransducer`'s
+`NondeterministicPair` / `checkTransitionDeterminismSym` prove at build time
+(§8). Treat it as a defect, not an ordinary rejection. Keep `step` on hot
+paths where a bare accept/reject is enough.
 
 ### 5.1 The Decider façade
 
@@ -719,16 +802,53 @@ Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. …
 
 Use `emitWith ic wc rec` or move the `emit` inside an `onCmd`.
 
+### Build-time validation (`validateTransducer`)
+
+`Keiki.Core.validateTransducer` is the umbrella check to put in every
+aggregate's test suite. One call runs three analyses over the `HsPred`
+carrier — purely, with no z3 process — and returns a flat list of
+structured warnings; an empty list means well-formed:
+
+```haskell
+import Keiki.Core (validateTransducer, defaultValidationOptions)
+
+validateTransducer defaultValidationOptions myTransducer == []   -- the canonical assertion
+```
+
+Each element is a `TransducerValidationWarning s` you can pattern-match on
+(it is data, not a string), and every kind locates the offending edge by the
+typed `EdgeRef s` — the same locator `stepEither` uses (§5):
+
+| Warning | Means | Fix |
+|---|---|---|
+| `HiddenInput` | an edge reads a command field its output doesn't emit, so the command can't be recovered on replay | add the field to the emitted event, or stop reading it (see below) |
+| `NondeterministicPair` | two outgoing guards of one vertex can both hold | make the guards mutually exclusive (runtime witness: `stepEither`'s `AmbiguousEdges`) |
+| `PossiblyDeadEdge` | an edge can never fire (unreachable vertex, or statically-unsatisfiable guard) | remove it or fix the reachability/guard |
+
+`ValidationOptions` toggles each check (`failOnEpsilonReadsInput`,
+`checkDeterminism`, `checkReachability`, and the opt-in `warnOpaqueGuards`
+— see "Opaque guards and collections" below). `defaultValidationOptions`
+enables the three soundness checks and leaves the opaque-guard audit off.
+
+The default path is **pure and conservative** — its determinism check flags
+only structurally-provable overlaps (never a false positive, but it can miss
+one it cannot prove syntactically). For exact, solver-backed answers call
+`Keiki.Symbolic.checkTransitionDeterminismSym` / `checkDeadEdgesSym`
+directly (these need `z3` on `PATH`); reserve them for a slower test group
+and keep `validateTransducer` as the always-on fast assertion.
+
 ### Hidden-input warnings
 
-`Keiki.Core.checkHiddenInputs` walks a transducer and flags edges
-where the update or guard reads an input field that doesn't
-appear in the output term. Such edges can't be replayed from the
-event alone — `applyEvent` will return `Nothing` even on
-well-formed events.
+The hidden-input check above is also available on its own as
+`Keiki.Core.checkHiddenInputs`, which walks a transducer and flags edges
+where the update or guard reads an input field that doesn't appear in the
+output term. Such edges can't be replayed from the event alone —
+`applyEvent` will return `Nothing` even on well-formed events.
+`validateTransducer` runs exactly this check and lifts each result into a
+structured `HiddenInput` warning; prefer the umbrella in tests and use
+`checkHiddenInputs` directly only when you want this slice alone.
 
-The warning is informational at the moment; treat it as a schema
-fix-up signal. The User Registration aggregate's
+Treat it as a schema fix-up signal. The User Registration aggregate's
 `AccountConfirmedData` schema in `docs/foundations/04` walks
 through one such fix.
 

@@ -43,6 +43,14 @@ moment your aggregate's lifecycle turns on collection contents, you've
 moved keiki's headline guarantee off exactly the logic that most needs
 it.
 
+> **Audit for this.** Because the loss is *silent*, keiki ships an opt-in
+> check that surfaces it: `validateTransducer defaultValidationOptions {
+> warnOpaqueGuards = True } t` returns an `OpaqueGuard` warning for every
+> edge whose guard branches through a `TApp` the solver can't see. It is
+> off under `defaultValidationOptions` (so it never changes an existing
+> `== []` assertion); turn it on to find exactly the guards this section
+> warns about. See §8 of `user-guide.md`.
+
 Ergonomics and replay degrade too (`Map.insert k v` is arity-3 and
 won't fit `TApp2`; collection-derived output fields stop being
 invertible by `solveOutput`), but the verification loss is the one that
@@ -243,8 +251,12 @@ first-class — structural `UInsert`/`UAdjust`, content guards
 `PMember`/`PAll`, element projection `TLookupField`
 (`docs/research/collection-registers-design.md`). It is a careful
 design, and it would restore ergonomics and a clean `checkHiddenInputs`
-for the collection case. It is deliberately **not** the default this
-guide points you to, because:
+for the collection case. It was **prototyped and reviewed under a
+ratification gate (MasterPlan 14, EP-60) and the decision was NO-GO** —
+deferred, not rejected — with the `warnOpaqueGuards` audit (above) shipped
+as the cheaper signpost instead; see
+`docs/plans/60-first-class-collection-registers-design-gated.md`. It is
+deliberately **not** the default this guide points you to, because:
 
 - Its own crux (FR6) admits that the recommended v1 keeps
   collection-guarded edges **"explicitly unverified"** — i.e. it gives

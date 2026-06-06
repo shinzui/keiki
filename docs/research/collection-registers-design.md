@@ -1,8 +1,21 @@
 # First-class collection registers in keiki
 
-Status: requirement / feasibility probe (not yet scheduled under a MasterPlan).
-**No committed consumer as of 2026-05-20** — the original motivating consumer
-withdrew after a boundary re-analysis; see the Consumer-reassessment callout below.
+Status: **scheduled, prototyped, and ratified NO-GO (deferred) under MasterPlan 14,
+EP-60, on 2026-06-06.** A working prototype demonstrated the FR1–FR6 vocabulary and
+confirmed INV1–INV6 are satisfiable, but the maintainer chose not to build it into the
+core formalism: the committed consumer (keiro-runtime-jitsurei) is not actually blocked
+— its only in-aggregate collection guard is whole-list emptiness, already structural —
+and the real hazard (silent under-verification of opaque collection guards) is addressed
+more cheaply and reversibly by the opt-in `warnOpaqueGuards` `validateTransducer` audit
+(EP-67). This note is preserved as the design of record; revive it if a real
+keyed-collection consumer with a genuine in-aggregate set-wide invariant appears, and
+prefer the flat-list variants the EP-60 reconciliation identified. See
+`docs/plans/60-first-class-collection-registers-design-gated.md` (the gate analysis) and
+`docs/guide/modeling-collections.md` (the patterns to use today).
+
+The original 2026-05 framing below is retained as historical context; the
+"no committed consumer as of 2026-05-20" line it opens with is now superseded
+(keiro-runtime-jitsurei revived the motivation, then the gate deferred the feature).
 
 > **Validated against the code on 2026-05-20** and reconciled with the GSM
 > widening that shipped under MasterPlan 7 / EP-19 on 2026-05-16. This note's
