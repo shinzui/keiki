@@ -152,6 +152,7 @@ module Keiki.Core (
     defaultValidationOptions,
     validateTransducer,
     hiddenInputWarnings,
+    opaqueGuardWarnings,
     DeterminismWarning (..),
     checkTransitionDeterminism,
     checkTransitionDeterminismPure,
@@ -1636,6 +1637,20 @@ data TransducerValidationWarning s
         { tvwEdge :: EdgeRef s
         , tvwDetail :: String
         }
+    | {- | An edge whose guard contains an opaque 'TApp' term. The symbolic
+      single-valuedness and dead-edge analyses translate such a term to an
+      unconstrained free variable ('Keiki.Symbolic.translateTermSym' emits
+      @SBV.free "app1"@), so they cannot see through the guard and silently
+      under-verify it. Most often this is a collection-content condition
+      (membership, "all resolved", size) lifted through a closure because the
+      structural predicate language has no node for it; see the user guide and
+      @docs\/plans\/60-first-class-collection-registers-design-gated.md@ for the
+      options. Advisory, not a soundness error: opt in via 'warnOpaqueGuards'.
+      -}
+      OpaqueGuard
+        { tvwEdge :: EdgeRef s
+        , tvwDetail :: String
+        }
     deriving stock (Eq, Show)
 
 {- | Which checks 'validateTransducer' runs. All default to 'True' (see
@@ -1648,16 +1663,23 @@ data ValidationOptions = ValidationOptions
     -- ^ run the (pure, structural) determinism check
     , checkReachability :: Bool
     -- ^ run the (structural) dead-edge check
+    , warnOpaqueGuards :: Bool
+    {- ^ run the opaque-guard audit (opt-in; default off). Flags edges whose
+    guard branches on an opaque 'TApp' term the symbolic analyses cannot
+    see through. Off by default so 'defaultValidationOptions' keeps its
+    meaning for existing consumers.
+    -}
     }
     deriving stock (Eq, Show)
 
--- | All checks enabled.
+-- | The three soundness checks enabled; the opt-in opaque-guard audit off.
 defaultValidationOptions :: ValidationOptions
 defaultValidationOptions =
     ValidationOptions
         { failOnEpsilonReadsInput = True
         , checkDeterminism = True
         , checkReachability = True
+        , warnOpaqueGuards = False
         }
 
 {- | The build-time validation umbrella. Runs the enabled checks over the
@@ -1689,6 +1711,7 @@ validateTransducer opts t =
                 | w <- checkDeadEdges defaultDeadEdgeOptions t
                 ]
             else []
+        , if warnOpaqueGuards opts then opaqueGuardWarnings t else []
         ]
 
 {- | Structured form of the hidden-input check, additive over
@@ -1718,6 +1741,56 @@ hiddenInputWarnings t =
     inCtorOf HirEpsilonReadsInput = Nothing
     missingSlotsOf (HirUnionMiss _ ms) = ms
     missingSlotsOf HirEpsilonReadsInput = []
+
+-- ** Opaque-guard diagnostics
+
+{- | Does the term contain an opaque 'TApp1'\/'TApp2' anywhere? Mirrors the
+structural recursion of 'termReadsInput'; 'TArith' is transparent, so it
+recurses into its operands rather than counting as opaque.
+-}
+termHasOpaqueApp :: Term rs ci ifs r -> Bool
+termHasOpaqueApp (TLit _) = False
+termHasOpaqueApp (TReg _) = False
+termHasOpaqueApp (TInpCtorField _ _) = False
+termHasOpaqueApp (TApp1 _ _) = True
+termHasOpaqueApp (TApp2 _ _ _) = True
+termHasOpaqueApp (TArith _ a b) = termHasOpaqueApp a || termHasOpaqueApp b
+
+{- | Does the guard predicate branch on an opaque term anywhere? The symbolic
+analyses cannot see through such a guard (it becomes a free SBV variable),
+so they silently under-verify the edge.
+-}
+predHasOpaqueTerm :: HsPred rs ci -> Bool
+predHasOpaqueTerm PTop = False
+predHasOpaqueTerm PBot = False
+predHasOpaqueTerm (PAnd p q) = predHasOpaqueTerm p || predHasOpaqueTerm q
+predHasOpaqueTerm (POr p q) = predHasOpaqueTerm p || predHasOpaqueTerm q
+predHasOpaqueTerm (PNot p) = predHasOpaqueTerm p
+predHasOpaqueTerm (PEq a b) = termHasOpaqueApp a || termHasOpaqueApp b
+predHasOpaqueTerm (PInCtor _) = False
+predHasOpaqueTerm (PCmp _ a b) = termHasOpaqueApp a || termHasOpaqueApp b
+
+{- | The opt-in opaque-guard audit (run by 'validateTransducer' only when
+'warnOpaqueGuards' is set). For every edge whose guard contains an opaque
+'TApp' term, emit an 'OpaqueGuard' warning locating the edge by its typed
+'EdgeRef'. Specialised to the 'HsPred' carrier because it walks the predicate
+AST, exactly as 'validateTransducer' is.
+-}
+opaqueGuardWarnings ::
+    (Bounded s, Enum s) =>
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    [TransducerValidationWarning s]
+opaqueGuardWarnings t =
+    [ OpaqueGuard
+        { tvwEdge = EdgeRef{edgeSource = s, edgeIndex = n}
+        , tvwDetail =
+            "guard contains an opaque TApp term the symbolic analyses cannot "
+                ++ "see through; its single-valuedness was not verified"
+        }
+    | s <- [minBound .. maxBound]
+    , (n, e) <- zip [(0 :: Int) ..] (edgesOut t s)
+    , predHasOpaqueTerm (guard e)
+    ]
 
 -- ** Determinism diagnostics
 

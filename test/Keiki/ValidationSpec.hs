@@ -105,6 +105,33 @@ symOverlapT =
         , isFinal = (== Mid)
         }
 
+-- (f) an opaque collection-style guard (EP-67): the guard lifts list membership
+-- through a TApp closure the symbolic analyses cannot see through. The register
+-- slot holds a collection; the guard asks "is 5 in items?" via `elem`, which has
+-- no structural keiki node, so it is forced through TApp1.
+type ItemRegs = '[ '("items", [Int])]
+
+opaqueT :: SymTransducer (HsPred ItemRegs Cmd) ItemRegs V Cmd ()
+opaqueT =
+    SymTransducer
+        { edgesOut = \case
+            Start ->
+                [ Edge
+                    { guard =
+                        PEq
+                            (TApp1 (5 `elem`) (TReg (ZIdx :: Index ItemRegs [Int])))
+                            (TLit True)
+                    , update = UKeep
+                    , output = []
+                    , target = Mid
+                    }
+                ]
+            _ -> []
+        , initial = Start
+        , initialRegs = RCons (Proxy @"items") [] RNil
+        , isFinal = (== Mid)
+        }
+
 -- A 3-slot input constructor, mirroring CoreHiddenInputsGSMSpec, used to build
 -- a hidden-input edge (its output recovers only slots a, b — never c).
 data MultiInput = Begin Int Int Int
@@ -202,6 +229,22 @@ spec = do
                 isND (NondeterministicPair{}) = True
                 isND _ = False
             filter isND (validateTransducer opts overlapT) `shouldBe` []
+
+    describe "opaque-guard audit (EP-67, opt-in)" $ do
+        let optsOn = defaultValidationOptions{warnOpaqueGuards = True}
+            isOpaqueStart (OpaqueGuard{tvwEdge = EdgeRef{edgeSource = Start, edgeIndex = 0}}) = True
+            isOpaqueStart _ = False
+
+        it "an opaque collection-style guard is flagged when the audit is on" $
+            validateTransducer optsOn opaqueT `shouldSatisfy` any isOpaqueStart
+
+        it "a fully structural transducer is never flagged, even with the audit on" $ do
+            let isOpaque (OpaqueGuard{}) = True
+                isOpaque _ = False
+            filter isOpaque (validateTransducer optsOn cleanT) `shouldBe` []
+
+        it "the audit is silent under defaultValidationOptions (backward compat)" $
+            validateTransducer defaultValidationOptions opaqueT `shouldBe` []
 
     describe "checkTransitionDeterminismSym (z3-backed)" $ do
         it "mutually-exclusive PInCtor guards yield no determinism warning" $

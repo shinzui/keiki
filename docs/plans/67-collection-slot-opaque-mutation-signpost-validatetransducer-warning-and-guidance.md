@@ -68,15 +68,17 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: add the `OpaqueGuard` arm to `TransducerValidationWarning` and the
+- [x] M1: added the `OpaqueGuard` arm to `TransducerValidationWarning` and the
       `warnOpaqueGuards :: Bool` field to `ValidationOptions` (default `False` in
-      `defaultValidationOptions`), in `src/Keiki/Core.hs`.
-- [ ] M1: add the structural walkers `termHasOpaqueApp` / `predHasOpaqueTerm` and the
-      `opaqueGuardWarnings` producer; wire it into `validateTransducer`.
-- [ ] M1: extend `test/Keiki/ValidationSpec.hs` with opaque-guard cases (fires when
-      enabled + names the edge; none for a structural transducer; silent under
-      `defaultValidationOptions`).
-- [ ] M1: `cabal build keiki` and `cabal test keiki-test` both pass.
+      `defaultValidationOptions`), in `src/Keiki/Core.hs`; exported `opaqueGuardWarnings`
+      for parity with `hiddenInputWarnings`. (2026-06-06)
+- [x] M1: added the structural walkers `termHasOpaqueApp` / `predHasOpaqueTerm` and the
+      `opaqueGuardWarnings` producer; wired it into `validateTransducer`. (2026-06-06)
+- [x] M1: extended `test/Keiki/ValidationSpec.hs` with three opaque-guard cases (fires when
+      enabled + names the edge; none for the structural `cleanT`; silent — full `== []` —
+      under `defaultValidationOptions`). (2026-06-06)
+- [x] M1: `cabal build keiki` and `cabal test keiki-test` both pass (325 examples, 0
+      failures; no new warnings on the touched files). (2026-06-06)
 - [ ] M2: add the "opaque collection guards" recipe section to a guide page and
       cross-link it (and EP-60's deferral) from `docs/guide/user-guide.md`.
 - [ ] Final: update Surprises/Decision Log/Outcomes; verify all acceptance criteria.

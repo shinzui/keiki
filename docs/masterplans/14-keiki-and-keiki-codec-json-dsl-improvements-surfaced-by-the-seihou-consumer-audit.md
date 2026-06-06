@@ -129,7 +129,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Complete |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
 | 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Complete (NO-GO at gate) |
-| 67 | Collection-slot opaque-mutation signpost: validateTransducer warning and guidance | docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md | None | EP-56 | Not Started |
+| 67 | Collection-slot opaque-mutation signpost: validateTransducer warning and guidance | docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md | None | EP-56 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-55).
