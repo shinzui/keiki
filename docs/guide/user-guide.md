@@ -303,6 +303,11 @@ The verbose carrier signatures also have synonyms: `Pred rs ci` for
 `SymTransducer (HsPred rs ci) rs s ci co`, and `SymGuarded rs s ci co`
 (in `Keiki.Symbolic`) for the SBV-backed carrier.
 
+Guarding on collection contents (membership, "all resolved", size)
+has no structural operator today, so it needs an opaque `TApp` the
+symbolic checker can't see through — enable `warnOpaqueGuards` to
+audit for it and see §8's "Opaque guards and collections".
+
 #### Slot writes
 
 `slot @"name"` is a `IndexN "name" rs r` value tagged at the type
@@ -726,6 +731,61 @@ The warning is informational at the moment; treat it as a schema
 fix-up signal. The User Registration aggregate's
 `AccountConfirmedData` schema in `docs/foundations/04` walks
 through one such fix.
+
+### Opaque guards and collections
+
+keiki's structural predicate language (`PEq`/`PCmp`/`PInCtor` over
+`TReg`/`TInpCtorField`/`TLit`/`TArith`) is what the symbolic
+analyses read. When you need a condition it has no node for —
+most often a **collection-content** test like "is this id in the
+list?", "are all items resolved?", or "is the set non-empty?" —
+you reach for an opaque closure (`TApp1`/`TApp2`, e.g.
+`TApp1 (k `elem`) (reg @"items")`). That compiles and *evaluates*
+correctly, but `Keiki.Symbolic.translateTermSym` turns the closure
+into an unconstrained free SBV variable, so the single-valuedness
+(`isSingleValuedSym`) and dead-edge analyses **cannot see through
+the guard** and silently under-verify the edge. You get a green
+build that didn't actually check what you think it did.
+
+Three things to know:
+
+1. **Storing a whole collection is fine — it's not opaque.** The
+   common pattern of carrying a precomputed list on the command and
+   assigning it wholesale, `B.slot @"items" =: d.items`, is a
+   *structural* input read: `solveOutput` inverts it and
+   `checkHiddenInputs` sees the whole list on the wire. No
+   degradation. (If the collection's invariants — append/remove/
+   membership — are enforced in the application layer before the
+   command is issued, and your only in-aggregate guard is something
+   structural like `reg @"items" .== lit []`, you are fully
+   verified.)
+
+2. **Audit your opaque guards.** The opaque degradation is in
+   *guards*, and it is opt-in to surface:
+
+   ```haskell
+   validateTransducer defaultValidationOptions { warnOpaqueGuards = True } myTransducer
+   -- ⇒ [ OpaqueGuard { tvwEdge = EdgeRef { edgeSource = …, edgeIndex = … }, tvwDetail = … }, … ]
+   ```
+
+   Each `OpaqueGuard` names an edge whose single-valuedness the
+   solver could not verify. The check is **off** under
+   `defaultValidationOptions` (so it never changes an existing
+   `== []` assertion); turn it on when you want to know which guards
+   the solver actually saw.
+
+3. **The honest options when you truly need a collection
+   invariant.** (a) Keep the invariant in the application layer
+   against the read model (option 1 above). (b) Split a
+   lifecycle-bearing sub-entity into its own *scalar* aggregate (the
+   "sub-entity-as-aggregate" path) and get full keiki guarantees per
+   sub-aggregate. (c) First-class collection registers — structural
+   `UInsert`/`PMember`/`TLookupField` so collection guards become
+   verifiable — were prototyped and **deferred**; see
+   `docs/plans/60-first-class-collection-registers-design-gated.md`
+   (NO-GO at the ratification gate) and
+   `docs/research/collection-registers-design.md`. They can be
+   revived if a real keyed-collection consumer appears.
 
 ---
 

@@ -79,9 +79,11 @@ This section must always reflect the actual current state of the work.
       under `defaultValidationOptions`). (2026-06-06)
 - [x] M1: `cabal build keiki` and `cabal test keiki-test` both pass (325 examples, 0
       failures; no new warnings on the touched files). (2026-06-06)
-- [ ] M2: add the "opaque collection guards" recipe section to a guide page and
-      cross-link it (and EP-60's deferral) from `docs/guide/user-guide.md`.
-- [ ] Final: update Surprises/Decision Log/Outcomes; verify all acceptance criteria.
+- [x] M2: added the "Opaque guards and collections" recipe subsection to
+      `docs/guide/user-guide.md` §8 (structural storage is fine; opaque guards silently
+      degrade; the `warnOpaqueGuards` audit; the three honest options + EP-60 deferral
+      pointer), cross-linked from the §3.4 guards section. (2026-06-06)
+- [x] Final: updated Surprises/Decision Log/Outcomes; all acceptance criteria verified. (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -148,7 +150,31 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Both milestones landed as specified; the plan delivered the signpost-first resolution of
+MasterPlan 14's Req 4.
+
+- **M1 (warning).** `validateTransducer` gained an opt-in `OpaqueGuard` check
+  (`warnOpaqueGuards`, default off) that flags every edge whose guard contains an opaque
+  `TApp` term — the structural signature of a collection-content condition lifted through a
+  closure, which the symbolic analyses translate to a free SBV variable and therefore
+  cannot verify. The implementation is purely additive (one warning arm, one option field,
+  two structural walkers mirroring `termReadsInput`, one producer reusing the typed
+  `EdgeRef`, one `concat` line) and reuses exactly the machinery EP-56 left extensible.
+  `cabal test keiki-test` passes (325 examples, 0 failures), and the load-bearing
+  backward-compat case — `validateTransducer defaultValidationOptions opaqueT == []` —
+  confirms the default surface is unchanged for existing consumers.
+- **M2 (docs).** `docs/guide/user-guide.md` §8 now carries the honest recipe: storing a
+  whole collection structurally is fine and fully verified; the silent degradation is in
+  *guards*; `warnOpaqueGuards` is the audit; and the three options (application-layer
+  invariant, sub-entity-as-aggregate split, or the deferred first-class registers) point
+  the reader at the sound paths and at EP-60.
+
+The key reframing (recorded in the Decision Log and Surprises): the warning targets opaque
+*guards*, not opaque *mutations*. An opaque update replays forward soundly and is never
+inverted, so it surrenders nothing; the "you thought it was verified but it wasn't" footgun
+lives entirely in guards. This makes the signpost both precise and genuinely useful beyond
+collections — it audits *any* guard the solver can't see. No gaps; the plan is fully
+delivered and additive (nothing that compiled or passed before changed).
 
 
 ## Context and Orientation
