@@ -89,20 +89,24 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 here, even if it requires splitting a partially completed task into two ("done" vs.
 "remaining"). This section must always reflect the actual current state of the work.
 
-- [ ] M1: Add `DeriveCtorOptions` record + `defaultDeriveCtorOptions` to
-      `src/Keiki/Generics/TH.hs`.
-- [ ] M1: Refactor `deriveAggregateCtors` / `deriveAggregateCtorsAll` to route through a
-      shared internal helper that takes a resolved `[(String, String)]` plus the reified
-      constructor list (no codegen duplication).
-- [ ] M1: Add the resolution helper that turns options + the reified constructor set
-      into a resolved spec list, applying excludes and overrides.
-- [ ] M1: Add the two compile-time validations: unknown override/exclude keys, and
+- [x] M1: Add `DeriveCtorOptions` record + `defaultDeriveCtorOptions` to
+      `src/Keiki/Generics/TH.hs`. (2026-06-06)
+- [x] M1: Refactor `deriveAggregateCtors` / `deriveAggregateCtorsAll` to route through a
+      shared internal helper (`genAggregateCtors`) that takes a resolved
+      `[(String, String)]` plus the reified constructor list (no codegen duplication).
+      (2026-06-06)
+- [x] M1: Add the resolution helper (`resolveCtorSpecs`) that turns options + the reified
+      constructor set into a resolved spec list, applying excludes and overrides.
+      (2026-06-06)
+- [x] M1: Add the two compile-time validations: unknown override/exclude keys, and
       duplicate resolved short names. Both `fail` in `Q` with named offenders.
-- [ ] M1: Implement and export `deriveAggregateCtorsWith`.
-- [ ] M1: Add the `Map`/`Set` imports and update the module export list + Haddock.
-- [ ] M1: Add a fixture aggregate to `test/Keiki/Generics/THSpec.hs` that uses
+      (2026-06-06)
+- [x] M1: Implement and export `deriveAggregateCtorsWith`. (2026-06-06)
+- [x] M1: Add the `Map`/`Set` imports and update the module export list + Haddock.
+      (2026-06-06)
+- [x] M1: Add a fixture aggregate to `test/Keiki/Generics/THSpec.hs` that uses
       `deriveAggregateCtorsWith` with one override and one exclude; add runtime
-      assertions; build and run the suite green.
+      assertions; build and run the suite green (297 examples, 0 failures). (2026-06-06)
 - [ ] M2: Add `DeriveWireOptions` + `defaultDeriveWireOptions` and
       `deriveWireCtorsWith` on the event side, mirroring M1 (shared codegen path,
       same two validations).
@@ -120,7 +124,13 @@ here, even if it requires splitting a partially completed task into two ("done" 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The `keiki-test` stanza did **not** transitively expose `containers` to the spec
+  modules: with `import qualified Data.Map.Strict as Map` in `THSpec.hs`, the build
+  failed with `Could not load module 'Data.Map.Strict' … member of the hidden package
+  'containers-0.7' … add 'containers' to the build-depends`. The plan's
+  Interfaces & Dependencies section anticipated this as a conditional; it was required.
+  Fix: added `containers >=0.6 && <0.9` to the `test-suite keiki-test` `build-depends`
+  (matching the library's existing bound). (2026-06-06)
 
 
 ## Decision Log

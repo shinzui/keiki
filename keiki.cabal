@@ -122,6 +122,7 @@ test-suite keiki-test
 
   build-depends:
     , base         ^>=4.21
+    , containers   >=0.6   && <0.9
     , deepseq      ^>=1.5
     , hspec        ^>=2.11
     , keiki
