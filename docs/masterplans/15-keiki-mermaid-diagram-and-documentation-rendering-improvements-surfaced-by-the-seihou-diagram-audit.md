@@ -148,7 +148,7 @@ namespace is their natural home.
 
 | #  | Title | Path | Hard Deps | Soft Deps | Status |
 |----|-------|------|-----------|-----------|--------|
-| 61 | Pretty-printer for HsPred/Term/Update and domain-readable Mermaid guard rendering | docs/plans/61-pretty-printer-for-hspred-term-update-and-domain-readable-mermaid-guard-rendering.md | None | None | In Progress |
+| 61 | Pretty-printer for HsPred/Term/Update and domain-readable Mermaid guard rendering | docs/plans/61-pretty-printer-for-hspred-term-update-and-domain-readable-mermaid-guard-rendering.md | None | None | Complete |
 | 62 | Edge inspector Markdown renderer for SymTransducer | docs/plans/62-edge-inspector-markdown-renderer-for-symtransducer.md | None | EP-61 | Not Started |
 | 63 | Multiline Mermaid edge labels and multi-event output layout controls | docs/plans/63-multiline-mermaid-edge-labels-and-multi-event-output-layout-controls.md | None | EP-61 | Not Started |
 | 64 | Stable human-friendly Mermaid state IDs and display labels | docs/plans/64-stable-human-friendly-mermaid-state-ids-and-display-labels.md | None | None | Not Started |
@@ -232,8 +232,8 @@ Track milestone-level progress across all child plans. Each entry names the chil
 milestone. Milestones are seeded top-down here for coordination; each child plan owns the
 authoritative, detailed version.
 
-- [ ] EP-61 M1: `src/Keiki/Render/Pretty.hs` with `prettyPred`/`prettyTerm`/`prettyUpdate` + `indexName`; pure unit tests covering slot reads, input-field reads, comparisons, arithmetic, boolean structure, opaque `<fn>(...)` and `<lit>` markers.
-- [ ] EP-61 M2: `MermaidGuardMode` (`Hidden`/`StructuralSummary`/`Pretty`) added to `MermaidOptions`; `showGuardSummary` reconciled as the legacy spelling; default output byte-identical; new golden for `MermaidGuardPretty`.
+- [x] EP-61 M1: `src/Keiki/Render/Pretty.hs` with `prettyPred`/`prettyTerm`/`prettyUpdate` + `indexName`; pure unit tests covering slot reads, input-field reads, comparisons, arithmetic, boolean structure, opaque `<fn>(...)` and `<lit>` markers. (2026-06-06)
+- [x] EP-61 M2: `MermaidGuardMode` (`Hidden`/`StructuralSummary`/`Pretty`) added to `MermaidOptions`; `showGuardSummary` reconciled as the legacy spelling; default output byte-identical; new golden for `MermaidGuardPretty`. (2026-06-06)
 - [ ] EP-62 M1: `renderEdgeInspector` + `EdgeInspectorOptions` Markdown renderer grouped by source state; deterministic, golden-tested.
 - [ ] EP-62 M2: structural-and-pretty guard option, output-field term rendering (positional, field-name-free per validation), written-slot listing; golden cases.
 - [ ] EP-63 M1: `MermaidLabelLayout` + `maxInlineWrittenSlots`/`maxInlineGuardWidth` added additively; multiline `<br/>` labels with deterministic `+N more` truncation; default byte-identical.
@@ -275,6 +275,21 @@ between child plans. Provide concise evidence.
   plan that walks an edge's update (EP-61's `prettyUpdate` call sites, EP-62's written-slot
   listing) must pattern-match the `Edge` constructor, never apply `update` as a selector. The
   existing `edgeLabelWith` already does this (`Mermaid.hs:622`, `Edge { update = u, guard = g }`).
+- **Adding a field to `MermaidOptions` is byte-identical for output and for record-*update*
+  callers, but breaks full record-*literal* constructors at run time** (discovered in EP-61 M2).
+  The existing annotated-golden test built `MermaidOptions { showWrittenSlots = True,
+  showGuardSummary = True }` as a full literal; once EP-61 added `guardMode`, GHC only *warns*
+  (`-Wmissing-fields`, no `-Werror` here) and leaves `guardMode` as a bottom thunk that explodes
+  with a `RecConError` the moment `renderGuardSegment` forces it. The fix is to construct options
+  via record-update on `defaultMermaidOptions` (`defaultMermaidOptions { … }`); the pinned golden
+  *text* is unchanged, so byte-identity holds. **This directly affects EP-63**, which also appends
+  `MermaidOptions` fields (`labelLayout`, `maxInlineWrittenSlots`, `maxInlineGuardWidth`,
+  output-layout): EP-63 must (a) append after `guardMode`, never reorder; (b) default each new
+  field in `defaultMermaidOptions`; and (c) ensure any test or downstream caller that constructs
+  `MermaidOptions` uses record-update on `defaultMermaidOptions`, not a full record literal. The
+  Integration Points "extend additively" rule should be read as "extend additively **and**
+  construct via record-update on `defaultMermaidOptions`." The downstream Seihou consumer must do
+  the same for any full-literal `MermaidOptions` it builds.
 
 
 ## Decision Log

@@ -205,7 +205,7 @@ Outcome: delivered in full against the original purpose. `Keiki.Generics.TH` now
 exports `deriveAggregateCtorsWith` / `DeriveCtorOptions` / `defaultDeriveCtorOptions`
 (command side) and `deriveWireCtorsWith` / `DeriveWireOptions` /
 `defaultDeriveWireOptions` (event side). A consumer can enumerate every constructor
-automatically while overriding the short name of a *subset* (e.g. Seihou's
+automatically while overriding the short name of a *subset* (e.g. keiro-runtime-jitsurei's
 `DeclareIncident -> "Declare"`) and/or excluding a subset — no more hand-listing the
 constructors it was happy with. The exact ergonomics promised in Purpose now compile:
 

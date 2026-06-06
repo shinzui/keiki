@@ -1,13 +1,13 @@
 ---
 id: 14
 slug: keiki-and-keiki-codec-json-dsl-improvements-surfaced-by-the-seihou-consumer-audit
-title: "Keiki and keiki-codec-json DSL improvements surfaced by the Seihou consumer audit"
+title: "Keiki and keiki-codec-json DSL improvements surfaced by the keiro-runtime-jitsurei consumer audit"
 kind: master-plan
 created_at: 2026-06-06T14:40:56Z
 intention: "intention_01ktensqv9ecmv5cd5jrbcfej7"
 ---
 
-# Keiki and keiki-codec-json DSL improvements surfaced by the Seihou consumer audit
+# Keiki and keiki-codec-json DSL improvements surfaced by the keiro-runtime-jitsurei consumer audit
 
 This MasterPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
@@ -15,9 +15,9 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 ## Vision & Scope
 
-Seihou — the disaster-response runtime at `../keiro-runtime-jitsurei` (Incident Command and
-Hospital Capacity services) — is the second substantial consumer to drive keiki hard in
-anger, after Rei (MasterPlan 13). Its team wrote up the sharp edges it hit while building
+The **keiro-runtime-jitsurei** consumer (the disaster-response runtime at
+`../keiro-runtime-jitsurei`, with Incident Command and Hospital Capacity services) is the
+second substantial consumer to drive keiki hard in anger, after Rei (MasterPlan 13). Its team wrote up the sharp edges it hit while building
 service-owned event-sourced aggregate transducers in
 `../keiro-runtime-jitsurei/docs/keiki-dsl-feature-requirements.md` (eight requirements). Each
 was evaluated against keiki's foundational invariant — that keiki never lets the user
@@ -39,7 +39,7 @@ package. After it is complete:
   guards (non-determinism), and unreachable (possibly-dead) edges — the Hospital
   `TransferReservationCreated` hidden-input class and the FieldResource dead self-loop the
   audit found are exactly what this surfaces (Reqs 1 and 2).
-- An author who abbreviates a single command-helper name (Seihou's `DeclareIncident` →
+- An author who abbreviates a single command-helper name (keiro-runtime-jitsurei's `DeclareIncident` →
   `Declare`) can use an all-derived TH splice with a per-constructor override instead of
   hand-listing every constructor, with duplicate/unknown names failing at compile time
   (Req 5).
@@ -51,7 +51,7 @@ package. After it is complete:
   eliminating the ~10–20 lines of hand-written aeson per event and the drift risk between the
   keiki payload shape and the stored JSON. This lives entirely in the `keiki-codec-json`
   sibling package; keiki core stays aeson-free (Req 6).
-- Collection-bearing aggregates (Seihou's whole-list-in-command slots `activeResourceIds`,
+- Collection-bearing aggregates (keiro-runtime-jitsurei's whole-list-in-command slots `activeResourceIds`,
   `pendingReservationIds`, `availableServiceLines`) gain a path to first-class keyed-collection
   registers with a structural AST vocabulary — *behind a design-ratification gate*, because it
   is the one change that touches the core formalism (Req 4).
@@ -164,7 +164,7 @@ Recommended waves: **Phase 1** — EP-55, EP-57, EP-58, EP-59 in parallel. **Pha
 
 EP-60's M1 is a ratification gate, not an ordinary first milestone (mirroring EP-47 in
 MasterPlan 13): it produces a prototype plus a written FR6 (symbolic-translation) analysis and a
-reconciliation with the now-committed Seihou consumer cases, then STOPS for an explicit
+reconciliation with the now-committed keiro-runtime-jitsurei consumer cases, then STOPS for an explicit
 maintainer go/no-go before any `src/Keiki/` core change. A no-go is legitimate — collections
 then stay opaque-`TApp`-only and the consumer uses the design note's §8 fallbacks. So Phase 3
 does not auto-proceed from design to implementation.
@@ -223,7 +223,7 @@ authoritative, detailed version.
 - [x] EP-59 M1: event-sum reflection + `kind`-discriminated encode/decode skeleton with per-field override hooks in new `Keiki.Codec.JSON.Event` (`keiki-codec-json`). (2026-06-06)
 - [x] EP-59 M2: no-silent-fallback safety mechanism (`FailAtCompileTime` Q-fail or `EmitTodoBindings` named `_todo_*` bindings) + `<prefix>EventTypes :: [Text]` / `<prefix>KindMap` for Keiro `eventTypes`. (2026-06-06)
 - [x] EP-59 M3: round-trip + override-used + error-path + EventTypes/KindMap tests in `keiki-codec-json-test` (50 examples, 0 failures); both negative cases verified by hand; README worked example; haddock clean. In-repo demonstration only (the jitsurei dogfood is in a sibling repo, out of scope here). (2026-06-06)
-- [x] EP-60 M1 (ratification gate): prototype (`test/Keiki/CollectionSpike.hs`, 18 hspec examples in the 322-example run) + FR6 analysis (recommend **Option B**) + Seihou-consumer reconciliation (flat-list ergonomics, not the symbolic story; only in-keiki guard is whole-list emptiness, already structural) + INV1–INV6 satisfiability argument. **STOPPED for maintainer GO/NO-GO** (see EP-60 "M1 Ratification Analysis" + Decision Log). (2026-06-06)
+- [x] EP-60 M1 (ratification gate): prototype (`test/Keiki/CollectionSpike.hs`, 18 hspec examples in the 322-example run) + FR6 analysis (recommend **Option B**) + keiro-runtime-jitsurei-consumer reconciliation (flat-list ergonomics, not the symbolic story; only in-keiki guard is whole-list emptiness, already structural) + INV1–INV6 satisfiability argument. **STOPPED for maintainer GO/NO-GO** (see EP-60 "M1 Ratification Analysis" + Decision Log). (2026-06-06)
 - [~] EP-60 M2–M5: **NOT pursued** — NO-GO at the M1 gate (signpost-first chosen). Deferred until a real keyed-collection consumer appears.
 - [x] EP-67 M1: opt-in `OpaqueGuard` `validateTransducer` warning (new `TransducerValidationWarning` arm + `warnOpaqueGuards` option, default off) + `termHasOpaqueApp`/`predHasOpaqueTerm` walkers + `opaqueGuardWarnings` producer + 3 `ValidationSpec` cases (325 examples, 0 failures; backward-compat `== []` under defaults verified). (2026-06-06)
 - [x] EP-67 M2: user-guide §8 recipe (structural storage is fine; opaque guards silently degrade; `warnOpaqueGuards` audit; the three options + EP-60 deferral pointer) + §3.4 cross-link. (2026-06-06)
@@ -263,10 +263,10 @@ between child plans. Provide concise evidence.
   the *display* layer (detail strings). Any later plan (EP-60) that emits validation warnings
   must use the same typed `EdgeRef s` and parameterize over `s`.
 - **EP-60 M1 gate reached: the committed consumer is not actually blocked.** The ratification
-  spike + analysis (2026-06-06) found that all three Seihou collection cases are flat `[a]`
+  spike + analysis (2026-06-06) found that all three keiro-runtime-jitsurei collection cases are flat `[a]`
   value-lists stored wholesale via `=:`, and their *only* in-keiki collection guard is
   whole-list emptiness (`reg .== lit []`) — already structural today as a scalar `PEq`. So the
-  collection feature is an ergonomics/correctness-surface improvement for Seihou, not a current
+  collection feature is an ergonomics/correctness-surface improvement for keiro-runtime-jitsurei, not a current
   blocker, which both supports the cheaper FR6 **Option B** and gives a NO-GO/deferral a low
   consumer cost. Also corrected a stale design-note claim: current `stepOne` returns `Just []`
   (not `Nothing`) for `TApp` (EP-47 recompute-and-verify), so the real INV2 distinction is
@@ -349,7 +349,7 @@ between child plans. Provide concise evidence.
   specifies the sound shape (structural updates, `TLookupField` for output invertibility, FR6
   Option B graceful-and-queryable degradation, static output arity). Because it is the only
   change to the core formalism, it opens with a ratification gate like EP-47, with a legitimate
-  no-go outcome (the §8 fallbacks). The Seihou consumer revives the design's motivation — the
+  no-go outcome (the §8 fallbacks). The keiro-runtime-jitsurei consumer revives the design's motivation — the
   note's "no committed consumer as of 2026-05-20" is now stale.
   Date: 2026-06-06
 
@@ -366,7 +366,7 @@ between child plans. Provide concise evidence.
 - Decision: At the EP-60 M1 ratification gate, record **NO-GO** on first-class collection
   registers and adopt the **signpost-first** alternative, scoped as a new child plan EP-67
   (`docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md`).
-  Rationale: M1's prototype + analysis showed the committed consumer (Seihou) is not blocked
+  Rationale: M1's prototype + analysis showed the committed consumer (keiro-runtime-jitsurei) is not blocked
   (its only in-keiki collection guard is whole-list emptiness, already structural), and that
   what future consumers actually trip over is the *silent* degradation when an opaque `TApp`
   guard branches on collection contents — a discoverability problem. Building the full core
@@ -386,6 +386,19 @@ between child plans. Provide concise evidence.
   honest signpost. EP-67 soft-depends on EP-56 (it extends the `validateTransducer` machinery
   additively) and reuses the typed `EdgeRef s` locator. The new check defaults **off** to
   preserve the meaning of `defaultValidationOptions` for existing consumers.
+  Date: 2026-06-06
+
+
+- Decision: Correct the consumer's name throughout this MasterPlan and its child plans from
+  "Seihou" to **keiro-runtime-jitsurei** (the disaster-response runtime at
+  `../keiro-runtime-jitsurei`).
+  Rationale: "Seihou" is the name of the *planning toolkit* (the `seihou:` master-plan /
+  exec-plan skills), not the consumer; it was mistakenly applied as the consumer's name when
+  this MasterPlan was authored. The actual consumer that drove the audit is
+  keiro-runtime-jitsurei. Prose, title, and heading are corrected here and in EP-57/EP-60/EP-67;
+  the file slug/filename is left unchanged to keep the `master_plan:` frontmatter links in the
+  child plans and the `MasterPlan:` git trailers in prior commits valid (those reference the
+  original path). The legitimate lowercase `seihou:` skill markers are untouched.
   Date: 2026-06-06
 
 
@@ -412,7 +425,7 @@ Against the original vision:
 - **Req 4 (collections) — the substantive surprise.** The vision anticipated a possible
   formalism extension behind a ratification gate. The gate's prototype + analysis (EP-60 M1)
   produced a *different, better-grounded* outcome than "build it or don't": it found that the
-  committed consumer (Seihou) is **not actually blocked** — its collection cases store whole
+  committed consumer (keiro-runtime-jitsurei) is **not actually blocked** — its collection cases store whole
   lists structurally and its only in-keiki guard is whole-list emptiness, already verifiable —
   and that the real, recurring hazard is the *silent* under-verification when an opaque `TApp`
   guard branches on collection contents. So the maintainer chose **NO-GO on the core change**
@@ -438,5 +451,5 @@ Lessons:
 
 Gaps / follow-ups: first-class collection registers remain deferred (EP-60 M2–M5) pending a real
 keyed-collection consumer; if one appears, revisit the gate with that concrete shape and prefer
-the flat-list variants the Seihou reconciliation identified. The `OpaqueGuard` audit ships
+the flat-list variants the keiro-runtime-jitsurei reconciliation identified. The `OpaqueGuard` audit ships
 opt-in; if experience shows default-on is wanted, that is a small, evidence-driven follow-up.

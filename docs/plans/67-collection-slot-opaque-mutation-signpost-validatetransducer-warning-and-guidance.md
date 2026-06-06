@@ -45,11 +45,11 @@ After this change, two things exist that did not before:
    guards are invisible to the solver.
 
 2. **A documentation recipe** — a short guide section that explains, honestly: storing a
-   whole collection that arrives *structurally on the command* (the Seihou
+   whole collection that arrives *structurally on the command* (the keiro-runtime-jitsurei
    `B.slot @"x" =: d.x` pattern) is fine and fully visible; the degradation happens only
    when you **guard on or derive outputs from** collection contents through an opaque
    `TApp`; the cheapest sound options today are (a) keep the collection's invariants in
-   the application layer against the read model (what Seihou does), or (b) split a
+   the application layer against the read model (what keiro-runtime-jitsurei does), or (b) split a
    lifecycle-bearing sub-entity into its own scalar aggregate (the §8
    "sub-entity-as-aggregate" path); and first-class collection registers are **deferred**
    (link EP-60) until a real keyed-collection consumer appears.
@@ -92,7 +92,7 @@ Document unexpected behaviors, bugs, optimizations, or insights discovered durin
 implementation. Provide concise evidence.
 
 - **The signpost target is the opaque *guard*, not the opaque *mutation*.** The EP-60 M1
-  reconciliation found that the three Seihou collection cases store a whole list that
+  reconciliation found that the three keiro-runtime-jitsurei collection cases store a whole list that
   arrives *structurally* on the command (`B.slot @"x" =: d.x`, i.e.
   `USet ix (TInpCtorField …)`), which is fully visible to every analysis — `solveOutput`
   inverts it and `checkHiddenInputs` sees the whole list on the wire. So an opaque
@@ -102,7 +102,7 @@ implementation. Provide concise evidence.
   Boolean, silently defeating the single-valuedness/dead-edge checks. This plan therefore
   flags opaque *guard terms*, which is the precise locus of the "you think it was
   verified but it wasn't" footgun. (Verified against `src/Keiki/Symbolic.hs`
-  `translateTermSym` lines 461–462 and the Seihou files on 2026-06-06.)
+  `translateTermSym` lines 461–462 and the keiro-runtime-jitsurei files on 2026-06-06.)
 
 (More to be added during implementation.)
 
@@ -127,7 +127,7 @@ Record every decision made while working on the plan.
 - Decision: Default the new check **off** (`warnOpaqueGuards = False` in
   `defaultValidationOptions`); it is an opt-in audit lint, not a soundness error.
   Rationale: opaque guards are sometimes legitimate and intentional, and existing
-  consumers (including Seihou) assert `validateTransducer defaultValidationOptions t == []`
+  consumers (including keiro-runtime-jitsurei) assert `validateTransducer defaultValidationOptions t == []`
   — turning this on by default could newly fail those assertions, a backward-compat
   break (INV-style). Keeping it opt-in preserves the meaning of `defaultValidationOptions`
   while giving authors a one-flag way to audit "which of my guards did the solver
@@ -376,7 +376,7 @@ Add a subsection — recommended location: a new short block under
 1. **The structural-storage case is fine.** Storing a whole collection that arrives on the
    command (`B.slot @"items" =: d.items`) is a structural input read: `solveOutput` inverts
    it and `checkHiddenInputs` sees the whole list on the wire. No degradation. (This is the
-   Seihou pattern.)
+   keiro-runtime-jitsurei pattern.)
 2. **Opaque *guards* are where verification silently degrades.** A guard that lifts
    `Map.member`/`all`/`null`/`elem` through `TApp` (because keiki has no structural
    collection predicate) becomes a free Boolean to the symbolic checker, which then cannot
@@ -389,7 +389,7 @@ Add a subsection — recommended location: a new short block under
    ```
 
 3. **The honest options today.** (a) Keep the collection's invariant in the application
-   layer against the read model (what Seihou does — its only in-aggregate guard is whole-list
+   layer against the read model (what keiro-runtime-jitsurei does — its only in-aggregate guard is whole-list
    emptiness, `reg .== lit []`, which *is* structural). (b) Split a lifecycle-bearing
    sub-entity into its own scalar aggregate (the "sub-entity-as-aggregate" path), getting
    full keiki guarantees per sub-aggregate. (c) First-class collection registers (structural

@@ -79,7 +79,7 @@ here, even if it requires splitting a partially completed task into two ("done" 
       demonstrated zero-`TApp` authoring of `BlockerBoard`; showed the `solveOutput`
       (`stepOne` recoverability) and `checkHiddenInputs` (union-coverage) behavior on
       the structural shapes; wrote the FR6 Option A vs B decision (recommend **B**);
-      reconciled with the three Seihou cases (need flat-list ergonomics, not the
+      reconciled with the three keiro-runtime-jitsurei cases (need flat-list ergonomics, not the
       symbolic story); confirmed INV1–INV6 satisfiable with mechanical evidence per
       invariant (18 hspec examples, part of 322 total, 0 failures, 0 warnings). See
       the "M1 Ratification Analysis" section. **STOPPED for maintainer GO/NO-GO.**
@@ -90,7 +90,7 @@ here, even if it requires splitting a partially completed task into two ("done" 
 - [~] M2–M5 (GATED) — **NOT pursued** (NO-GO at the gate). Deferred until a real
       consumer with a genuine keyed-collection in-aggregate invariant appears; revisit
       this gate with that concrete shape (and prefer the flat-list variants identified
-      in the Seihou reconciliation). The cheap guardrail lives in EP-67 instead.
+      in the keiro-runtime-jitsurei reconciliation). The cheap guardrail lives in EP-67 instead.
         - M2 (FR1 slot kinds + FR2 `UInsert`/`UDelete`/`UAdjust`) — deferred.
         - M3 (FR3 guards + FR4 `TLookupField`) — deferred.
         - M4 (FR6 Option B status) — deferred.
@@ -114,12 +114,12 @@ implementation. Provide concise evidence.
   enumeration** of command sequences, not a generator-driven QuickCheck property.
 - The design note's top matter (Status line and the 2026-05-20 "Consumer
   reassessment") says **"No committed consumer as of 2026-05-20"** because Rei's
-  Intention withdrew. **That is now stale.** The Seihou consumer
+  Intention withdrew. **That is now stale.** The keiro-runtime-jitsurei consumer
   (`/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei`) has three verified
   whole-list-in-command cases (see Context and Orientation), reviving the design's
   motivation. M1 must reconcile the design with these concrete cases.
 
-- **M1 finding — the Seihou cases need only whole-list emptiness, not keyed
+- **M1 finding — the keiro-runtime-jitsurei cases need only whole-list emptiness, not keyed
   membership.** Spot-checking the three committed cases on 2026-06-06 confirmed all
   three are flat `[a]` slots assigned wholesale (`B.slot @"x" =: d.x`), but the
   sharper discovery is their *in-keiki guard*: `IncidentCommand/Domain/Incident.hs`
@@ -131,7 +131,7 @@ implementation. Provide concise evidence.
   committed consumer does **not** exercise per-element structural updates or
   `PMember`/`PAll` at all today; its only in-aggregate collection guard is emptiness,
   already covered. The collection feature would be an *ergonomic + future-proofing*
-  improvement for Seihou (letting it move append/remove/membership invariants back
+  improvement for keiro-runtime-jitsurei (letting it move append/remove/membership invariants back
   inside keiki structurally), not a current blocker. This materially lowers the
   urgency and argues for the cheaper FR6 Option B. (verified 2026-06-06)
 - **M1 finding — the design note's `stepOne`/`TApp` claim is stale; current code
@@ -193,12 +193,12 @@ Record every decision made while working on the plan.
   edges as explicitly "not symbolically verified" via a *named, queryable* status —
   honest about the boundary, and preserving verification for the scalar part of
   every aggregate. A later EP can upgrade specific guard forms to Option A. The
-  Seihou cases (set-like membership over `[a]`) appear to need only Option B.
+  keiro-runtime-jitsurei cases (set-like membership over `[a]`) appear to need only Option B.
   Date: 2026-06-06
 
 - Decision: Treat the design note's "no committed consumer" status as superseded by
-  the Seihou consumer.
-  Rationale: Seihou has three verified `[a]`-register cases that carry a whole
+  the keiro-runtime-jitsurei consumer.
+  Rationale: keiro-runtime-jitsurei has three verified `[a]`-register cases that carry a whole
   precomputed list on the command and store it wholesale, pushing append/remove/
   member invariants outside keiki. This is exactly the value-object-collection case
   the note was waiting for; the gate must reconcile the design with these cases.
@@ -206,7 +206,7 @@ Record every decision made while working on the plan.
 
 - GATE DECISION: **NO-GO** on the core-formalism change (FR1–FR6 / milestones M2–M5),
   choosing the **signpost-first** alternative instead.
-  Rationale: M1 established that (a) the committed consumer (Seihou) is not blocked — its
+  Rationale: M1 established that (a) the committed consumer (keiro-runtime-jitsurei) is not blocked — its
   only in-keiki collection guard is whole-list emptiness, already structural; (b) the real
   thing future consumers "trip over" is *not knowing* that an opaque whole-collection `=:`
   silently surrenders keiki's symbolic + hidden-input guarantees, which is a *discoverability*
@@ -222,7 +222,7 @@ Record every decision made while working on the plan.
   (`docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md`), under MasterPlan 14. The full
   feature (this plan's M2–M5) is **deferred, not rejected**: if a real consumer with a genuine
   keyed-collection in-aggregate invariant materializes, revisit this gate with that concrete
-  shape in hand (and prefer the flat-list variants the Seihou reconciliation identified).
+  shape in hand (and prefer the flat-list variants the keiro-runtime-jitsurei reconciliation identified).
   Date: 2026-06-06
   (Chosen by the user at the M1 ratification gate.)
 
@@ -231,7 +231,7 @@ Record every decision made while working on the plan.
 
 This section is the written analysis the ratification gate requires. It is backed by
 the runnable prototype `test/Keiki/CollectionSpike.hs` (18 hspec examples, all green).
-It records the FR6 recommendation, the Seihou reconciliation, and a per-invariant
+It records the FR6 recommendation, the keiro-runtime-jitsurei reconciliation, and a per-invariant
 satisfiability argument, and ends with the maintainer decision the gate is waiting on.
 
 
@@ -255,7 +255,7 @@ The crux (design note §5) is whether collection guards translate to z3
   and asserts a scalar guard is `Verified` while a `PMember` guard is
   `SkippedCollectionGuard "PMember"` — honest and inspectable.
 
-**Why Option B for v1.** The committed consumer (Seihou) does not exercise symbolic
+**Why Option B for v1.** The committed consumer (keiro-runtime-jitsurei) does not exercise symbolic
 verification of collection guards *at all* today — its only in-keiki collection guard
 is whole-list emptiness (`reg .== lit []`), already structural and already verifiable
 as a scalar `PEq`. So Option A's extra power buys the committed consumer nothing right
@@ -267,7 +267,7 @@ guard forms (`PMember`, `PSizeCmp`) to Option A's array theory without changing 
 surface. **Recommendation: ship Option B as the v1 contract; defer Option A.**
 
 
-### B. Seihou reconciliation — the consumer needs ergonomics, not the symbolic story
+### B. keiro-runtime-jitsurei reconciliation — the consumer needs ergonomics, not the symbolic story
 
 The three committed cases (`activeResourceIds`, `pendingReservationIds`,
 `availableServiceLines`) are **flat `[a]` value-lists**, not keyed maps: the command
@@ -280,17 +280,17 @@ Implications for the design:
 
 1. **The keyed-`Map`/`Set` vocabulary does not naturally subsume them.** They are
    ordered/flat lists with set-like membership semantics. If the feature ships, the
-   Seihou-facing surface they would actually use is the **ordered-list variants**
+   keiro-runtime-jitsurei-facing surface they would actually use is the **ordered-list variants**
    (`UAppend`/`URemoveBy`, a list-level `PMember`/`PSizeCmp`), not `UInsert`/`UAdjust`
    over a `Map`. The `BlockerBoard` worked example (a true `Map BlockerId BlockerState`
    with per-element lifecycle) remains the right *acceptance* vehicle because it
    exercises the harder keyed path, but M2's FR1/FR2 must include the flat-list
    variants for the consumer to benefit.
-2. **Option B is more than adequate for Seihou.** Because these cases currently push
+2. **Option B is more than adequate for keiro-runtime-jitsurei.** Because these cases currently push
    their invariants outside keiki entirely (opaque whole-list `=:`), even Option B's
    "explicitly unverified, but structurally visible and `checkHiddenInputs`-checked"
    status is a strict improvement over today.
-3. **The feature is not a current blocker for Seihou.** It is an ergonomic +
+3. **The feature is not a current blocker for keiro-runtime-jitsurei.** It is an ergonomic +
    correctness-surface improvement (moving append/remove/membership back inside keiki
    structurally). This lowers the urgency relative to the design note's original
    framing and supports the cheaper Option B.
@@ -338,7 +338,7 @@ spike example.
   type, using strict-spine containers.
 
 **Conclusion of the analysis:** the design note's vocabulary, with FR6 Option B and
-the flat-list variants the Seihou cases need, satisfies all six invariants; the
+the flat-list variants the keiro-runtime-jitsurei cases need, satisfies all six invariants; the
 prototype demonstrates each mechanically-checkable one. The cost is moderate and
 additive; the only formalism risk (FR6 quantifiers) is sidestepped by Option B. The
 one caveat the maintainer should weigh against GO is **urgency**: the committed
@@ -349,7 +349,7 @@ consumer is not currently blocked (§B.3), so this can also be reasonably deferr
 
 **STATUS: awaiting maintainer GO/NO-GO.** Per the gate, M2–M5 do not begin until a GO
 is recorded in the Decision Log above. A NO-GO is legitimate: collections stay
-opaque-`TApp`-only and Seihou keeps its current whole-list `=:` storage plus the §8
+opaque-`TApp`-only and keiro-runtime-jitsurei keeps its current whole-list `=:` storage plus the §8
 fallbacks. Either way, the M1 spike and this analysis are committed (additive, no core
 change).
 
@@ -364,7 +364,7 @@ Compare the result against the original purpose.
   written analysis (the "M1 Ratification Analysis" section above) deliver exactly what
   the gate asked for: a `TApp`-free authoring demonstration, the inverter/hidden-input
   behavior on structural shapes, a prototype-backed FR6 **Option B** recommendation, a
-  Seihou reconciliation (the consumer needs ergonomics + flat-list variants, not the
+  keiro-runtime-jitsurei reconciliation (the consumer needs ergonomics + flat-list variants, not the
   symbolic story), and an INV1–INV6 satisfiability argument with mechanical evidence
   for each checkable invariant. The headline finding that reframes the original vision:
   the committed consumer's only in-keiki collection guard is whole-list emptiness
@@ -569,11 +569,11 @@ cabal test jitsurei-test
 ```
 
 
-### The committed consumer — why now (the Seihou cases)
+### The committed consumer — why now (the keiro-runtime-jitsurei cases)
 
 The design note was written for Rei's Intention aggregate, which then withdrew,
 leaving "no committed consumer as of 2026-05-20". **That status is now stale.** The
-Seihou consumer at `/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei` has three
+keiro-runtime-jitsurei consumer at `/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei` has three
 verified cases of a whole list carried in a command and assigned wholesale (via the
 `=:` builder operator) to a `[a]` register slot:
 
@@ -736,7 +736,7 @@ Summarized from `docs/research/collection-registers-design.md` §4.
 The work is organized as one ratification gate (M1) followed by four gated
 implementation milestones (M2–M5). **M2–M5 do not begin until a maintainer GO is
 recorded in the Decision Log.** A NO-GO closes the plan with no change to
-`src/Keiki/`; the Seihou consumer then keeps its current opaque whole-list `=:`
+`src/Keiki/`; the keiro-runtime-jitsurei consumer then keeps its current opaque whole-list `=:`
 storage (which already works at runtime) and the design note's §8 fallbacks remain
 the path for any genuinely keyed-collection aggregate.
 
@@ -747,7 +747,7 @@ the path for any genuinely keyed-collection aggregate.
 vocabulary *without editing any file under `src/Keiki/`*, plus a written analysis
 that lets the maintainer decide GO or NO-GO. The design already exists in
 `docs/research/collection-registers-design.md`; M1 is "prototype + ratify the FR6
-option + reconcile with the now-committed Seihou consumer", not "write the design
+option + reconcile with the now-committed keiro-runtime-jitsurei consumer", not "write the design
 from scratch". This mirrors EP-47's M1 ratification gate exactly.
 
 **What will exist at the end of M1.** A new scratch/spike module under `test/` (for
@@ -755,7 +755,7 @@ example `test/Keiki/CollectionSpike.hs`), registered in `keiki.cabal`'s
 `other-modules` and in `test/Spec.hs`, that:
 
 (a) **Prototypes the structural vocabulary** for the `BlockerBoard` worked example
-   and/or the Seihou `[a]`-slot cases. Because M1 must not touch `src/Keiki/`, the
+   and/or the keiro-runtime-jitsurei `[a]`-slot cases. Because M1 must not touch `src/Keiki/`, the
    prototype models the proposed `UInsert`/`UDelete`/`UAdjust`/`TLookupField`/
    `PMember`/… as a *local* mini-AST in the spike module (or as thin wrappers that
    compile to existing constructors only for demonstration), and shows by
@@ -774,10 +774,10 @@ example `test/Keiki/CollectionSpike.hs`), registered in `keiki.cabal`'s
    `isSingleValuedSym`/`symIsBot` surface it, how a caller queries "was this edge
    verified or skipped?").
 
-(c) **Reconciles with the three Seihou cases.** Determine whether the keyed
+(c) **Reconciles with the three keiro-runtime-jitsurei cases.** Determine whether the keyed
    Map/Set vocabulary subsumes the three `[a]` membership cases or whether flat
    ordered-list variants (`UAppend`/`URemoveBy`, `PMember` over a list) suffice. The
-   working hypothesis (to be confirmed) is that the Seihou cases are *set-like
+   working hypothesis (to be confirmed) is that the keiro-runtime-jitsurei cases are *set-like
    membership over `[a]`* — flat lists, not keyed maps — and that Option B is
    adequate for them because they currently push their invariants outside keiki
    entirely, so any structural, queryable status is a strict improvement.
@@ -798,7 +798,7 @@ cabal test keiki-test
 **Acceptance for M1.** The spike module compiles and its hspec cases pass,
 demonstrating: zero-`TApp` authoring of the prototype aggregate; the inverter and
 hidden-input behavior on the structural shapes; and a written FR6 recommendation,
-Seihou reconciliation, and INV1–INV6 satisfiability argument captured *in this plan*
+keiro-runtime-jitsurei reconciliation, and INV1–INV6 satisfiability argument captured *in this plan*
 (Surprises & Discoveries and a new analysis subsection) plus, optionally, a short
 research-note addendum. **Then STOP.** Record the maintainer GO or NO-GO in the
 Decision Log before any M2 work begins.
@@ -814,7 +814,7 @@ adapter). A GO unlocks M2–M5. Record the decision verbatim with rationale and 
 **Scope.** Behind a recorded GO, add to `src/Keiki/Core.hs`: the FR1 collection slot
 kind machinery (so a slot's element schema is known to be a keyed collection), and
 the FR2 structural `Update` constructors `UInsert`/`UDelete`/`UAdjust` (plus
-ordered-list `UAppend`/`URemoveBy` if M1 found the Seihou cases need them), each
+ordered-list `UAppend`/`URemoveBy` if M1 found the keiro-runtime-jitsurei cases need them), each
 carrying **terms** not closures. Extend `runUpdate` (line 811) with arms for the new
 constructors that re-evaluate forward against the current register file and command
 (INV1). Ensure they compose under the `Disjoint`-checked `combine` (two writes to the
@@ -966,7 +966,7 @@ Run everything from the repo root `/Users/shinzui/Keikaku/bokuno/keiki`.
    (`checkHiddenInputs`), ~1309 (`updateReadsInput`); `src/Keiki/Symbolic.hs` lines
    ~432 (`translateTermSym`), ~601 (`symIsBot`), ~620 (`isSingleValuedSym`);
    `src/Keiki/NoThunks.hs`.
-3. Spot-check the Seihou cases in
+3. Spot-check the keiro-runtime-jitsurei cases in
    `/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei` (the three files named in
    Context and Orientation) to confirm they remain whole-list `=:` assignments.
 4. Create `test/Keiki/CollectionSpike.hs`; register it in `keiki.cabal`
@@ -980,7 +980,7 @@ Run everything from the repo root `/Users/shinzui/Keikaku/bokuno/keiki`.
 
    Expected: the suite compiles and passes, with the spike's cases demonstrating the
    prototype vocabulary (zero `TApp`) and the inverter/hidden-input behavior.
-5. Write the FR6 decision, the Seihou reconciliation, and the INV1–INV6
+5. Write the FR6 decision, the keiro-runtime-jitsurei reconciliation, and the INV1–INV6
    satisfiability argument into this plan (Surprises & Discoveries plus a new
    analysis subsection), then **STOP** and record the maintainer GO/NO-GO in the
    Decision Log.
@@ -1113,7 +1113,7 @@ Intention: intention_01ktensqv9ecmv5cd5jrbcfej7
   `docs/masterplans/13-...md`). Carries over FR1–FR6 and INV1–INV6 from
   `docs/research/collection-registers-design.md`, recommends FR6 Option B (queryable
   unverified status), redirects the consumer audit's flat-list proposal to the
-  keyed-collection vocabulary, and records that the Seihou consumer revives the
+  keyed-collection vocabulary, and records that the keiro-runtime-jitsurei consumer revives the
   design's motivation (the note's "no committed consumer" status is now stale). Code
   sites re-verified against `src/Keiki/Core.hs` and `src/Keiki/Symbolic.hs` on
   2026-06-06; both test suites confirmed hspec-only (reconstitute "property" written
