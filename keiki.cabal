@@ -72,6 +72,7 @@ library
     Keiki.Render.Markdown
     Keiki.Render.Mermaid
     Keiki.Render.Pretty
+    Keiki.Render.Validate
     Keiki.Shape
     Keiki.Symbolic
 
@@ -123,6 +124,7 @@ test-suite keiki-test
     Keiki.Render.MarkdownSpec
     Keiki.Render.MermaidSpec
     Keiki.Render.PrettySpec
+    Keiki.Render.ValidateSpec
     Keiki.ShapeSpec
     Keiki.StepEitherSpec
     Keiki.StrongSpec

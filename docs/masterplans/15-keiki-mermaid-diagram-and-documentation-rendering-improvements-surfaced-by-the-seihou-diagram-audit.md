@@ -153,7 +153,7 @@ namespace is their natural home.
 | 63 | Multiline Mermaid edge labels and multi-event output layout controls | docs/plans/63-multiline-mermaid-edge-labels-and-multi-event-output-layout-controls.md | None | EP-61 | Complete |
 | 64 | Stable human-friendly Mermaid state IDs and display labels | docs/plans/64-stable-human-friendly-mermaid-state-ids-and-display-labels.md | None | None | Complete |
 | 65 | Mermaid diagram atlas sections and Markdown marker replacement helper | docs/plans/65-mermaid-diagram-atlas-sections-and-markdown-marker-replacement-helper.md | None | None | Complete |
-| 66 | Pure Mermaid diagram and atlas validation helpers | docs/plans/66-pure-mermaid-diagram-and-atlas-validation-helpers.md | None | EP-64 | Not Started |
+| 66 | Pure Mermaid diagram and atlas validation helpers | docs/plans/66-pure-mermaid-diagram-and-atlas-validation-helpers.md | None | EP-64 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-61).

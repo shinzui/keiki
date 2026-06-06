@@ -27,6 +27,7 @@ import Keiki.Render.InspectorSpec qualified
 import Keiki.Render.MarkdownSpec qualified
 import Keiki.Render.MermaidSpec qualified
 import Keiki.Render.PrettySpec qualified
+import Keiki.Render.ValidateSpec qualified
 import Keiki.ShapeSpec qualified
 import Keiki.StepEitherSpec qualified
 import Keiki.StrongSpec qualified
@@ -64,6 +65,7 @@ main = hspec $ do
     describe "Keiki.Render.Markdown (EP-65)" Keiki.Render.MarkdownSpec.spec
     describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
     describe "Keiki.Render.Pretty (EP-61)" Keiki.Render.PrettySpec.spec
+    describe "Keiki.Render.Validate (EP-66)" Keiki.Render.ValidateSpec.spec
     describe "Keiki.Shape (EP-36 M1)" Keiki.ShapeSpec.spec
     describe "Keiki.Symbolic" Keiki.SymbolicSpec.spec
     describe "Keiki.CollectionSpike (EP-60 M1 ratification gate)" Keiki.CollectionSpike.spec

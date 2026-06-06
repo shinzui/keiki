@@ -55,20 +55,20 @@ This section must always reflect the actual current state of the work.
 
 Milestone 1 (single-diagram validator):
 
-- [ ] Create `src/Keiki/Render/Validate.hs` with module header, `OverloadedStrings`, and exports.
-- [ ] Define `MermaidValidationOptions` + `defaultMermaidValidationOptions`.
-- [ ] Define `MermaidValidationWarning` (all five constructors) deriving `Eq`, `Show`.
-- [ ] Implement `validateMermaidDiagram` covering missing-header, empty, label-too-long, and suspicious-unescaped-char checks.
-- [ ] Add `Keiki.Render.Validate` to `keiki.cabal` `library: exposed-modules`.
-- [ ] Create `test/Keiki/Render/ValidateSpec.hs`; add it to `keiki.cabal` test-suite `other-modules` and import + `describe` it in `test/Spec.hs`.
-- [ ] `cabal build keiki` and `cabal test keiki-test` pass.
+- [x] Create `src/Keiki/Render/Validate.hs` with module header and exports. (Relies on the project-wide `OverloadedStrings` default extension rather than a per-module pragma.)
+- [x] Define `MermaidValidationOptions` + `defaultMermaidValidationOptions`.
+- [x] Define `MermaidValidationWarning` (all five constructors) deriving `Eq`, `Show`.
+- [x] Implement `validateMermaidDiagram` covering missing-header, empty, label-too-long, and suspicious-unescaped-char checks.
+- [x] Add `Keiki.Render.Validate` to `keiki.cabal` `library: exposed-modules`.
+- [x] Create `test/Keiki/Render/ValidateSpec.hs`; add it to `keiki.cabal` test-suite `other-modules` and import + `describe` it in `test/Spec.hs`.
+- [x] `cabal build keiki` and `cabal test keiki-test` pass.
 
 Milestone 2 (duplicate-ID detection + atlas):
 
-- [ ] Implement duplicate-state-ID detection in `validateMermaidDiagram` (aligned with EP-64's `state "…" as <id>` emission).
-- [ ] Implement `validateMermaidAtlas` (locate `` ```mermaid `` blocks, run the diagram validator per block, aggregate in document order).
-- [ ] Extend `ValidateSpec` with a duplicate-id document and a multi-section atlas.
-- [ ] `cabal test keiki-test` passes; sample atlas warnings reproduced in this plan.
+- [x] Implement duplicate-state-ID detection in `validateMermaidDiagram` (aligned with EP-64's `state "…" as <id>` emission). Implemented directly (no stub stage), so the `foldl'`/`Data.Map.Strict` imports are used from the first commit.
+- [x] Implement `validateMermaidAtlas` (locate `` ```mermaid `` blocks, run the diagram validator per block, aggregate in document order).
+- [x] Extend `ValidateSpec` with a duplicate-id document and a multi-section atlas. (Plus a `<br/>`-exemption case.)
+- [x] `cabal test keiki-test` passes; sample atlas warnings reproduced in this plan. (372 examples, 0 failures.)
 
 
 ## Surprises & Discoveries
@@ -76,7 +76,24 @@ Milestone 2 (duplicate-ID detection + atlas):
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The two milestones were collapsed into a single implementation: the duplicate-ID detection and
+  its `foldl'`/`Data.Map.Strict` imports were written directly rather than via the planned M1 stub
+  (`duplicateStateIdWarnings _ = []`). The stub existed only to keep M1 free of the two imports for
+  independent shippability; since both milestones land together here, the stub-then-fill dance and
+  its import churn were unnecessary.
+- `MermaidValidationWarning`'s per-constructor record fields (`warnLength`, `warnStateId`,
+  `warnChar` each in only one constructor) trip `-Wpartial-fields` from keiki's shared `warnings`
+  cabal stanza. This is *accepted, not suppressed*, because the sibling `validateTransducer` warning
+  type `Keiki.Core.TransducerValidationWarning` (`src/Keiki/Core.hs:1608`) uses the identical
+  sum-of-records shape with partial fields and likewise carries no `-Wno-partial-fields` pragma. The
+  warnings are non-fatal (there is no `-Werror`), and the record fields are what make the warnings
+  directly assertable with `shouldBe` — matching the EP-56 house style was the deciding factor.
+- A real fixture (`Cmd / "quoted"`) contains *two* denylisted `"` characters, so it would yield two
+  `SuspiciousUnescapedChar` warnings, not one (the rule is one warning per denylisted `Char`, left to
+  right). The spec therefore uses a single-suspicious-char label (`Cmd / a|b`) for the clean
+  one-warning assertion, plus a dedicated `<br/>`-exemption case (`Cmd / A<br/>B` → `[]`) to prove
+  the deliberate-tag carve-out works. This matches the plan's own note that the expected list must
+  track the count of denylisted characters in the chosen fixture.
 
 
 ## Decision Log
@@ -148,7 +165,30 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Delivered as designed: a downstream test can now call
+`validateMermaidDiagram defaultMermaidValidationOptions renderedText` (or `validateMermaidAtlas`
+over a whole atlas) and get a deterministic, document-ordered list of structured warnings — purely,
+with no IO/SMT and no new dependency.
+
+- **New module** `src/Keiki/Render/Validate.hs` exports `MermaidValidationOptions`,
+  `defaultMermaidValidationOptions`, `MermaidValidationWarning` (all five constructors,
+  `Eq`/`Show`), `validateMermaidDiagram`, and `validateMermaidAtlas`. Written by hand against
+  `text` + `containers`; no source outside this module and the three registration edits was touched,
+  so no existing golden could move.
+- **Five structural-heuristic checks**, in document order: missing `stateDiagram-v2` header, empty
+  diagram, over-length transition label (`maxLabelLength`), suspicious unescaped char in a label
+  (`suspiciousChars`, with the `<br/>` tag exempt), and duplicate declared state id. The
+  duplicate-id check keys off exactly the `state "<display>" as <id>` declaration lines EP-64 emits
+  and deliberately ignores endpoint recurrence — the shared-id contract with EP-64.
+- **Tests** (`test/Keiki/Render/ValidateSpec.hs`): a clean diagram → `[]`, one crafted input per
+  warning, the `<br/>`-exemption carve-out, and a two-section atlas aggregating in block order. Full
+  suite green at **372 examples, 0 failures**.
+- **Honest scope.** These are line-scanning heuristics, not a Mermaid parser (per the parent
+  MasterPlan's out-of-scope list); the module header and this plan say so plainly. Known limitation:
+  false negatives and false positives are possible — they are a cheap first line of defense for
+  downstream unit tests, not a validity guarantee.
+- **Gap (out of scope, unchanged):** wiring these checks into Seihou's own diagram-regeneration test
+  is downstream work in `keiro-runtime-jitsurei`. EP-66 completes MasterPlan 15.
 
 
 ## Context and Orientation
