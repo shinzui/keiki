@@ -6,6 +6,7 @@ import Keiki.BuilderSpec qualified
 import Keiki.BuilderSpike qualified
 import Keiki.CategorySpec qualified
 import Keiki.ChoiceSpec qualified
+import Keiki.CollectionSpike qualified
 import Keiki.CompositionAlternativeSpec qualified
 import Keiki.CompositionFeedback1Spec qualified
 import Keiki.CompositionMultiEventSpec qualified
@@ -59,4 +60,5 @@ main = hspec $ do
     describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
     describe "Keiki.Shape (EP-36 M1)" Keiki.ShapeSpec.spec
     describe "Keiki.Symbolic" Keiki.SymbolicSpec.spec
+    describe "Keiki.CollectionSpike (EP-60 M1 ratification gate)" Keiki.CollectionSpike.spec
     describe "Keiki.Core.validateTransducer (EP-56)" Keiki.ValidationSpec.spec

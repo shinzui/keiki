@@ -128,7 +128,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Complete |
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Complete |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
-| 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Not Started |
+| 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-55).

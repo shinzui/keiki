@@ -97,6 +97,7 @@ test-suite keiki-test
     Keiki.BuilderSpike
     Keiki.CategorySpec
     Keiki.ChoiceSpec
+    Keiki.CollectionSpike
     Keiki.CompositionAlternativeSpec
     Keiki.CompositionFeedback1Spec
     Keiki.CompositionMultiEventSpec

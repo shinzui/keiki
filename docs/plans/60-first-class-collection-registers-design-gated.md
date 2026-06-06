@@ -74,15 +74,19 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 here, even if it requires splitting a partially completed task into two ("done" vs.
 "remaining"). This section must always reflect the actual current state of the work.
 
-- [ ] M1 (design + ratification gate) — prototype the structural collection
-      vocabulary in a scratch module under `test/` *without touching* `src/Keiki/`;
-      demonstrate zero-`TApp` authoring of `BlockerBoard` and/or the Seihou `[a]`
-      cases; show `solveOutput` and `checkHiddenInputs` behave as designed; write
-      the FR6 Option A vs B decision with evidence; reconcile with the three Seihou
-      consumer cases; confirm INV1–INV6 are all satisfiable. **STOP for maintainer
-      GO/NO-GO.**
+- [x] M1 (design + ratification gate) — prototyped the structural collection
+      vocabulary in `test/Keiki/CollectionSpike.hs` *without touching* `src/Keiki/`;
+      demonstrated zero-`TApp` authoring of `BlockerBoard`; showed the `solveOutput`
+      (`stepOne` recoverability) and `checkHiddenInputs` (union-coverage) behavior on
+      the structural shapes; wrote the FR6 Option A vs B decision (recommend **B**);
+      reconciled with the three Seihou cases (need flat-list ergonomics, not the
+      symbolic story); confirmed INV1–INV6 satisfiable with mechanical evidence per
+      invariant (18 hspec examples, part of 322 total, 0 failures, 0 warnings). See
+      the "M1 Ratification Analysis" section. **STOPPED for maintainer GO/NO-GO.**
+      (2026-06-06)
 - [ ] GATE: record maintainer GO or NO-GO in the Decision Log. (M2+ blocked until a
       GO is recorded; a NO-GO closes the plan — consumer uses §8 fallbacks.)
+      **← awaiting decision**
 - [ ] M2 (GATED) — collection slot kinds (FR1) + structural `Update` constructors
       `UInsert`/`UDelete`/`UAdjust` (FR2), with derived replay (INV1) and NoThunks
       discipline (INV6).
@@ -118,7 +122,41 @@ implementation. Provide concise evidence.
   whole-list-in-command cases (see Context and Orientation), reviving the design's
   motivation. M1 must reconcile the design with these concrete cases.
 
-(More to be added during implementation.)
+- **M1 finding — the Seihou cases need only whole-list emptiness, not keyed
+  membership.** Spot-checking the three committed cases on 2026-06-06 confirmed all
+  three are flat `[a]` slots assigned wholesale (`B.slot @"x" =: d.x`), but the
+  sharper discovery is their *in-keiki guard*: `IncidentCommand/Domain/Incident.hs`
+  lines 378 and 428 guard with `B.requireGuard (B.reg @"activeResourceIds" .== lit [])`
+  — a whole-list **emptiness** check, which is *already structural today* (a `PEq`
+  over a list literal), needing no collection vocabulary at all. The hospital cases
+  (`Capacity.hs`, `Hospital.hs`) likewise store the whole precomputed list and push
+  append/remove/membership entirely outside keiki. **Consequence for the gate:** the
+  committed consumer does **not** exercise per-element structural updates or
+  `PMember`/`PAll` at all today; its only in-aggregate collection guard is emptiness,
+  already covered. The collection feature would be an *ergonomic + future-proofing*
+  improvement for Seihou (letting it move append/remove/membership invariants back
+  inside keiki structurally), not a current blocker. This materially lowers the
+  urgency and argues for the cheaper FR6 Option B. (verified 2026-06-06)
+- **M1 finding — the design note's `stepOne`/`TApp` claim is stale; current code
+  returns `Just []`, not `Nothing`.** The note's §1 point 2 says `gatherInpEntries`/
+  `stepOne` "return `Nothing` for `TApp1` and `TApp2`". The *current* code
+  (`src/Keiki/Core.hs` lines 1349–1359, verified 2026-06-06) returns `Just []` for
+  `TApp1`/`TApp2`/`TArith` — they are skipped and verified forward by EP-47's
+  recompute-and-verify, contributing no command information but **not** breaking the
+  gather. The EP-60 plan's Context section already reflects the current behavior; the
+  spike models it faithfully (`stepOneSlots` never returns `Nothing`). The real INV2
+  distinction is therefore *visibility* (register-recoverable vs analysis-blind
+  closure), not `Just`-vs-`Nothing`. FR4's `TLookupField` must classify as
+  register-recoverable (`FromRegisters` in the spike), joining `TReg`. (verified
+  2026-06-06)
+- **M1 deliverable — the ratification spike compiles and passes.**
+  `test/Keiki/CollectionSpike.hs` (18 hspec examples, part of the 322-example
+  `keiki-test` run, 0 failures, 0 warnings) models the FR1–FR6 vocabulary as a local
+  mini-AST and demonstrates: zero-`TApp` authoring of `BlockerBoard`; INV1 derived
+  replay matching a reference oracle; INV2 `TLookupField` joining the structural side;
+  INV3 flagging a silent ε-edge insert while passing an on-wire insert; INV4 static
+  output arity; INV6 forced long replay; and FR6 Option B's named, queryable
+  `SkippedCollectionGuard` status. No `src/Keiki/` file was touched. (2026-06-06)
 
 
 ## Decision Log
@@ -172,12 +210,151 @@ Record every decision made while working on the plan.
 (Add the GATE decision — GO or NO-GO — here when M1 review concludes.)
 
 
+## M1 Ratification Analysis (the GO/NO-GO basis)
+
+This section is the written analysis the ratification gate requires. It is backed by
+the runnable prototype `test/Keiki/CollectionSpike.hs` (18 hspec examples, all green).
+It records the FR6 recommendation, the Seihou reconciliation, and a per-invariant
+satisfiability argument, and ends with the maintainer decision the gate is waiting on.
+
+
+### A. FR6 decision — recommend **Option B** (graceful, queryable degradation)
+
+The crux (design note §5) is whether collection guards translate to z3
+(`src/Keiki/Symbolic.hs`).
+
+- **Option A (full symbolic).** Translate `PMember`/`PNotMember`/`PSizeCmp` to z3
+  array/finite-set theory and `PAll`/`PAny` to quantifiers. Highest value (collection
+  lifecycle guards become machine-verified single-valued), but `PAll`/`PAny`
+  quantifiers materially exceed keiki's current quantifier-free predicate set
+  (`PEq`/`PInCtor`/`PCmp` + Boolean connectives) and carry a real risk of making
+  `isSingleValuedSym` undecidable or impractically slow.
+- **Option B (recommended).** Keep collection guards runtime-evaluable and
+  replay-sound, but have `translateTermSym`/`translatePred` classify a
+  collection-guarded edge via a **named, queryable status** rather than the *current*
+  silent `SBV.free "neq"`/`"app1"` free Boolean (which a caller cannot distinguish
+  from a real verification). The scalar part of every aggregate keeps full
+  verification. The spike models this as `SymStatus = Verified | SkippedCollectionGuard String`
+  and asserts a scalar guard is `Verified` while a `PMember` guard is
+  `SkippedCollectionGuard "PMember"` — honest and inspectable.
+
+**Why Option B for v1.** The committed consumer (Seihou) does not exercise symbolic
+verification of collection guards *at all* today — its only in-keiki collection guard
+is whole-list emptiness (`reg .== lit []`), already structural and already verifiable
+as a scalar `PEq`. So Option A's extra power buys the committed consumer nothing right
+now, while its quantifier risk could destabilize the single-valuedness gate that the
+*scalar* aggregates (all of `jitsurei`) depend on. Option B is strictly honest (no
+silent opaque pass — the audit's own bar, strengthened to *queryable*), preserves
+scalar verification, and leaves a clean upgrade path: a later EP can lift specific
+guard forms (`PMember`, `PSizeCmp`) to Option A's array theory without changing the
+surface. **Recommendation: ship Option B as the v1 contract; defer Option A.**
+
+
+### B. Seihou reconciliation — the consumer needs ergonomics, not the symbolic story
+
+The three committed cases (`activeResourceIds`, `pendingReservationIds`,
+`availableServiceLines`) are **flat `[a]` value-lists**, not keyed maps: the command
+carries the whole precomputed list and the aggregate stores it wholesale via `=:`.
+Their only in-aggregate collection guard is **emptiness** (`reg .== lit []`), already
+structural today. Append/remove/membership invariants live *outside* keiki, in the
+application that builds the list before issuing the command.
+
+Implications for the design:
+
+1. **The keyed-`Map`/`Set` vocabulary does not naturally subsume them.** They are
+   ordered/flat lists with set-like membership semantics. If the feature ships, the
+   Seihou-facing surface they would actually use is the **ordered-list variants**
+   (`UAppend`/`URemoveBy`, a list-level `PMember`/`PSizeCmp`), not `UInsert`/`UAdjust`
+   over a `Map`. The `BlockerBoard` worked example (a true `Map BlockerId BlockerState`
+   with per-element lifecycle) remains the right *acceptance* vehicle because it
+   exercises the harder keyed path, but M2's FR1/FR2 must include the flat-list
+   variants for the consumer to benefit.
+2. **Option B is more than adequate for Seihou.** Because these cases currently push
+   their invariants outside keiki entirely (opaque whole-list `=:`), even Option B's
+   "explicitly unverified, but structurally visible and `checkHiddenInputs`-checked"
+   status is a strict improvement over today.
+3. **The feature is not a current blocker for Seihou.** It is an ergonomic +
+   correctness-surface improvement (moving append/remove/membership back inside keiki
+   structurally). This lowers the urgency relative to the design note's original
+   framing and supports the cheaper Option B.
+
+
+### C. INV1–INV6 satisfiability — all six are satisfiable by the design
+
+Each invariant is argued below and, where mechanically checkable, demonstrated by a
+spike example.
+
+- **INV1 (derived replay).** `runCUpdate` re-evaluates a structural update *forward*
+  against the current board and the command recovered by `solveOutput` — no
+  hand-written `apply`. Spike: `reconstitute` over eight command sequences matches an
+  independent reference oracle. *Satisfiable.* In the real implementation this is new
+  arms of `runUpdate` (`src/Keiki/Core.hs` line 885) for `UInsert`/`UDelete`/`UAdjust`.
+- **INV2 (`solveOutput` invertibility).** `TLookupField` reads a collection element
+  from the register file, so it is register-recoverable and must join `TReg` on the
+  structural side of `stepOne` (return `Just []`), never the would-be-`Nothing` opaque
+  side. Spike: `classify (KLookup …) == FromRegisters` (identical to a literal read)
+  and `stepOneSlots (KLookup …) == Just []`, distinct from the `OpaqueRecompute`
+  closure. *Satisfiable.* Real change: a `TLookupField` arm in `stepOne`
+  (`src/Keiki/Core.hs` lines 1348–1359) returning `Just []`.
+- **INV3 (`checkHiddenInputs` understands collection updates).** `updateReadsInput`
+  (`src/Keiki/Core.hs` line 1514) must recurse into the new collection `Update`
+  constructors' terms, and the union-coverage walk must treat a silent collection
+  mutation like a silent scalar one. Spike: `checkHiddenEdge` flags a `[]`-output
+  (ε-edge) insert and a partially-covered insert, while passing an insert whose
+  element data is fully on the wire. *Satisfiable.* This is the soft-dependency seam
+  with EP-56 (already Complete): EP-56 left its warning machinery extensible, so the
+  collection arms are additive (`src/Keiki/Core.hs` Surprises in MasterPlan 14).
+- **INV4 (static output arity).** A per-element mutation is a *register update*, never
+  a source of output multiplicity; each edge's `output` list length is fixed at
+  construction. Spike: `outputArity` is a function of the command only, constant `1`
+  per edge, independent of board contents. *Satisfiable* and structurally enforced by
+  the existing `[OutTerm rs ci co]` shape (no change needed; it is a non-goal to widen
+  to data-dependent length).
+- **INV5 (backward compatibility).** All new constructors are additive; no existing
+  signature changes. Spike: real keiki `evalTerm (TLit 42)` still evaluates unchanged;
+  all 304 pre-existing examples stay green alongside the 18 new ones. *Satisfiable.*
+- **INV6 (NoThunks discipline).** Collection slot writes must force enough structure
+  to avoid thunk towers. Spike: a 2000-command replay over `Data.Map.Strict` (strict
+  in values) forces fully (the summed severities are computed, proving no bottom/leak).
+  *Satisfiable.* Real change: extend `setSlotN`'s WHNF discipline and the
+  `NoThunks (RegFile rs)` instance (`src/Keiki/NoThunks.hs`) to the collection element
+  type, using strict-spine containers.
+
+**Conclusion of the analysis:** the design note's vocabulary, with FR6 Option B and
+the flat-list variants the Seihou cases need, satisfies all six invariants; the
+prototype demonstrates each mechanically-checkable one. The cost is moderate and
+additive; the only formalism risk (FR6 quantifiers) is sidestepped by Option B. The
+one caveat the maintainer should weigh against GO is **urgency**: the committed
+consumer is not currently blocked (§B.3), so this can also be reasonably deferred.
+
+
+### D. The decision
+
+**STATUS: awaiting maintainer GO/NO-GO.** Per the gate, M2–M5 do not begin until a GO
+is recorded in the Decision Log above. A NO-GO is legitimate: collections stay
+opaque-`TApp`-only and Seihou keeps its current whole-list `=:` storage plus the §8
+fallbacks. Either way, the M1 spike and this analysis are committed (additive, no core
+change).
+
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+- **M1 (ratification gate) — complete, awaiting decision.** The prototype
+  (`test/Keiki/CollectionSpike.hs`, 18 green examples, no `src/Keiki/` change) and the
+  written analysis (the "M1 Ratification Analysis" section above) deliver exactly what
+  the gate asked for: a `TApp`-free authoring demonstration, the inverter/hidden-input
+  behavior on structural shapes, a prototype-backed FR6 **Option B** recommendation, a
+  Seihou reconciliation (the consumer needs ergonomics + flat-list variants, not the
+  symbolic story), and an INV1–INV6 satisfiability argument with mechanical evidence
+  for each checkable invariant. The headline finding that reframes the original vision:
+  the committed consumer's only in-keiki collection guard is whole-list emptiness
+  (already structural), so this feature is an ergonomic/correctness-surface improvement
+  rather than a current blocker — which both supports the cheaper Option B and means a
+  NO-GO/deferral has a low consumer cost. **Next step: maintainer records GO or NO-GO
+  in the Decision Log.** (M2–M5 outcomes to be filled if a GO is recorded.)
 
 
 ## Context and Orientation
