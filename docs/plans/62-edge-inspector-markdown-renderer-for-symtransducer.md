@@ -53,20 +53,20 @@ This section must always reflect the actual current state of the work.
 
 Milestone 1 (core inspector + golden):
 
-- [ ] Create `src/Keiki/Render/Inspector.hs` with `EdgeInspectorOptions`, `defaultEdgeInspectorOptions`, and `renderEdgeInspector`.
-- [ ] Decide and record: reuse vs replicate the Mermaid helpers (`edgeInputName`, `edgeOutputName`, `writtenSlots`, `guardSummary`).
-- [ ] Add `Keiki.Render.Inspector` to `keiki.cabal` `library: exposed-modules`.
-- [ ] Confirm the library builds: `cabal build keiki`.
-- [ ] Create `test/Keiki/Render/InspectorSpec.hs` with a golden over `Keiki.Fixtures.UserRegistration.userReg`.
-- [ ] Add `Keiki.Render.InspectorSpec` to `keiki.cabal` `test-suite keiki-test: other-modules`.
-- [ ] Add the import + `describe` for the inspector spec to `test/Spec.hs`.
-- [ ] Confirm the suite passes: `cabal test keiki-test`.
+- [x] Create `src/Keiki/Render/Inspector.hs` with `EdgeInspectorOptions`, `defaultEdgeInspectorOptions`, and `renderEdgeInspector`. (2026-06-06)
+- [x] Decide and record: reuse vs replicate the Mermaid helpers. Reused exported `edgeInputName`; defined a local Markdown-safe `outputName` (not `edgeOutputName`, which emits `<br/>` for 3+); replicated the unexported `guardSummary`/`writtenSlots`. (2026-06-06)
+- [x] Add `Keiki.Render.Inspector` to `keiki.cabal` `library: exposed-modules`. (2026-06-06)
+- [x] Confirm the library builds: `cabal build keiki`. (2026-06-06)
+- [x] Create `test/Keiki/Render/InspectorSpec.hs` with a golden over `Keiki.Fixtures.UserRegistration.userReg`. (2026-06-06)
+- [x] Add `Keiki.Render.InspectorSpec` to `keiki.cabal` `test-suite keiki-test: other-modules`. (2026-06-06)
+- [x] Add the import + `describe` for the inspector spec to `test/Spec.hs`. (2026-06-06)
+- [x] Confirm the suite passes: `cabal test keiki-test` (346 examples, 0 failures). (2026-06-06)
 
 Milestone 2 (pretty guard + output-field terms):
 
-- [ ] Wire `includePrettyGuard` to `Keiki.Render.Pretty.prettyPred` (or no-op if EP-61 not yet merged — see fallback below).
-- [ ] Wire `includeOutputFields` to `Keiki.Render.Pretty.prettyTerm`, rendering each output field's term positionally.
-- [ ] Add golden cases that exercise both options; confirm the full suite passes.
+- [x] Wire `includePrettyGuard` to `Keiki.Render.Pretty.prettyPred` (EP-61 is merged, so done directly, not deferred). (2026-06-06)
+- [x] Wire `includeOutputFields` to `Keiki.Render.Pretty.prettyTerm`, rendering each output field's term positionally, grouped by output constructor. (2026-06-06)
+- [x] Add golden cases that exercise both options; full suite passes (346 examples, 0 failures). (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -74,7 +74,29 @@ Milestone 2 (pretty guard + output-field terms):
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- EP-61 was already merged when this plan ran, so M1 and M2 were implemented together
+  in one pass; the EP-61 fallback path (ship M1 with the pretty options as no-ops) was
+  never needed. Both `includePrettyGuard` and `includeOutputFields` reuse
+  `Keiki.Render.Pretty` (`prettyPred`/`prettyTerm`) directly, exactly as the
+  Integration Points require.
+- The `includeOutputFields` rendering is more informative than the plan's prose
+  predicted, because `prettyTerm` distinguishes the two term sources. For `userReg`'s
+  `ConfirmAccount -> Confirmed` edge the `AccountConfirmed` event's fields render as
+  `field 0: email; field 1: ConfirmAccount.confirmCode; field 2: ConfirmAccount.at` —
+  field 0 is a *register* read (`email`, no constructor prefix), while fields 1–2 are
+  *input-field* reads (`ConfirmAccount.<field>`). So the inspector visibly shows which
+  output fields come from stored state vs. the incoming command — a free benefit of
+  reusing the EP-61 pretty-printer.
+- Confirmed the `WireCtor`-has-no-field-names limitation in the rendered output: every
+  output field is labelled `field 0`, `field 1`, … positionally, never by a wire field
+  name, because `WireCtor` carries only `wcName` (`src/Keiki/Core.hs:479-483`). This is
+  exactly the Decision Log / MasterPlan-15 finding, now visible in the golden.
+- Chose a local `outputName` over reusing the exported `edgeOutputName`: the latter
+  joins three-or-more outputs with the Mermaid diagram line-break `<br/>`
+  (`src/Keiki/Render/Mermaid.hs:600`), which would be wrong inside a Markdown bullet.
+  The local version joins all multi-output cases with `"; "`. For `userReg` (max two
+  outputs per edge) the rendered bytes are identical either way, but the local version
+  is Markdown-correct for transducers with 3+ outputs per edge.
 
 
 ## Decision Log
@@ -111,12 +133,16 @@ Record every decision made while working on the plan.
   in its Surprises section, lines 263-265.)
   Date: 2026-06-06
 
-- Decision: (to be confirmed during M1) Reuse vs replicate the four Mermaid helper functions.
-  Rationale: see the "Reuse-vs-replicate" subsection under Plan of Work for the exact analysis; the
-  implementer records the chosen path here (the recommendation is to widen the Mermaid export list
-  additively for `edgeInputName`/`edgeOutputName`, which are pure and already exported, and to
-  replicate the tiny `writtenSlots` and `guardSummary` helpers locally because they are NOT exported
-  and replication is two short total functions).
+- Decision: (confirmed during M1) Reuse vs replicate the Mermaid helpers — final choice:
+  **import `edgeInputName`** (already exported, pure), **replicate `guardSummary` and
+  `writtenSlots`** locally (they are not exported; each is a short total function), and **do not
+  reuse `edgeOutputName`** — instead define a local `outputName` that joins multi-output edges with
+  `"; "` rather than the Mermaid `<br/>` (a diagram-only line break that would corrupt a Markdown
+  bullet for 3+ outputs).
+  Rationale: this keeps the inspector self-contained, leaves `Keiki.Render.Mermaid` completely
+  untouched (so its load-bearing byte-identity is never at risk), and makes the output
+  Markdown-correct for any edge fan-out. The two replicated helpers walk fixed ASTs and are unlikely
+  to drift; they are kept byte-identical to `Mermaid.hs:649-652` / `Mermaid.hs:662-673`.
   Date: 2026-06-06
 
 - Decision: Soft-depend on EP-61
@@ -138,7 +164,37 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-62 is complete; M1 and M2 landed together (EP-61 was already merged). Full suite is
+green at 346 examples, 0 failures.
+
+- **Delivered.** `src/Keiki/Render/Inspector.hs` exports `EdgeInspectorOptions`,
+  `defaultEdgeInspectorOptions`, and `renderEdgeInspector`. Calling
+  `renderEdgeInspector defaultEdgeInspectorOptions userReg` produces a deterministic
+  Markdown document: a `# Edge inspector` title, a `### <state>` section per source
+  state with outgoing edges (in `[minBound .. maxBound]` order; states with no edges,
+  like `Deleted`, produce no section), and one bullet block per edge showing source →
+  target, 0-based edge index, input constructor, output constructor(s), structural
+  guard, and written slots. The ε-edge renders `ε`; the self-loop and delete edge carry
+  indices 1 and 2 straight from `edgesOut` order.
+- **The two pretty options work** by reusing `Keiki.Render.Pretty`:
+  `includePrettyGuard` adds a `guard (pretty)` bullet beside the structural one (e.g.
+  `(ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)`), and
+  `includeOutputFields` adds an `output fields` bullet listing each output's field terms
+  positionally, grouped by output constructor. Three golden cases pin the default, the
+  pretty-guard, and the output-fields documents.
+- **Goal met.** An auditor can now answer "what does the `RequiresConfirmation →
+  Confirmed` transition actually do?" from the generated Markdown alone — guard,
+  written registers, and (optionally) the event-field provenance — without decoding a
+  dense Mermaid label or reading Haskell. The inspector is rendered from the same
+  `userReg` value as the Mermaid golden, so the two are diffable.
+- **No regressions / no Mermaid edits.** The plan's preferred path (leave
+  `Keiki.Render.Mermaid` untouched, replicate the two unexported helpers) held: no
+  existing golden changed, and the byte-identity invariant on the Mermaid default output
+  was never at risk.
+- **Lesson.** Reusing the EP-61 pretty-printer paid off twice over: it gave identical
+  readable-guard text across the topology renderer and the inspector (the whole point of
+  the shared module), and its term-level distinction between register reads and
+  input-field reads made `output fields` more informative than the plan anticipated.
 
 
 ## Context and Orientation
