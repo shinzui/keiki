@@ -18,6 +18,7 @@ import Keiki.CoreSpec qualified
 import Keiki.DeciderSpec qualified
 import Keiki.Generics.THSpec qualified
 import Keiki.NoThunksSpec qualified
+import Keiki.OperatorsQualifiedSpec qualified
 import Keiki.OperatorsSpec qualified
 import Keiki.ProfunctorSpec qualified
 import Keiki.RecomputeVerifySpec qualified
@@ -50,6 +51,7 @@ main = hspec $ do
     describe "Keiki.Generics.TH" Keiki.Generics.THSpec.spec
     describe "Keiki.NoThunks" Keiki.NoThunksSpec.spec
     describe "Keiki.Core operators (EP-45)" Keiki.OperatorsSpec.spec
+    describe "Keiki.Operators (qualified import, EP-58)" Keiki.OperatorsQualifiedSpec.spec
     describe "Keiki.Profunctor (EP-27)" Keiki.ProfunctorSpec.spec
     describe "Keiki.Profunctor (Strong, EP-29 M2)" Keiki.StrongSpec.spec
     describe "Keiki.Profunctor (Arrow, EP-29 M3)" Keiki.ArrowSpec.spec

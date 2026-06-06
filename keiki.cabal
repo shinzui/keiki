@@ -66,6 +66,7 @@ library
     Keiki.Generics.TH
     Keiki.Internal.Slots
     Keiki.NoThunks
+    Keiki.Operators
     Keiki.Profunctor
     Keiki.Render.Mermaid
     Keiki.Shape
@@ -110,6 +111,7 @@ test-suite keiki-test
     Keiki.Fixtures.UserRegistration
     Keiki.Generics.THSpec
     Keiki.NoThunksSpec
+    Keiki.OperatorsQualifiedSpec
     Keiki.OperatorsSpec
     Keiki.ProfunctorSpec
     Keiki.RecomputeVerifySpec

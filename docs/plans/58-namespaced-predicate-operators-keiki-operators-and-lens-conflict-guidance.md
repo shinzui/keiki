@@ -61,11 +61,11 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Create `src/Keiki/Operators.hs` re-exporting the operator set from `Keiki.Core` with replicated fixities.
-- [ ] M1: Add `Keiki.Operators` to `keiki.cabal` library `exposed-modules`.
-- [ ] M1: Create `test/Keiki/OperatorsQualifiedSpec.hs` (qualified-import + simulated-clash spec).
-- [ ] M1: Register `Keiki.OperatorsQualifiedSpec` in `keiki.cabal` test `other-modules` and in `test/Spec.hs` (import + `describe`).
-- [ ] M1: `cabal build keiki` and `cabal test keiki-test` both pass.
+- [x] M1: Create `src/Keiki/Operators.hs` re-exporting the operator set from `Keiki.Core` (fixities NOT restated — see Surprises). (2026-06-06)
+- [x] M1: Add `Keiki.Operators` to `keiki.cabal` library `exposed-modules`. (2026-06-06)
+- [x] M1: Create `test/Keiki/OperatorsQualifiedSpec.hs` (qualified-import + simulated-clash spec). (2026-06-06)
+- [x] M1: Register `Keiki.OperatorsQualifiedSpec` in `keiki.cabal` test `other-modules` and in `test/Spec.hs` (import + `describe`). (2026-06-06)
+- [x] M1: `cabal build keiki` and `cabal test keiki-test` both pass (304 examples, 0 failures; the 4 EP-58 examples pass). (2026-06-06)
 - [ ] M2: Extend `docs/guide/generic-lens-and-label-reads.md` with a new operator-collision section (hiding recipe, qualified recipe, `requireGt` vs `requireGuard (x .> y)` guidance).
 - [ ] M2: Cross-link the new section from `docs/guide/user-guide.md`.
 - [ ] Final: Update Surprises/Decision Log/Outcomes; verify all acceptance criteria.
@@ -76,6 +76,19 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
+- **Restating fixities in a re-export module fails on GHC 9.12 / GHC2024.** The plan's M1
+  text said to replicate the `infix` declarations and called it "harmless"; that is wrong on
+  this toolchain. A fixity signature requires an *accompanying binding in the same module*
+  — `cabal build` failed with `GHC-44432: The fixity signature for ‘.<’ lacks an accompanying
+  binding` for every restated operator, because `Keiki.Operators` only re-exports the names,
+  it does not bind them. The fix is to **omit** the fixity block entirely: a re-exported
+  operator already carries its fixity from the defining module, so a qualified user
+  (`x K..> y`) still gets `infix 4` from `Keiki.Core`. The module now carries an explanatory
+  comment in place of the fixity lines. Verified: `cabal build keiki` succeeds and the
+  qualified `K..>`/`K..<=`/`K..*`/`K..&&` examples parse and evaluate correctly. (2026-06-06)
+- The spec did not need `evalTerm`, `Term`, or `lit`'s `Term` import beyond `lit` itself;
+  `import Keiki.Core (HsPred, RegFile(..), evalPred, lit)` is the minimal set (the plan's
+  draft import list also named `Term`/`evalTerm`, which `-Wall` would flag as unused). (2026-06-06)
 - A test module named `Keiki.OperatorsSpec` **already exists** at
   `test/Keiki/OperatorsSpec.hs` (introduced by an earlier plan, EP-45) and is already
   registered in both `keiki.cabal` (test `other-modules`) and `test/Spec.hs`. It tests the

@@ -126,7 +126,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 55 | Explainable step result: stepEither and StepFailure | docs/plans/55-explainable-step-result-stepeither-and-stepfailure.md | None | None | Complete |
 | 56 | Build-time validation and diagnostics: validateTransducer, determinism, and dead-edge analysis | docs/plans/56-build-time-validation-and-diagnostics-validatetransducer-determinism-and-dead-edge-analysis.md | None | EP-55 | Complete |
 | 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Complete |
-| 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Not Started |
+| 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | In Progress |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
 | 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Not Started |
 
