@@ -77,6 +77,73 @@ a `Generic` instance for you. Multi-constructor sum types, positional
 (non-record-syntax) constructors, and type synonyms are rejected at
 splice time with a precise error message.
 
+## Deriving an event codec skeleton
+
+A service that stores its events as JSON usually hand-writes a
+`kind`-discriminated encoder/decoder per event *sum* type — a large
+`\case` with one branch per constructor and one `.=` per payload field,
+plus a matching parser. That is the boilerplate `deriveEventCodecSkeleton`
+(from `Keiki.Codec.JSON.Event`) removes. Given a sum type whose
+constructors each wrap a single record payload (or are no-arg
+singletons):
+
+    {-# LANGUAGE TemplateHaskell #-}
+    import qualified Data.Aeson as Aeson
+    import qualified Data.Map.Strict as Map
+    import qualified Data.Set as Set
+    import Data.Text (Text)
+    import Keiki.Codec.JSON.Event
+      ( deriveEventCodecSkeleton, defaultEventCodecOptions
+      , EventCodecOptions (..), FieldCodec (..) )
+
+    newtype OrderId = OrderId Int deriving stock (Eq, Show)
+    orderIdToJSON   :: OrderId -> Aeson.Value
+    orderIdFromJSON :: Aeson.Value -> Either String OrderId
+
+    data PlacedData  = PlacedData  { orderId :: OrderId, qty :: Int } deriving stock (Eq, Show)
+    data ShippedData = ShippedData { trackingNo :: Text }            deriving stock (Eq, Show)
+
+    data OrderEvent
+      = Placed PlacedData
+      | Shipped ShippedData
+      | Cancelled                     -- singleton
+      deriving stock (Eq, Show)
+
+    $(deriveEventCodecSkeleton
+        defaultEventCodecOptions
+          { fieldCodecOverrides =
+              Map.fromList [("orderId", FieldCodec 'orderIdToJSON 'orderIdFromJSON)]
+          , passthroughFields = Set.fromList ["qty", "trackingNo"]
+          }
+        ''OrderEvent)
+    --  emits (prefix = lower-cased type name):
+    --    orderEventToJSON     :: OrderEvent -> Aeson.Value
+    --    orderEventFromJSON   :: Aeson.Value -> Either String OrderEvent
+    --    orderEventEventTypes :: [Text]            -- ctor names, in order
+    --    orderEventKindMap    :: [(Text, Text)]    -- (ctor, kind string)
+
+Each constructor encodes to an object carrying a `"kind"` discriminator
+(its constructor name) plus one entry per payload field, so
+`orderEventToJSON (Placed (PlacedData (OrderId 7) 3))` is
+`{"kind":"Placed","orderId":"ord-7","qty":3}` — note `orderId` is the
+override's output, not a generic `Int`. The `orderEventEventTypes` /
+`orderEventKindMap` bindings are plain `Text` (no Keiro dependency) so a
+downstream can feed them to Keiro's `Codec.eventTypes`.
+
+**No silent generic fallback.** Each payload field is encoded by *name*:
+an override (`fieldCodecOverrides`), a passthrough using the field's own
+aeson instances (`passthroughFields`), or — for a field in neither —
+whatever `onMissingCodec` says. The default `FailAtCompileTime` aborts the
+splice listing every unhandled `<Event>.<field> :: <Type>`; the
+alternative `EmitTodoBindings` emits a `_todo_<Event>_<field>` placeholder
+that compiles but is `error "TODO: ..."`-bodied. Adding a field to a
+payload record therefore forces a compile-time decision instead of
+silently changing (or dropping) the stored JSON.
+
+Constructors that are multi-argument, use record syntax directly, or are
+GADT/infix are rejected at splice time with a precise message; wrap a
+single record payload type instead (`Placed PlacedData`).
+
 ## When to use the streaming encoder
 
 `regFileToJSON` builds an `Aeson.Value` whose `Object` is an

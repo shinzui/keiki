@@ -65,36 +65,43 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1.1 — Add `containers ^>= 0.7` to the `keiki-codec-json` library
-      `build-depends` (needed for `Data.Map` in `EventCodecOptions`).
-- [ ] M1.2 — Define `EventCodecOptions` and `FieldCodec` in
-      `Keiki.Codec.JSON.TH` (or a new `Keiki.Codec.JSON.Event` module);
-      export them and `defaultEventCodecOptions`.
-- [ ] M1.3 — Implement event sum-type reflection: reify the sum, validate each
-      constructor is a single-arg `NormalC` wrapping a record payload (or a
-      no-arg singleton), extract per-constructor payload field name/type lists.
-- [ ] M1.4 — Implement the `kind`-discriminated encoder generation (one object
-      per constructor with the `kind` field plus one entry per payload field,
-      using the per-field override hook where present).
-- [ ] M1.5 — Implement the `kind`-discriminated decoder generation (read the
-      kind string, branch, reassemble the payload record field by field).
-- [ ] M2.1 — Implement the no-silent-fallback safety mechanism: classify each
-      field as overridden / known-default / unhandled; per `OnMissingCodec`,
-      either `fail` in `Q` listing unhandled fields, or emit named TODO
-      bindings.
-- [ ] M2.2 — Emit the compile-time event-type list binding
-      (`<prefix>EventTypes :: [Text]`) and the kind-mapping binding so a
-      downstream can feed Keiro `Codec.eventTypes` without this package
-      depending on Keiro.
-- [ ] M3.1 — Add the test fixtures (a 2–3 constructor event sum with one
-      newtype-field payload, one singleton) and `THEventSpec.hs`; wire it into
-      `keiki-codec-json/test/Spec.hs` and the cabal `other-modules`.
-- [ ] M3.2 — Round-trip, kind-discriminator, and override-used assertions pass;
-      `text` JSON transcripts captured in the spec haddock.
-- [ ] M3.3 — Document the missing-override manual negative check (TODO binding or
-      `Q`-fail) in the spec's top comment, mirroring `THSpec.hs`.
-- [ ] M3.4 — README section in `keiki-codec-json/README.md` with the worked
-      splice; `cabal haddock keiki-codec-json` clean.
+- [x] M1.1 — Add `containers ^>= 0.7` to the `keiki-codec-json` library
+      `build-depends` (needed for `Data.Map`/`Data.Set` in `EventCodecOptions`).
+      (2026-06-06)
+- [x] M1.2 — Defined `EventCodecOptions`, `FieldCodec`, `OnMissingCodec` in a new
+      `Keiki.Codec.JSON.Event` module; exported them and `defaultEventCodecOptions`.
+      (2026-06-06)
+- [x] M1.3 — Event sum-type reflection (`reifyEventCtors`/`toEvCtor`/
+      `reifyPayloadFields`): reify the sum, classify each constructor as
+      single-arg `NormalC` payload or no-arg singleton, reject record/multi-arg/
+      GADT with precise messages, extract per-constructor payload field
+      name/selector/type lists. (2026-06-06)
+- [x] M1.4 — `kind`-discriminated encoder generation (one `Aeson.object` per
+      constructor with the `kind` entry plus one per payload field, via the
+      per-field override hook where present). (2026-06-06)
+- [x] M1.5 — `kind`-discriminated decoder generation (read the kind string,
+      nested-`if` dispatch, reassemble the payload record field by field in the
+      `Either String` applicative). (2026-06-06)
+- [x] M2.1 — No-silent-fallback safety mechanism: classify each field as
+      overridden / passthrough / unhandled; per `OnMissingCodec`, either `fail`
+      in `Q` listing every unhandled `<Event>.<field> :: <Type>`, or emit named
+      `_todo_<Event>_<field>` bindings and route those fields through them.
+      (2026-06-06)
+- [x] M2.2 — Emit `<prefix>EventTypes :: [Text]` and
+      `<prefix>KindMap :: [(Text, Text)]` (constructor order); plain `Text`, no
+      Keiro import. (2026-06-06)
+- [x] M3.1 — Added `THEventSpec.hs` with a 3-constructor `OrderEvent` fixture
+      (overridden newtype field, all-passthrough payload, singleton); wired into
+      `keiki-codec-json/test/Spec.hs` and the cabal `other-modules`. (2026-06-06)
+- [x] M3.2 — Round-trip, kind-discriminator, override-used, error-path, and
+      EventTypes/KindMap assertions pass (50 examples, 0 failures); JSON
+      transcript captured in the spec haddock. (2026-06-06)
+- [x] M3.3 — Documented the missing-override manual negative checks (both
+      `FailAtCompileTime` and `EmitTodoBindings`) in the spec's top comment with
+      verified observed text. (2026-06-06)
+- [x] M3.4 — README "Deriving an event codec skeleton" section with the worked
+      splice; `cabal haddock keiki-codec-json` clean (100% coverage on the new
+      module). (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -102,7 +109,32 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- `Language.Haskell.TH` already exports `stringE :: String -> Q Exp` (= `litE .
+  stringL`). A locally-defined `stringE` helper caused an "Ambiguous occurrence"
+  error; removed it and used the built-in. (2026-06-06)
+- The generated `error` message and the `FailAtCompileTime` listing print
+  fully-qualified names: the sum type via `show tyName`
+  (`Keiki.Codec.JSON.THEventSpec.OrderEvent`) and the field type via `pprint ft`
+  (`GHC.Types.Int`, not `Int`). The substring `Placed.discount` and the
+  surrounding sentence are stable; the qualification is cosmetic. The spec's
+  doc-comment expected text was updated to match the observed output. (2026-06-06)
+- A TODO placeholder used on the encode side needs an explicit `:: Aeson.Value`
+  annotation. `_todo_C_field :: a` applied as `(_todo (sel p))` leaves the result
+  type ambiguous (only a `ToJSON` constraint), so the encode expression is
+  `(_todo (sel p) :: Aeson.Value)`. The decode side
+  (`_todo =<< lookupField ...`) is unambiguous because the applicative chain
+  fixes the field type. (2026-06-06)
+- The `keiki-codec-json-test` test stanza also got `containers ^>= 0.7` added
+  (the spec fixture imports `Data.Map.Strict`/`Data.Set` directly), mirroring the
+  lesson from EP-57 that the library-stanza dependency is not transitively visible
+  to a test module's own imports. (2026-06-06)
+- Using TH quotation (`[| ... |]`) for the generated bodies means every
+  referenced name (`Aeson.object`, `Aeson..=`, `T.pack`, the runtime helpers, the
+  sum's constructors and selectors) resolves to its origin module hygienically —
+  the *consumer* module needs only `TemplateHaskell` and the splice; it does not
+  need to import `aeson` or this module's helpers. (verified: `THEventSpec`
+  imports only `Keiki.Codec.JSON.Event` symbols + `Data.Aeson`/`Data.Text` for
+  its own assertions, not for the generated code.) (2026-06-06)
 
 
 ## Decision Log
@@ -165,7 +197,54 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Outcome: delivered in full against the original purpose. The new module
+`keiki-codec-json/src/Keiki/Codec/JSON/Event.hs` exports
+`deriveEventCodecSkeleton` / `deriveEventCodecSkeletonAs` plus
+`EventCodecOptions` / `FieldCodec` / `OnMissingCodec` / `defaultEventCodecOptions`.
+A service author replaces a hand-written per-event `\case` encoder + parser with
+one splice and gets `<prefix>ToJSON`, `<prefix>FromJSON`,
+`<prefix>EventTypes :: [Text]`, and `<prefix>KindMap :: [(Text, Text)]`, derived
+directly from the sum's constructors and each payload record's fields.
+
+The anti-drift property is realized exactly as specified: there is **no silent
+generic fallback**. Each payload field is encoded by name as an override, a
+passthrough, or — if neither — per `onMissingCodec`: `FailAtCompileTime` (default)
+aborts the splice listing every unhandled `<Event>.<field> :: <Type>`, and
+`EmitTodoBindings` emits a named `_todo_<Event>_<field>` placeholder. Both
+negative behaviours were verified by hand (the compile-fail text captured
+verbatim; the TODO binding confirmed to compile and be referenceable).
+
+The aeson-free-core invariant is preserved: every line of JSON lives in
+`keiki-codec-json`; `src/Keiki/` was never touched; `keiki.cabal` gained no aeson.
+Because the generated bodies are built with TH quotation, the consumer module
+needs only `TemplateHaskell` and the splice — it imports neither `aeson` nor this
+module's runtime helpers for the generated code.
+
+Acceptance: `cabal build keiki-codec-json` succeeds; `cabal test
+keiki-codec-json:keiki-codec-json-test` reports 50 examples / 0 failures
+(11 new EP-59 examples: round-trip ×3, kind+override ×3, error paths ×2,
+EventTypes/KindMap ×2 — and one override-used assertion proving `"ord-7"` rather
+than the integer `7`); `cabal haddock keiki-codec-json` is clean at 100% coverage
+on the new module.
+
+Gaps / deltas from the plan:
+
+- The plan staged M1 with "unhandled = passthrough" then flipped to fail/TODO in
+  M2. The implementation went straight to the final M2 behaviour in one module
+  write (the no-fallback net is the headline property; an intermediate
+  silently-passthrough state had no acceptance value and would have been thrown
+  away).
+- The plan suggested either extending `Keiki.Codec.JSON.TH` or a new module; the
+  new `Keiki.Codec.JSON.Event` module was chosen (the plan's preferred option) to
+  keep the record-codec and event-codec splices independently readable.
+- The dogfood into `keiro-runtime-jitsurei` is out of this repo's scope (that
+  consumer lives in a sibling repository) and was not performed here; the README
+  worked example + the test fixture stand in as the in-repo demonstration.
+
+Lesson: TH quotation plus a few exported runtime helpers (`lookupField`,
+`lookupText`, `aesonResultToEither`) keeps the generated `[Dec]` compact and fully
+hygienic, so the consumer's import surface stays minimal and the aeson-free
+boundary is structurally guaranteed rather than merely conventional.
 
 
 ## Context and Orientation

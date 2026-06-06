@@ -40,8 +40,9 @@ After this MasterPlan is complete:
   pretty-printer for keiki's predicate/term ASTs (`HsPred`, `Term`, `Update`) renders constructor
   names, register reads by slot name, input-field reads by field name, equality, ordering,
   arithmetic, and boolean structure — clearly marking the two things that are *provably*
-  unprintable: applied opaque functions (`<fn>(...)`) and literal *values* (`<lit::T>`, the type
-  only, because `Term` literals carry no `Show`). (Req 1)
+  unprintable: applied opaque functions (`<fn>(...)`) and literal *values* (`<lit>` at baseline,
+  because `Term` literals carry no `Show`; optionally `<lit::T>` — the type name only — within the
+  `PEq`/`PCmp` arms where a `Typeable` instance is in scope). (Req 1)
 - An audit or documentation reader can call `renderEdgeInspector` to get a deterministic Markdown
   block — edges grouped by source state, each showing source, target, edge index, input
   constructor, output constructor(s), structural and/or pretty guard, and written slots — instead
@@ -231,7 +232,7 @@ Track milestone-level progress across all child plans. Each entry names the chil
 milestone. Milestones are seeded top-down here for coordination; each child plan owns the
 authoritative, detailed version.
 
-- [ ] EP-61 M1: `src/Keiki/Render/Pretty.hs` with `prettyPred`/`prettyTerm`/`prettyUpdate` + `indexName`; pure unit tests covering slot reads, input-field reads, comparisons, arithmetic, boolean structure, opaque `<fn>(...)` and `<lit::T>` markers.
+- [ ] EP-61 M1: `src/Keiki/Render/Pretty.hs` with `prettyPred`/`prettyTerm`/`prettyUpdate` + `indexName`; pure unit tests covering slot reads, input-field reads, comparisons, arithmetic, boolean structure, opaque `<fn>(...)` and `<lit>` markers.
 - [ ] EP-61 M2: `MermaidGuardMode` (`Hidden`/`StructuralSummary`/`Pretty`) added to `MermaidOptions`; `showGuardSummary` reconciled as the legacy spelling; default output byte-identical; new golden for `MermaidGuardPretty`.
 - [ ] EP-62 M1: `renderEdgeInspector` + `EdgeInspectorOptions` Markdown renderer grouped by source state; deterministic, golden-tested.
 - [ ] EP-62 M2: structural-and-pretty guard option, output-field term rendering (positional, field-name-free per validation), written-slot listing; golden cases.
@@ -253,8 +254,9 @@ between child plans. Provide concise evidence.
   `r` (verified at `src/Keiki/Core.hs:306-339`), and `PEq`/`PCmp` constrain their operands to
   `(Eq r, Typeable r)` / `(Ord r, Typeable r)` only — no `Show` (`Core.hs:544-574`). So the
   pretty-printer (EP-61) can render predicate/term *structure* and slot/field *names*, but a
-  literal value renders as `<lit::T>` (the `Typeable` type name) at best, never its value. This
-  bounds Req 1's "`PEq` renders as `<left> == <right>`": the shape renders, the literal does not.
+  literal value renders as `<lit>` at baseline (and at most `<lit::T>`, the `Typeable` type name,
+  within the `PEq`/`PCmp` arms where `Typeable` is in scope), never its value. This bounds Req 1's
+  "`PEq` renders as `<left> == <right>`": the shape renders, the literal value does not.
 - Register/field slot names ARE recoverable from any `Index`. `Index`'s head constructor `ZIdx ::
   KnownSymbol s => Index ('(s,r)':rs) r` carries the slot's `KnownSymbol` (`Core.hs:210-212`), so a
   recursive `indexName` (walk `SIdx` to the `ZIdx`, return `symbolVal`) recovers it with no extra
@@ -289,7 +291,7 @@ between child plans. Provide concise evidence.
 - Decision: Validate all eight requirements against the actual ASTs before planning, because they
   were authored by the Seihou team from rendered output. Verdict: all eight feasible and
   keiki-appropriate; five need adjustment (recorded as Surprises). Adjustments: (1) literal values
-  render opaquely as `<lit::T>` (Req 1); (2) `MermaidOptions` extended additively, not redesigned
+  render opaquely as `<lit>` at baseline (`<lit::T>` only where `Typeable` is in scope) (Req 1); (2) `MermaidOptions` extended additively, not redesigned
   (Reqs 1/2/8); (3) `MermaidOutputSemicolon` reproduces the current length-based `;`/`<br/>`
   behavior, not pure semicolon (Req 8); (4) output fields render positionally without field names
   (Req 3); (5) validation is structural heuristics, not Mermaid parsing (Req 6).
