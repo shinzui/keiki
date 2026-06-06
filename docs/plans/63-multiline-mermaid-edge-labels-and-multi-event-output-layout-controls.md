@@ -53,23 +53,23 @@ This section must always reflect the actual current state of the work.
 
 Milestone 1 — multiline labels and inline truncation:
 
-- [ ] Add `data MermaidLabelLayout = MermaidLabelInline | MermaidLabelMultiline` to `src/Keiki/Render/Mermaid.hs` and export it.
-- [ ] Add fields `labelLayout :: MermaidLabelLayout`, `maxInlineWrittenSlots :: Maybe Int`, `maxInlineGuardWidth :: Maybe Int` to `MermaidOptions`, after any field EP-61 has added and never before `showWrittenSlots`/`showGuardSummary`.
-- [ ] Set defaults in `defaultMermaidOptions`: `labelLayout = MermaidLabelInline`, `maxInlineWrittenSlots = Nothing`, `maxInlineGuardWidth = Nothing`.
-- [ ] Refactor `edgeLabelWith` to build a list of label *segments* (base, optional written-slots segment, optional guard segment) and then lay them out per `labelLayout`.
-- [ ] Implement deterministic `+N more` truncation of written slots driven by `maxInlineWrittenSlots`.
-- [ ] Implement deterministic guard-text ellipsis truncation driven by `maxInlineGuardWidth`.
-- [ ] Add golden cases (multiline label; `+N more`; guard width truncation) to the spec; confirm existing goldens unchanged.
-- [ ] `cabal build keiki` and `cabal test keiki-test` pass.
+- [x] Add `data MermaidLabelLayout = MermaidLabelInline | MermaidLabelMultiline` to `src/Keiki/Render/Mermaid.hs` and export it.
+- [x] Add fields `labelLayout :: MermaidLabelLayout`, `maxInlineWrittenSlots :: Maybe Int`, `maxInlineGuardWidth :: Maybe Int` to `MermaidOptions`, after any field EP-61 has added and never before `showWrittenSlots`/`showGuardSummary`.
+- [x] Set defaults in `defaultMermaidOptions`: `labelLayout = MermaidLabelInline`, `maxInlineWrittenSlots = Nothing`, `maxInlineGuardWidth = Nothing`.
+- [x] Refactor `edgeLabelWith` to build a list of label *segments* (base, optional written-slots segment, optional guard segment) and then lay them out per `labelLayout`.
+- [x] Implement deterministic `+N more` truncation of written slots driven by `maxInlineWrittenSlots`.
+- [x] Implement deterministic guard-text ellipsis truncation driven by `maxInlineGuardWidth`.
+- [x] Add golden cases (multiline label; `+N more`; guard width truncation) to the spec; confirm existing goldens unchanged.
+- [x] `cabal build keiki` and `cabal test keiki-test` pass.
 
 Milestone 2 — multi-event output layout:
 
-- [ ] Add `data MermaidOutputLayout = MermaidOutputSemicolon | MermaidOutputMultiline | MermaidOutputCounted` and export it.
-- [ ] Add field `outputLayout :: MermaidOutputLayout` to `MermaidOptions` after the M1 fields; default `MermaidOutputSemicolon`.
-- [ ] Factor `edgeOutputName` so the layout strategy is chosen by `outputLayout`, with `MermaidOutputSemicolon` reproducing today's exact length-based behavior (`;` for two, `<br/>` for three or more).
-- [ ] Thread `outputLayout` through `edgeLabel`/`edgeLabelWith` so the base segment uses the chosen output rendering.
-- [ ] Add golden cases for each of the three output layouts; confirm existing goldens unchanged.
-- [ ] `cabal build keiki` and `cabal test keiki-test` pass.
+- [x] Add `data MermaidOutputLayout = MermaidOutputSemicolon | MermaidOutputMultiline | MermaidOutputCounted` and export it.
+- [x] Add field `outputLayout :: MermaidOutputLayout` to `MermaidOptions` after the M1 fields; default `MermaidOutputSemicolon`.
+- [x] Factor `edgeOutputName` so the layout strategy is chosen by `outputLayout`, with `MermaidOutputSemicolon` reproducing today's exact length-based behavior (`;` for two, `<br/>` for three or more).
+- [x] Thread `outputLayout` through `edgeLabel`/`edgeLabelWith` so the base segment uses the chosen output rendering.
+- [x] Add golden cases for each of the three output layouts; confirm existing goldens unchanged.
+- [x] `cabal build keiki` and `cabal test keiki-test` pass.
 
 
 ## Surprises & Discoveries
@@ -77,7 +77,22 @@ Milestone 2 — multi-event output layout:
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- EP-61 had already landed when this plan was implemented, so the field order is
+  `showWrittenSlots`, `showGuardSummary`, `guardMode` (EP-61), then this plan's four fields
+  (`labelLayout`, `maxInlineWrittenSlots`, `maxInlineGuardWidth`, `outputLayout`). Guard-text
+  production was consumed unchanged via EP-61's `renderGuardSegment opts` chokepoint
+  (`src/Keiki/Render/Mermaid.hs`); this plan only wrapped segment layout/truncation and the output
+  rendering, exactly as the Decision Log anticipated.
+- `userReg`'s densest edge writes only three slots (`StartRegistration`), so the `+N more` golden
+  uses `maxInlineWrittenSlots = Just 2` (yielding `registeredAt; confirmCode; +1 more`) rather than
+  the plan example's `Just 3` over a four-slot edge — there is no four-slot edge in the fixture.
+- For three-or-more events, `MermaidOutputSemicolon` and `MermaidOutputMultiline` render
+  identically (`<br/>`-joined); they diverge only at exactly two events (`A; B` vs `A<br/>B`). The
+  M2 fixture (`multiEvt`) therefore carries both a 3-event and a 2-event edge so the three layout
+  goldens are all observably distinct.
+- All eight hand-derived golden strings matched the renderer on the first test run (352 examples,
+  0 failures; the six pre-existing renderer goldens unchanged), confirming byte-identity of the
+  default output.
 
 
 ## Decision Log
@@ -139,7 +154,18 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Both milestones landed as designed. `MermaidOptions` now carries `labelLayout`,
+`maxInlineWrittenSlots`, `maxInlineGuardWidth` (M1) and `outputLayout` (M2), all defaulted in
+`defaultMermaidOptions` to reproduce today's bytes. `edgeLabelWith` assembles label segments and
+lays them out inline or multiline with deterministic `+N more` / `…` truncation; `edgeOutputName`
+delegates to a new `edgeOutputNameWith` and `edgeLabel` to `edgeLabelWithLayout`, both keeping their
+original types and behaviour for existing callers. Six new goldens in
+`test/Keiki/Render/MermaidSpec.hs` pin the multiline layout, both truncations, and the three output
+layouts; the suite is green at 352 examples with every pre-existing renderer golden byte-identical,
+satisfying the MasterPlan's load-bearing byte-identity invariant. No core type changed; the work is
+confined to `src/Keiki/Render/Mermaid.hs` and the spec. The only deviation from the plan text was
+the `+N more` golden's threshold (`Just 2`, since the fixture has no four-slot edge) — a fixture
+artefact, not a design change.
 
 
 ## Context and Orientation

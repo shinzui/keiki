@@ -36,6 +36,8 @@ module Keiki.Render.Mermaid (
     toMermaidWith,
     MermaidOptions (..),
     MermaidGuardMode (..),
+    MermaidLabelLayout (..),
+    MermaidOutputLayout (..),
     defaultMermaidOptions,
     vertexLabel,
     compositeLabel,
@@ -82,6 +84,33 @@ data MermaidGuardMode
     | MermaidGuardPretty
     deriving stock (Eq, Show)
 
+{- | How dense edge labels are laid out.
+
+  * 'MermaidLabelInline' — the current single-line @[seg; seg]@ form.
+  * 'MermaidLabelMultiline' — the base on line one; each further
+    segment on its own @<br/>@-separated line.
+-}
+data MermaidLabelLayout
+    = MermaidLabelInline
+    | MermaidLabelMultiline
+    deriving stock (Eq, Show)
+
+{- | How an edge that emits several events renders its output names.
+
+  * 'MermaidOutputSemicolon' — today's length-based default: @;@ for
+    exactly two events, @<br/>@ for three or more.
+  * 'MermaidOutputMultiline' — always one event per line
+    (@<br/>@-joined), regardless of count.
+  * 'MermaidOutputCounted' — a compact @N events@ count for two or
+    more (a single event still renders as its name; an ε-edge stays
+    @ε@).
+-}
+data MermaidOutputLayout
+    = MermaidOutputSemicolon
+    | MermaidOutputMultiline
+    | MermaidOutputCounted
+    deriving stock (Eq, Show)
+
 {- | Rendering options for the structural edge-summary suffix. All
 fields default to the no-suffix setting in 'defaultMermaidOptions', so
 the default rendering is byte-identical to 'toMermaid'.
@@ -110,6 +139,25 @@ data MermaidOptions = MermaidOptions
     than 'MermaidGuardHidden', it takes precedence over the legacy
     'showGuardSummary' flag. Defaults to 'MermaidGuardHidden'.
     -}
+    , labelLayout :: MermaidLabelLayout
+    {- ^ Inline (default, byte-identical) or multiline @<br/>@ layout
+    of an edge label's segments. Defaults to 'MermaidLabelInline'.
+    -}
+    , maxInlineWrittenSlots :: Maybe Int
+    {- ^ When @'Just' k@ and an edge writes @n > k@ slots, show the
+    first @k@ then a single @+{n-k} more@ token. 'Nothing' (the
+    default) disables truncation.
+    -}
+    , maxInlineGuardWidth :: Maybe Int
+    {- ^ When @'Just' w@ and the guard segment text exceeds @w@
+    characters, take @w@ characters then append the ellipsis @…@.
+    'Nothing' (the default) disables truncation.
+    -}
+    , outputLayout :: MermaidOutputLayout
+    {- ^ How a multi-event edge renders its output names. Defaults to
+    'MermaidOutputSemicolon', which reproduces today's length-based
+    behaviour exactly.
+    -}
     }
 
 {- | The default: no summary suffix. @'toMermaid' t@ equals
@@ -121,6 +169,10 @@ defaultMermaidOptions =
         { showWrittenSlots = False
         , showGuardSummary = False
         , guardMode = MermaidGuardHidden
+        , labelLayout = MermaidLabelInline
+        , maxInlineWrittenSlots = Nothing
+        , maxInlineGuardWidth = Nothing
+        , outputLayout = MermaidOutputSemicolon
         }
 
 {- | Render a 'SymTransducer' to a Mermaid @stateDiagram-v2@ block.
@@ -696,23 +748,61 @@ switchover:
   * length 3+: @e1\<br/>e2\<br/>…\<br/>eN@ — Mermaid multi-line.
 -}
 edgeOutputName :: Edge (HsPred rs ci) rs ci co s -> Maybe Text
-edgeOutputName Edge{output = outs} = case outs of
+edgeOutputName = edgeOutputNameWith MermaidOutputSemicolon
+
+{- | The layout-aware output renderer behind 'edgeOutputName'. Returns
+'Nothing' for an ε-edge (output @[]@) under every layout, and the lone
+constructor name for a single-event edge under every layout. For two or
+more events the chosen 'MermaidOutputLayout' decides the rendering:
+
+  * 'MermaidOutputSemicolon' reproduces 'edgeOutputName''s historical
+    length-based behaviour — @;@ for exactly two, @<br/>@ for three or
+    more.
+  * 'MermaidOutputMultiline' always joins with @<br/>@.
+  * 'MermaidOutputCounted' collapses to @N events@.
+
+Output order is the transducer's 'output' list order, preserved
+verbatim.
+-}
+edgeOutputNameWith ::
+    MermaidOutputLayout ->
+    Edge (HsPred rs ci) rs ci co s ->
+    Maybe Text
+edgeOutputNameWith layout Edge{output = outs} = case outs of
     [] -> Nothing
     [o] -> Just (wcN o)
-    [a, b] -> Just (wcN a <> T.pack "; " <> wcN b)
-    many -> Just (T.intercalate (T.pack "<br/>") (Prelude.map wcN many))
+    many -> Just (render layout (Prelude.map wcN many))
   where
     wcN :: OutTerm rs ci co -> Text
     wcN (OPack _ wc _) = T.pack (wcName wc)
+    render :: MermaidOutputLayout -> [Text] -> Text
+    render MermaidOutputSemicolon ns
+        | length ns == 2 = T.intercalate (T.pack "; ") ns
+        | otherwise = T.intercalate (T.pack "<br/>") ns
+    render MermaidOutputMultiline ns = T.intercalate (T.pack "<br/>") ns
+    render MermaidOutputCounted ns = T.pack (show (length ns) <> " events")
 
 {- | The Mermaid edge label for an edge: @<input ctor> / <output ctor>@.
 A missing input-constructor name (no 'PInCtor' in the guard)
-becomes @"?"@; a missing output (an ε-edge) becomes @"ε"@.
+becomes @"?"@; a missing output (an ε-edge) becomes @"ε"@. Uses the
+default 'MermaidOutputSemicolon' output layout, so its behaviour is
+unchanged from before EP-63.
 -}
 edgeLabel :: Edge (HsPred rs ci) rs ci co s -> Text
-edgeLabel e =
+edgeLabel = edgeLabelWithLayout MermaidOutputSemicolon
+
+{- | The output-layout-aware base label behind 'edgeLabel'. Renders
+@<input ctor> / <output ctor>@ using the supplied 'MermaidOutputLayout'
+for the output half; 'edgeLabel' delegates to it with
+'MermaidOutputSemicolon'.
+-}
+edgeLabelWithLayout ::
+    MermaidOutputLayout ->
+    Edge (HsPred rs ci) rs ci co s ->
+    Text
+edgeLabelWithLayout layout e =
     let inp = maybe (T.pack "?") id (edgeInputName e)
-        out = maybe (T.pack "\x03B5") id (edgeOutputName e)
+        out = maybe (T.pack "\x03B5") id (edgeOutputNameWith layout e)
      in inp <> T.pack " / " <> out
 
 {- | The options-aware edge label: 'edgeLabel' plus an optional
@@ -727,22 +817,50 @@ edgeLabelWith ::
     Edge (HsPred rs ci) rs ci co s ->
     Text
 edgeLabelWith opts e@Edge{update = u, guard = g} =
-    -- The whole edge @e@ is reused for 'edgeLabel'; @u@ and @g@ are bound
-    -- by the pattern so the existential write-set in @update@ does not
-    -- escape (the record selector cannot be used as a function for it).
-    let base = edgeLabel e
+    -- The whole edge @e@ is reused for the base label; @u@ and @g@ are
+    -- bound by the pattern so the existential write-set in @update@ does
+    -- not escape (the record selector cannot be used as a function for
+    -- it). This function owns only segment /layout/ and /truncation/ and
+    -- the output rendering; guard /text/ is produced by
+    -- 'renderGuardSegment' (EP-61's chokepoint).
+    let base = edgeLabelWithLayout (outputLayout opts) e
         ws = if showWrittenSlots opts then writtenSlots u else []
         wPart =
-            if null ws
-                then []
-                else [T.pack "w: " <> T.intercalate (T.pack "; ") ws]
+            case truncateSlots (maxInlineWrittenSlots opts) ws of
+                [] -> []
+                xs -> [T.pack "w: " <> T.intercalate (T.pack "; ") xs]
         gPart = case renderGuardSegment opts g of
-            Just t -> [T.pack "g: " <> t]
+            Just t -> [T.pack "g: " <> truncateGuard (maxInlineGuardWidth opts) t]
             Nothing -> []
         parts = wPart ++ gPart
-     in if null parts
-            then base
-            else base <> T.pack " [" <> T.intercalate (T.pack "; ") parts <> T.pack "]"
+     in case labelLayout opts of
+            MermaidLabelInline ->
+                if null parts
+                    then base
+                    else base <> T.pack " [" <> T.intercalate (T.pack "; ") parts <> T.pack "]"
+            MermaidLabelMultiline ->
+                T.intercalate (T.pack "<br/>") (base : parts)
+
+{- | Keep the first @k@ slots, replacing the rest with a single
+@+{n-k} more@ token. 'Nothing' or @n <= k@ leaves the list unchanged.
+Slot order is preserved.
+-}
+truncateSlots :: Maybe Int -> [Text] -> [Text]
+truncateSlots Nothing xs = xs
+truncateSlots (Just k) xs
+    | length xs > k =
+        take k xs ++ [T.pack ("+" <> show (length xs - k) <> " more")]
+    | otherwise = xs
+
+{- | Truncate guard segment text to @w@ characters, appending the
+ellipsis @…@ (U+2026) when it was longer. 'Nothing' or a text already
+within @w@ characters is returned unchanged.
+-}
+truncateGuard :: Maybe Int -> Text -> Text
+truncateGuard Nothing t = t
+truncateGuard (Just w) t
+    | T.length t > w = T.take w t <> T.pack "\x2026"
+    | otherwise = t
 
 {- | Recover the names of the slots an edge's 'Update' writes, by
 structural recursion over the 'Update' value. 'USet's @KnownSymbol s@

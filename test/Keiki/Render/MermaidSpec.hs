@@ -54,7 +54,9 @@ import Keiki.Fixtures.EmailDelivery (emailDelivery)
 import Keiki.Fixtures.UserRegistration (userReg)
 import Keiki.Render.Mermaid (
     MermaidGuardMode (..),
+    MermaidLabelLayout (..),
     MermaidOptions (..),
+    MermaidOutputLayout (..),
     defaultMermaidOptions,
     toMermaid,
     toMermaidAlternative,
@@ -123,6 +125,58 @@ spec = do
                 (defaultMermaidOptions{guardMode = MermaidGuardPretty})
                 userReg
                 `shouldBe` userRegPrettyGuardCanonical
+
+    describe "toMermaidWith (multiline label layout, EP-63)" $
+        it "renders userReg labels with <br/>-separated segments" $
+            toMermaidWith
+                ( defaultMermaidOptions
+                    { showWrittenSlots = True
+                    , showGuardSummary = True
+                    , labelLayout = MermaidLabelMultiline
+                    }
+                )
+                userReg
+                `shouldBe` userRegMultilineCanonical
+
+    describe "toMermaidWith (written-slot truncation, EP-63)" $
+        it "truncates a long written-slot list with +N more" $
+            toMermaidWith
+                ( defaultMermaidOptions
+                    { showWrittenSlots = True
+                    , maxInlineWrittenSlots = Just 2
+                    }
+                )
+                userReg
+                `shouldBe` userRegSlotTruncCanonical
+
+    describe "toMermaidWith (guard-width truncation, EP-63)" $
+        it "truncates an over-long guard segment with an ellipsis" $
+            toMermaidWith
+                ( defaultMermaidOptions
+                    { showGuardSummary = True
+                    , maxInlineGuardWidth = Just 10
+                    }
+                )
+                userReg
+                `shouldBe` userRegGuardTruncCanonical
+
+    describe "toMermaidWith (MermaidOutputSemicolon default, EP-63)" $
+        it "renders multiEvt with the length-based default output layout" $
+            toMermaid multiEvt `shouldBe` multiEvtSemicolonCanonical
+
+    describe "toMermaidWith (MermaidOutputMultiline, EP-63)" $
+        it "renders every multi-event edge one event per line" $
+            toMermaidWith
+                (defaultMermaidOptions{outputLayout = MermaidOutputMultiline})
+                multiEvt
+                `shouldBe` multiEvtMultilineCanonical
+
+    describe "toMermaidWith (MermaidOutputCounted, EP-63)" $
+        it "renders multi-event edges as an N events count" $
+            toMermaidWith
+                (defaultMermaidOptions{outputLayout = MermaidOutputCounted})
+                multiEvt
+                `shouldBe` multiEvtCountedCanonical
 
     describe "toMermaidAtlas (multi-diagram document)" $
         it "assembles two labelled diagrams into one document" $
@@ -196,6 +250,117 @@ userRegPrettyGuardCanonical =
         , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [g: FulfillGDPRRequest]"
         , "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [g: FulfillGDPRRequest]"
         , "    Deleted --> [*]"
+        ]
+
+{- | EP-63: @userReg@ rendered with both summary flags on and
+@labelLayout = MermaidLabelMultiline@. Same per-edge content as
+'userRegAnnotatedCanonical', but the bracketed inline suffix is replaced
+by @<br/>@-separated segments: the @command / event@ base on the first
+line, the @w: …@ segment next, the @g: …@ segment last. The 2-event
+output @RegistrationStarted; ConfirmationEmailSent@ keeps its @;@
+separator because that is the base segment's own (length-based) output
+rendering, not a label segment.
+-}
+userRegMultilineCanonical :: Text
+userRegMultilineCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    [*] --> PotentialCustomer"
+        , "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent<br/>w: registeredAt; confirmCode; email<br/>g: PInCtor"
+        , "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed<br/>w: confirmedAt<br/>g: PAnd PInCtor PEq"
+        , "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent<br/>w: registeredAt; confirmCode<br/>g: PInCtor"
+        , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5<br/>w: deletedAt<br/>g: PInCtor"
+        , "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>w: deletedAt<br/>g: PInCtor"
+        , "    Deleted --> [*]"
+        ]
+
+{- | EP-63: @userReg@ rendered with @showWrittenSlots = True@ and
+@maxInlineWrittenSlots = Just 2@. The only edge writing more than two
+slots is @StartRegistration@ (three slots), which truncates to the first
+two followed by a single @+1 more@ token; every other edge writes two or
+fewer slots and is unchanged.
+-}
+userRegSlotTruncCanonical :: Text
+userRegSlotTruncCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    [*] --> PotentialCustomer"
+        , "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [w: registeredAt; confirmCode; +1 more]"
+        , "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [w: confirmedAt]"
+        , "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [w: registeredAt; confirmCode]"
+        , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [w: deletedAt]"
+        , "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [w: deletedAt]"
+        , "    Deleted --> [*]"
+        ]
+
+{- | EP-63: @userReg@ rendered with @showGuardSummary = True@ and
+@maxInlineGuardWidth = Just 10@. The only guard whose structural text
+exceeds ten characters is @ConfirmAccount@'s @PAnd PInCtor PEq@ (length
+16), truncated to the first ten characters plus the ellipsis @…@. The
+other guards (@PInCtor@, length 7) are within the width and unchanged.
+-}
+userRegGuardTruncCanonical :: Text
+userRegGuardTruncCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    [*] --> PotentialCustomer"
+        , "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [g: PInCtor]"
+        , "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [g: PAnd PInCt\x2026]"
+        , "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [g: PInCtor]"
+        , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [g: PInCtor]"
+        , "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [g: PInCtor]"
+        , "    Deleted --> [*]"
+        ]
+
+{- | EP-63: the @multiEvt@ fixture (defined at the bottom of this file)
+rendered with the default @outputLayout = MermaidOutputSemicolon@. The
+3-event edge joins with @<br/>@ (three or more events), the 2-event edge
+joins with @;@ — exactly the renderer's historical length-based
+behaviour, so @toMermaid multiEvt@ pins it.
+-}
+multiEvtSemicolonCanonical :: Text
+multiEvtSemicolonCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    [*] --> MS0"
+        , "    MS0 --> MS1 : Go / A<br/>B<br/>C"
+        , "    MS1 --> MS2 : Go / A; B"
+        , "    MS2 --> [*]"
+        ]
+
+{- | EP-63: @multiEvt@ rendered with @outputLayout =
+MermaidOutputMultiline@. Every multi-event edge is one event per line
+regardless of count, so the 2-event edge becomes @A<br/>B@ (unlike the
+default's @A; B@) and the 3-event edge is unchanged from the default.
+-}
+multiEvtMultilineCanonical :: Text
+multiEvtMultilineCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    [*] --> MS0"
+        , "    MS0 --> MS1 : Go / A<br/>B<br/>C"
+        , "    MS1 --> MS2 : Go / A<br/>B"
+        , "    MS2 --> [*]"
+        ]
+
+{- | EP-63: @multiEvt@ rendered with @outputLayout =
+MermaidOutputCounted@. Each multi-event edge collapses to an @N events@
+count.
+-}
+multiEvtCountedCanonical :: Text
+multiEvtCountedCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    [*] --> MS0"
+        , "    MS0 --> MS1 : Go / 3 events"
+        , "    MS1 --> MS2 : Go / 2 events"
+        , "    MS2 --> [*]"
         ]
 
 {- | EP-50: the canonical atlas document for @userReg@ + the
@@ -476,3 +641,89 @@ toy3deepNestedCanonical =
         , "    T1A_T2A_T3A --> T1B_T2B_T3B : Tick / Tick"
         , "    T1B_T2B_T3B --> [*]"
         ]
+
+-- * Multi-event output fixture (EP-63 M2) -----------------------------
+
+{- | A three-constructor event type so an edge can emit two and three
+distinct events, exercising every 'MermaidOutputLayout'. The wire-ctor
+names (@A@, @B@, @C@) are what the renderer prints.
+-}
+data MEvt = MA | MB | MC
+    deriving (Eq, Show)
+
+-- | A single nullary command for the multi-event fixture.
+data MCmd = MGo
+    deriving (Eq, Show)
+
+{- | Three vertices: @MS0@ emits three events, @MS1@ emits two, @MS2@
+is final with no outgoing edge — enough to show all three output
+layouts and the length-based default's @;@-vs-@<br/>@ switchover.
+-}
+data MS = MS0 | MS1 | MS2
+    deriving (Eq, Show, Enum, Bounded)
+
+inCtorGo :: InCtor MCmd '[]
+inCtorGo =
+    InCtor
+        { icName = "Go"
+        , icMatch = \MGo -> Just RNil
+        , icBuild = \RNil -> MGo
+        }
+
+wireMA, wireMB, wireMC :: WireCtor MEvt ()
+wireMA =
+    WireCtor
+        { wcName = "A"
+        , wcMatch = \case MA -> Just (); _ -> Nothing
+        , wcBuild = \() -> MA
+        }
+wireMB =
+    WireCtor
+        { wcName = "B"
+        , wcMatch = \case MB -> Just (); _ -> Nothing
+        , wcBuild = \() -> MB
+        }
+wireMC =
+    WireCtor
+        { wcName = "C"
+        , wcMatch = \case MC -> Just (); _ -> Nothing
+        , wcBuild = \() -> MC
+        }
+
+{- | A tiny transducer whose @MS0@ edge emits three events and whose
+@MS1@ edge emits two, so the three 'MermaidOutputLayout' goldens differ
+observably. Both edges share the trivial guard @PInCtor inCtorGo@, so
+the input half of every label reads @Go@.
+-}
+multiEvt :: SymTransducer (HsPred '[] MCmd) '[] MS MCmd MEvt
+multiEvt =
+    SymTransducer
+        { edgesOut = \case
+            MS0 ->
+                [ Edge
+                    { guard = PInCtor inCtorGo
+                    , update = UKeep
+                    , output =
+                        [ pack inCtorGo wireMA OFNil
+                        , pack inCtorGo wireMB OFNil
+                        , pack inCtorGo wireMC OFNil
+                        ]
+                    , target = MS1
+                    }
+                ]
+            MS1 ->
+                [ Edge
+                    { guard = PInCtor inCtorGo
+                    , update = UKeep
+                    , output =
+                        [ pack inCtorGo wireMA OFNil
+                        , pack inCtorGo wireMB OFNil
+                        ]
+                    , target = MS2
+                    }
+                ]
+            MS2 -> []
+        , initial = MS0
+        , initialRegs = RNil
+        , isFinal = \case MS2 -> True; _ -> False
+        }
