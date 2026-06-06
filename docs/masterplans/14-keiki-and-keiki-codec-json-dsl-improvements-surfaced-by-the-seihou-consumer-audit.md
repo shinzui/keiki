@@ -126,7 +126,7 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 55 | Explainable step result: stepEither and StepFailure | docs/plans/55-explainable-step-result-stepeither-and-stepfailure.md | None | None | Complete |
 | 56 | Build-time validation and diagnostics: validateTransducer, determinism, and dead-edge analysis | docs/plans/56-build-time-validation-and-diagnostics-validatetransducer-determinism-and-dead-edge-analysis.md | None | EP-55 | Complete |
 | 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Complete |
-| 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | In Progress |
+| 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Complete |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
 | 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Not Started |
 
@@ -217,8 +217,8 @@ authoritative, detailed version.
 - [x] EP-56 M3: `checkDeadEdges` (structural reachability, "possibly dead" labeling) + optional `checkDeadEdgesSym`; tests including the FieldResource motivation. (2026-06-06)
 - [x] EP-57 M1: command-side `deriveAggregateCtorsWith` + `DeriveCtorOptions` + duplicate/unknown compile-time validation. (2026-06-06)
 - [x] EP-57 M2: event-side `deriveWireCtorsWith` + tests; shared codegen helpers (`genAggregateCtors`/`genWireCtors`) and sum-type-agnostic `resolveCtorSpecs` validator extracted; negative-case error text verified verbatim. (2026-06-06)
-- [ ] EP-58 M1: `src/Keiki/Operators.hs` (qualified-import re-export, fixities preserved) + cabal + qualified-path spec.
-- [ ] EP-58 M2: user-guide recipe (`hiding ((.>))` / qualified / `requireGt` vs `requireGuard (x .> y)`); cross-linked.
+- [x] EP-58 M1: `src/Keiki/Operators.hs` (qualified-import re-export; fixities **not** restated — see Discoveries) + cabal + qualified-path spec (`Keiki.OperatorsQualifiedSpec`, 4 examples; 304 total, 0 failures). (2026-06-06)
+- [x] EP-58 M2: user-guide recipe (§6: `hiding ((.>))` / qualified `Keiki.Operators` / builder verbs; `requireGt` vs `requireGuard (x .> y)` guidance); cross-linked from `user-guide.md`. (2026-06-06)
 - [x] EP-59 M1: event-sum reflection + `kind`-discriminated encode/decode skeleton with per-field override hooks in new `Keiki.Codec.JSON.Event` (`keiki-codec-json`). (2026-06-06)
 - [x] EP-59 M2: no-silent-fallback safety mechanism (`FailAtCompileTime` Q-fail or `EmitTodoBindings` named `_todo_*` bindings) + `<prefix>EventTypes :: [Text]` / `<prefix>KindMap` for Keiro `eventTypes`. (2026-06-06)
 - [x] EP-59 M3: round-trip + override-used + error-path + EventTypes/KindMap tests in `keiki-codec-json-test` (50 examples, 0 failures); both negative cases verified by hand; README worked example; haddock clean. In-repo demonstration only (the jitsurei dogfood is in a sibling repo, out of scope here). (2026-06-06)
@@ -235,6 +235,14 @@ between child plans. Provide concise evidence.
   EP-58 creates it. A `Keiki.OperatorsSpec` test module already exists from EP-45 (it tests the
   operators that live in `Keiki.Core`), so EP-58's new test is named `Keiki.OperatorsQualifiedSpec`
   to avoid a module-name clash in `test/Spec.hs`.
+- **EP-58: restating operator fixities in a re-export module is a hard error on GHC 9.12 /
+  GHC2024.** The EP-58 plan assumed it was "harmless" to replicate `infix` declarations in
+  `Keiki.Operators`; in fact `cabal build` failed with `GHC-44432: The fixity signature for ‘.<’
+  lacks an accompanying binding` — a fixity signature requires a binding *in the same module*,
+  and a re-export module only re-exports the names. The fix is to omit the fixity block entirely:
+  a re-exported operator carries its fixity from the defining module, so qualified users
+  (`x K..> y`) still get `infix 4` from `Keiki.Core`. Any future re-export-only module (or EP-60
+  if it adds a focused operator surface) must not restate fixities. (2026-06-06)
 - The `keiki-codec-json` package today (verified 2026-06-06) exposes only `deriveRegFileCodec`/
   `deriveRegFileCodecAs`, which handle a *single-constructor record* (a snapshot / register file)
   and explicitly *reject* sum types. Event-sum codecs — exactly what Req 6 needs — are genuinely
