@@ -58,11 +58,11 @@ This section must always reflect the actual current state of the work.
 - [x] M1.5 Create `test/Keiki/Render/PrettySpec.hs` with hand-built values covering slot reads, input-field reads, `==`, `< <= > >=`, arithmetic, boolean structure, `<fn>(...)`, `<lit>`, and `prettyUpdate`. (2026-06-06)
 - [x] M1.6 Register `Keiki.Render.PrettySpec` in `keiki.cabal` `test-suite: other-modules` and wire it into `test/Spec.hs`. (2026-06-06)
 - [x] M1.7 `cabal build keiki` and `cabal test keiki-test` pass; new describe block green (342 examples, 0 failures). (2026-06-06)
-- [ ] M2.1 Add `data MermaidGuardMode = MermaidGuardHidden | MermaidGuardStructuralSummary | MermaidGuardPretty` (derive `Eq`, `Show`) to `src/Keiki/Render/Mermaid.hs` and export it.
-- [ ] M2.2 Add `guardMode :: MermaidGuardMode` field to `MermaidOptions`, set its default in `defaultMermaidOptions`.
-- [ ] M2.3 Add `renderGuardSegment :: MermaidOptions -> HsPred rs ci -> Maybe Text` and route the guard segment of `edgeLabelWith` through it.
-- [ ] M2.4 Confirm default and `showGuardSummary = True` goldens unchanged; add `MermaidGuardPretty` golden to `test/Keiki/Render/MermaidSpec.hs`.
-- [ ] M2.5 `cabal build keiki` and `cabal test keiki-test` pass; full suite green.
+- [x] M2.1 Add `data MermaidGuardMode = MermaidGuardHidden | MermaidGuardStructuralSummary | MermaidGuardPretty` (derive `Eq`, `Show`) to `src/Keiki/Render/Mermaid.hs` and export it. (2026-06-06)
+- [x] M2.2 Add `guardMode :: MermaidGuardMode` field to `MermaidOptions`, set its default in `defaultMermaidOptions`. (2026-06-06)
+- [x] M2.3 Add `renderGuardSegment :: MermaidOptions -> HsPred rs ci -> Maybe Text` and route the guard segment of `edgeLabelWith` through it. (2026-06-06)
+- [x] M2.4 Confirm default and `showGuardSummary = True` goldens unchanged; add `MermaidGuardPretty` golden to `test/Keiki/Render/MermaidSpec.hs`. (2026-06-06)
+- [x] M2.5 `cabal build keiki` and `cabal test keiki-test` pass; full suite green (343 examples, 0 failures). (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -85,6 +85,30 @@ implementation. Provide concise evidence.
   ```
 
   After the pragma, `cabal build keiki` is warning-free for this module.
+
+- Adding the `guardMode` field to `MermaidOptions` is byte-identical for *output* and
+  for record-*update* callers (`defaultMermaidOptions { … }`), but it breaks full
+  record-*literal* constructors. The existing annotated-golden test constructed
+  `MermaidOptions { showWrittenSlots = True, showGuardSummary = True }` as a full
+  literal; after the field was added GHC only *warns* (`-Wmissing-fields`, not an
+  error here), leaving `guardMode` as a bottom thunk, which then blows up at run time
+  the moment `renderGuardSegment` forces it:
+
+  ```text
+  1) … toMermaidWith (annotated edge summary) …
+       uncaught exception: RecConError
+       test/Keiki/Render/MermaidSpec.hs:116:10-76: Missing field in record construction guardMode
+  ```
+
+  Fix: construct the options via record-update on `defaultMermaidOptions`
+  (`defaultMermaidOptions { showWrittenSlots = True, showGuardSummary = True }`). The
+  pinned golden text `userRegAnnotatedCanonical` is *unchanged*, so byte-identity of
+  the output is preserved; only the construction site changed. This matters for the
+  sibling plan `docs/plans/63-…md` (which appends more `MermaidOptions` fields) and
+  for the downstream Seihou consumer: any caller that builds `MermaidOptions` as a
+  full record literal must switch to record-update on `defaultMermaidOptions`, or add
+  the new field. The MasterPlan's Integration Points rule "extend additively" should
+  be read as "and construct via record-update on `defaultMermaidOptions`".
 
 
 ## Decision Log
@@ -146,7 +170,36 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-61 is complete. Both milestones landed and the full suite is green (343 examples,
+0 failures).
+
+- **M1 — the pure pretty-printer.** `src/Keiki/Render/Pretty.hs` exports `indexName`,
+  `prettyTerm`, `prettyPred`, `prettyUpdate`, all pure over `text` with no solver and
+  no new dependency. `test/Keiki/Render/PrettySpec.hs` pins every constructor's exact
+  rendering: register reads by slot name (via the new `indexName` `Index` walker),
+  input-field reads as `ctor.field`, the four `PCmp` directions, `+ - *` arithmetic,
+  `&& || !` boolean structure with parentheses, opaque `<fn>(...)`, and the opaque
+  `<lit>` for literal values. The sibling plans `docs/plans/62-…md` and
+  `docs/plans/63-…md` can now import this module rather than re-implementing guard
+  prettifying.
+
+- **M2 — the `MermaidGuardPretty` mode.** `MermaidOptions` gained the `guardMode`
+  field additively; `renderGuardSegment` reconciles the legacy `showGuardSummary`
+  flag (now the legacy spelling of `MermaidGuardStructuralSummary`, honoured only when
+  `guardMode` is left at `MermaidGuardHidden`). The default output is byte-identical —
+  the pre-existing default and annotated goldens both pass unchanged — and the new
+  golden pins the readable rendering, e.g. the `ConfirmAccount` edge now reads
+  `[g: (ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)]` instead of
+  `[g: PAnd PInCtor PEq]`. That contrast is the user-visible payoff the Seihou audit
+  asked for.
+
+- **Lessons.** Two implementation realities the plan's prose only partly anticipated,
+  both now in Surprises: (1) the `ZIdx @s` pattern needs `{-# LANGUAGE TypeAbstractions #-}`
+  to avoid a 9.14-deprecation warning; (2) adding a record field breaks full
+  record-literal constructors (a runtime `RecConError`), so callers must use
+  record-update on `defaultMermaidOptions`. Both are relevant to EP-63, which also
+  appends `MermaidOptions` fields. The predicted pretty-guard text in the plan was
+  close; the generate-and-pin recipe was the source of truth, as instructed.
 
 
 ## Context and Orientation
