@@ -53,16 +53,22 @@ import Keiki.Core (
 import Keiki.Fixtures.EmailDelivery (emailDelivery)
 import Keiki.Fixtures.UserRegistration (Vertex (..), userReg)
 import Keiki.Render.Mermaid (
+    AtlasKindDisplay (..),
+    MermaidAtlasOptions (..),
     MermaidGuardMode (..),
     MermaidLabelLayout (..),
     MermaidOptions (..),
     MermaidOutputLayout (..),
+    MermaidSection (..),
+    MermaidSectionKind (..),
     MermaidStateLabels (..),
+    defaultMermaidAtlasOptions,
     defaultMermaidOptions,
     duplicateStateIds,
     toMermaid,
     toMermaidAlternative,
     toMermaidAtlas,
+    toMermaidAtlasWith,
     toMermaidCompose3,
     toMermaidCompose3Nested,
     toMermaidComposite,
@@ -209,6 +215,28 @@ spec = do
                 , (T.pack "Alert \x2A3E Email", toMermaidComposite (compose alertSource emailDelivery))
                 ]
                 `shouldBe` atlasCanonical
+
+    describe "toMermaidAtlasWith (typed sections, EP-65)" $
+        it "distinguishes kinds and emits markers keyed by sectionId" $
+            toMermaidAtlasWith
+                ( defaultMermaidAtlasOptions
+                    { atlasTitle = Just (T.pack "Seihou diagrams")
+                    , atlasShowSectionKind = KindAsComment
+                    , atlasWrapMarkers = Just (T.pack "seihou")
+                    }
+                )
+                [ MermaidSection
+                    (T.pack "incident-command")
+                    (T.pack "Incident Command")
+                    AggregateDiagram
+                    (toMermaid userReg)
+                , MermaidSection
+                    (T.pack "dispatch")
+                    (T.pack "Dispatch")
+                    ProcessManagerDiagram
+                    (toMermaidComposite (compose alertSource emailDelivery))
+                ]
+                `shouldBe` typedAtlasCanonical
 
 {- | The canonical Mermaid block for @userReg@, mirrored verbatim from
 the aggregate's diagram in @docs/guide/diagrams/user-registration.md@.
@@ -454,6 +482,36 @@ atlasCanonical =
         , T.pack "## Alert \x2A3E Email\n\n```mermaid\n"
             <> alertEmailCompositeCanonical
             <> T.pack "\n```"
+        ]
+
+{- | EP-65: the canonical typed-atlas document. Two sections — an
+aggregate and a process-manager — each labelled with an HTML-comment
+kind line and wrapped in @seihou: {sectionId}@ begin/end markers, under a
+top-level @# Seihou diagrams@ title. Built from the same canonical
+diagram blocks the other goldens pin, so a future diagram change forces
+an update here too. Exercises 'atlasTitle', 'KindAsComment',
+'atlasWrapMarkers', and the marker-id = 'sectionId' contract that ties
+the atlas to "Keiki.Render.Markdown".
+-}
+typedAtlasCanonical :: Text
+typedAtlasCanonical =
+    T.concat
+        [ T.pack "# Seihou diagrams\n\n"
+        , T.pack "## Incident Command\n\n"
+        , T.pack "<!-- kind: Aggregate -->\n\n"
+        , T.pack "<!-- seihou: incident-command begin -->\n"
+        , T.pack "```mermaid\n"
+        , userRegCanonical
+        , T.pack "\n```"
+        , T.pack "\n<!-- seihou: incident-command end -->"
+        , T.pack "\n\n"
+        , T.pack "## Dispatch\n\n"
+        , T.pack "<!-- kind: Process manager -->\n\n"
+        , T.pack "<!-- seihou: dispatch begin -->\n"
+        , T.pack "```mermaid\n"
+        , alertEmailCompositeCanonical
+        , T.pack "\n```"
+        , T.pack "\n<!-- seihou: dispatch end -->"
         ]
 
 {- | The canonical Mermaid block for the @AlertSource ⨾ EmailDelivery@

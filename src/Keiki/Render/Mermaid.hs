@@ -33,6 +33,12 @@ module Keiki.Render.Mermaid (
     toMermaidCompose3Nested,
     toMermaidFeedback1,
     toMermaidAtlas,
+    toMermaidAtlasWith,
+    MermaidSection (..),
+    MermaidSectionKind (..),
+    MermaidAtlasOptions (..),
+    AtlasKindDisplay (..),
+    defaultMermaidAtlasOptions,
     toMermaidWith,
     toMermaidWithLabels,
     MermaidOptions (..),
@@ -1016,13 +1022,149 @@ yields the empty 'Text'.
 -}
 toMermaidAtlas :: [(Text, Text)] -> Text
 toMermaidAtlas sections =
-    T.intercalate
-        (T.pack "\n\n")
-        [ T.pack "## "
-            <> label
-            <> T.pack "\n\n"
-            <> T.pack "```mermaid\n"
-            <> diagram
-            <> T.pack "\n```"
-        | (label, diagram) <- sections
+    toMermaidAtlasWith
+        defaultMermaidAtlasOptions
+        [ MermaidSection
+            { sectionId = T.pack ("section-" <> show i)
+            , sectionTitle = title
+            , sectionKind = CustomDiagram (T.pack "")
+            , sectionDiagram = diagram
+            }
+        | (i, (title, diagram)) <- zip [(0 :: Int) ..] sections
         ]
+
+{- | What kind of transducer a diagram section depicts. Lets a generated
+atlas distinguish an aggregate state diagram from a process-manager or
+workflow diagram. 'CustomDiagram' carries a caller-chosen label for
+anything outside the three named kinds.
+-}
+data MermaidSectionKind
+    = AggregateDiagram
+    | ProcessManagerDiagram
+    | WorkflowDiagram
+    | CustomDiagram Text
+    deriving stock (Eq, Show)
+
+{- | One section of a diagram atlas. 'sectionDiagram' is already-rendered
+Mermaid 'Text' (produced by 'toMermaid' \/ 'toMermaidWith' or any other
+renderer in this module), so the atlas is independent of the
+transducer's vertex\/register\/input\/output types. 'sectionId' is a
+stable token suitable for use as a Markdown replacement-marker id (see
+"Keiki.Render.Markdown").
+-}
+data MermaidSection = MermaidSection
+    { sectionId :: Text
+    , sectionTitle :: Text
+    , sectionKind :: MermaidSectionKind
+    , sectionDiagram :: Text
+    }
+    deriving stock (Eq, Show)
+
+{- | How (or whether) to surface a section's 'MermaidSectionKind' in the
+rendered atlas.
+-}
+data AtlasKindDisplay
+    = -- | Do not render the kind at all (default).
+      KindHidden
+    | -- | Render the kind as a visible italic line under the heading.
+      KindAsLabel
+    | -- | Render the kind as an HTML comment (invisible in previews).
+      KindAsComment
+    deriving stock (Eq, Show)
+
+{- | Options for 'toMermaidAtlasWith'. Every field defaults (in
+'defaultMermaidAtlasOptions') to a value that reproduces the legacy
+'toMermaidAtlas' output byte-for-byte.
+-}
+data MermaidAtlasOptions = MermaidAtlasOptions
+    { atlasTitle :: Maybe Text
+    -- ^ Optional top-level heading prepended above all sections. Default 'Nothing'.
+    , atlasSectionHeadingLevel :: Int
+    -- ^ Markdown heading level for each section heading. Default 2 (@## @).
+    , atlasShowSectionKind :: AtlasKindDisplay
+    -- ^ Whether\/how to show each section's kind. Default 'KindHidden'.
+    , atlasWrapMarkers :: Maybe Text
+    {- ^ When @'Just' ns@, wrap each section's fenced block in
+    @\<!-- ns: sectionId begin --\>@ \/ @\<!-- ns: sectionId end --\>@
+    markers, so 'Keiki.Render.Markdown.replaceMarkdownDiagramBlock' can
+    later update that block in place. Default 'Nothing'.
+    -}
+    , atlasFenceLanguage :: Text
+    -- ^ Fenced-block language tag. Default @"mermaid"@.
+    }
+
+{- | The default atlas options: no top-level title, heading level 2,
+hidden kind, no markers, @mermaid@ fence. @'toMermaidAtlasWith'
+'defaultMermaidAtlasOptions'@ over sections built from @(title, diagram)@
+pairs is byte-identical to the legacy 'toMermaidAtlas'.
+-}
+defaultMermaidAtlasOptions :: MermaidAtlasOptions
+defaultMermaidAtlasOptions =
+    MermaidAtlasOptions
+        { atlasTitle = Nothing
+        , atlasSectionHeadingLevel = 2
+        , atlasShowSectionKind = KindHidden
+        , atlasWrapMarkers = Nothing
+        , atlasFenceLanguage = T.pack "mermaid"
+        }
+
+{- | Assemble typed diagram sections into one Markdown document. With
+'defaultMermaidAtlasOptions' the per-section output is
+@## {title}\\n\\n```{lang}\\n{diagram}\\n```@ and sections are joined by a
+blank line, byte-identical to the legacy 'toMermaidAtlas'. Turning on a
+field adds output (a top-level title, a per-section kind line, or
+begin/end markers keyed by 'sectionId') without disturbing the rest.
+-}
+toMermaidAtlasWith :: MermaidAtlasOptions -> [MermaidSection] -> Text
+toMermaidAtlasWith opts secs =
+    let body = T.intercalate (T.pack "\n\n") (map (renderSection opts) secs)
+     in case atlasTitle opts of
+            Nothing -> body
+            Just t
+                | T.null body -> T.pack "# " <> t
+                | otherwise -> T.pack "# " <> t <> T.pack "\n\n" <> body
+
+{- | Render one atlas section: a heading, an optional kind line, and the
+fenced diagram block (optionally wrapped in begin/end markers). The
+within-section pieces are joined by a blank line.
+-}
+renderSection :: MermaidAtlasOptions -> MermaidSection -> Text
+renderSection opts sec =
+    let heading =
+            T.replicate (atlasSectionHeadingLevel opts) (T.pack "#")
+                <> T.pack " "
+                <> sectionTitle sec
+        kindLine = case atlasShowSectionKind opts of
+            KindHidden -> Nothing
+            KindAsLabel -> Just (T.pack "_" <> kindText (sectionKind sec) <> T.pack "_")
+            KindAsComment -> Just (T.pack "<!-- kind: " <> kindText (sectionKind sec) <> T.pack " -->")
+        fenced =
+            T.pack "```"
+                <> atlasFenceLanguage opts
+                <> T.pack "\n"
+                <> sectionDiagram sec
+                <> T.pack "\n```"
+        block = case atlasWrapMarkers opts of
+            Nothing -> fenced
+            Just ns ->
+                T.pack "<!-- "
+                    <> ns
+                    <> T.pack ": "
+                    <> sectionId sec
+                    <> T.pack " begin -->\n"
+                    <> fenced
+                    <> T.pack "\n<!-- "
+                    <> ns
+                    <> T.pack ": "
+                    <> sectionId sec
+                    <> T.pack " end -->"
+     in T.intercalate (T.pack "\n\n") (heading : maybe id (:) kindLine [block])
+
+{- | The visible label for a 'MermaidSectionKind', used by
+'renderSection' when 'atlasShowSectionKind' is not 'KindHidden'.
+-}
+kindText :: MermaidSectionKind -> Text
+kindText AggregateDiagram = T.pack "Aggregate"
+kindText ProcessManagerDiagram = T.pack "Process manager"
+kindText WorkflowDiagram = T.pack "Workflow"
+kindText (CustomDiagram lbl) = lbl

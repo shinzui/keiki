@@ -67,12 +67,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Read `src/Keiki/Render/Mermaid.hs` around lines 676-696 to confirm the current `toMermaidAtlas` shape before editing.
-- [ ] M1: Add `MermaidSectionKind`, `MermaidSection`, `MermaidAtlasOptions`, `defaultMermaidAtlasOptions`, and `toMermaidAtlasWith` to `src/Keiki/Render/Mermaid.hs`.
-- [ ] M1: Re-express `toMermaidAtlas` in terms of `toMermaidAtlasWith defaultMermaidAtlasOptions` and verify it is byte-identical to the old definition.
-- [ ] M1: Extend the module export list in `src/Keiki/Render/Mermaid.hs` with the new names.
-- [ ] M1: Add a new multi-section atlas golden to `test/Keiki/Render/MermaidSpec.hs`; leave the existing `atlasCanonical` golden untouched.
-- [ ] M1: Run `cabal build keiki` and `cabal test keiki-test`; confirm the pre-existing atlas golden still passes.
+- [x] M1: Read `src/Keiki/Render/Mermaid.hs` around lines 676-696 to confirm the current `toMermaidAtlas` shape before editing. (Confirmed at `Mermaid.hs:1017-1028`.)
+- [x] M1: Add `MermaidSectionKind`, `MermaidSection`, `MermaidAtlasOptions`, `defaultMermaidAtlasOptions`, and `toMermaidAtlasWith` to `src/Keiki/Render/Mermaid.hs`. (Plus `AtlasKindDisplay` and the private `renderSection`/`kindText` helpers.)
+- [x] M1: Re-express `toMermaidAtlas` in terms of `toMermaidAtlasWith defaultMermaidAtlasOptions` and verify it is byte-identical to the old definition. (Pre-existing `atlasCanonical` golden still passes.)
+- [x] M1: Extend the module export list in `src/Keiki/Render/Mermaid.hs` with the new names.
+- [x] M1: Add a new multi-section atlas golden to `test/Keiki/Render/MermaidSpec.hs`; leave the existing `atlasCanonical` golden untouched. (`typedAtlasCanonical`.)
+- [x] M1: Run `cabal build keiki` and `cabal test keiki-test`; confirm the pre-existing atlas golden still passes. (357 examples, 0 failures.)
 - [ ] M2: Create `src/Keiki/Render/Markdown.hs` with `MarkdownDiagramBlock`, `MarkdownDiagramError`, and `replaceMarkdownDiagramBlock`.
 - [ ] M2: Add `Keiki.Render.Markdown` to `keiki.cabal` `library: exposed-modules`.
 - [ ] M2: Create `test/Keiki/Render/MarkdownSpec.hs`; add it to the test-suite `other-modules` and wire it into `test/Spec.hs`.
