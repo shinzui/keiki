@@ -51,13 +51,15 @@ import Keiki.Core (
     pack,
  )
 import Keiki.Fixtures.EmailDelivery (emailDelivery)
-import Keiki.Fixtures.UserRegistration (userReg)
+import Keiki.Fixtures.UserRegistration (Vertex (..), userReg)
 import Keiki.Render.Mermaid (
     MermaidGuardMode (..),
     MermaidLabelLayout (..),
     MermaidOptions (..),
     MermaidOutputLayout (..),
+    MermaidStateLabels (..),
     defaultMermaidOptions,
+    duplicateStateIds,
     toMermaid,
     toMermaidAlternative,
     toMermaidAtlas,
@@ -67,6 +69,8 @@ import Keiki.Render.Mermaid (
     toMermaidCompositeNested,
     toMermaidFeedback1,
     toMermaidWith,
+    toMermaidWithLabels,
+    vertexLabel,
  )
 
 spec :: Spec
@@ -177,6 +181,26 @@ spec = do
                 (defaultMermaidOptions{outputLayout = MermaidOutputCounted})
                 multiEvt
                 `shouldBe` multiEvtCountedCanonical
+
+    describe "toMermaidWithLabels (stable ASCII ids, spaced display labels, EP-64)" $
+        it "renders userReg with friendly labels and stable ids" $
+            toMermaidWithLabels defaultMermaidOptions userRegLabels userReg
+                `shouldBe` userRegLabeledCanonical
+
+    describe "toMermaidWithLabels (id == display is byte-identical, EP-64)" $
+        it "equals toMermaidWith when stateId == stateDisplayLabel" $
+            toMermaidWithLabels
+                defaultMermaidOptions
+                (MermaidStateLabels{stateId = vertexLabel, stateDisplayLabel = vertexLabel})
+                userReg
+                `shouldBe` toMermaidWith defaultMermaidOptions userReg
+
+    describe "duplicateStateIds (EP-64)" $ do
+        it "is empty for a unique-id labels record" $
+            duplicateStateIds userRegLabels userReg `shouldBe` []
+        it "reports the colliding id for a clashing labels record" $
+            duplicateStateIds collidingLabels userReg
+                `shouldBe` [T.pack "X"]
 
     describe "toMermaidAtlas (multi-diagram document)" $
         it "assembles two labelled diagrams into one document" $
@@ -361,6 +385,56 @@ multiEvtCountedCanonical =
         , "    MS0 --> MS1 : Go / 3 events"
         , "    MS1 --> MS2 : Go / 2 events"
         , "    MS2 --> [*]"
+        ]
+
+{- | EP-64: a labels record mapping each @userReg@ 'Vertex' to its
+@show@-derived stable ASCII id and a friendly spaced display label.
+@Confirmed@ and @Deleted@ map to display labels equal to their ids, so
+they get no @state \"…\" as …@ declaration; @PotentialCustomer@ and
+@RequiresConfirmation@ get spaced labels and therefore declarations.
+-}
+userRegLabels :: MermaidStateLabels Vertex
+userRegLabels =
+    MermaidStateLabels
+        { stateId = T.pack . show
+        , stateDisplayLabel = \case
+            PotentialCustomer -> T.pack "Potential Customer"
+            RequiresConfirmation -> T.pack "Requires Confirmation"
+            Confirmed -> T.pack "Confirmed"
+            Deleted -> T.pack "Deleted"
+        }
+
+{- | EP-64: a deliberately broken labels record collapsing every
+'Vertex' onto the single id @\"X\"@, so 'duplicateStateIds' reports
+@\"X\"@ once.
+-}
+collidingLabels :: MermaidStateLabels Vertex
+collidingLabels =
+    MermaidStateLabels
+        { stateId = const (T.pack "X")
+        , stateDisplayLabel = T.pack . show
+        }
+
+{- | EP-64: @userReg@ rendered by 'toMermaidWithLabels' with
+'userRegLabels'. Two @state \"…\" as …@ declarations (for the two
+spaced labels) precede the initial-state line; every transition arrow
+still uses the stable ASCII id, so the topology below the declarations
+is byte-identical to 'userRegCanonical'.
+-}
+userRegLabeledCanonical :: Text
+userRegLabeledCanonical =
+    T.intercalate
+        (T.pack "\n")
+        [ "stateDiagram-v2"
+        , "    state \"Potential Customer\" as PotentialCustomer"
+        , "    state \"Requires Confirmation\" as RequiresConfirmation"
+        , "    [*] --> PotentialCustomer"
+        , "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent"
+        , "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed"
+        , "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent"
+        , "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5"
+        , "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted"
+        , "    Deleted --> [*]"
         ]
 
 {- | EP-50: the canonical atlas document for @userReg@ + the

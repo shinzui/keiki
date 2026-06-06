@@ -151,7 +151,7 @@ namespace is their natural home.
 | 61 | Pretty-printer for HsPred/Term/Update and domain-readable Mermaid guard rendering | docs/plans/61-pretty-printer-for-hspred-term-update-and-domain-readable-mermaid-guard-rendering.md | None | None | Complete |
 | 62 | Edge inspector Markdown renderer for SymTransducer | docs/plans/62-edge-inspector-markdown-renderer-for-symtransducer.md | None | EP-61 | Complete |
 | 63 | Multiline Mermaid edge labels and multi-event output layout controls | docs/plans/63-multiline-mermaid-edge-labels-and-multi-event-output-layout-controls.md | None | EP-61 | Complete |
-| 64 | Stable human-friendly Mermaid state IDs and display labels | docs/plans/64-stable-human-friendly-mermaid-state-ids-and-display-labels.md | None | None | Not Started |
+| 64 | Stable human-friendly Mermaid state IDs and display labels | docs/plans/64-stable-human-friendly-mermaid-state-ids-and-display-labels.md | None | None | Complete |
 | 65 | Mermaid diagram atlas sections and Markdown marker replacement helper | docs/plans/65-mermaid-diagram-atlas-sections-and-markdown-marker-replacement-helper.md | None | None | Not Started |
 | 66 | Pure Mermaid diagram and atlas validation helpers | docs/plans/66-pure-mermaid-diagram-and-atlas-validation-helpers.md | None | EP-64 | Not Started |
 
@@ -238,7 +238,8 @@ authoritative, detailed version.
 - [x] EP-62 M2: structural-and-pretty guard option, output-field term rendering (positional, field-name-free per validation), written-slot listing; golden cases. (2026-06-06)
 - [x] EP-63 M1: `MermaidLabelLayout` + `maxInlineWrittenSlots`/`maxInlineGuardWidth` added additively; multiline `<br/>` labels with deterministic `+N more` truncation; default byte-identical. (2026-06-06)
 - [x] EP-63 M2: `MermaidOutputLayout` (`Semicolon`/`Multiline`/`Counted`); default reproduces current length-based behavior; golden cases. (2026-06-06)
-- [ ] EP-64 M1: `MermaidStateLabels` + `toMermaidWithLabels`; stable ASCII IDs with friendly display labels; default rendering still `Show s`; golden cases.
+- [x] EP-64 M1: `MermaidStateLabels` + `toMermaidWithLabels`; stable ASCII IDs with friendly display labels; default rendering still `Show s`; golden cases. (2026-06-06)
+- [x] EP-64 M2: pure total `duplicateStateIds` (AST-level duplicate-ID check, the shared-id contract for EP-66); colliding + clean unit tests. (2026-06-06)
 - [ ] EP-65 M1: `MermaidSection` + `MermaidSectionKind` + `toMermaidAtlasWith` (typed sections, stable section IDs); default `toMermaidAtlas` byte-identical.
 - [ ] EP-65 M2: `src/Keiki/Render/Markdown.hs` with `replaceMarkdownDiagramBlock` + `MarkdownDiagramBlock`/`MarkdownDiagramError`; begin/end/duplicate-marker errors; content-preservation tests.
 - [ ] EP-66 M1: `validateMermaidDiagram` + `MermaidValidationOptions`/`MermaidValidationWarning` (missing header, empty, over-length labels, suspicious unescaped chars).

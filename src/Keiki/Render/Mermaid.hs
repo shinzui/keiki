@@ -34,10 +34,13 @@ module Keiki.Render.Mermaid (
     toMermaidFeedback1,
     toMermaidAtlas,
     toMermaidWith,
+    toMermaidWithLabels,
     MermaidOptions (..),
     MermaidGuardMode (..),
     MermaidLabelLayout (..),
     MermaidOutputLayout (..),
+    MermaidStateLabels (..),
+    duplicateStateIds,
     defaultMermaidOptions,
     vertexLabel,
     compositeLabel,
@@ -205,7 +208,69 @@ toMermaidWith ::
     MermaidOptions ->
     SymTransducer (HsPred rs ci) rs s ci co ->
     Text
-toMermaidWith opts = renderTopologyWith opts vertexLabel
+toMermaidWith opts = renderTopologyWith opts vertexLabel vertexLabel
+
+{- | A pair of per-vertex label functions for 'toMermaidWithLabels'.
+
+  * 'stateId' produces the stable ASCII Mermaid identifier used as a
+    node id and in every transition arrow. It is the caller's
+    responsibility to return a legal Mermaid identifier
+    (@[A-Za-z_][A-Za-z0-9_]*@); keiki uses it verbatim and does not
+    sanitise it.
+  * 'stateDisplayLabel' produces the friendly visible label, which may
+    contain spaces. When the display differs from the id for a vertex,
+    the renderer emits a @state \"<display>\" as <id>@ declaration; when
+    they are equal it emits nothing extra, so feeding identical
+    functions reproduces 'toMermaidWith' byte-for-byte.
+-}
+data MermaidStateLabels s = MermaidStateLabels
+    { stateId :: s -> Text
+    , stateDisplayLabel :: s -> Text
+    }
+
+{- | Like 'toMermaidWith', but the caller supplies separate stable
+identifiers and friendly display labels via 'MermaidStateLabels'
+instead of deriving both from 'Show'. The @Show s@ constraint is
+dropped — labels come from the callbacks.
+
+For every vertex whose display label differs from its id, a
+@state \"<display>\" as <id>@ declaration line is emitted between the
+@stateDiagram-v2@ header and the initial-state line; every transition
+arrow and @[*]@ marker uses the stable id. Vertices whose display
+equals their id get no declaration. The default 'toMermaid' /
+'toMermaidWith' path is unaffected.
+-}
+toMermaidWithLabels ::
+    (Bounded s, Enum s) =>
+    MermaidOptions ->
+    MermaidStateLabels s ->
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    Text
+toMermaidWithLabels opts lbls =
+    renderTopologyWith opts (stateId lbls) (stateDisplayLabel lbls)
+
+{- | Return the ASCII ids that collide: any id produced by 'stateId'
+for two or more distinct vertices. An empty result means every vertex
+maps to a unique id. Result order is first-occurrence order.
+
+Rendering itself stays total (it never throws on a collision); this is
+the AST-level check a caller runs before trusting a labeled diagram.
+The sibling validation helpers in "Keiki.Render" detect the same
+collisions over rendered diagram /text/ and key off the same id token,
+so the two agree on what an \"id\" is by construction.
+-}
+duplicateStateIds ::
+    (Bounded s, Enum s) =>
+    MermaidStateLabels s ->
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    [Text]
+duplicateStateIds lbls _t =
+    let ids = Prelude.map (stateId lbls) [minBound .. maxBound]
+     in [i | i <- nubInOrder ids, count i ids > (1 :: Int)]
+  where
+    count x = length . filter (== x)
+    nubInOrder =
+        foldr (\x acc -> if x `elem` acc then acc else x : acc) []
 
 {- | Render a composite 'SymTransducer' (a 'Keiki.Composition.compose'
 result, vertex type @'Composite' s1 s2@) to a Mermaid
@@ -654,7 +719,7 @@ renderTopology ::
     (s -> Text) ->
     SymTransducer (HsPred rs ci) rs s ci co ->
     Text
-renderTopology = renderTopologyWith defaultMermaidOptions
+renderTopology label = renderTopologyWith defaultMermaidOptions label label
 
 {- | The options-aware rendering core. Identical to 'renderTopology'
 except the per-edge line calls 'edgeLabelWith' so the structural
@@ -665,34 +730,50 @@ summary suffix appears when 'MermaidOptions' requests it. With
 renderTopologyWith ::
     (Enum s, Bounded s) =>
     MermaidOptions ->
+    {- | @idOf@: the stable Mermaid identifier for a vertex, used as
+    the node id and in every transition arrow.
+    -}
+    (s -> Text) ->
+    {- | @displayOf@: the visible display label for a vertex, which may
+    contain spaces. When it differs from @idOf@ the renderer emits a
+    @state \"<display>\" as <id>@ declaration line.
+    -}
     (s -> Text) ->
     SymTransducer (HsPred rs ci) rs s ci co ->
     Text
-renderTopologyWith opts label t =
+renderTopologyWith opts idOf displayOf t =
     let vertices = [minBound .. maxBound]
         header = T.pack "stateDiagram-v2"
         ind = T.pack "    "
         arrow = T.pack " --> "
         colon = T.pack " : "
-        initLine = ind <> T.pack "[*]" <> arrow <> label (initial t)
+        -- A declaration is emitted ONLY when the display differs from
+        -- the id; when they are equal (the Show-based default) this list
+        -- is empty, so the default output stays byte-identical.
+        declLines =
+            [ ind <> T.pack "state \"" <> displayOf s <> T.pack "\" as " <> idOf s
+            | s <- vertices
+            , displayOf s /= idOf s
+            ]
+        initLine = ind <> T.pack "[*]" <> arrow <> idOf (initial t)
         edgeLines =
             [ ind
-                <> label s
+                <> idOf s
                 <> arrow
-                <> label (target e)
+                <> idOf (target e)
                 <> colon
                 <> edgeLabelWith opts e
             | s <- vertices
             , e <- edgesOut t s
             ]
         finalLines =
-            [ ind <> label s <> arrow <> T.pack "[*]"
+            [ ind <> idOf s <> arrow <> T.pack "[*]"
             | s <- vertices
             , isFinal t s
             ]
      in T.intercalate
             (T.pack "\n")
-            (header : initLine : edgeLines ++ finalLines)
+            (header : declLines ++ initLine : edgeLines ++ finalLines)
 
 {- | The Mermaid identifier for a vertex. @'T.pack' . 'show'@ — for
 every shipped aggregate's vertex type, the data-constructor names

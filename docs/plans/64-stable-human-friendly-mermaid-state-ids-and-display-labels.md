@@ -46,13 +46,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Generalize `renderTopologyWith` in `src/Keiki/Render/Mermaid.hs` to take `idOf` and `displayOf`; splice `state "<display>" as <id>` declaration lines only where `displayOf s /= idOf s`.
-- [ ] M1: Update `renderTopology` and `toMermaidWith` to pass the same label function twice (preserve byte-identity for `toMermaid` and the composite renderers).
-- [ ] M1: Add `data MermaidStateLabels s` and `toMermaidWithLabels` (drops `Show s`); export both from the module.
-- [ ] M1: Add golden cases in `test/Keiki/Render/MermaidSpec.hs` — spaced-display-label block + the id==display byte-identity assertion; confirm existing goldens unchanged.
-- [ ] M1: `cabal build keiki` and `cabal test keiki-test` pass.
-- [ ] M2: Add and export pure `duplicateStateIds`; add colliding-id + clean-id unit tests.
-- [ ] M2: `cabal test keiki-test` passes.
+- [x] M1: Generalize `renderTopologyWith` in `src/Keiki/Render/Mermaid.hs` to take `idOf` and `displayOf`; splice `state "<display>" as <id>` declaration lines only where `displayOf s /= idOf s`.
+- [x] M1: Update `renderTopology` and `toMermaidWith` to pass the same label function twice (preserve byte-identity for `toMermaid` and the composite renderers).
+- [x] M1: Add `data MermaidStateLabels s` and `toMermaidWithLabels` (drops `Show s`); export both from the module.
+- [x] M1: Add golden cases in `test/Keiki/Render/MermaidSpec.hs` — spaced-display-label block + the id==display byte-identity assertion; confirm existing goldens unchanged.
+- [x] M1: `cabal build keiki` and `cabal test keiki-test` pass.
+- [x] M2: Add and export pure `duplicateStateIds`; add colliding-id + clean-id unit tests.
+- [x] M2: `cabal test keiki-test` passes.
 
 
 ## Surprises & Discoveries
@@ -60,7 +60,19 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- EP-61 and EP-63 had already landed, so `renderTopologyWith` carried EP-61/EP-63's `guardMode`
+  and layout logic through `edgeLabelWith`. The two-function generalization (`idOf`/`displayOf`)
+  composes cleanly with that work — it only touched the vertex-label uses (init/edge/final lines
+  plus the new `declLines`), leaving `edgeLabelWith opts e` untouched. No interaction surfaced.
+- `userReg`'s vertex type `Vertex` is exported with `(..)` from
+  `test/Keiki/Fixtures/UserRegistration.hs`, so the test's `userRegLabels` pattern-matches the
+  real constructors (`PotentialCustomer`, …) for friendly labels instead of switching on
+  `show s` strings — simpler and total. The renderer's exported `vertexLabel` (`= T.pack . show`)
+  served directly as the id==display identity function for the byte-identity assertion, so no
+  local `vertexLabelShow` helper was needed.
+- All goldens matched the renderer on the first run (356 examples, 0 failures); the
+  pre-existing `userRegCanonical` and every other golden stayed byte-identical, confirming the
+  "declaration only when display ≠ id" rule keeps the default path untouched.
 
 
 ## Decision Log
@@ -113,7 +125,17 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Delivered as designed. `renderTopologyWith` now takes separate `idOf`/`displayOf` functions and
+splices `state "<display>" as <id>` declarations only for vertices whose display differs from
+their id; `renderTopology` and `toMermaidWith` pass the same function twice, so `toMermaid`,
+`toMermaidWith`, and every composite renderer stay byte-identical. The new public surface is
+`MermaidStateLabels (..)`, `toMermaidWithLabels` (which drops the `Show s` constraint), and the
+pure total `duplicateStateIds`. Four new tests in `test/Keiki/Render/MermaidSpec.hs` pin the
+spaced-label rendering, the id==display byte-identity equivalence, and both duplicate-id cases;
+the suite is green at 356 examples with all pre-existing goldens unchanged. The
+`duplicateStateIds` AST-level check is the shared-id contract for EP-66, which will detect the
+same collisions over rendered text. No core type changed; the work is confined to
+`src/Keiki/Render/Mermaid.hs` and the spec. No deviations from the plan.
 
 
 ## Context and Orientation
