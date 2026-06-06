@@ -128,7 +128,8 @@ design note already specifies the sound shape, and the risk warrants a ratificat
 | 57 | Aggregate ctor derivation with per-constructor suffix overrides and excludes | docs/plans/57-aggregate-ctor-derivation-with-per-constructor-suffix-overrides-and-excludes.md | None | None | Complete |
 | 58 | Namespaced predicate operators (Keiki.Operators) and lens-conflict guidance | docs/plans/58-namespaced-predicate-operators-keiki-operators-and-lens-conflict-guidance.md | None | None | Complete |
 | 59 | Event codec skeleton derivation in keiki-codec-json | docs/plans/59-event-codec-skeleton-derivation-in-keiki-codec-json.md | None | None | Complete |
-| 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | In Progress |
+| 60 | First-class collection registers (design-gated) | docs/plans/60-first-class-collection-registers-design-gated.md | None | EP-56 | Complete (NO-GO at gate) |
+| 67 | Collection-slot opaque-mutation signpost: validateTransducer warning and guidance | docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md | None | EP-56 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-55).
@@ -223,7 +224,9 @@ authoritative, detailed version.
 - [x] EP-59 M2: no-silent-fallback safety mechanism (`FailAtCompileTime` Q-fail or `EmitTodoBindings` named `_todo_*` bindings) + `<prefix>EventTypes :: [Text]` / `<prefix>KindMap` for Keiro `eventTypes`. (2026-06-06)
 - [x] EP-59 M3: round-trip + override-used + error-path + EventTypes/KindMap tests in `keiki-codec-json-test` (50 examples, 0 failures); both negative cases verified by hand; README worked example; haddock clean. In-repo demonstration only (the jitsurei dogfood is in a sibling repo, out of scope here). (2026-06-06)
 - [x] EP-60 M1 (ratification gate): prototype (`test/Keiki/CollectionSpike.hs`, 18 hspec examples in the 322-example run) + FR6 analysis (recommend **Option B**) + Seihou-consumer reconciliation (flat-list ergonomics, not the symbolic story; only in-keiki guard is whole-list emptiness, already structural) + INV1–INV6 satisfiability argument. **STOPPED for maintainer GO/NO-GO** (see EP-60 "M1 Ratification Analysis" + Decision Log). (2026-06-06)
-- [ ] EP-60 M2–M5 (gated behind GO): collection slot kinds + structural updates (FR1/FR2, INV1/INV6); structural guards + `TLookupField` (FR3/FR4, INV2/INV3); FR6 symbolic per chosen option; builder verbs + `BlockerBoard` acceptance suite (INV5).
+- [~] EP-60 M2–M5: **NOT pursued** — NO-GO at the M1 gate (signpost-first chosen). Deferred until a real keyed-collection consumer appears.
+- [ ] EP-67 M1: opt-in `OpaqueGuard` `validateTransducer` warning (new `TransducerValidationWarning` arm + `warnOpaqueGuards` option, default off) + walkers + `ValidationSpec` cases.
+- [ ] EP-67 M2: user-guide recipe (structural storage is fine; opaque guards silently degrade; the three options; EP-60 deferral pointer) + cross-link.
 
 
 ## Surprises & Discoveries
@@ -357,6 +360,32 @@ between child plans. Provide concise evidence.
   the `keiki-codec-json` sibling package to preserve the aeson-free-core constraint; its key
   property is no silent generic codec fallback (compile failure or named TODO bindings), which
   is the anti-drift guarantee the requester asked for.
+  Date: 2026-06-06
+
+
+- Decision: At the EP-60 M1 ratification gate, record **NO-GO** on first-class collection
+  registers and adopt the **signpost-first** alternative, scoped as a new child plan EP-67
+  (`docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md`).
+  Rationale: M1's prototype + analysis showed the committed consumer (Seihou) is not blocked
+  (its only in-keiki collection guard is whole-list emptiness, already structural), and that
+  what future consumers actually trip over is the *silent* degradation when an opaque `TApp`
+  guard branches on collection contents — a discoverability problem. Building the full core
+  formalism change speculatively (zero consumers exercising the keyed path) risks a wrong,
+  irreversible AST cut and could entrench a boundary anti-pattern (the §8 sub-entity-as-aggregate
+  split is often the better design). The cheap, reversible guardrail — an opt-in
+  `validateTransducer` warning for opaque guards plus a doc recipe — prevents the tripping
+  without committing the formalism. EP-60's M2–M5 are deferred, not rejected; revisit if a real
+  keyed-collection consumer appears. (Chosen by the user.)
+  Date: 2026-06-06
+
+- Decision: Add EP-67 as a child plan; its warning targets opaque **guards** (not opaque
+  *updates*).
+  Rationale: an opaque update replays forward soundly and is never inverted, so it surrenders
+  nothing; the silent degradation lives in guards, where an opaque `TApp` becomes a free SBV
+  Boolean the determinism/dead-edge analyses cannot see. Flagging opaque guards is the precise,
+  honest signpost. EP-67 soft-depends on EP-56 (it extends the `validateTransducer` machinery
+  additively) and reuses the typed `EdgeRef s` locator. The new check defaults **off** to
+  preserve the meaning of `defaultValidationOptions` for existing consumers.
   Date: 2026-06-06
 
 

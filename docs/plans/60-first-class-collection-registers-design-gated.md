@@ -84,20 +84,17 @@ here, even if it requires splitting a partially completed task into two ("done" 
       invariant (18 hspec examples, part of 322 total, 0 failures, 0 warnings). See
       the "M1 Ratification Analysis" section. **STOPPED for maintainer GO/NO-GO.**
       (2026-06-06)
-- [ ] GATE: record maintainer GO or NO-GO in the Decision Log. (M2+ blocked until a
-      GO is recorded; a NO-GO closes the plan — consumer uses §8 fallbacks.)
-      **← awaiting decision**
-- [ ] M2 (GATED) — collection slot kinds (FR1) + structural `Update` constructors
-      `UInsert`/`UDelete`/`UAdjust` (FR2), with derived replay (INV1) and NoThunks
-      discipline (INV6).
-- [ ] M3 (GATED) — structural content guards `PMember`/`PNotMember`/`PSizeCmp`/
-      `PAll`/`PAny` (FR3) + `TLookupField` element projection (FR4), with
-      `solveOutput` invertibility (INV2) and `checkHiddenInputs` understanding
-      (INV3).
-- [ ] M4 (GATED) — FR6 symbolic translation per the ratified option (recommended
-      Option B: a named, queryable "not symbolically verified" status).
-- [ ] M5 (GATED) — builder verbs (FR5) + the `BlockerBoard` worked example + the §6
-      acceptance test suite; all existing suites green (INV5).
+- [x] GATE: maintainer decision recorded in the Decision Log — **NO-GO** on the core
+      change, **signpost-first** alternative chosen (follow-up plan EP-67). M2–M5 are
+      deferred, not pursued. (2026-06-06)
+- [~] M2–M5 (GATED) — **NOT pursued** (NO-GO at the gate). Deferred until a real
+      consumer with a genuine keyed-collection in-aggregate invariant appears; revisit
+      this gate with that concrete shape (and prefer the flat-list variants identified
+      in the Seihou reconciliation). The cheap guardrail lives in EP-67 instead.
+        - M2 (FR1 slot kinds + FR2 `UInsert`/`UDelete`/`UAdjust`) — deferred.
+        - M3 (FR3 guards + FR4 `TLookupField`) — deferred.
+        - M4 (FR6 Option B status) — deferred.
+        - M5 (FR5 builder verbs + `BlockerBoard` suite) — deferred.
 
 
 ## Surprises & Discoveries
@@ -207,7 +204,27 @@ Record every decision made while working on the plan.
   the note was waiting for; the gate must reconcile the design with these cases.
   Date: 2026-06-06
 
-(Add the GATE decision — GO or NO-GO — here when M1 review concludes.)
+- GATE DECISION: **NO-GO** on the core-formalism change (FR1–FR6 / milestones M2–M5),
+  choosing the **signpost-first** alternative instead.
+  Rationale: M1 established that (a) the committed consumer (Seihou) is not blocked — its
+  only in-keiki collection guard is whole-list emptiness, already structural; (b) the real
+  thing future consumers "trip over" is *not knowing* that an opaque whole-collection `=:`
+  silently surrenders keiki's symbolic + hidden-input guarantees, which is a *discoverability*
+  problem, not a missing-AST problem; and (c) building the full feature speculatively (zero
+  consumers exercising the hard keyed path) risks both a wrong, irreversible AST cut and
+  entrenching a boundary anti-pattern (the §8 sub-entity-as-aggregate split is often the
+  better design — it is exactly what the original Rei consumer chose). The cheapest move that
+  actually prevents future tripping is therefore a **signpost**: a documentation recipe plus a
+  `validateTransducer` warning (EP-56 is Complete and left its machinery extensible) that fires
+  when a collection-typed slot is mutated opaquely — turning the silent footgun into a
+  build-time nudge toward either the §8 split or a future first-class-collections request. This
+  is scoped as a small follow-up plan, **EP-67**
+  (`docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md`), under MasterPlan 14. The full
+  feature (this plan's M2–M5) is **deferred, not rejected**: if a real consumer with a genuine
+  keyed-collection in-aggregate invariant materializes, revisit this gate with that concrete
+  shape in hand (and prefer the flat-list variants the Seihou reconciliation identified).
+  Date: 2026-06-06
+  (Chosen by the user at the M1 ratification gate.)
 
 
 ## M1 Ratification Analysis (the GO/NO-GO basis)
@@ -353,8 +370,16 @@ Compare the result against the original purpose.
   the committed consumer's only in-keiki collection guard is whole-list emptiness
   (already structural), so this feature is an ergonomic/correctness-surface improvement
   rather than a current blocker — which both supports the cheaper Option B and means a
-  NO-GO/deferral has a low consumer cost. **Next step: maintainer records GO or NO-GO
-  in the Decision Log.** (M2–M5 outcomes to be filled if a GO is recorded.)
+  NO-GO/deferral has a low consumer cost.
+- **Gate outcome: NO-GO, signpost-first.** The maintainer chose to *not* build the core
+  formalism change (M2–M5) and instead address the real, recurring problem — consumers not
+  realizing an opaque whole-collection `=:` silently surrenders keiki's guarantees — with a
+  cheap, reversible guardrail: a documentation recipe plus a `validateTransducer` warning on
+  opaque mutation of a collection-typed slot. That work is the follow-up plan **EP-67**
+  (`docs/plans/67-collection-slot-opaque-mutation-signpost-validatetransducer-warning-and-guidance.md`). The full feature is deferred, not
+  rejected; revisit this gate if a real keyed-collection consumer appears. This plan (EP-60) is
+  therefore complete at its defined terminal state — the ratification gate — with M2–M5
+  intentionally not pursued.
 
 
 ## Context and Orientation
