@@ -24,14 +24,14 @@
 --
 -- See the keiki-codec-json-test/README.md for a worked example.
 module Keiki.Codec.JSON.Test.Golden
-  ( SlotGolden (..)
-  , slotGoldenSpec
-  ) where
+  ( SlotGolden (..),
+    slotGoldenSpec,
+  )
+where
 
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as LBS
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Lazy qualified as LBS
 import Test.Hspec (Spec, describe, it, shouldBe)
-
 
 -- | A pinned (input, expected-bytes) golden pair for a slot type.
 --
@@ -40,13 +40,12 @@ import Test.Hspec (Spec, describe, it, shouldBe)
 -- the result as a string literal. Future drift in @ToJSON@ trips the
 -- detector.
 data SlotGolden a = SlotGolden
-  { sgInput :: a
-    -- ^ Canonical input value the golden bytes are pinned against.
-  , sgBytes :: LBS.ByteString
-    -- ^ Expected @Aeson.encode (sgInput g)@ output, in lazy
+  { -- | Canonical input value the golden bytes are pinned against.
+    sgInput :: a,
+    -- | Expected @Aeson.encode (sgInput g)@ output, in lazy
     -- ByteString form for direct equality with 'Aeson.encode'.
+    sgBytes :: LBS.ByteString
   }
-
 
 -- | Run the case-#10 ToJSON-change detector for a slot type. Two
 -- assertions inside a @describe@ block:
@@ -68,13 +67,13 @@ data SlotGolden a = SlotGolden
 --                                      , sgBytes = "\"a\@b.c\"" })
 --   ...
 -- @
-slotGoldenSpec
-  :: (Aeson.ToJSON a, Aeson.FromJSON a, Eq a, Show a)
-  => String
-    -- ^ A human-readable label for the slot type (used as the
-    -- @describe@ heading; typically the type's name).
-  -> SlotGolden a
-  -> Spec
+slotGoldenSpec ::
+  (Aeson.ToJSON a, Aeson.FromJSON a, Eq a, Show a) =>
+  -- | A human-readable label for the slot type (used as the
+  -- @describe@ heading; typically the type's name).
+  String ->
+  SlotGolden a ->
+  Spec
 slotGoldenSpec name g = describe name $ do
   it "ToJSON matches golden bytes" $
     Aeson.encode (sgInput g) `shouldBe` sgBytes g

@@ -17,30 +17,29 @@
 -- Discoveries entry dated 2026-05-03 for the design discovery that
 -- led to this shape.
 module Keiki.CompositionAlternativeSpec
-  ( spec
+  ( spec,
     -- Re-exported for "Keiki.Render.MermaidSpec" (EP-33 M6). Following
     -- the test-fixture-re-export pattern EP-31's M4 established (see
     -- @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@'s
     -- IP-5 reference).
-  , pinger
-  , PingVertex (..)
-  , siblings
-  ) where
+    pinger,
+    PingVertex (..),
+    siblings,
+  )
+where
 
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import GHC.Generics (Generic)
-import Test.Hspec
-
 import Keiki.Composition (Composite (..), alternative)
 import Keiki.Core
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Generics (Append, emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
-
+import Test.Hspec
 
 -- * The Pinger fixture ----------------------------------------------------
 
@@ -48,27 +47,24 @@ import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 -- event's nonce.
 data PingData = PingData
   { nonce :: Text
-  } deriving stock (Eq, Show, Generic)
-
+  }
+  deriving stock (Eq, Show, Generic)
 
 data PingCmd = Ping PingData
   deriving stock (Eq, Show, Generic)
 
-
 -- | Single-field event payload: same nonce, different wrapping.
 data PongData = PongData
   { nonce :: Text
-  } deriving stock (Eq, Show, Generic)
-
+  }
+  deriving stock (Eq, Show, Generic)
 
 data PingEvent = Pong PongData
   deriving stock (Eq, Show, Generic)
 
-
 -- | Two-vertex aggregate: idle → pinged on a 'Ping'.
 data PingVertex = PingIdle | PingDone
   deriving stock (Eq, Show, Enum, Bounded)
-
 
 -- | Disjoint slot name from EmailDelivery's @emailRecipient@ /
 -- @emailSubject@ / @emailSentAt@ so 'alternative''s
@@ -77,56 +73,61 @@ type PingRegs =
   '[ '("pingNonce", Text)
    ]
 
-
 emptyPingRegs :: RegFile PingRegs
 emptyPingRegs = emptyRegFile
-
 
 -- TH-derived per-constructor projections + guards. The third element
 -- (the binding-suffix) is "Ping" so the bindings are @inCtorPing@,
 -- @inpPing@, @isPing@.
-$(deriveAggregateCtors ''PingCmd ''PingRegs
-    [ ("Ping", "Ping")
-    ])
+$( deriveAggregateCtors
+     ''PingCmd
+     ''PingRegs
+     [ ("Ping", "Ping")
+     ]
+ )
 
+$( deriveWireCtors
+     ''PingEvent
+     [ ("Pong", "Pong")
+     ]
+ )
 
-$(deriveWireCtors ''PingEvent
-    [ ("Pong", "Pong")
-    ])
+pinger ::
+  SymTransducer
+    (HsPred PingRegs PingCmd)
+    PingRegs
+    PingVertex
+    PingCmd
+    PingEvent
+pinger =
+  SymTransducer
+    { edgesOut = pingerEdges,
+      initial = PingIdle,
+      initialRegs = emptyPingRegs,
+      isFinal = \case PingDone -> True; _ -> False
+    }
 
-
-pinger
-  :: SymTransducer (HsPred PingRegs PingCmd)
-                   PingRegs PingVertex PingCmd PingEvent
-pinger = SymTransducer
-  { edgesOut    = pingerEdges
-  , initial     = PingIdle
-  , initialRegs = emptyPingRegs
-  , isFinal     = \case PingDone -> True; _ -> False
-  }
-
-
-pingerEdges
-  :: PingVertex
-  -> [Edge (HsPred PingRegs PingCmd) PingRegs PingCmd PingEvent PingVertex]
+pingerEdges ::
+  PingVertex ->
+  [Edge (HsPred PingRegs PingCmd) PingRegs PingCmd PingEvent PingVertex]
 pingerEdges = \case
-
   PingIdle ->
     [ Edge
-        { guard  = isPing
-        , update =
-            USet (#pingNonce :: IndexN "pingNonce" PingRegs Text)
-                 (inpPing #nonce)
-        , output = [ pack
-            inCtorPing
-            wirePong
-            (OFCons (inpPing #nonce) OFNil) ]
-        , target = PingDone
+        { guard = isPing,
+          update =
+            USet
+              (#pingNonce :: IndexN "pingNonce" PingRegs Text)
+              (inpPing #nonce),
+          output =
+            [ pack
+                inCtorPing
+                wirePong
+                (OFCons (inpPing #nonce) OFNil)
+            ],
+          target = PingDone
         }
     ]
-
   PingDone -> []
-
 
 -- * The composite --------------------------------------------------------
 
@@ -139,87 +140,98 @@ pingerEdges = \case
 -- Output: Either EmailEvent PingEvent
 -- Vertex: Composite EmailVertex PingVertex
 -- Regs:   Append EmailRegs PingRegs
-siblings
-  :: SymTransducer
-       (HsPred (Append EmailRegs PingRegs) (Either EmailCmd PingCmd))
-       (Append EmailRegs PingRegs)
-       (Composite EmailVertex PingVertex)
-       (Either EmailCmd PingCmd)
-       (Either EmailEvent PingEvent)
+siblings ::
+  SymTransducer
+    (HsPred (Append EmailRegs PingRegs) (Either EmailCmd PingCmd))
+    (Append EmailRegs PingRegs)
+    (Composite EmailVertex PingVertex)
+    (Either EmailCmd PingCmd)
+    (Either EmailEvent PingEvent)
 siblings = alternative emailDelivery pinger
-
 
 -- * Test fixtures --------------------------------------------------------
 
 sampleAt :: UTCTime
 sampleAt = UTCTime (fromGregorian 2026 5 3) (secondsToDiffTime 36000)
 
-
 sampleSendEmail :: EmailCmd
-sampleSendEmail = SendEmail (SendEmailData
-  { recipient = "alice@example.com"
-  , subject   = "Hello"
-  , at        = sampleAt
-  })
-
+sampleSendEmail =
+  SendEmail
+    ( SendEmailData
+        { recipient = "alice@example.com",
+          subject = "Hello",
+          at = sampleAt
+        }
+    )
 
 sampleEmailEvent :: EmailEvent
-sampleEmailEvent = EmailSent (EmailSentData
-  { recipient = "alice@example.com"
-  , subject   = "Hello"
-  , at        = sampleAt
-  })
-
+sampleEmailEvent =
+  EmailSent
+    ( EmailSentData
+        { recipient = "alice@example.com",
+          subject = "Hello",
+          at = sampleAt
+        }
+    )
 
 samplePing :: PingCmd
-samplePing = Ping (PingData { nonce = "abc123" })
-
+samplePing = Ping (PingData {nonce = "abc123"})
 
 samplePingEvent :: PingEvent
-samplePingEvent = Pong (PongData { nonce = "abc123" })
-
+samplePingEvent = Pong (PongData {nonce = "abc123"})
 
 -- * Specs ----------------------------------------------------------------
 
 spec :: Spec
 spec = do
   describe "alternative emailDelivery pinger" $ do
-
     describe "step routing" $ do
       it "Left input advances the EmailDelivery arm and emits Left output" $
-        case step siblings (initial siblings, initialRegs siblings)
-                  (Left sampleSendEmail) of
+        case step
+          siblings
+          (initial siblings, initialRegs siblings)
+          (Left sampleSendEmail) of
           Just (Composite ev pv, _, [Left co]) -> do
             ev `shouldBe` EmailSentVertex
-            pv `shouldBe` PingIdle           -- Pinger arm unchanged
+            pv `shouldBe` PingIdle -- Pinger arm unchanged
             co `shouldBe` sampleEmailEvent
-          other -> expectationFailure
-            ("expected Just (Composite EmailSentVertex PingIdle, _, Just (Left EmailSent ...)), got "
-              <> showStep other)
+          other ->
+            expectationFailure
+              ( "expected Just (Composite EmailSentVertex PingIdle, _, Just (Left EmailSent ...)), got "
+                  <> showStep other
+              )
 
       it "Right input advances the Pinger arm and emits Right output" $
-        case step siblings (initial siblings, initialRegs siblings)
-                  (Right samplePing) of
+        case step
+          siblings
+          (initial siblings, initialRegs siblings)
+          (Right samplePing) of
           Just (Composite ev pv, _, [Right co]) -> do
-            ev `shouldBe` EmailPending       -- EmailDelivery arm unchanged
+            ev `shouldBe` EmailPending -- EmailDelivery arm unchanged
             pv `shouldBe` PingDone
             co `shouldBe` samplePingEvent
-          other -> expectationFailure
-            ("expected Just (Composite EmailPending PingDone, _, Just (Right Pong ...)), got "
-              <> showStep other)
+          other ->
+            expectationFailure
+              ( "expected Just (Composite EmailPending PingDone, _, Just (Right Pong ...)), got "
+                  <> showStep other
+              )
 
       it "two-step interleave: Left then Right advances both arms independently" $
-        case step siblings (initial siblings, initialRegs siblings)
-                  (Left sampleSendEmail) of
+        case step
+          siblings
+          (initial siblings, initialRegs siblings)
+          (Left sampleSendEmail) of
           Just (s1, regs1, _) ->
             case step siblings (s1, regs1) (Right samplePing) of
               Just (Composite ev pv, _, [Right co]) -> do
-                ev `shouldBe` EmailSentVertex   -- preserved from step 1
+                ev `shouldBe` EmailSentVertex -- preserved from step 1
                 pv `shouldBe` PingDone
                 co `shouldBe` samplePingEvent
-              other -> expectationFailure
-                ("expected both arms advanced after Left+Right, got "
-                  <> showStep other)
+              other ->
+                expectationFailure
+                  ( "expected both arms advanced after Left+Right, got "
+                      <> showStep other
+                  )
           Nothing -> expectationFailure "first step (Left) returned Nothing"
 
     describe "checkHiddenInputs" $ do
@@ -236,33 +248,43 @@ spec = do
           Just (Composite ev pv, _) -> do
             ev `shouldBe` EmailSentVertex
             pv `shouldBe` PingDone
-          Nothing -> expectationFailure
-            "reconstitute returned Nothing on the canonical mixed-arm log"
+          Nothing ->
+            expectationFailure
+              "reconstitute returned Nothing on the canonical mixed-arm log"
 
       it "preserves cross-arm state across reconstitute order (Right then Left)" $
         case reconstitute siblings [Right samplePingEvent, Left sampleEmailEvent] of
           Just (Composite ev pv, _) -> do
             ev `shouldBe` EmailSentVertex
             pv `shouldBe` PingDone
-          Nothing -> expectationFailure
-            "reconstitute returned Nothing on the reordered mixed-arm log"
+          Nothing ->
+            expectationFailure
+              "reconstitute returned Nothing on the reordered mixed-arm log"
 
     describe "omega (the wire event for one external command)" $ do
       it "produces Left sampleEmailEvent on Left sampleSendEmail" $
-        omega siblings (initial siblings) (initialRegs siblings)
-              (Left sampleSendEmail)
+        omega
+          siblings
+          (initial siblings)
+          (initialRegs siblings)
+          (Left sampleSendEmail)
           `shouldBe` [(Left sampleEmailEvent)]
 
       it "produces Right samplePingEvent on Right samplePing" $
-        omega siblings (initial siblings) (initialRegs siblings)
-              (Right samplePing)
+        omega
+          siblings
+          (initial siblings)
+          (initialRegs siblings)
+          (Right samplePing)
           `shouldBe` [(Right samplePingEvent)]
-
   where
-    showStep
-      :: Maybe ( Composite EmailVertex PingVertex, x
-               , [Either EmailEvent PingEvent] )
-      -> String
-    showStep Nothing                  = "Nothing"
-    showStep (Just (cs, _, cos_))     =
+    showStep ::
+      Maybe
+        ( Composite EmailVertex PingVertex,
+          x,
+          [Either EmailEvent PingEvent]
+        ) ->
+      String
+    showStep Nothing = "Nothing"
+    showStep (Just (cs, _, cos_)) =
       "Just (" <> show cs <> ", _, " <> show cos_ <> ")"

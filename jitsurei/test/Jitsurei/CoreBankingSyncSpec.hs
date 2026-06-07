@@ -12,60 +12,66 @@
 --      'requireEq' guard; 'delta' returns 'Nothing'.
 module Jitsurei.CoreBankingSyncSpec (spec) where
 
-import Test.Hspec
-
-import Keiki.Core
 import Jitsurei.CoreBankingSync
 import Jitsurei.Loan
-  ( LoanCmd' (AssignLegacyLoanId)
-  , AssignLegacyLoanIdData (..)
+  ( AssignLegacyLoanIdData (..),
+    LoanCmd' (AssignLegacyLoanId),
   )
-
+import Keiki.Core
+import Test.Hspec
 
 happyPathInput :: SyncInput
-happyPathInput = LoanCreatedIn
-  (LoanCreatedInData "loan-001" "alice" 250_000)
-
+happyPathInput =
+  LoanCreatedIn
+    (LoanCreatedInData "loan-001" "alice" 250_000)
 
 callbackInput :: SyncInput
-callbackInput = LegacyCallbackReceivedIn
-  (LegacyCallbackReceivedInData "loan-001" "LEG-42")
-
+callbackInput =
+  LegacyCallbackReceivedIn
+    (LegacyCallbackReceivedInData "loan-001" "LEG-42")
 
 mismatchedCallback :: SyncInput
-mismatchedCallback = LegacyCallbackReceivedIn
-  (LegacyCallbackReceivedInData "loan-OTHER" "LEG-X")
-
+mismatchedCallback =
+  LegacyCallbackReceivedIn
+    (LegacyCallbackReceivedInData "loan-OTHER" "LEG-X")
 
 spec :: Spec
 spec = do
   describe "happy path: pending -> settled" $ do
     it "step on LoanCreatedIn emits SyncToLegacyRequested" $
-      case step coreBankingSync (initial coreBankingSync, initialRegs coreBankingSync)
-                happyPathInput of
+      case step
+        coreBankingSync
+        (initial coreBankingSync, initialRegs coreBankingSync)
+        happyPathInput of
         Just (SyncRequested, _, [SyncToLegacyRequested d]) -> do
-          d.loanId      `shouldBe` "loan-001"
+          d.loanId `shouldBe` "loan-001"
           d.applicantId `shouldBe` "alice"
-          d.principal   `shouldBe` 250_000
-        Just _  -> expectationFailure "unexpected output payload"
+          d.principal `shouldBe` 250_000
+        Just _ -> expectationFailure "unexpected output payload"
         Nothing -> expectationFailure "step on LoanCreatedIn returned Nothing"
 
     it "step on LegacyCallbackReceivedIn at SyncRequested emits LegacyAssignmentCommanded" $
-      case delta coreBankingSync (initial coreBankingSync) (initialRegs coreBankingSync)
-                 happyPathInput of
+      case delta
+        coreBankingSync
+        (initial coreBankingSync)
+        (initialRegs coreBankingSync)
+        happyPathInput of
         Just (SyncRequested, regs') ->
           case step coreBankingSync (SyncRequested, regs') callbackInput of
             Just (SyncSettled, _, [LegacyAssignmentCommanded d]) ->
-              d.assignment `shouldBe`
-                AssignLegacyLoanId (AssignLegacyLoanIdData "loan-001" "LEG-42")
-            Just _  -> expectationFailure "unexpected output payload at SyncRequested"
+              d.assignment
+                `shouldBe` AssignLegacyLoanId (AssignLegacyLoanIdData "loan-001" "LEG-42")
+            Just _ -> expectationFailure "unexpected output payload at SyncRequested"
             Nothing -> expectationFailure "step on callback returned Nothing"
         _ -> expectationFailure "first step did not land at SyncRequested"
 
   describe "idempotent replay: duplicate callback after settle" $
     it "delta on a duplicate LegacyCallbackReceivedIn returns Nothing" $
-      case delta coreBankingSync (initial coreBankingSync) (initialRegs coreBankingSync)
-                 happyPathInput of
+      case delta
+        coreBankingSync
+        (initial coreBankingSync)
+        (initialRegs coreBankingSync)
+        happyPathInput of
         Just (SyncRequested, regs') ->
           case delta coreBankingSync SyncRequested regs' callbackInput of
             Just (SyncSettled, regs'') ->
@@ -78,8 +84,11 @@ spec = do
 
   describe "mismatched callback: requireEq guard fails" $
     it "delta on a callback with a different loanId returns Nothing" $
-      case delta coreBankingSync (initial coreBankingSync) (initialRegs coreBankingSync)
-                 happyPathInput of
+      case delta
+        coreBankingSync
+        (initial coreBankingSync)
+        (initialRegs coreBankingSync)
+        happyPathInput of
         Just (SyncRequested, regs') ->
           fmap fst (delta coreBankingSync SyncRequested regs' mismatchedCallback)
             `shouldBe` Nothing

@@ -9,43 +9,43 @@
 -- assertions.
 module Main (main) where
 
-import qualified Data.Text as T
-import Test.Hspec (describe, hspec)
-
+import Data.Proxy (Proxy (..))
+import Data.Text qualified as T
 import Keiki.Codec.JSON.Test
-  ( regFileCodecProps
-  , regFileShapeSensitivitySpec
-  , someKnownShape
+  ( regFileCodecProps,
+    regFileShapeSensitivitySpec,
+    someKnownShape,
+  )
+import Keiki.Codec.JSON.Test.Demo
+  ( DemoSlots,
+    DemoSlotsRenamed,
+    Email (..),
   )
 import Keiki.Codec.JSON.Test.Golden
-  ( SlotGolden (..)
-  , slotGoldenSpec
+  ( SlotGolden (..),
+    slotGoldenSpec,
   )
-
-import Data.Proxy (Proxy (..))
-import Keiki.Codec.JSON.Test.Demo
-  ( DemoSlots
-  , DemoSlotsRenamed
-  , Email (..)
-  )
-
+import Test.Hspec (describe, hspec)
 
 main :: IO ()
 main = hspec $ do
   describe "Keiki.Codec.JSON.Test.Golden.slotGoldenSpec" $ do
-    slotGoldenSpec "Email"
+    slotGoldenSpec
+      "Email"
       ( SlotGolden
-          { sgInput = Email (T.pack "a@b.c")
-          , sgBytes = "\"a@b.c\""
+          { sgInput = Email (T.pack "a@b.c"),
+            sgBytes = "\"a@b.c\""
           }
       )
 
-  describe "Keiki.Codec.JSON.Test.regFileCodecProps @DemoSlots"
+  describe
+    "Keiki.Codec.JSON.Test.regFileCodecProps @DemoSlots"
     (regFileCodecProps @DemoSlots)
 
   describe "Keiki.Codec.JSON.Test.regFileShapeSensitivitySpec" $
     regFileShapeSensitivitySpec
       (Proxy @DemoSlots)
-      [ ("rename email -> emailAddress",
-          someKnownShape @DemoSlotsRenamed)
+      [ ( "rename email -> emailAddress",
+          someKnownShape @DemoSlotsRenamed
+        )
       ]

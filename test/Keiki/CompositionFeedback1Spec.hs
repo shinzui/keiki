@@ -35,26 +35,25 @@
 -- the original input's 'tValue', forwarded through the cascade by
 -- structural substitution.
 module Keiki.CompositionFeedback1Spec
-  ( spec
+  ( spec,
     -- Re-exported for "Keiki.Render.MermaidSpec" (EP-33 M6). See
     -- @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@'s
     -- IP-5 reference.
-  , toggleAgg
-  , togglePolicy
-  , ToggleVertex (..)
-  , PolicyVertex (..)
-  , loop
-  ) where
+    toggleAgg,
+    togglePolicy,
+    ToggleVertex (..),
+    PolicyVertex (..),
+    loop,
+  )
+where
 
 import GHC.Generics (Generic)
-import Test.Hspec
-
 import Keiki.Composition (Composite (..), feedback1)
 import Keiki.Core
 import Keiki.Generics (Append, emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
-
+import Test.Hspec
 
 -- * The Toggle aggregate fixture (stateless) ------------------------------
 
@@ -63,78 +62,87 @@ import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 -- final 'TgFlipped' value matches the original 'TgFlip' value.
 data TgPayload = TgPayload
   { tValue :: Int
-  } deriving stock (Eq, Show, Generic)
-
+  }
+  deriving stock (Eq, Show, Generic)
 
 -- | Single-constructor command type with a record payload (the
 -- shape 'deriveAggregateCtors' / 'deriveWireCtors' expect).
 data TgCmd = TgFlip TgPayload
   deriving stock (Eq, Show, Generic)
 
-
 -- | Single-constructor event type with the same record payload.
 data TgEv = TgFlipped TgPayload
   deriving stock (Eq, Show, Generic)
-
 
 -- | Two-vertex toggle: each TgFlip command alternates Off ↔ On.
 data ToggleVertex = Off | On
   deriving stock (Eq, Show, Enum, Bounded)
 
-
 -- | Aggregate has no register slots; the toggle's state is entirely
 -- in the vertex.
 type ToggleRegs = '[]
 
-
 -- TH-derived per-constructor projections / guards / wire ctors for
 -- the aggregate side. Binding suffixes pick "Flip" / "Flipped" to
 -- keep call sites readable.
-$(deriveAggregateCtors ''TgCmd ''ToggleRegs
-    [ ("TgFlip", "Flip")
-    ])
+$( deriveAggregateCtors
+     ''TgCmd
+     ''ToggleRegs
+     [ ("TgFlip", "Flip")
+     ]
+ )
 
-$(deriveWireCtors ''TgEv
-    [ ("TgFlipped", "Flipped")
-    ])
+$( deriveWireCtors
+     ''TgEv
+     [ ("TgFlipped", "Flipped")
+     ]
+ )
 
+toggleAgg ::
+  SymTransducer
+    (HsPred ToggleRegs TgCmd)
+    ToggleRegs
+    ToggleVertex
+    TgCmd
+    TgEv
+toggleAgg =
+  SymTransducer
+    { edgesOut = toggleEdges,
+      initial = Off,
+      initialRegs = emptyRegFile,
+      isFinal = const True
+    }
 
-toggleAgg
-  :: SymTransducer (HsPred ToggleRegs TgCmd)
-                   ToggleRegs ToggleVertex TgCmd TgEv
-toggleAgg = SymTransducer
-  { edgesOut    = toggleEdges
-  , initial     = Off
-  , initialRegs = emptyRegFile
-  , isFinal     = const True
-  }
-
-
-toggleEdges
-  :: ToggleVertex
-  -> [Edge (HsPred ToggleRegs TgCmd) ToggleRegs TgCmd TgEv ToggleVertex]
+toggleEdges ::
+  ToggleVertex ->
+  [Edge (HsPred ToggleRegs TgCmd) ToggleRegs TgCmd TgEv ToggleVertex]
 toggleEdges = \case
-
   Off ->
     [ Edge
-        { guard  = isFlip
-        , update = UKeep
-        , output = [ pack inCtorFlip wireFlipped
-            (OFCons (inpFlip #tValue) OFNil) ]
-        , target = On
+        { guard = isFlip,
+          update = UKeep,
+          output =
+            [ pack
+                inCtorFlip
+                wireFlipped
+                (OFCons (inpFlip #tValue) OFNil)
+            ],
+          target = On
         }
     ]
-
   On ->
     [ Edge
-        { guard  = isFlip
-        , update = UKeep
-        , output = [ pack inCtorFlip wireFlipped
-            (OFCons (inpFlip #tValue) OFNil) ]
-        , target = Off
+        { guard = isFlip,
+          update = UKeep,
+          output =
+            [ pack
+                inCtorFlip
+                wireFlipped
+                (OFCons (inpFlip #tValue) OFNil)
+            ],
+          target = Off
         }
     ]
-
 
 -- * The Policy fixture (stateless) ----------------------------------------
 
@@ -144,9 +152,7 @@ toggleEdges = \case
 data PolicyVertex = Pol
   deriving stock (Eq, Show, Enum, Bounded)
 
-
 type PolicyRegs = '[]
-
 
 -- TH-derived guards / wire ctors for the policy side. Distinct
 -- binding suffixes ("PFlipped", "PFlip") avoid clashing with the
@@ -154,41 +160,51 @@ type PolicyRegs = '[]
 -- ("TgFlipped", "TgFlip") still match across the aggregate ↔ policy
 -- boundary, so 'compose''s structural-name substitution wires the
 -- cascade correctly.
-$(deriveAggregateCtors ''TgEv ''PolicyRegs
-    [ ("TgFlipped", "PFlipped")
-    ])
+$( deriveAggregateCtors
+     ''TgEv
+     ''PolicyRegs
+     [ ("TgFlipped", "PFlipped")
+     ]
+ )
 
-$(deriveWireCtors ''TgCmd
-    [ ("TgFlip", "PFlip")
-    ])
+$( deriveWireCtors
+     ''TgCmd
+     [ ("TgFlip", "PFlip")
+     ]
+ )
 
+togglePolicy ::
+  SymTransducer
+    (HsPred PolicyRegs TgEv)
+    PolicyRegs
+    PolicyVertex
+    TgEv
+    TgCmd
+togglePolicy =
+  SymTransducer
+    { edgesOut = policyEdges,
+      initial = Pol,
+      initialRegs = emptyRegFile,
+      isFinal = const True
+    }
 
-togglePolicy
-  :: SymTransducer (HsPred PolicyRegs TgEv)
-                   PolicyRegs PolicyVertex TgEv TgCmd
-togglePolicy = SymTransducer
-  { edgesOut    = policyEdges
-  , initial     = Pol
-  , initialRegs = emptyRegFile
-  , isFinal     = const True
-  }
-
-
-policyEdges
-  :: PolicyVertex
-  -> [Edge (HsPred PolicyRegs TgEv) PolicyRegs TgEv TgCmd PolicyVertex]
+policyEdges ::
+  PolicyVertex ->
+  [Edge (HsPred PolicyRegs TgEv) PolicyRegs TgEv TgCmd PolicyVertex]
 policyEdges = \case
-
   Pol ->
     [ Edge
-        { guard  = isPFlipped
-        , update = UKeep
-        , output = [ pack inCtorPFlipped wirePFlip
-            (OFCons (inpPFlipped #tValue) OFNil) ]
-        , target = Pol
+        { guard = isPFlipped,
+          update = UKeep,
+          output =
+            [ pack
+                inCtorPFlipped
+                wirePFlip
+                (OFCons (inpPFlipped #tValue) OFNil)
+            ],
+          target = Pol
         }
     ]
-
 
 -- * The composite --------------------------------------------------------
 
@@ -203,56 +219,56 @@ policyEdges = \case
 -- Regs:   @Append '[] (Append '[] '[])@ ≡ '[].
 -- Input:  TgCmd
 -- Output: TgEv
-loop
-  :: SymTransducer
-       (HsPred (Append ToggleRegs (Append PolicyRegs ToggleRegs)) TgCmd)
-       (Append ToggleRegs (Append PolicyRegs ToggleRegs))
-       (Composite ToggleVertex (Composite PolicyVertex ToggleVertex))
-       TgCmd
-       TgEv
+loop ::
+  SymTransducer
+    (HsPred (Append ToggleRegs (Append PolicyRegs ToggleRegs)) TgCmd)
+    (Append ToggleRegs (Append PolicyRegs ToggleRegs))
+    (Composite ToggleVertex (Composite PolicyVertex ToggleVertex))
+    TgCmd
+    TgEv
 loop = feedback1 toggleAgg togglePolicy
-
 
 -- * Test fixtures --------------------------------------------------------
 
 externalCmd :: TgCmd
-externalCmd = TgFlip (TgPayload { tValue = 42 })
-
+externalCmd = TgFlip (TgPayload {tValue = 42})
 
 cascadedEvent :: TgEv
-cascadedEvent = TgFlipped (TgPayload { tValue = 42 })
-
+cascadedEvent = TgFlipped (TgPayload {tValue = 42})
 
 -- * Specs ---------------------------------------------------------------
 
 spec :: Spec
 spec = do
   describe "feedback1 toggleAgg togglePolicy" $ do
-
     describe "single-step cascade" $ do
       it "Composite Off (Composite Pol Off) -- TgFlip{42} --> Composite On (Composite Pol On), emitting TgFlipped{42}" $
         case step loop (initial loop, initialRegs loop) externalCmd of
           Just (Composite outerT (Composite policy innerT), _, [co]) -> do
-            outerT `shouldBe` On       -- outer toggle stepped Off → On
-            policy `shouldBe` Pol      -- policy self-loops
-            innerT `shouldBe` On       -- inner toggle stepped Off → On (proves cascade ran)
-            co     `shouldBe` cascadedEvent
-          other -> expectationFailure
-            ("expected Just (Composite On (Composite Pol On), _, [TgFlipped{42}]), got "
-              <> showStep other)
+            outerT `shouldBe` On -- outer toggle stepped Off → On
+            policy `shouldBe` Pol -- policy self-loops
+            innerT `shouldBe` On -- inner toggle stepped Off → On (proves cascade ran)
+            co `shouldBe` cascadedEvent
+          other ->
+            expectationFailure
+              ( "expected Just (Composite On (Composite Pol On), _, [TgFlipped{42}]), got "
+                  <> showStep other
+              )
 
       it "two consecutive composite steps return to the initial vertex" $
         case step loop (initial loop, initialRegs loop) externalCmd of
           Just (s1, regs1, _) ->
             case step loop (s1, regs1) externalCmd of
               Just (Composite outerT (Composite policy innerT), _, [co]) -> do
-                outerT `shouldBe` Off  -- back to initial
+                outerT `shouldBe` Off -- back to initial
                 policy `shouldBe` Pol
                 innerT `shouldBe` Off
-                co     `shouldBe` cascadedEvent
-              other -> expectationFailure
-                ("expected Composite Off (Composite Pol Off) after 2 steps, got "
-                  <> showStep other)
+                co `shouldBe` cascadedEvent
+              other ->
+                expectationFailure
+                  ( "expected Composite Off (Composite Pol Off) after 2 steps, got "
+                      <> showStep other
+                  )
           Nothing -> expectationFailure "first step returned Nothing"
 
     describe "round-trip replay" $ do
@@ -262,8 +278,9 @@ spec = do
             outerT `shouldBe` On
             policy `shouldBe` Pol
             innerT `shouldBe` On
-          Nothing -> expectationFailure
-            "reconstitute returned Nothing for the canonical one-event log"
+          Nothing ->
+            expectationFailure
+              "reconstitute returned Nothing for the canonical one-event log"
 
       it "reconstitute on [cascadedEvent, cascadedEvent] returns to the initial vertex" $
         case reconstitute loop [cascadedEvent, cascadedEvent] of
@@ -271,8 +288,9 @@ spec = do
             outerT `shouldBe` Off
             policy `shouldBe` Pol
             innerT `shouldBe` Off
-          Nothing -> expectationFailure
-            "reconstitute returned Nothing for the two-event log"
+          Nothing ->
+            expectationFailure
+              "reconstitute returned Nothing for the two-event log"
 
     describe "checkHiddenInputs" $ do
       it "reports no warnings on the feedback1 composite" $
@@ -286,12 +304,14 @@ spec = do
       it "produces cascadedEvent on externalCmd from the initial composite state" $
         omega loop (initial loop) (initialRegs loop) externalCmd
           `shouldBe` [cascadedEvent]
-
   where
-    showStep
-      :: Maybe ( Composite ToggleVertex (Composite PolicyVertex ToggleVertex)
-               , x, [TgEv] )
-      -> String
-    showStep Nothing              = "Nothing"
+    showStep ::
+      Maybe
+        ( Composite ToggleVertex (Composite PolicyVertex ToggleVertex),
+          x,
+          [TgEv]
+        ) ->
+      String
+    showStep Nothing = "Nothing"
     showStep (Just (cs, _, cos_)) =
       "Just (" <> show cs <> ", _, " <> show cos_ <> ")"

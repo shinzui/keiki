@@ -32,32 +32,35 @@
 -- "Keiki.Codec.JSON.Test.Golden"; see that module's documentation.
 module Keiki.Codec.JSON.Test
   ( -- * Arbitrary generator for slot lists
-    ArbitraryRegFile (..)
-    -- * Round-trip + determinism properties
-  , regFileCodecProps
-    -- * Sensitivity helper
-  , SomeKnownRegFileShape (..)
-  , someKnownShape
-  , regFileShapeSensitivitySpec
-  ) where
+    ArbitraryRegFile (..),
 
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Encoding as AesonEnc
+    -- * Round-trip + determinism properties
+    regFileCodecProps,
+
+    -- * Sensitivity helper
+    SomeKnownRegFileShape (..),
+    someKnownShape,
+    regFileShapeSensitivitySpec,
+  )
+where
+
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Encoding qualified as AesonEnc
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (KnownSymbol)
-import Test.Hspec (Spec, describe, it, shouldSatisfy)
-import Test.QuickCheck (Arbitrary (..), Gen, Property, forAllShow, (===))
-import Test.QuickCheck.Instances ()  -- Arbitrary UTCTime, Text, etc.
+-- Arbitrary UTCTime, Text, etc.
 
 import Keiki.Codec.JSON
-  ( RegFileToJSON
-  , regFileFromJSON
-  , regFileToEncoding
-  , regFileToJSON
+  ( RegFileToJSON,
+    regFileFromJSON,
+    regFileToEncoding,
+    regFileToJSON,
   )
 import Keiki.Core (RegFile (..), Slot)
 import Keiki.Shape (KnownRegFileShape, regFileShapeHash)
-
+import Test.Hspec (Spec, describe, it, shouldSatisfy)
+import Test.QuickCheck (Arbitrary (..), Gen, Property, forAllShow, (===))
+import Test.QuickCheck.Instances ()
 
 -- * Arbitrary generator for slot lists --------------------------------------
 
@@ -77,20 +80,17 @@ import Keiki.Shape (KnownRegFileShape, regFileShapeHash)
 class ArbitraryRegFile (rs :: [Slot]) where
   arbRegFile :: Gen (RegFile rs)
 
-
 instance ArbitraryRegFile '[] where
   arbRegFile = pure RNil
 
-
 instance
-  ( KnownSymbol s
-  , Arbitrary t
-  , ArbitraryRegFile rs
-  )
-  => ArbitraryRegFile ('(s, t) ': rs)
+  ( KnownSymbol s,
+    Arbitrary t,
+    ArbitraryRegFile rs
+  ) =>
+  ArbitraryRegFile ('(s, t) ': rs)
   where
   arbRegFile = RCons (Proxy @s) <$> arbitrary <*> arbRegFile
-
 
 -- * Round-trip + determinism properties -------------------------------------
 
@@ -124,12 +124,12 @@ instance
 -- (auto-derived when each slot's type has 'Aeson.ToJSON' +
 -- 'Aeson.FromJSON' + 'KnownSymbol'), and (b) an 'ArbitraryRegFile'
 -- instance (auto-derived when each slot's type has 'Arbitrary').
-regFileCodecProps
-  :: forall rs.
-     ( RegFileToJSON rs
-     , ArbitraryRegFile rs
-     )
-  => Spec
+regFileCodecProps ::
+  forall rs.
+  ( RegFileToJSON rs,
+    ArbitraryRegFile rs
+  ) =>
+  Spec
 regFileCodecProps = do
   describe "Roundtrip" $ do
     it "Value path round-trips" $
@@ -151,8 +151,9 @@ regFileCodecProps = do
       let bytes = Aeson.encode (regFileToJSON rf)
        in case Aeson.decode bytes of
             Nothing ->
-              False === error
-                "Aeson.decode failed on our own Value-path encoder output"
+              False
+                === error
+                  "Aeson.decode failed on our own Value-path encoder output"
             Just v -> case regFileFromJSON @rs v of
               Left msg ->
                 False === error ("regFileFromJSON failed: " <> msg)
@@ -164,8 +165,9 @@ regFileCodecProps = do
       let bytes = AesonEnc.encodingToLazyByteString (regFileToEncoding rf)
        in case Aeson.decode bytes of
             Nothing ->
-              False === error
-                "Aeson.decode failed on streaming-encoder output"
+              False
+                === error
+                  "Aeson.decode failed on streaming-encoder output"
             Just v -> case regFileFromJSON @rs v of
               Left msg ->
                 False === error ("regFileFromJSON failed: " <> msg)
@@ -183,7 +185,6 @@ regFileCodecProps = do
       AesonEnc.encodingToLazyByteString (regFileToEncoding rf)
         === AesonEnc.encodingToLazyByteString (regFileToEncoding rf)
 
-
 -- * Sensitivity helper ------------------------------------------------------
 
 -- | A type-erased witness that a slot list is hashable. The
@@ -192,9 +193,8 @@ regFileCodecProps = do
 --
 -- Construct values via 'someKnownShape' with a type application.
 data SomeKnownRegFileShape where
-  SomeKnownRegFileShape
-    :: KnownRegFileShape rs => Proxy rs -> SomeKnownRegFileShape
-
+  SomeKnownRegFileShape ::
+    (KnownRegFileShape rs) => Proxy rs -> SomeKnownRegFileShape
 
 -- | Convenience constructor for 'SomeKnownRegFileShape'.
 --
@@ -207,12 +207,11 @@ data SomeKnownRegFileShape where
 -- @
 -- SomeKnownRegFileShape ('Proxy' \@MyMutatedSlots)
 -- @
-someKnownShape
-  :: forall rs.
-     KnownRegFileShape rs
-  => SomeKnownRegFileShape
+someKnownShape ::
+  forall rs.
+  (KnownRegFileShape rs) =>
+  SomeKnownRegFileShape
 someKnownShape = SomeKnownRegFileShape (Proxy @rs)
-
 
 -- | Run the EP-36 M3 sensitivity discipline against a baseline slot
 -- list and a list of mutations. For each @(label, mutation)@ pair,
@@ -233,12 +232,12 @@ someKnownShape = SomeKnownRegFileShape (Proxy @rs)
 --   , (\"rename\",   someKnownShape \@MySlotsRenamed)
 --   ]
 -- @
-regFileShapeSensitivitySpec
-  :: forall baseline.
-     KnownRegFileShape baseline
-  => Proxy baseline
-  -> [(String, SomeKnownRegFileShape)]
-  -> Spec
+regFileShapeSensitivitySpec ::
+  forall baseline.
+  (KnownRegFileShape baseline) =>
+  Proxy baseline ->
+  [(String, SomeKnownRegFileShape)] ->
+  Spec
 regFileShapeSensitivitySpec p mutations = do
   let baseline = regFileShapeHash p
   describe "Shape-hash sensitivity" $

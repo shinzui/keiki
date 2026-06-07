@@ -9,22 +9,18 @@
 -- 2026-05-13 M2 entry documenting this.
 module Keiki.Codec.JSON.PropSpec (spec) where
 
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Encoding as AesonEnc
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Encoding qualified as AesonEnc
+import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
+import Keiki.Codec.JSON.Fixtures (ExemplarSlots, arbRegFile)
+import Keiki.Core (RegFile)
 import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Property, forAllShow, (===))
-
-import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
-import Keiki.Core (RegFile)
-
-import Keiki.Codec.JSON.Fixtures (ExemplarSlots, arbRegFile)
-
 
 -- | RegFile rs has no Show instance (the slot list is heterogeneous);
 -- use the JSON encoding as the renderer for QuickCheck counterexamples.
 showRegFile :: RegFile ExemplarSlots -> String
 showRegFile = show . regFileToJSON
-
 
 spec :: Spec
 spec = do
@@ -39,7 +35,6 @@ spec = do
       forAllShow arbRegFile showRegFile valueDeterministic
     it "Encoding path is deterministic" $
       forAllShow arbRegFile showRegFile encodingDeterministic
-
 
 -- | @regFileFromJSON . regFileToJSON ≡ Right rf@. We use the encoded
 -- bytes as the canonical comparison point: re-encoding the parsed
@@ -57,7 +52,6 @@ valueRoundTrip rf =
           Right rf' ->
             Aeson.encode (regFileToJSON rf') === bytes
 
-
 -- | Encoding path round-trip via
 -- @regFileFromJSON . fromJust . Aeson.decode . AesonEnc.encodingToLazyByteString . regFileToEncoding@.
 encodingRoundTrip :: RegFile ExemplarSlots -> Property
@@ -72,14 +66,12 @@ encodingRoundTrip rf =
           Right rf' ->
             AesonEnc.encodingToLazyByteString (regFileToEncoding rf') === bytes
 
-
 -- | Re-encoding the same RegFile via the Value path produces byte-
 -- equal output.
 valueDeterministic :: RegFile ExemplarSlots -> Property
 valueDeterministic rf =
   Aeson.encode (regFileToJSON rf)
     === Aeson.encode (regFileToJSON rf)
-
 
 -- | Re-encoding via the Encoding path produces byte-equal output.
 encodingDeterministic :: RegFile ExemplarSlots -> Property

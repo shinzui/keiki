@@ -29,11 +29,9 @@
 -- @True@.
 module Jitsurei.LoanApplicationSymbolicSpec (spec) where
 
-import Test.Hspec
-
 import Jitsurei.LoanApplication
 import Keiki.Symbolic
-
+import Test.Hspec
 
 spec :: Spec
 spec = do
@@ -59,12 +57,14 @@ spec = do
     -- TApp1, so the full evalPred could not be asserted.
     it "approval edge witness satisfies the whole guard (score + cap)" $
       case edgesOut loanApplication UnderReview of
-        []        -> expectationFailure "UnderReview has no outgoing edges"
-        (e : _)   -> case symSatExt (guard e) of
-          Nothing          -> expectationFailure "approval edge guard reported unsat"
+        [] -> expectationFailure "UnderReview has no outgoing edges"
+        (e : _) -> case symSatExt (guard e) of
+          Nothing -> expectationFailure "approval edge guard reported unsat"
           Just (regs, cmd) -> do
-            (regs ! (#appCreditScore :: Index LoanAppRegs Int)
-               >= approvalThresholdScore) `shouldBe` True
+            ( regs ! (#appCreditScore :: Index LoanAppRegs Int)
+                >= approvalThresholdScore
+              )
+              `shouldBe` True
             evalPred (guard e) regs cmd `shouldBe` True
 
   describe "sat (BoolAlg/Sat surface) on the approval edge (EP-44)" $
@@ -74,7 +74,7 @@ spec = do
     -- 'symSatExt' call needed.
     it "sat's witness satisfies models for the approval edge guard" $
       case edgesOut loanApplication UnderReview of
-        []      -> expectationFailure "UnderReview has no outgoing edges"
+        [] -> expectationFailure "UnderReview has no outgoing edges"
         (e : _) -> case sat (SymPred (guard e)) of
           Nothing -> expectationFailure "approval edge guard reported unsat"
-          Just w  -> models (SymPred (guard e)) w `shouldBe` True
+          Just w -> models (SymPred (guard e)) w `shouldBe` True

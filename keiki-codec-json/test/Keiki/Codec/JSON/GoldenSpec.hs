@@ -6,13 +6,10 @@
 module Keiki.Codec.JSON.GoldenSpec (spec) where
 
 import Data.Proxy (Proxy (..))
-import qualified Data.Text as T
-import Test.Hspec (Spec, describe, it, shouldBe)
-
-import Keiki.Shape (regFileShapeHash)
-
+import Data.Text qualified as T
 import Keiki.Codec.JSON.Fixtures (ExemplarSlots)
-
+import Keiki.Shape (regFileShapeHash)
+import Test.Hspec (Spec, describe, it, shouldBe)
 
 spec :: Spec
 spec = describe "Golden hash for ExemplarSlots" $ do
@@ -24,5 +21,4 @@ spec = describe "Golden hash for ExemplarSlots" $ do
   -- `CanonicalTypeName` override for the affected slot type.
   it "matches the pinned GHC-9.12.* value" $
     regFileShapeHash (Proxy @ExemplarSlots)
-      `shouldBe`
-      T.pack "a37b2b77042a635f394a082765f3410ea23a0b89745b0c77242b925a03aa172b"
+      `shouldBe` T.pack "a37b2b77042a635f394a082765f3410ea23a0b89745b0c77242b925a03aa172b"

@@ -33,23 +33,25 @@
 -- @(s, 'Keiki.Core.RegFile' rs)@, relationship to 'Keiki.Decider').
 module Keiki.Acceptor
   ( -- * The acceptor projection
-    Acceptor (..)
+    Acceptor (..),
+
     -- * Projecting a transducer
-  , inputAcceptor
-  , outputAcceptor
+    inputAcceptor,
+    outputAcceptor,
+
     -- * Folding helpers
-  , runAcceptor
-  , accepts
-  ) where
+    runAcceptor,
+    accepts,
+  )
+where
 
 import Keiki.Core
-  ( BoolAlg
-  , RegFile
-  , SymTransducer (..)
-  , applyEvent
-  , delta
+  ( BoolAlg,
+    RegFile,
+    SymTransducer (..),
+    applyEvent,
+    delta,
   )
-
 
 -- | A minimal acceptor over alphabet @a@ with state carrier @s@.
 --
@@ -70,11 +72,10 @@ import Keiki.Core
 -- 'Acceptor' carries closures and therefore has no 'Show' or 'Eq'
 -- instance; assert on 'runAcceptor' or 'accepts' results instead.
 data Acceptor a s = Acceptor
-  { aStep    :: s -> a -> Maybe s
-  , aInitial :: s
-  , aIsFinal :: s -> Bool
+  { aStep :: s -> a -> Maybe s,
+    aInitial :: s,
+    aIsFinal :: s -> Bool
   }
-
 
 -- | Project a 'SymTransducer' to its /input/ acceptor (π₁): the
 -- acceptor over the command alphabet whose step is
@@ -93,16 +94,16 @@ data Acceptor a s = Acceptor
 -- reaches a final control vertex. A command sequence is rejected
 -- (returns 'False') as soon as any step finds zero or multiple
 -- satisfied outgoing edges.
-inputAcceptor
-  :: BoolAlg phi (RegFile rs, ci)
-  => SymTransducer phi rs s ci co
-  -> Acceptor ci (s, RegFile rs)
-inputAcceptor t = Acceptor
-  { aStep    = \(s, regs) ci -> delta t s regs ci
-  , aInitial = (initial t, initialRegs t)
-  , aIsFinal = \(s, _regs) -> isFinal t s
-  }
-
+inputAcceptor ::
+  (BoolAlg phi (RegFile rs, ci)) =>
+  SymTransducer phi rs s ci co ->
+  Acceptor ci (s, RegFile rs)
+inputAcceptor t =
+  Acceptor
+    { aStep = \(s, regs) ci -> delta t s regs ci,
+      aInitial = (initial t, initialRegs t),
+      aIsFinal = \(s, _regs) -> isFinal t s
+    }
 
 -- | Project a 'SymTransducer' to its /output/ acceptor (π₂): the
 -- acceptor over the event alphabet whose step is
@@ -120,16 +121,16 @@ inputAcceptor t = Acceptor
 -- @'Keiki.Core.reconstitute' t events@ returns 'Just' a final
 -- @(s, regs)@. The output acceptor /is/ the @evolve@ acceptor the
 -- foundations chapter derives.
-outputAcceptor
-  :: (BoolAlg phi (RegFile rs, ci), Eq co)
-  => SymTransducer phi rs s ci co
-  -> Acceptor co (s, RegFile rs)
-outputAcceptor t = Acceptor
-  { aStep    = \(s, regs) co -> applyEvent t s regs co
-  , aInitial = (initial t, initialRegs t)
-  , aIsFinal = \(s, _regs) -> isFinal t s
-  }
-
+outputAcceptor ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  Acceptor co (s, RegFile rs)
+outputAcceptor t =
+  Acceptor
+    { aStep = \(s, regs) co -> applyEvent t s regs co,
+      aInitial = (initial t, initialRegs t),
+      aIsFinal = \(s, _regs) -> isFinal t s
+    }
 
 -- | Run an 'Acceptor' over a sequence. Returns 'Just' the terminal
 -- state if every step succeeds, 'Nothing' on the first step that
@@ -141,9 +142,8 @@ outputAcceptor t = Acceptor
 runAcceptor :: Acceptor a s -> [a] -> Maybe s
 runAcceptor a = go (aInitial a)
   where
-    go s []       = Just s
+    go s [] = Just s
     go s (x : xs) = aStep a s x >>= \s' -> go s' xs
-
 
 -- | Decide membership: 'True' iff the input is accepted (every step
 -- succeeds and the terminal state is final).
@@ -155,5 +155,5 @@ runAcceptor a = go (aInitial a)
 -- @
 accepts :: Acceptor a s -> [a] -> Bool
 accepts a xs = case runAcceptor a xs of
-  Just s  -> aIsFinal a s
+  Just s -> aIsFinal a s
   Nothing -> False

@@ -22,51 +22,47 @@
 --     sentinel arm).
 module Keiki.ChoiceSpec (spec) where
 
-import qualified Control.Category as Cat
+import Control.Category qualified as Cat
 import Data.Profunctor (Choice (..))
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
-import Test.Hspec
-
 import Keiki.Core
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
-
+import Test.Hspec
 
 -- * Fixtures ----------------------------------------------------------------
 
 sampleAt :: UTCTime
 sampleAt = UTCTime (fromGregorian 2026 5 9) (secondsToDiffTime 0)
 
-
 sampleSendEmail :: EmailCmd
-sampleSendEmail = SendEmail SendEmailData
-  { recipient = "alice@example.com"
-  , subject   = "hello"
-  , at        = sampleAt
-  }
-
+sampleSendEmail =
+  SendEmail
+    SendEmailData
+      { recipient = "alice@example.com",
+        subject = "hello",
+        at = sampleAt
+      }
 
 sampleEmailEvent :: EmailEvent
-sampleEmailEvent = EmailSent EmailSentData
-  { recipient = "alice@example.com"
-  , subject   = "hello"
-  , at        = sampleAt
-  }
-
+sampleEmailEvent =
+  EmailSent
+    EmailSentData
+      { recipient = "alice@example.com",
+        subject = "hello",
+        at = sampleAt
+      }
 
 someEmail :: SomeSymTransducer EmailCmd EmailEvent
 someEmail = someSymTransducer emailDelivery
-
 
 -- * Specs -------------------------------------------------------------------
 
 spec :: Spec
 spec = do
-
   describe "left'" $ do
-
     it "Left input routes through the wrapped transducer" $ do
       let routedLeft :: SomeSymTransducer (Either EmailCmd Int) (Either EmailEvent Int)
           routedLeft = left' someEmail
@@ -95,12 +91,11 @@ spec = do
       let lifted :: SomeSymTransducer (Either Int Bool) (Either Int Bool)
           lifted = left' (Cat.id :: SomeSymTransducer Int Int)
       case lifted of
-        SomeSymIdentity     -> pure ()
+        SomeSymIdentity -> pure ()
         SomeSymTransducer _ ->
           expectationFailure "left' Cat.id should preserve the identity sentinel"
 
   describe "right'" $ do
-
     it "Right input routes through the wrapped transducer" $ do
       let routedRight :: SomeSymTransducer (Either Int EmailCmd) (Either Int EmailEvent)
           routedRight = right' someEmail
@@ -129,15 +124,14 @@ spec = do
       let lifted :: SomeSymTransducer (Either Bool Int) (Either Bool Int)
           lifted = right' (Cat.id :: SomeSymTransducer Int Int)
       case lifted of
-        SomeSymIdentity     -> pure ()
+        SomeSymIdentity -> pure ()
         SomeSymTransducer _ ->
           expectationFailure "right' Cat.id should preserve the identity sentinel"
 
   describe "isSingleValuedSym survives left' / right'" $ do
-
     it "single-valuedness is preserved across left'" $
-      case left' someEmail
-            :: SomeSymTransducer (Either EmailCmd Int) (Either EmailEvent Int) of
+      case left' someEmail ::
+             SomeSymTransducer (Either EmailCmd Int) (Either EmailEvent Int) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
         SomeSymIdentity ->
@@ -145,8 +139,8 @@ spec = do
             "left' on a non-identity wrapper returned the identity sentinel"
 
     it "single-valuedness is preserved across right'" $
-      case right' someEmail
-            :: SomeSymTransducer (Either Int EmailCmd) (Either Int EmailEvent) of
+      case right' someEmail ::
+             SomeSymTransducer (Either Int EmailCmd) (Either Int EmailEvent) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
         SomeSymIdentity ->

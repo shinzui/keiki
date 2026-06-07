@@ -40,22 +40,23 @@
 --    cleaner than carrying it in the workflow's RegFile.
 module Keiki.Codec.JSON
   ( -- * The codec class
-    RegFileToJSON (..)
-    -- * Internal helper (exported so its instances are reachable; users
-    -- typically program against 'RegFileToJSON' only)
-  , RegFileWalk
-  ) where
+    RegFileToJSON (..),
 
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Key as Key
-import qualified Data.Aeson.KeyMap as KeyMap
-import qualified Data.Aeson.Types as Aeson (Pair)
+    -- * Internal helper (exported so its instances are reachable; users
+
+    -- typically program against 'RegFileToJSON' only)
+    RegFileWalk,
+  )
+where
+
 import Data.Aeson ((.=))
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Aeson.Types qualified as Aeson (Pair)
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (KnownSymbol, symbolVal)
-
 import Keiki.Core (RegFile (..), Slot)
-
 
 -- * Internal walker -----------------------------------------------------------
 
@@ -77,24 +78,22 @@ class RegFileWalk (rs :: [Slot]) where
   -- | Consume slots from an 'Aeson.Object', returning the populated
   -- 'RegFile' and the leftover keys. The top-level decoder
   -- ('regFileFromJSON') uses the leftover to reject extra fields.
-  regFileReadObject
-    :: Aeson.Object
-    -> Either String (RegFile rs, Aeson.Object)
-
+  regFileReadObject ::
+    Aeson.Object ->
+    Either String (RegFile rs, Aeson.Object)
 
 instance RegFileWalk '[] where
   regFilePairs _ = []
   regFileSeries _ = mempty
   regFileReadObject km = Right (RNil, km)
 
-
 instance
-  ( KnownSymbol s
-  , Aeson.ToJSON t
-  , Aeson.FromJSON t
-  , RegFileWalk rs
-  )
-  => RegFileWalk ('(s, t) ': rs)
+  ( KnownSymbol s,
+    Aeson.ToJSON t,
+    Aeson.FromJSON t,
+    RegFileWalk rs
+  ) =>
+  RegFileWalk ('(s, t) ': rs)
   where
   regFilePairs (RCons _ x rest) =
     let k = Key.fromString (symbolVal (Proxy @s))
@@ -115,7 +114,6 @@ instance
               (rest, km') <- regFileReadObject (KeyMap.delete k km)
               Right (RCons (Proxy @s) x rest, km')
 
-
 -- * Public class --------------------------------------------------------------
 
 -- | The codec class for 'RegFile' slot lists.
@@ -133,7 +131,7 @@ instance
 --   mismatched fields are 'Left' with a per-slot error message).
 -- * 'regFileToEncoding' — R10, streaming encoder over 'Aeson.Encoding'
 --   that avoids the 'Aeson.Value' intermediate.
-class RegFileWalk rs => RegFileToJSON (rs :: [Slot]) where
+class (RegFileWalk rs) => RegFileToJSON (rs :: [Slot]) where
   -- | Encode a slot list as a JSON object whose keys are the slot
   -- symbols, in slot-list order.
   regFileToJSON :: RegFile rs -> Aeson.Value
@@ -163,10 +161,9 @@ class RegFileWalk rs => RegFileToJSON (rs :: [Slot]) where
             )
     _ -> Left "regfile: expected JSON Object"
 
-
 -- | Generic instance: every slot list with the inductive 'RegFileWalk'
 -- coverage is a 'RegFileToJSON'. Users do not write instances of this
 -- class themselves; the inductive 'RegFileWalk' instances (one for
 -- @'[]@, one for @\'(s, t) \': rs@) cover every slot list whose
 -- component types carry 'Aeson.ToJSON' and 'Aeson.FromJSON'.
-instance RegFileWalk rs => RegFileToJSON rs
+instance (RegFileWalk rs) => RegFileToJSON rs

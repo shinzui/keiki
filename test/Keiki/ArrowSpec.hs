@@ -16,23 +16,19 @@
 -- delegation, and the documented 'solveOutput' lossy contract.
 module Keiki.ArrowSpec (spec) where
 
-import qualified Control.Arrow as Arr
-import qualified Control.Category as Cat
+import Control.Arrow qualified as Arr
+import Control.Category qualified as Cat
 import Data.Text (Text)
-import qualified Data.Text as Text
-import Test.Hspec
-
+import Data.Text qualified as Text
 import Keiki.Core
 import Keiki.Profunctor
-
+import Test.Hspec
 
 -- * Specs -------------------------------------------------------------------
 
 spec :: Spec
 spec = do
-
   describe "arr" $ do
-
     it "lifts (Text.pack . show) :: SomeSymTransducer Int Text" $ do
       let lifted :: SomeSymTransducer Int Text
           lifted = Arr.arr (Text.pack . show)
@@ -61,7 +57,6 @@ spec = do
             \— Haskell function identity is unobservable at the value level"
 
   describe "first via Arrow's first method (delegates to Strong.first')" $ do
-
     it "first (arr show) on (42, \"extra\") emits (\"42\", \"extra\")" $ do
       let lifted :: SomeSymTransducer (Int, Text) (String, Text)
           lifted = Arr.first (Arr.arr show)
@@ -74,7 +69,6 @@ spec = do
             "Arr.first on a non-identity wrapper returned the sentinel"
 
   describe "Cat.id and the Arrow instance interplay" $ do
-
     it "Cat.id passes through arr-style values verbatim" $
       -- This exercises that the Arrow instance's superclass dispatch
       -- of (>>>) hits the sentinel short-circuit when one operand is
@@ -82,23 +76,23 @@ spec = do
       -- behaviourally.
       let lifted :: SomeSymTransducer Int Text
           lifted = Arr.arr (Text.pack . show) Cat.>>> Cat.id
-      in case lifted of
-           SomeSymTransducer t ->
-             omega t (initial t) (initialRegs t) (99 :: Int)
-               `shouldBe` [("99" :: Text)]
-           SomeSymIdentity ->
-             expectationFailure
-               "arr f >>> Cat.id unexpectedly returned the sentinel \
-               \— the sentinel short-circuit returns the non-sentinel arg, \
-               \so we expect SomeSymTransducer here"
+       in case lifted of
+            SomeSymTransducer t ->
+              omega t (initial t) (initialRegs t) (99 :: Int)
+                `shouldBe` [("99" :: Text)]
+            SomeSymIdentity ->
+              expectationFailure
+                "arr f >>> Cat.id unexpectedly returned the sentinel \
+                \— the sentinel short-circuit returns the non-sentinel arg, \
+                \so we expect SomeSymTransducer here"
 
     it "Cat.id <<< arr f passes through verbatim too" $
       let lifted :: SomeSymTransducer Int Text
           lifted = Cat.id Cat.<<< Arr.arr (Text.pack . show)
-      in case lifted of
-           SomeSymTransducer t ->
-             omega t (initial t) (initialRegs t) (5 :: Int)
-               `shouldBe` [("5" :: Text)]
-           SomeSymIdentity ->
-             expectationFailure
-               "Cat.id <<< arr f unexpectedly returned the sentinel"
+       in case lifted of
+            SomeSymTransducer t ->
+              omega t (initial t) (initialRegs t) (5 :: Int)
+                `shouldBe` [("5" :: Text)]
+            SomeSymIdentity ->
+              expectationFailure
+                "Cat.id <<< arr f unexpectedly returned the sentinel"

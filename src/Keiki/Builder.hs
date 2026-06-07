@@ -137,86 +137,96 @@
 -- builder-produced values without modification.
 module Keiki.Builder
   ( -- * Top-level entry point
-    buildTransducer
+    buildTransducer,
+
     -- * Vertex-level builder
-  , VertexBuilder
-  , from
+    VertexBuilder,
+    from,
+
     -- * Edge-list builder (per source vertex)
-  , EdgeListBuilder
-  , onCmd
-  , onEpsilon
+    EdgeListBuilder,
+    onCmd,
+    onEpsilon,
+
     -- * Edge body builder (per outgoing transition)
-  , EdgeBuilder
+    EdgeBuilder,
+
     -- ** Slot writes
-  , slot
-  , (.=)
-  , (=:)
-  , reg
+    slot,
+    (.=),
+    (=:),
+    reg,
+
     -- ** Outputs
-  , emit
-  , emitWith
-  , noEmit
+    emit,
+    emitWith,
+    noEmit,
+
     -- ** Output-fields HList sugar
-  , (*:)
-  , oNil
+    (*:),
+    oNil,
+
     -- ** Field-keyed record sugar
-  , ToOutFields (..)
+    ToOutFields (..),
+
     -- ** Guards
-  , requireEq
-  , requireGuard
-  , Cmp (..)
-  , requireCmp
-  , requireLt
-  , requireLe
-  , requireGt
-  , requireGe
+    requireEq,
+    requireGuard,
+    Cmp (..),
+    requireCmp,
+    requireLt,
+    requireLe,
+    requireGt,
+    requireGe,
+
     -- ** Termination
-  , goto
+    goto,
+
     -- ** Payload projection (OverloadedRecordDot)
-  , PayloadProj
+    PayloadProj,
+
     -- * QualifiedDo bind/return exports
     -- $qualifiedDo
-  , (>>=)
-  , (>>)
-  , pure
-  , return
-  ) where
+    (>>=),
+    (>>),
+    pure,
+    return,
+  )
+where
 
 import Data.Typeable (Typeable)
 import GHC.Records (HasField (..))
 import GHC.TypeLits (KnownSymbol, Symbol)
-import Unsafe.Coerce (unsafeCoerce)
-import Prelude hiding ((>>), (>>=), pure, return)
-import qualified Prelude
-
 import Keiki.Core
-  ( Cmp (..)
-  , Edge (..)
-  , HsPred (..)
-  , Index
-  , InCtor
-  , OutFields (..)
-  , OutTerm
-  , RegFile
-  , SymTransducer (..)
-  , Term (TReg)
-  , Update (..)
-  , WireCtor
-  , combine
-  , inpCtor
-  , matchInCtor
-  , oNil
-  , pack
-  , (*:)
+  ( Cmp (..),
+    Edge (..),
+    HsPred (..),
+    InCtor,
+    Index,
+    OutFields (..),
+    OutTerm,
+    RegFile,
+    SymTransducer (..),
+    Term (TReg),
+    Update (..),
+    WireCtor,
+    combine,
+    inpCtor,
+    matchInCtor,
+    oNil,
+    pack,
+    (*:),
   )
 import Keiki.Core qualified as K
 import Keiki.Internal.Slots
-  ( Concat
-  , Disjoint
-  , HasIndexN (..)
-  , IndexN (..)
+  ( Concat,
+    Disjoint,
+    HasIndexN (..),
+    IndexN (..),
   )
-
+import Unsafe.Coerce (unsafeCoerce)
+import Prelude hiding (pure, return, (>>), (>>=))
+import Prelude qualified
 
 -- $qualifiedDo
 --
@@ -226,7 +236,6 @@ import Keiki.Internal.Slots
 -- not the right operators for the outer 'VertexBuilder' /
 -- 'EdgeListBuilder' layers — those use the regular 'Prelude.do'
 -- syntax with the 'Monad' instances declared below.
-
 
 -- * The per-edge state ----------------------------------------------------
 
@@ -238,24 +247,23 @@ import Keiki.Internal.Slots
 -- called and packages the result into a closed 'Edge'. The
 -- existential @w@ on 'Edge''s 'update' field closes here.
 data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
-  { peGuard   :: HsPred rs ci
-  , peUpdate  :: Update rs w ci
-  , peOutput  :: [OutTerm rs ci co]
-    -- ^ Output terms accumulated by 'emit' / 'emitWith' calls in
+  { peGuard :: HsPred rs ci,
+    peUpdate :: Update rs w ci,
+    -- | Output terms accumulated by 'emit' / 'emitWith' calls in
     -- declaration order (snoc-appended). The empty list is an ε-edge
     -- (@output = []@ on the resulting 'Edge'); a single 'emit' yields
     -- a length-1 list (today's letter behaviour); two or more 'emit's
     -- in one body yield a multi-event edge (EP-19).
-  , peTargets :: [v]
-    -- ^ Reverse-order list of every 'goto' invocation in the body.
+    peOutput :: [OutTerm rs ci co],
+    -- | Reverse-order list of every 'goto' invocation in the body.
     -- Finalization requires exactly one element.
-  , peInCtor  :: Maybe (PeInCtor ci)
-    -- ^ The 'InCtor' bound by the enclosing 'onCmd', so that the
+    peTargets :: [v],
+    -- | The 'InCtor' bound by the enclosing 'onCmd', so that the
     -- 2-argument 'emit' can recover it without the user repeating
     -- it. 'Nothing' inside an 'onEpsilon' body — 'emit' there must
     -- use 'emitWith' to supply the 'InCtor' explicitly.
+    peInCtor :: Maybe (PeInCtor ci)
   }
-
 
 -- | Existential wrapper hiding the @ifs@ slot list of an 'InCtor'.
 -- Stored on 'PartialEdge' by 'onCmd' and read back by 'emit'.
@@ -267,7 +275,6 @@ data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
 -- every consumer of "Keiki.Builder".
 data PeInCtor ci where
   PeInCtor :: InCtor ci ifs -> PeInCtor ci
-
 
 -- | The per-edge indexed-state monad. The two phantom slot-set
 -- indices @(w :: [Symbol])@ (before this step) and @(w' :: [Symbol])@
@@ -284,44 +291,43 @@ data PeInCtor ci where
 -- with @QualifiedDo@.
 newtype EdgeBuilder rs ci co v (w :: [Symbol]) (w' :: [Symbol]) a
   = EdgeBuilder
-      { runEdgeBuilder :: PartialEdge rs ci co v w
-                       -> (a, PartialEdge rs ci co v w') }
-
+  { runEdgeBuilder ::
+      PartialEdge rs ci co v w ->
+      (a, PartialEdge rs ci co v w')
+  }
 
 -- * QualifiedDo bind/return exports ----------------------------------------
 
 -- | Indexed bind. The @w@ index of the first argument flows through
 -- the second argument's @w@ argument, and the second argument's @w'@
 -- index becomes the result's @w'@. Re-export for @QualifiedDo@.
-(>>=)
-  :: EdgeBuilder rs ci co v w1 w2 a
-  -> (a -> EdgeBuilder rs ci co v w2 w3 b)
-  -> EdgeBuilder rs ci co v w1 w3 b
+(>>=) ::
+  EdgeBuilder rs ci co v w1 w2 a ->
+  (a -> EdgeBuilder rs ci co v w2 w3 b) ->
+  EdgeBuilder rs ci co v w1 w3 b
 EdgeBuilder f >>= k = EdgeBuilder $ \pe ->
-  let (a, pe1)        = f pe
-      EdgeBuilder g   = k a
-  in g pe1
+  let (a, pe1) = f pe
+      EdgeBuilder g = k a
+   in g pe1
+
 infixl 1 >>=
 
-
 -- | Sequence. Defined in terms of '(>>=)'.
-(>>)
-  :: EdgeBuilder rs ci co v w1 w2 a
-  -> EdgeBuilder rs ci co v w2 w3 b
-  -> EdgeBuilder rs ci co v w1 w3 b
+(>>) ::
+  EdgeBuilder rs ci co v w1 w2 a ->
+  EdgeBuilder rs ci co v w2 w3 b ->
+  EdgeBuilder rs ci co v w1 w3 b
 m >> n = m Keiki.Builder.>>= \_ -> n
-infixl 1 >>
 
+infixl 1 >>
 
 -- | Embed a value. Slot-set unchanged.
 pure :: a -> EdgeBuilder rs ci co v w w a
 pure a = EdgeBuilder $ \pe -> (a, pe)
 
-
 -- | Synonym for 'pure'. Re-exported for @QualifiedDo@.
 return :: a -> EdgeBuilder rs ci co v w w a
 return = Keiki.Builder.pure
-
 
 -- * Slot writes ----------------------------------------------------------
 
@@ -341,12 +347,11 @@ return = Keiki.Builder.pure
 -- GHC defers commitment). 'slot' pins the symbol via TypeApplication
 -- so the inference proceeds without ambiguity. Slot name still
 -- appears once.
-slot
-  :: forall (name :: Symbol) rs r.
-     ( KnownSymbol name, HasIndexN name rs r )
-  => IndexN name rs r
+slot ::
+  forall (name :: Symbol) rs r.
+  (KnownSymbol name, HasIndexN name rs r) =>
+  IndexN name rs r
 slot = indexN @name @rs @r
-
 
 -- | Read a register slot into a 'Keiki.Core.Term', the read-side
 -- mirror of 'slot'. The slot name is supplied via @TypeApplication@,
@@ -371,12 +376,11 @@ slot = indexN @name @rs @r
 -- (which ships its own @IsLabel@ instance that shadows keiki's) loses
 -- the bare-@\#name@ read path entirely; because 'reg' goes through a
 -- type application rather than an overloaded label, it is unaffected.
-reg
-  :: forall (name :: Symbol) rs ci ifs r.
-     ( KnownSymbol name, HasIndexN name rs r )
-  => Term rs ci ifs r
+reg ::
+  forall (name :: Symbol) rs ci ifs r.
+  (KnownSymbol name, HasIndexN name rs r) =>
+  Term rs ci ifs r
 reg = TReg (indexNToIndex (indexN @name @rs @r))
-
 
 -- | Slot assignment. The slot name is supplied by 'slot' (via
 -- TypeApplication); the value is a 'Term'. The
@@ -389,16 +393,16 @@ reg = TReg (indexNToIndex (indexN @name @rs @r))
 -- The RHS is a 'Term' (not a bare value); use
 -- 'Keiki.Core.lit' / 'Keiki.Core.proj' / 'Keiki.Core.inpCtor' or
 -- @d.fieldName@ via 'PayloadProj' to construct it.
-(.=)
-  :: forall name r rs ci ifs co v w.
-     ( KnownSymbol name, Disjoint '[name] w )
-  => IndexN name rs r
-  -> Term rs ci ifs r
-  -> EdgeBuilder rs ci co v w (Concat '[name] w) ()
+(.=) ::
+  forall name r rs ci ifs co v w.
+  (KnownSymbol name, Disjoint '[name] w) =>
+  IndexN name rs r ->
+  Term rs ci ifs r ->
+  EdgeBuilder rs ci co v w (Concat '[name] w) ()
 ix .= t = EdgeBuilder $ \pe ->
-  ((), pe { peUpdate = USet ix t `combine` peUpdate pe })
-infixr 6 .=
+  ((), pe {peUpdate = USet ix t `combine` peUpdate pe})
 
+infixr 6 .=
 
 -- | Slot assignment, an exact synonym for '(.=)': @slot \@\"x\" =: t@
 -- is @slot \@\"x\" .= t@ and produces the identical 'Keiki.Core.Update'.
@@ -411,15 +415,15 @@ infixr 6 .=
 -- \/ @lens@ \/ @mtl@. (A colon-prefixed @:=@ is not available: GHC
 -- reserves operators beginning with a colon for data constructors, so a
 -- value-level synonym must start with another symbol — hence @=:@.)
-(=:)
-  :: forall name r rs ci ifs co v w.
-     ( KnownSymbol name, Disjoint '[name] w )
-  => IndexN name rs r
-  -> Term rs ci ifs r
-  -> EdgeBuilder rs ci co v w (Concat '[name] w) ()
+(=:) ::
+  forall name r rs ci ifs co v w.
+  (KnownSymbol name, Disjoint '[name] w) =>
+  IndexN name rs r ->
+  Term rs ci ifs r ->
+  EdgeBuilder rs ci co v w (Concat '[name] w) ()
 (=:) = (.=)
-infixr 6 =:
 
+infixr 6 =:
 
 -- * Termination -----------------------------------------------------------
 
@@ -429,8 +433,7 @@ infixr 6 =:
 -- 'goto's in the same body.
 goto :: v -> EdgeBuilder rs ci co v w w ()
 goto v = EdgeBuilder $ \pe ->
-  ((), pe { peTargets = v : peTargets pe })
-
+  ((), pe {peTargets = v : peTargets pe})
 
 -- * Outputs ---------------------------------------------------------------
 
@@ -453,12 +456,12 @@ goto v = EdgeBuilder $ \pe ->
 -- the same pre-transition @(regs, ci)@ snapshot; register updates
 -- accumulated by '(.=)' apply once at the edge level, not per
 -- emitted event.
-emit
-  :: forall co fs rs ci ifs v w rec.
-     ToOutFields rec rs ci ifs fs
-  => WireCtor co fs
-  -> rec
-  -> EdgeBuilder rs ci co v w w ()
+emit ::
+  forall co fs rs ci ifs v w rec.
+  (ToOutFields rec rs ci ifs fs) =>
+  WireCtor co fs ->
+  rec ->
+  EdgeBuilder rs ci co v w w ()
 emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
   Just (PeInCtor ic) ->
     -- 'onCmd' pins the same 'InCtor' into 'peInCtor' /and/ into the
@@ -469,13 +472,18 @@ emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
     -- weaken replay soundness: the resulting 'OPack''s 'InCtor' and
     -- 'OutFields' share 'ifs', so 'solveOutput' recovers fields with no
     -- coercion (EP-53). Mirrors 'Keiki.Composition.unsafeCoerceInCtor'.
-    ((), pe { peOutput = peOutput pe
-                ++ [pack (reIndexPinnedInCtor @ci @_ @ifs ic) wc (toOutFields rec)] })
+    ( (),
+      pe
+        { peOutput =
+            peOutput pe
+              ++ [pack (reIndexPinnedInCtor @ci @_ @ifs ic) wc (toOutFields rec)]
+        }
+    )
   Nothing ->
-    error "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
-          \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
-          \emit inside an 'onCmd' block."
-
+    error
+      "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
+      \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
+      \emit inside an 'onCmd' block."
 
 -- | Re-establish the (existentially hidden) equality between a pinned
 -- 'InCtor''s field schema and the schema the enclosing 'onCmd''s
@@ -485,23 +493,21 @@ emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
 reIndexPinnedInCtor :: forall ci ifs0 ifs. InCtor ci ifs0 -> InCtor ci ifs
 reIndexPinnedInCtor = unsafeCoerce
 
-
 -- | Emit an event with an explicit 'InCtor'. The escape hatch for
 -- 'onEpsilon' bodies (which do not pin an 'InCtor') and for any
 -- caller that needs to override the one bound by the enclosing
 -- 'onCmd'. Inside 'onCmd' the InCtor-less 'emit' is preferred.
 -- Like 'emit', accumulates into the edge's output list — multiple
 -- calls produce a multi-event edge.
-emitWith
-  :: forall co fs rs ci v w ifs rec.
-     ToOutFields rec rs ci ifs fs
-  => InCtor ci ifs
-  -> WireCtor co fs
-  -> rec
-  -> EdgeBuilder rs ci co v w w ()
+emitWith ::
+  forall co fs rs ci v w ifs rec.
+  (ToOutFields rec rs ci ifs fs) =>
+  InCtor ci ifs ->
+  WireCtor co fs ->
+  rec ->
+  EdgeBuilder rs ci co v w w ()
 emitWith ic wc rec = EdgeBuilder $ \pe ->
-  ((), pe { peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)] })
-
+  ((), pe {peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)]})
 
 -- | Mark the edge as ε-output (no event). Idempotent: an edge with
 -- no 'emit' or 'noEmit' call is also an ε-edge by default; 'noEmit'
@@ -511,7 +517,6 @@ emitWith ic wc rec = EdgeBuilder $ \pe ->
 -- output list).
 noEmit :: EdgeBuilder rs ci co v w w ()
 noEmit = EdgeBuilder $ \pe -> ((), pe)
-
 
 -- * Field-keyed record sugar ---------------------------------------------
 
@@ -538,13 +543,11 @@ noEmit = EdgeBuilder $ \pe -> ((), pe)
 class ToOutFields rec rs ci ifs fs | rec -> rs ci ifs fs where
   toOutFields :: rec -> OutFields rs ci ifs fs
 
-
 -- | Passthrough: a bare 'OutFields' is its own conversion. Lets
 -- 'B.emit' accept either a per-event record or an
 -- @(t1 *: t2 *: oNil)@ chain through the same overload.
 instance ToOutFields (OutFields rs ci ifs fs) rs ci ifs fs where
   toOutFields = id
-
 
 -- * Guards ----------------------------------------------------------------
 
@@ -554,18 +557,16 @@ instance ToOutFields (OutFields rs ci ifs fs) rs ci ifs fs where
 -- by helper functions).
 requireGuard :: HsPred rs ci -> EdgeBuilder rs ci co v w w ()
 requireGuard p = EdgeBuilder $ \pe ->
-  ((), pe { peGuard = PAnd (peGuard pe) p })
-
+  ((), pe {peGuard = PAnd (peGuard pe) p})
 
 -- | Conjoin an equality predicate (@a '==' b@) with the edge's
 -- existing guard.
-requireEq
-  :: (Eq r, Typeable r)
-  => Term rs ci ifs1 r
-  -> Term rs ci ifs2 r
-  -> EdgeBuilder rs ci co v w w ()
+requireEq ::
+  (Eq r, Typeable r) =>
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  EdgeBuilder rs ci co v w w ()
 requireEq a b = requireGuard (PEq a b)
-
 
 -- | Conjoin an ordering predicate (@a `op` b@ for the relation named
 -- by 'Cmp') with the edge's existing guard. Unlike a threshold lifted
@@ -573,26 +574,27 @@ requireEq a b = requireGuard (PEq a b)
 -- visible to the SBV-backed analyses. The four direction-specific
 -- conveniences 'requireLt'\/'requireLe'\/'requireGt'\/'requireGe' wrap
 -- this with a fixed 'Cmp'.
-requireCmp
-  :: (Ord r, Typeable r)
-  => Cmp
-  -> Term rs ci ifs1 r
-  -> Term rs ci ifs2 r
-  -> EdgeBuilder rs ci co v w w ()
+requireCmp ::
+  (Ord r, Typeable r) =>
+  Cmp ->
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  EdgeBuilder rs ci co v w w ()
 requireCmp op a b = requireGuard (PCmp op a b)
 
-
 -- | Require @a < b@. See 'requireCmp'.
-requireLt, requireLe, requireGt, requireGe
-  :: (Ord r, Typeable r)
-  => Term rs ci ifs1 r
-  -> Term rs ci ifs2 r
-  -> EdgeBuilder rs ci co v w w ()
+requireLt,
+  requireLe,
+  requireGt,
+  requireGe ::
+    (Ord r, Typeable r) =>
+    Term rs ci ifs1 r ->
+    Term rs ci ifs2 r ->
+    EdgeBuilder rs ci co v w w ()
 requireLt = requireCmp CmpLt
 requireLe = requireCmp CmpLe
 requireGt = requireCmp CmpGt
 requireGe = requireCmp CmpGe
-
 
 -- * Payload projection ----------------------------------------------------
 
@@ -605,15 +607,15 @@ requireGe = requireCmp CmpGe
 -- @d.fieldName@ never collides with a built-in selector.
 data PayloadProj rs ci ifs = PayloadProj (InCtor ci ifs)
 
-
 -- | OverloadedRecordDot resolution: @d.fieldName@ on a 'PayloadProj'
 -- builds a 'TInpCtorField' term that projects the named field of the
 -- input symbol's payload.
-instance ( HasIndexN name ifs r )
-      => HasField name (PayloadProj rs ci ifs) (Term rs ci ifs r) where
+instance
+  (HasIndexN name ifs r) =>
+  HasField name (PayloadProj rs ci ifs) (Term rs ci ifs r)
+  where
   getField (PayloadProj ic) =
     inpCtor ic (indexNToIndex (indexN @name @ifs @r))
-
 
 -- | Translate the slot-name-tagged 'IndexN' into the legacy
 -- existentially-typed 'Index' that 'Keiki.Core.inpCtor' expects.
@@ -621,9 +623,8 @@ instance ( HasIndexN name ifs r )
 -- a structural recursion. (M3+ may widen 'inpCtor' to take 'IndexN'
 -- directly; this helper keeps the spike's legacy bridge.)
 indexNToIndex :: forall name rs r. IndexN name rs r -> Index rs r
-indexNToIndex IZ      = K.ZIdx
-indexNToIndex (IS i)  = K.SIdx (indexNToIndex i)
-
+indexNToIndex IZ = K.ZIdx
+indexNToIndex (IS i) = K.SIdx (indexNToIndex i)
 
 -- * Edge-list builder -----------------------------------------------------
 
@@ -632,54 +633,52 @@ indexNToIndex (IS i)  = K.SIdx (indexNToIndex i)
 -- call prepends one edge (the list is reversed in 'from' before
 -- storage so declaration order is preserved).
 newtype EdgeListBuilder rs ci co v a = EdgeListBuilder
-  { runEdgeListBuilder :: v
-                       -> [Edge (HsPred rs ci) rs ci co v]
-                       -> (a, [Edge (HsPred rs ci) rs ci co v]) }
-
+  { runEdgeListBuilder ::
+      v ->
+      [Edge (HsPred rs ci) rs ci co v] ->
+      (a, [Edge (HsPred rs ci) rs ci co v])
+  }
 
 instance Functor (EdgeListBuilder rs ci co v) where
   fmap f (EdgeListBuilder k) = EdgeListBuilder $ \src acc ->
     let (a, acc') = k src acc in (f a, acc')
-
 
 instance Applicative (EdgeListBuilder rs ci co v) where
   pure a = EdgeListBuilder $ \_ acc -> (a, acc)
   EdgeListBuilder kf <*> EdgeListBuilder ka = EdgeListBuilder $ \src acc ->
     let (f, acc1) = kf src acc
         (a, acc2) = ka src acc1
-    in (f a, acc2)
-
+     in (f a, acc2)
 
 instance Monad (EdgeListBuilder rs ci co v) where
   (>>=) (EdgeListBuilder k) f = EdgeListBuilder $ \src acc ->
     let (a, acc') = k src acc
         EdgeListBuilder k' = f a
-    in k' src acc'
-
+     in k' src acc'
 
 -- | Per-edge entry. Wires the InCtor's match-guard, gives the user
 -- a 'PayloadProj' handle (so OverloadedRecordDot resolves
 -- @d.field@), runs the body to accumulate the edge, and finalizes
 -- into a closed 'Edge'.
-onCmd
-  :: forall ci ifs rs co v w.
-     Show v
-  => InCtor ci ifs
-  -> (PayloadProj rs ci ifs -> EdgeBuilder rs ci co v '[] w ())
-  -> EdgeListBuilder rs ci co v ()
+onCmd ::
+  forall ci ifs rs co v w.
+  (Show v) =>
+  InCtor ci ifs ->
+  (PayloadProj rs ci ifs -> EdgeBuilder rs ci co v '[] w ()) ->
+  EdgeListBuilder rs ci co v ()
 onCmd ic body = EdgeListBuilder $ \src acc ->
-  let initial = PartialEdge
-        { peGuard   = matchInCtor ic
-        , peUpdate  = UKeep
-        , peOutput  = []
-        , peTargets = []
-        , peInCtor  = Just (PeInCtor ic)
-        }
+  let initial =
+        PartialEdge
+          { peGuard = matchInCtor ic,
+            peUpdate = UKeep,
+            peOutput = [],
+            peTargets = [],
+            peInCtor = Just (PeInCtor ic)
+          }
       (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
-      edgeIx       = length acc
-      edge         = finalizeEdge edgeIx src finalPE
-  in ((), edge : acc)
-
+      edgeIx = length acc
+      edge = finalizeEdge edgeIx src finalPE
+   in ((), edge : acc)
 
 -- | ε-edge entry: no input projection, no input-ctor match-guard.
 -- The guard starts at 'PTop' (so any conjuncts the body adds via
@@ -687,24 +686,24 @@ onCmd ic body = EdgeListBuilder $ \src acc ->
 -- the body, no 'PayloadProj' is supplied, so 'OverloadedRecordDot'
 -- access to the input is unavailable; use 'Keiki.Core.inpCtor'
 -- directly with an explicit 'InCtor' if needed.
-onEpsilon
-  :: forall rs ci co v w.
-     Show v
-  => EdgeBuilder rs ci co v '[] w ()
-  -> EdgeListBuilder rs ci co v ()
+onEpsilon ::
+  forall rs ci co v w.
+  (Show v) =>
+  EdgeBuilder rs ci co v '[] w () ->
+  EdgeListBuilder rs ci co v ()
 onEpsilon body = EdgeListBuilder $ \src acc ->
-  let initial = PartialEdge
-        { peGuard   = PTop
-        , peUpdate  = UKeep
-        , peOutput  = []
-        , peTargets = []
-        , peInCtor  = Nothing
-        }
+  let initial =
+        PartialEdge
+          { peGuard = PTop,
+            peUpdate = UKeep,
+            peOutput = [],
+            peTargets = [],
+            peInCtor = Nothing
+          }
       (_, finalPE) = runEdgeBuilder body initial
-      edgeIx       = length acc
-      edge         = finalizeEdge edgeIx src finalPE
-  in ((), edge : acc)
-
+      edgeIx = length acc
+      edge = finalizeEdge edgeIx src finalPE
+   in ((), edge : acc)
 
 -- | Close a 'PartialEdge' into an 'Edge'. Validation: 'peTargets'
 -- must have exactly one entry; missing or duplicated 'goto' calls
@@ -712,26 +711,37 @@ onEpsilon body = EdgeListBuilder $ \src acc ->
 -- The 'peOutput' list (zero or more 'OutTerm's accumulated by
 -- 'emit' / 'emitWith' calls) flows directly into the resulting
 -- 'Edge.output' field.
-finalizeEdge
-  :: Show v
-  => Int
-  -> v
-  -> PartialEdge rs ci co v w
-  -> Edge (HsPred rs ci) rs ci co v
+finalizeEdge ::
+  (Show v) =>
+  Int ->
+  v ->
+  PartialEdge rs ci co v w ->
+  Edge (HsPred rs ci) rs ci co v
 finalizeEdge n src pe = case peTargets pe of
-  [t]      -> Edge { guard  = peGuard pe
-                   , update = peUpdate pe
-                   , output = peOutput pe
-                   , target = t
-                   }
-  []       -> error $ "Keiki.Builder: edge #" <> show n <> " from "
-                   <> show src <> ": goto missing. Each onCmd/"
-                   <> "onEpsilon body must end with exactly one goto V."
-  (_:_:_)  -> error $ "Keiki.Builder: edge #" <> show n <> " from "
-                   <> show src <> ": goto called more than once. "
-                   <> "Each onCmd/onEpsilon body must end with "
-                   <> "exactly one goto V."
-
+  [t] ->
+    Edge
+      { guard = peGuard pe,
+        update = peUpdate pe,
+        output = peOutput pe,
+        target = t
+      }
+  [] ->
+    error $
+      "Keiki.Builder: edge #"
+        <> show n
+        <> " from "
+        <> show src
+        <> ": goto missing. Each onCmd/"
+        <> "onEpsilon body must end with exactly one goto V."
+  (_ : _ : _) ->
+    error $
+      "Keiki.Builder: edge #"
+        <> show n
+        <> " from "
+        <> show src
+        <> ": goto called more than once. "
+        <> "Each onCmd/onEpsilon body must end with "
+        <> "exactly one goto V."
 
 -- * Vertex builder --------------------------------------------------------
 
@@ -740,29 +750,27 @@ finalizeEdge n src pe = case peTargets pe of
 -- 'SymTransducer''s 'edgesOut' function via @lookup@ with @[]@ as
 -- default for unmentioned vertices.
 newtype VertexBuilder rs ci co v a = VertexBuilder
-  { runVertexBuilder :: [(v, [Edge (HsPred rs ci) rs ci co v])]
-                     -> (a, [(v, [Edge (HsPred rs ci) rs ci co v])]) }
-
+  { runVertexBuilder ::
+      [(v, [Edge (HsPred rs ci) rs ci co v])] ->
+      (a, [(v, [Edge (HsPred rs ci) rs ci co v])])
+  }
 
 instance Functor (VertexBuilder rs ci co v) where
   fmap f (VertexBuilder k) = VertexBuilder $ \vs ->
     let (a, vs') = k vs in (f a, vs')
-
 
 instance Applicative (VertexBuilder rs ci co v) where
   pure a = VertexBuilder $ \vs -> (a, vs)
   VertexBuilder kf <*> VertexBuilder ka = VertexBuilder $ \vs ->
     let (f, vs1) = kf vs
         (a, vs2) = ka vs1
-    in (f a, vs2)
-
+     in (f a, vs2)
 
 instance Monad (VertexBuilder rs ci co v) where
   (>>=) (VertexBuilder k) f = VertexBuilder $ \vs ->
     let (a, vs') = k vs
         VertexBuilder k' = f a
-    in k' vs'
-
+     in k' vs'
 
 -- | Group edges by source vertex. The argument is an
 -- 'EdgeListBuilder' do-block of 'onCmd' / 'onEpsilon' calls; each
@@ -771,16 +779,15 @@ instance Monad (VertexBuilder rs ci co v) where
 -- A vertex not mentioned in any 'from' block defaults to @[]@
 -- (terminal). To assert "this vertex is terminal" explicitly,
 -- write @from V (Prelude.pure ())@.
-from
-  :: (Eq v, Show v)
-  => v
-  -> EdgeListBuilder rs ci co v ()
-  -> VertexBuilder rs ci co v ()
+from ::
+  (Eq v, Show v) =>
+  v ->
+  EdgeListBuilder rs ci co v () ->
+  VertexBuilder rs ci co v ()
 from v eb = VertexBuilder $ \vs ->
   let (_, accFinal) = runEdgeListBuilder eb v []
-      entry         = (v, Prelude.reverse accFinal)
-  in ((), entry : vs)
-
+      entry = (v, Prelude.reverse accFinal)
+   in ((), entry : vs)
 
 -- | Top-level entry. Run the 'VertexBuilder' do-block to produce a
 -- list of @(vertex, edges)@ pairs, then assemble a 'SymTransducer'
@@ -796,19 +803,20 @@ from v eb = VertexBuilder $ \vs ->
 -- 'buildTransducer' itself but are recorded as reserved for a
 -- future @withCompletenessCheck@ combinator that would assert every
 -- vertex appears in some 'from' block.
-buildTransducer
-  :: forall rs ci co v.
-     (Bounded v, Enum v, Eq v, Show v)
-  => v
-  -> RegFile rs
-  -> (v -> Bool)
-  -> VertexBuilder rs ci co v ()
-  -> SymTransducer (HsPred rs ci) rs v ci co
-buildTransducer initS initR isF vb = SymTransducer
-  { edgesOut    = \v -> Prelude.concatMap snd (Prelude.filter ((== v) . fst) vmap)
-  , initial     = initS
-  , initialRegs = initR
-  , isFinal     = isF
-  }
+buildTransducer ::
+  forall rs ci co v.
+  (Bounded v, Enum v, Eq v, Show v) =>
+  v ->
+  RegFile rs ->
+  (v -> Bool) ->
+  VertexBuilder rs ci co v () ->
+  SymTransducer (HsPred rs ci) rs v ci co
+buildTransducer initS initR isF vb =
+  SymTransducer
+    { edgesOut = \v -> Prelude.concatMap snd (Prelude.filter ((== v) . fst) vmap),
+      initial = initS,
+      initialRegs = initR,
+      isFinal = isF
+    }
   where
     (_, vmap) = runVertexBuilder vb []

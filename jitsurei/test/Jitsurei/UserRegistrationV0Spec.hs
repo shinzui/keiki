@@ -2,10 +2,9 @@ module Jitsurei.UserRegistrationV0Spec (spec) where
 
 import Data.List (isInfixOf)
 import Data.Maybe (isNothing)
-import Test.Hspec
-import Keiki.Core
 import Jitsurei.UserRegistrationV0
-
+import Keiki.Core
+import Test.Hspec
 
 spec :: Spec
 spec = do
@@ -27,8 +26,8 @@ spec = do
 
     it "checkHiddenInputs warning includes the RequiresConfirmation source" $
       let warnings = checkHiddenInputs userRegV0
-          sources  = map hiwEdgeSource warnings
-      in sources `shouldContain` ["RequiresConfirmation"]
+          sources = map hiwEdgeSource warnings
+       in sources `shouldContain` ["RequiresConfirmation"]
 
     it "checkHiddenInputs warning names the missing InCtor and field" $
       -- Post-EP-1: the structural analyzer names the precise missing
@@ -36,8 +35,8 @@ spec = do
       -- inCtorConfirm has slots [confirmCode, at]; \"confirmCode\" is
       -- left unrecovered.
       let warnings = checkHiddenInputs userRegV0
-          reasons  = map hiwReason warnings
+          reasons = map hiwReason warnings
           inAny xs sub = any (sub `isInfixOf`) xs
-      in do
-        reasons `shouldSatisfy` (`inAny` "ConfirmAccount")
-        reasons `shouldSatisfy` (`inAny` "confirmCode")
+       in do
+            reasons `shouldSatisfy` (`inAny` "ConfirmAccount")
+            reasons `shouldSatisfy` (`inAny` "confirmCode")

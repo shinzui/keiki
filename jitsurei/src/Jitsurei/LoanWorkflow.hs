@@ -35,42 +35,42 @@
 -- for the full discussion.
 module Jitsurei.LoanWorkflow
   ( -- * The composed transducer (type-level wiring)
-    loanWorkflow
-    -- * Adapter functions (the runtime adapter calls these)
-  , loanEventToSyncInput
-  , syncOutputToLoanCmd
-  ) where
+    loanWorkflow,
 
+    -- * Adapter functions (the runtime adapter calls these)
+    loanEventToSyncInput,
+    syncOutputToLoanCmd,
+  )
+where
+
+import Jitsurei.CoreBankingSync
+  ( LegacyAssignmentCommandedData (..),
+    LoanCreatedInData (..),
+    SyncInput (..),
+    SyncOutput (..),
+    SyncRegs,
+    SyncVertex,
+    coreBankingSync,
+  )
+import Jitsurei.Loan
+  ( LoanCmd' (..),
+    LoanEvent',
+    LoanRegs,
+    LoanVertex,
+    loan,
+  )
+import Jitsurei.LoanApplication
+  ( ApplicationApprovedData (..),
+    LoanAppRegs,
+    LoanAppVertex,
+    LoanCmd,
+    LoanEvent (..),
+    loanApplication,
+  )
 import Keiki.Composition (Composite, compose)
 import Keiki.Core (Guarded)
 import Keiki.Generics (Append)
 import Keiki.Profunctor (lmapMaybeCi)
-
-import Jitsurei.CoreBankingSync
-  ( SyncInput (..)
-  , SyncOutput (..)
-  , SyncRegs
-  , SyncVertex
-  , LoanCreatedInData (..)
-  , LegacyAssignmentCommandedData (..)
-  , coreBankingSync
-  )
-import Jitsurei.Loan
-  ( LoanCmd' (..)
-  , LoanEvent'
-  , LoanRegs
-  , LoanVertex
-  , loan
-  )
-import Jitsurei.LoanApplication
-  ( ApplicationApprovedData (..)
-  , LoanAppRegs
-  , LoanAppVertex
-  , LoanCmd
-  , LoanEvent (..)
-  , loanApplication
-  )
-
 
 -- | Adapter from the upstream LoanApplication's event alphabet to
 -- the CoreBankingSync Process's input alphabet. Only
@@ -86,13 +86,16 @@ import Jitsurei.LoanApplication
 -- doesn't need a fresh-randomness source.
 loanEventToSyncInput :: LoanEvent -> Maybe SyncInput
 loanEventToSyncInput (ApplicationApproved a) =
-  Just (LoanCreatedIn (LoanCreatedInData
-    { loanId      = "loan-" <> a.applicantId
-    , applicantId = a.applicantId
-    , principal   = a.requestedAmount
-    }))
+  Just
+    ( LoanCreatedIn
+        ( LoanCreatedInData
+            { loanId = "loan-" <> a.applicantId,
+              applicantId = a.applicantId,
+              principal = a.requestedAmount
+            }
+        )
+    )
 loanEventToSyncInput _ = Nothing
-
 
 -- | Adapter from the CoreBankingSync Process's output alphabet to
 -- the Loan aggregate's command alphabet. Only the
@@ -102,19 +105,18 @@ loanEventToSyncInput _ = Nothing
 -- doesn't drive the Loan aggregate directly.
 syncOutputToLoanCmd :: SyncOutput -> Maybe LoanCmd'
 syncOutputToLoanCmd (LegacyAssignmentCommanded d) = Just d.assignment
-syncOutputToLoanCmd (SyncToLegacyRequested  _)    = Nothing
-
+syncOutputToLoanCmd (SyncToLegacyRequested _) = Nothing
 
 -- | The three-aggregate composition. Type-level only — see the
 -- module's variance caveat.
-loanWorkflow
-  :: Guarded
-       (Append LoanAppRegs (Append SyncRegs LoanRegs))
-       (Composite LoanAppVertex (Composite SyncVertex LoanVertex))
-       LoanCmd
-       LoanEvent'
+loanWorkflow ::
+  Guarded
+    (Append LoanAppRegs (Append SyncRegs LoanRegs))
+    (Composite LoanAppVertex (Composite SyncVertex LoanVertex))
+    LoanCmd
+    LoanEvent'
 loanWorkflow =
   loanApplication
-    `compose`
-  lmapMaybeCi loanEventToSyncInput
-    (coreBankingSync `compose` lmapMaybeCi syncOutputToLoanCmd loan)
+    `compose` lmapMaybeCi
+      loanEventToSyncInput
+      (coreBankingSync `compose` lmapMaybeCi syncOutputToLoanCmd loan)

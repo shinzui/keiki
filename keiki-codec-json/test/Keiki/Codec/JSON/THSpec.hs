@@ -24,45 +24,38 @@
 --    is out of scope for v0.2.
 module Keiki.Codec.JSON.THSpec (spec) where
 
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Encoding as AesonEnc
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Encoding qualified as AesonEnc
 import Data.Maybe (fromJust)
-import qualified Data.Text as T
 import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
-
 import Keiki.Codec.JSON.TH (deriveRegFileCodec)
-
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
 -- * Test fixtures -----------------------------------------------------------
 
 -- | Non-trivial two-field record used to exercise round-trip and strict
 -- decoder behaviour.
 data TestRec = TestRec
-  { trCount :: Int
-  , trNote  :: Text
+  { trCount :: Int,
+    trNote :: Text
   }
   deriving stock (Eq, Show, Generic)
 
-
 $(deriveRegFileCodec ''TestRec)
-
 
 -- | Singleton record used to exercise the empty-slot-list edge case.
 data Empty = Empty
   deriving stock (Eq, Show, Generic)
 
-
 $(deriveRegFileCodec ''Empty)
-
 
 -- * Spec --------------------------------------------------------------------
 
-
 spec :: Spec
 spec = describe "deriveRegFileCodec" $ do
-  let tr  = TestRec { trCount = 7, trNote = T.pack "hi" }
+  let tr = TestRec {trCount = 7, trNote = T.pack "hi"}
 
   describe "TestRec — round-trip and encoding agreement" $ do
     it "Value path round-trips" $
@@ -70,35 +63,36 @@ spec = describe "deriveRegFileCodec" $ do
 
     it "Encoding path bytes parse back to the same value" $ do
       let bytes = AesonEnc.encodingToLazyByteString (testRecToEncoding tr)
-          v     = fromJust (Aeson.decode bytes :: Maybe Aeson.Value)
+          v = fromJust (Aeson.decode bytes :: Maybe Aeson.Value)
       testRecFromJSON v `shouldBe` Right tr
 
     it "Value path emits both slots in slot-list order" $
       testRecToJSON tr
-        `shouldBe`
-        Aeson.object
-          [ "trCount" Aeson..= (7 :: Int)
-          , "trNote"  Aeson..= T.pack "hi"
+        `shouldBe` Aeson.object
+          [ "trCount" Aeson..= (7 :: Int),
+            "trNote" Aeson..= T.pack "hi"
           ]
 
   describe "TestRec — strict decoder" $ do
     it "rejects an Object missing trCount with a slot-prefixed message" $ do
-      let v = Aeson.object [ "trNote" Aeson..= T.pack "hi" ]
+      let v = Aeson.object ["trNote" Aeson..= T.pack "hi"]
       testRecFromJSON v `shouldBe` Left "trCount: missing slot"
 
     it "rejects an Object with an unknown extra field" $ do
-      let v = Aeson.object
-                [ "trCount" Aeson..= (7 :: Int)
-                , "trNote"  Aeson..= T.pack "hi"
-                , "bogus"   Aeson..= (1 :: Int)
-                ]
+      let v =
+            Aeson.object
+              [ "trCount" Aeson..= (7 :: Int),
+                "trNote" Aeson..= T.pack "hi",
+                "bogus" Aeson..= (1 :: Int)
+              ]
       testRecFromJSON v `shouldSatisfy` isExtraFieldsLeft
 
     it "rejects a type-mismatched field with a slot-prefixed message" $ do
-      let v = Aeson.object
-                [ "trCount" Aeson..= T.pack "seven"
-                , "trNote"  Aeson..= T.pack "hi"
-                ]
+      let v =
+            Aeson.object
+              [ "trCount" Aeson..= T.pack "seven",
+                "trNote" Aeson..= T.pack "hi"
+              ]
       testRecFromJSON v `shouldSatisfy` hasPrefix "trCount:"
 
   describe "Empty — empty-slot-list edge case" $ do
@@ -113,19 +107,17 @@ spec = describe "deriveRegFileCodec" $ do
         `shouldBe` AesonEnc.encodingToLazyByteString (AesonEnc.pairs mempty)
 
     it "rejects a non-empty JSON object as unknown extra fields" $
-      emptyFromJSON (Aeson.object [ "x" Aeson..= (1 :: Int) ])
+      emptyFromJSON (Aeson.object ["x" Aeson..= (1 :: Int)])
         `shouldSatisfy` isExtraFieldsLeft
-
 
 -- * Helpers -----------------------------------------------------------------
 
 isExtraFieldsLeft :: Either String a -> Bool
 isExtraFieldsLeft = \case
   Left msg -> T.pack "regfile: unknown extra fields:" `T.isPrefixOf` T.pack msg
-  Right _  -> False
-
+  Right _ -> False
 
 hasPrefix :: String -> Either String a -> Bool
 hasPrefix p = \case
   Left msg -> T.pack p `T.isPrefixOf` T.pack msg
-  Right _  -> False
+  Right _ -> False

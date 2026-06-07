@@ -20,42 +20,43 @@
 -- codec serialises the eligible ones.
 module Keiki.Shape
   ( -- * Shape hash
-    KnownRegFileShape (..)
-  , regFileShapeHash
-    -- * Per-type canonical name (escape hatch)
-  , CanonicalTypeName (..)
-    -- * TypeRep rendering
-  , renderStableTypeRep
-    -- * SHA-256 helper
-  , sha256Hex
-  ) where
+    KnownRegFileShape (..),
+    regFileShapeHash,
 
+    -- * Per-type canonical name (escape hatch)
+    CanonicalTypeName (..),
+
+    -- * TypeRep rendering
+    renderStableTypeRep,
+
+    -- * SHA-256 helper
+    sha256Hex,
+  )
+where
+
+import Crypto.Hash.SHA256 qualified as SHA256
 import Data.Bits (shiftR, (.&.))
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
 import Data.Char (intToDigit)
-import Data.Int (Int8, Int16, Int32, Int64)
+import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Proxy (Proxy (..))
-import qualified Data.Text as T
 import Data.Text (Text)
-import qualified Data.Text.Encoding as TE
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Time.Calendar (Day)
 import Data.Time.Clock (UTCTime)
 import Data.Typeable (Typeable)
-import Data.Word (Word8, Word16, Word32, Word64)
+import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.TypeLits (KnownSymbol, symbolVal)
-import Type.Reflection
-  ( SomeTypeRep (..)
-  , TypeRep
-  , someTypeRep
-  , splitApps
-  , tyConModule
-  , tyConName
-  )
-
-import qualified Crypto.Hash.SHA256 as SHA256
-
 import Keiki.Core (Slot)
-
+import Type.Reflection
+  ( SomeTypeRep (..),
+    TypeRep,
+    someTypeRep,
+    splitApps,
+    tyConModule,
+    tyConName,
+  )
 
 -- * Canonical type names ----------------------------------------------------
 
@@ -69,11 +70,11 @@ import Keiki.Core (Slot)
 -- See P9 in EP-36 (@docs\/plans\/36-regfile-json-codec-and-shape-hash-for-snapshot-persistence.md@).
 class CanonicalTypeName a where
   canonicalTypeName :: Proxy a -> Text
-  default canonicalTypeName :: Typeable a => Proxy a -> Text
+  default canonicalTypeName :: (Typeable a) => Proxy a -> Text
   canonicalTypeName p = renderStableTypeRep (someTypeRep p)
 
-
 -- ** Built-in instances ------------------------------------------------------
+
 --
 -- Default instances for the common scalar and primitive container types
 -- that a typical 'RegFile' carries. Each is empty-bodied, picking up the
@@ -81,31 +82,52 @@ class CanonicalTypeName a where
 -- with a non-empty instance.
 
 instance CanonicalTypeName ()
+
 instance CanonicalTypeName Bool
+
 instance CanonicalTypeName Char
+
 instance CanonicalTypeName Int
+
 instance CanonicalTypeName Int8
+
 instance CanonicalTypeName Int16
+
 instance CanonicalTypeName Int32
+
 instance CanonicalTypeName Int64
+
 instance CanonicalTypeName Integer
+
 instance CanonicalTypeName Word
+
 instance CanonicalTypeName Word8
+
 instance CanonicalTypeName Word16
+
 instance CanonicalTypeName Word32
+
 instance CanonicalTypeName Word64
+
 instance CanonicalTypeName Double
+
 instance CanonicalTypeName Float
+
 instance CanonicalTypeName Text
+
 instance CanonicalTypeName UTCTime
+
 instance CanonicalTypeName Day
 
-instance Typeable a => CanonicalTypeName (Maybe a)
-instance Typeable a => CanonicalTypeName [a]
-instance (Typeable a, Typeable b) => CanonicalTypeName (Either a b)
-instance (Typeable a, Typeable b) => CanonicalTypeName (a, b)
-instance (Typeable a, Typeable b, Typeable c) => CanonicalTypeName (a, b, c)
+instance (Typeable a) => CanonicalTypeName (Maybe a)
 
+instance (Typeable a) => CanonicalTypeName [a]
+
+instance (Typeable a, Typeable b) => CanonicalTypeName (Either a b)
+
+instance (Typeable a, Typeable b) => CanonicalTypeName (a, b)
+
+instance (Typeable a, Typeable b, Typeable c) => CanonicalTypeName (a, b, c)
 
 -- * Shape hash --------------------------------------------------------------
 
@@ -135,27 +157,25 @@ instance KnownRegFileShape '[] where
   regFileShapeCanonical _ = T.pack "regfile:0"
 
 instance
-  ( KnownSymbol s
-  , CanonicalTypeName t
-  , KnownRegFileShape rs
-  )
-  => KnownRegFileShape ('(s, t) ': rs)
+  ( KnownSymbol s,
+    CanonicalTypeName t,
+    KnownRegFileShape rs
+  ) =>
+  KnownRegFileShape ('(s, t) ': rs)
   where
   regFileShapeCanonical _ =
     T.concat
-      [ T.pack (symbolVal (Proxy @s))
-      , T.pack ":"
-      , canonicalTypeName (Proxy @t)
-      , T.pack ";"
-      , regFileShapeCanonical (Proxy @rs)
+      [ T.pack (symbolVal (Proxy @s)),
+        T.pack ":",
+        canonicalTypeName (Proxy @t),
+        T.pack ";",
+        regFileShapeCanonical (Proxy @rs)
       ]
-
 
 -- | Shape hash of a slot list, as lower-case hexadecimal SHA-256 over
 -- the UTF-8 bytes of 'regFileShapeCanonical'. Pure, no 'IO'.
-regFileShapeHash :: forall rs. KnownRegFileShape rs => Proxy rs -> Text
+regFileShapeHash :: forall rs. (KnownRegFileShape rs) => Proxy rs -> Text
 regFileShapeHash p = sha256Hex (regFileShapeCanonical p)
-
 
 -- * TypeRep rendering -------------------------------------------------------
 
@@ -178,7 +198,6 @@ regFileShapeHash p = sha256Hex (regFileShapeCanonical p)
 renderStableTypeRep :: SomeTypeRep -> Text
 renderStableTypeRep (SomeTypeRep tr) = renderTypeRep tr
 
-
 renderTypeRep :: forall k (a :: k). TypeRep a -> Text
 renderTypeRep tr =
   let (tc, args) = splitApps tr
@@ -194,7 +213,6 @@ renderTypeRep tr =
             <> T.intercalate (T.pack ",") (map renderStableTypeRep args)
             <> T.pack ")"
 
-
 -- * SHA-256 helper ----------------------------------------------------------
 
 -- | SHA-256 over the UTF-8 encoding of the input, rendered as
@@ -203,9 +221,8 @@ sha256Hex :: Text -> Text
 sha256Hex =
   T.pack . concatMap byteToHex . BS.unpack . SHA256.hash . TE.encodeUtf8
 
-
 byteToHex :: Word8 -> String
 byteToHex b =
-  [ intToDigit (fromIntegral (b `shiftR` 4))
-  , intToDigit (fromIntegral (b .&. 0x0F))
+  [ intToDigit (fromIntegral (b `shiftR` 4)),
+    intToDigit (fromIntegral (b .&. 0x0F))
   ]

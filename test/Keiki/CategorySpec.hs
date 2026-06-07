@@ -12,46 +12,44 @@
 -- across @id . t@.
 module Keiki.CategorySpec (spec) where
 
-import Control.Category ((.), id)
-import qualified Control.Category as Cat
+import Control.Category (id, (.))
+import Control.Category qualified as Cat
 import Control.Exception (evaluate)
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
-import Prelude hiding ((.), id)
-import Test.Hspec
-
 import Keiki.Core
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
-
+import Test.Hspec
+import Prelude hiding (id, (.))
 
 -- * Fixtures ----------------------------------------------------------------
 
 sampleAt :: UTCTime
 sampleAt = UTCTime (fromGregorian 2026 5 9) (secondsToDiffTime 0)
 
-
 sampleSendEmail :: EmailCmd
-sampleSendEmail = SendEmail SendEmailData
-  { recipient = "alice@example.com"
-  , subject   = "hello"
-  , at        = sampleAt
-  }
-
+sampleSendEmail =
+  SendEmail
+    SendEmailData
+      { recipient = "alice@example.com",
+        subject = "hello",
+        at = sampleAt
+      }
 
 sampleEmailEvent :: EmailEvent
-sampleEmailEvent = EmailSent EmailSentData
-  { recipient = "alice@example.com"
-  , subject   = "hello"
-  , at        = sampleAt
-  }
-
+sampleEmailEvent =
+  EmailSent
+    EmailSentData
+      { recipient = "alice@example.com",
+        subject = "hello",
+        at = sampleAt
+      }
 
 -- | @emailDelivery@ wrapped in the existential.
 someEmail :: SomeSymTransducer EmailCmd EmailEvent
 someEmail = someSymTransducer emailDelivery
-
 
 -- | An "adapted" copy of @emailDelivery@ whose input alphabet is
 -- bridged from 'EmailEvent' back to 'EmailCmd' via 'lmapCi'. Used
@@ -69,12 +67,13 @@ adaptedEmail :: SomeSymTransducer EmailEvent EmailEvent
 adaptedEmail = someSymTransducer (lmapCi eventToCmd emailDelivery)
   where
     eventToCmd :: EmailEvent -> EmailCmd
-    eventToCmd (EmailSent d) = SendEmail SendEmailData
-      { recipient = d.recipient
-      , subject   = d.subject
-      , at        = d.at
-      }
-
+    eventToCmd (EmailSent d) =
+      SendEmail
+        SendEmailData
+          { recipient = d.recipient,
+            subject = d.subject,
+            at = d.at
+          }
 
 -- * Behavioural-equality helpers --------------------------------------------
 
@@ -90,14 +89,11 @@ runOmega (SomeSymTransducer t) ci =
   omega t (initial t) (initialRegs t) ci
 runOmega SomeSymIdentity ci = [ci]
 
-
 -- * Specs -------------------------------------------------------------------
 
 spec :: Spec
 spec = do
-
   describe "Cat.id" $ do
-
     it "lifts identityTransducer at any alphabet" $ do
       let identityAtCmd :: SomeSymTransducer EmailCmd EmailCmd
           identityAtCmd = id
@@ -111,7 +107,6 @@ spec = do
         `shouldBe` [sampleEmailEvent]
 
   describe "Category laws (behavioural, up to state-isomorphism)" $ do
-
     it "L1 left identity: id . t behaves like t on a representative input" $
       runOmega (id . someEmail) sampleSendEmail
         `shouldBe` runOmega someEmail sampleSendEmail
@@ -124,17 +119,16 @@ spec = do
       let t1 = someEmail
           t2 = id :: SomeSymTransducer EmailEvent EmailEvent
           t3 = id :: SomeSymTransducer EmailEvent EmailEvent
-          left  = (t3 . t2) . t1
+          left = (t3 . t2) . t1
           right = t3 . (t2 . t1)
-      in runOmega left sampleSendEmail
-           `shouldBe` runOmega right sampleSendEmail
+       in runOmega left sampleSendEmail
+            `shouldBe` runOmega right sampleSendEmail
 
     it "L1 with concrete output: id . someEmail still emits the wire EmailEvent" $
       runOmega (id . someEmail) sampleSendEmail
         `shouldBe` [sampleEmailEvent]
 
   describe "CategoryOverlapError on slot-name collision" $ do
-
     it "raises when both halves share register slots" $ do
       -- adaptedEmail's slot list is the same as emailDelivery's
       -- (EmailRegs); composing them on the EmailEvent boundary
@@ -142,12 +136,12 @@ spec = do
       -- slots.
       let composed = adaptedEmail . someEmail
       evaluate composed
-        `shouldThrow`
-        (\e ->
-            let slots = coeSlots e
-            in    "emailRecipient" `elem` slots
-               && "emailSubject"   `elem` slots
-               && "emailSentAt"    `elem` slots)
+        `shouldThrow` ( \e ->
+                          let slots = coeSlots e
+                           in "emailRecipient" `elem` slots
+                                && "emailSubject" `elem` slots
+                                && "emailSentAt" `elem` slots
+                      )
 
     it "does NOT raise when one half is the empty-slot identity" $ do
       -- id has rs = '[], so Disjoint reduces statically; the
@@ -158,7 +152,6 @@ spec = do
       runOmega composedR sampleSendEmail `shouldBe` [sampleEmailEvent]
 
   describe "isSingleValuedSym survives id . t" $ do
-
     it "single-valuedness is preserved across left identity" $
       case id . someEmail of
         SomeSymTransducer t ->

@@ -45,20 +45,20 @@
 -- 'Keiki.Core.delta' / 'Keiki.Core.step' directly when ε-driven
 -- transitions matter.
 module Keiki.Decider
-  ( Decider (..)
-  , toDecider
-  ) where
+  ( Decider (..),
+    toDecider,
+  )
+where
 
 import Keiki.Core
-  ( BoolAlg
-  , InFlight (..)
-  , RegFile
-  , SymTransducer (..)
-  , applyEvent
-  , applyEventStreaming
-  , omega
+  ( BoolAlg,
+    InFlight (..),
+    RegFile,
+    SymTransducer (..),
+    applyEvent,
+    applyEventStreaming,
+    omega,
   )
-
 
 -- | The Chassaing-shape Decider record. Field selectors are named
 -- to match published Decider examples; conflicts with other modules
@@ -68,13 +68,12 @@ import Keiki.Core
 -- state ('Keiki.Core.InFlight' s co paired with a register file);
 -- for letter-only callers it is unused.
 data Decider c e s s_streaming = Decider
-  { decide          :: c -> s -> [e]
-  , evolve          :: s -> e -> s
-  , evolveStreaming :: s_streaming -> e -> Maybe s_streaming
-  , initialState    :: s
-  , isTerminal      :: s -> Bool
+  { decide :: c -> s -> [e],
+    evolve :: s -> e -> s,
+    evolveStreaming :: s_streaming -> e -> Maybe s_streaming,
+    initialState :: s,
+    isTerminal :: s -> Bool
   }
-
 
 -- | Project a keiki 'SymTransducer' to a 'Decider' record. The
 -- letter-replay state carrier is @(s, RegFile rs)@ and the
@@ -104,16 +103,17 @@ data Decider c e s s_streaming = Decider
 -- that want strict replay use 'evolveStreaming' (whose 'Maybe' is
 -- explicit) or 'Keiki.Core.applyEvents' (which returns 'Nothing' on
 -- the first replay failure across a chunk).
-toDecider
-  :: (BoolAlg phi (RegFile rs, ci), Eq co)
-  => SymTransducer phi rs s ci co
-  -> Decider ci co (s, RegFile rs) (InFlight s co, RegFile rs)
-toDecider t = Decider
-  { decide = \cmd (s, regs) -> omega t s regs cmd
-  , evolve = \(s, regs) ev -> case applyEvent t s regs ev of
-      Just (s', regs') -> (s', regs')
-      Nothing          -> (s, regs)
-  , evolveStreaming = \(w, regs) ev -> applyEventStreaming t w regs ev
-  , initialState    = (initial t, initialRegs t)
-  , isTerminal      = \(s, _regs) -> isFinal t s
-  }
+toDecider ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  Decider ci co (s, RegFile rs) (InFlight s co, RegFile rs)
+toDecider t =
+  Decider
+    { decide = \cmd (s, regs) -> omega t s regs cmd,
+      evolve = \(s, regs) ev -> case applyEvent t s regs ev of
+        Just (s', regs') -> (s', regs')
+        Nothing -> (s, regs),
+      evolveStreaming = \(w, regs) ev -> applyEventStreaming t w regs ev,
+      initialState = (initial t, initialRegs t),
+      isTerminal = \(s, _regs) -> isFinal t s
+    }

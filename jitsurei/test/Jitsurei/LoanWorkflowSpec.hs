@@ -20,19 +20,15 @@
 module Jitsurei.LoanWorkflowSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
-import Test.Hspec
-
-import Keiki.Core
-
 import Jitsurei.CoreBankingSync
 import Jitsurei.Loan
 import Jitsurei.LoanApplication
 import Jitsurei.LoanWorkflow
-
+import Keiki.Core
+import Test.Hspec
 
 t :: Integer -> UTCTime
 t s = UTCTime (fromGregorian 2026 5 3) (secondsToDiffTime s)
-
 
 -- | The 2-event chain that the original (pre-EP-19) multi-decider
 -- produced for the threshold-tipping 'RecordEmploymentCheck' command:
@@ -43,61 +39,74 @@ t s = UTCTime (fromGregorian 2026 5 3) (secondsToDiffTime s)
 -- so they are inlined here.
 recordEmploymentTipsApproval :: [LoanEvent]
 recordEmploymentTipsApproval =
-  [ EmploymentChecked    (EmploymentCheckedData True (t 50))
-  , ApplicationApproved
+  [ EmploymentChecked (EmploymentCheckedData True (t 50)),
+    ApplicationApproved
       (ApplicationApprovedData "alice" 250_000 720 (t 50))
   ]
 
-
 spec :: Spec
 spec = do
-
   describe "Stage 1: LoanApplication ⇒ CoreBankingSync via loanEventToSyncInput" $ do
     it "ApplicationApproved adapts to LoanCreatedIn" $ do
-      let appApproved = ApplicationApproved
-            (ApplicationApprovedData "alice" 250_000 720 (t 100))
+      let appApproved =
+            ApplicationApproved
+              (ApplicationApprovedData "alice" 250_000 720 (t 100))
       case loanEventToSyncInput appApproved of
         Just (LoanCreatedIn d) -> do
           d.applicantId `shouldBe` "alice"
-          d.principal   `shouldBe` 250_000
-        _ -> expectationFailure
-               "loanEventToSyncInput rejected ApplicationApproved"
+          d.principal `shouldBe` 250_000
+        _ ->
+          expectationFailure
+            "loanEventToSyncInput rejected ApplicationApproved"
 
     it "non-approval LoanEvents adapt to Nothing" $ do
-      let started = ApplicationStarted
-            (ApplicationStartedData "alice" 250_000 "home" (t 0))
+      let started =
+            ApplicationStarted
+              (ApplicationStartedData "alice" 250_000 "home" (t 0))
       loanEventToSyncInput started `shouldBe` Nothing
 
     it "LoanCreatedIn drives CoreBankingSync from SyncIdle to SyncRequested" $ do
-      let appApproved = ApplicationApproved
-            (ApplicationApprovedData "alice" 250_000 720 (t 100))
+      let appApproved =
+            ApplicationApproved
+              (ApplicationApprovedData "alice" 250_000 720 (t 100))
       case loanEventToSyncInput appApproved of
         Just inp ->
           case step coreBankingSync (initial coreBankingSync, initialRegs coreBankingSync) inp of
             Just (SyncRequested, _, [SyncToLegacyRequested d]) -> do
-              d.loanId      `shouldBe` "loan-alice"
+              d.loanId `shouldBe` "loan-alice"
               d.applicantId `shouldBe` "alice"
-              d.principal   `shouldBe` 250_000
-            Just _  -> expectationFailure
-                         "step on LoanCreatedIn produced unexpected output"
-            Nothing -> expectationFailure
-                         "step on LoanCreatedIn returned Nothing"
-        Nothing -> expectationFailure
-                     "loanEventToSyncInput unexpectedly returned Nothing"
+              d.principal `shouldBe` 250_000
+            Just _ ->
+              expectationFailure
+                "step on LoanCreatedIn produced unexpected output"
+            Nothing ->
+              expectationFailure
+                "step on LoanCreatedIn returned Nothing"
+        Nothing ->
+          expectationFailure
+            "loanEventToSyncInput unexpectedly returned Nothing"
 
   describe "Stage 2: CoreBankingSync ⇒ Loan via syncOutputToLoanCmd" $ do
     it "SyncToLegacyRequested adapts to Nothing (audit only)" $
-      syncOutputToLoanCmd (SyncToLegacyRequested
-        (SyncToLegacyRequestedData "loan-alice" "alice" 250_000))
+      syncOutputToLoanCmd
+        ( SyncToLegacyRequested
+            (SyncToLegacyRequestedData "loan-alice" "alice" 250_000)
+        )
         `shouldBe` Nothing
 
     it "LegacyAssignmentCommanded unwraps to a LoanCmd'" $
-      syncOutputToLoanCmd (LegacyAssignmentCommanded
-        (LegacyAssignmentCommandedData
-          (AssignLegacyLoanId
-            (AssignLegacyLoanIdData "loan-alice" "LEG-42"))))
-        `shouldBe` Just (AssignLegacyLoanId
-          (AssignLegacyLoanIdData "loan-alice" "LEG-42"))
+      syncOutputToLoanCmd
+        ( LegacyAssignmentCommanded
+            ( LegacyAssignmentCommandedData
+                ( AssignLegacyLoanId
+                    (AssignLegacyLoanIdData "loan-alice" "LEG-42")
+                )
+            )
+        )
+        `shouldBe` Just
+          ( AssignLegacyLoanId
+              (AssignLegacyLoanIdData "loan-alice" "LEG-42")
+          )
 
   describe "End-to-end: LoanCmd ⇒ approval ⇒ legacy callback ⇒ LegacyLoanIdAssigned" $
     it "drives the full async creation flow via the adapter functions" $ do
@@ -112,18 +121,24 @@ spec = do
       -- with the audit emit.
       let appApproved = case events1 of
             [_, ev] -> ev
-            _       -> error "stage 1 did not produce 2 events"
+            _ -> error "stage 1 did not produce 2 events"
       Just syncInput <- pure (loanEventToSyncInput appApproved)
       Just (sync1State, sync1Regs) <-
-        pure (delta coreBankingSync (initial coreBankingSync)
-                                    (initialRegs coreBankingSync) syncInput)
+        pure
+          ( delta
+              coreBankingSync
+              (initial coreBankingSync)
+              (initialRegs coreBankingSync)
+              syncInput
+          )
       sync1State `shouldBe` SyncRequested
 
       -- Stage 3: simulate the legacy callback channel delivering
       -- a LegacyCallbackReceivedIn event with the matching loanId.
       -- CoreBankingSync emits LegacyAssignmentCommanded.
-      let callback = LegacyCallbackReceivedIn
-            (LegacyCallbackReceivedInData "loan-alice" "LEG-42")
+      let callback =
+            LegacyCallbackReceivedIn
+              (LegacyCallbackReceivedInData "loan-alice" "LEG-42")
       Just (sync2State, _, [sync2Out]) <-
         pure (step coreBankingSync (sync1State, sync1Regs) callback)
       sync2State `shouldBe` SyncSettled
@@ -144,9 +159,11 @@ spec = do
       -- Loan to LoanLinked and emits LegacyLoanIdAssigned.
       case step loan (loan1State, loan1Regs) loanCmd' of
         Just (LoanLinked, _, [LegacyLoanIdAssigned d]) -> do
-          d.loanId       `shouldBe` "loan-alice"
+          d.loanId `shouldBe` "loan-alice"
           d.legacyLoanId `shouldBe` "LEG-42"
-        Just _  -> expectationFailure
-                     "final step produced unexpected output"
-        Nothing -> expectationFailure
-                     "final step returned Nothing"
+        Just _ ->
+          expectationFailure
+            "final step produced unexpected output"
+        Nothing ->
+          expectationFailure
+            "final step returned Nothing"

@@ -20,30 +20,28 @@ module Keiki.CompositionNarySpec (spec) where
 import Data.List (nub)
 import Data.Maybe (isNothing)
 import GHC.Generics (Generic)
-import Test.Hspec
-
-import Keiki.Core
-  ( InCtor (..)
-  , OutFields (..)
-  , OutTerm
-  , RegFile (..)
-  , WireCtor (..)
-  , pack
-  , solveOutput
-  )
 import Keiki.Composition
-  ( inCtor3At1
-  , inCtor3At2
-  , inCtor3At3
-  , outTerm3At1
-  , outTerm3At2
-  , wireCtor3At1
-  , wireCtor3At2
-  , wireCtor3At3
+  ( inCtor3At1,
+    inCtor3At2,
+    inCtor3At3,
+    outTerm3At1,
+    outTerm3At2,
+    wireCtor3At1,
+    wireCtor3At2,
+    wireCtor3At3,
+  )
+import Keiki.Core
+  ( InCtor (..),
+    OutFields (..),
+    OutTerm,
+    RegFile (..),
+    WireCtor (..),
+    pack,
+    solveOutput,
   )
 import Keiki.Generics (FieldsOf, RegFieldsOf, mkWireCtor0)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
-
+import Test.Hspec
 
 -- * Three independent event families ------------------------------------
 
@@ -51,36 +49,39 @@ import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 -- empty; the output fields read from the input command, not from state.
 type Regs = '[]
 
-
 -- Family 1 (A): a record-payload command/event pair.
-data AData = AData { aVal :: Int } deriving (Eq, Show, Generic)
-data ACmd  = AFlip AData            deriving (Eq, Show, Generic)
-data AEvt  = AFlipped AData         deriving (Eq, Show, Generic)
+data AData = AData {aVal :: Int} deriving (Eq, Show, Generic)
+
+data ACmd = AFlip AData deriving (Eq, Show, Generic)
+
+data AEvt = AFlipped AData deriving (Eq, Show, Generic)
 
 -- Family 2 (B).
-data BData = BData { bVal :: Int } deriving (Eq, Show, Generic)
-data BCmd  = BFlip BData            deriving (Eq, Show, Generic)
-data BEvt  = BFlipped BData         deriving (Eq, Show, Generic)
+data BData = BData {bVal :: Int} deriving (Eq, Show, Generic)
+
+data BCmd = BFlip BData deriving (Eq, Show, Generic)
+
+data BEvt = BFlipped BData deriving (Eq, Show, Generic)
 
 -- Family 3 (C) — present so the 3-way sum is concrete and so the
 -- uniqueness check has a third name to compare.
-data CData = CData { cVal :: Int } deriving (Eq, Show, Generic)
-data CCmd  = CFlip CData            deriving (Eq, Show, Generic)
-data CEvt  = CFlipped CData         deriving (Eq, Show, Generic)
+data CData = CData {cVal :: Int} deriving (Eq, Show, Generic)
 
+data CCmd = CFlip CData deriving (Eq, Show, Generic)
 
-$(deriveAggregateCtors ''ACmd ''Regs [ ("AFlip", "AFlip") ])
-$(deriveWireCtors      ''AEvt        [ ("AFlipped", "AFlipped") ])
-$(deriveAggregateCtors ''BCmd ''Regs [ ("BFlip", "BFlip") ])
-$(deriveWireCtors      ''BEvt        [ ("BFlipped", "BFlipped") ])
-$(deriveAggregateCtors ''CCmd ''Regs [ ("CFlip", "CFlip") ])
-$(deriveWireCtors      ''CEvt        [ ("CFlipped", "CFlipped") ])
+data CEvt = CFlipped CData deriving (Eq, Show, Generic)
 
+$(deriveAggregateCtors ''ACmd ''Regs [("AFlip", "AFlip")])
+$(deriveWireCtors ''AEvt [("AFlipped", "AFlipped")])
+$(deriveAggregateCtors ''BCmd ''Regs [("BFlip", "BFlip")])
+$(deriveWireCtors ''BEvt [("BFlipped", "BFlipped")])
+$(deriveAggregateCtors ''CCmd ''Regs [("CFlip", "CFlip")])
+$(deriveWireCtors ''CEvt [("CFlipped", "CFlipped")])
 
 -- The right-nested 3-family summed alphabets.
 type SumCmd = Either ACmd (Either BCmd CCmd)
-type SumEvt = Either AEvt (Either BEvt CEvt)
 
+type SumEvt = Either AEvt (Either BEvt CEvt)
 
 -- Edge output terms re-homed into the summed alphabet, one per family.
 sumOutA :: OutTerm Regs SumCmd SumEvt
@@ -89,34 +90,42 @@ sumOutA = outTerm3At1 (pack inCtorAFlip wireAFlipped (OFCons (inpAFlip #aVal) OF
 sumOutB :: OutTerm Regs SumCmd SumEvt
 sumOutB = outTerm3At2 (pack inCtorBFlip wireBFlipped (OFCons (inpBFlip #bVal) OFNil))
 
-
 -- Injected wire/in constructors, used by the uniqueness group.
 sumWireA :: WireCtor SumEvt (FieldsOf AData)
 sumWireA = wireCtor3At1 wireAFlipped
+
 sumWireB :: WireCtor SumEvt (FieldsOf BData)
 sumWireB = wireCtor3At2 wireBFlipped
+
 sumWireC :: WireCtor SumEvt (FieldsOf CData)
 sumWireC = wireCtor3At3 wireCFlipped
 
 sumInA :: InCtor SumCmd (RegFieldsOf AData)
 sumInA = inCtor3At1 inCtorAFlip
+
 sumInB :: InCtor SumCmd (RegFieldsOf BData)
 sumInB = inCtor3At2 inCtorBFlip
+
 sumInC :: InCtor SumCmd (RegFieldsOf CData)
 sumInC = inCtor3At3 inCtorCFlip
 
-
 -- * A singleton (payload-free) event family -----------------------------
 
-data DoorCmd = OpenDoor   | CloseDoor   deriving (Eq, Show, Generic)
-data DoorEvt = DoorOpened | DoorClosed  deriving (Eq, Show, Generic)
+data DoorCmd = OpenDoor | CloseDoor deriving (Eq, Show, Generic)
 
-$(deriveAggregateCtors ''DoorCmd ''Regs
-    [ ("OpenDoor", "OpenDoor"), ("CloseDoor", "CloseDoor") ])
+data DoorEvt = DoorOpened | DoorClosed deriving (Eq, Show, Generic)
+
+$( deriveAggregateCtors
+     ''DoorCmd
+     ''Regs
+     [("OpenDoor", "OpenDoor"), ("CloseDoor", "CloseDoor")]
+ )
+
 -- This is the new capability: deriveWireCtors over zero-arg event ctors.
-$(deriveWireCtors ''DoorEvt
-    [ ("DoorOpened", "DoorOpened"), ("DoorClosed", "DoorClosed") ])
-
+$( deriveWireCtors
+     ''DoorEvt
+     [("DoorOpened", "DoorOpened"), ("DoorClosed", "DoorClosed")]
+ )
 
 spec :: Spec
 spec = do
@@ -139,8 +148,8 @@ spec = do
     -- solveOutput/stepOne match by name string (src/Keiki/Core.hs ~1067),
     -- so the summed families' constructor names must be pairwise distinct.
     it "injected family names are pairwise distinct" $ do
-      let wcNames = [ wcName sumWireA, wcName sumWireB, wcName sumWireC ]
-          icNames = [ icName sumInA,   icName sumInB,   icName sumInC ]
+      let wcNames = [wcName sumWireA, wcName sumWireB, wcName sumWireC]
+          icNames = [icName sumInA, icName sumInB, icName sumInC]
       (length wcNames, length (nub wcNames)) `shouldBe` (3, 3)
       (length icNames, length (nub icNames)) `shouldBe` (3, 3)
 
@@ -149,8 +158,8 @@ spec = do
       -- summed, solveOutput's name-equality match could mis-invert. The
       -- nub-based uniqueness check flags the collision.
       let collidingNames =
-            [ wcName (mkWireCtor0 "Dup" () :: WireCtor () ())
-            , wcName (mkWireCtor0 "Dup" 'x' :: WireCtor Char ())
+            [ wcName (mkWireCtor0 "Dup" () :: WireCtor () ()),
+              wcName (mkWireCtor0 "Dup" 'x' :: WireCtor Char ())
             ]
       (length collidingNames == length (nub collidingNames)) `shouldBe` False
 

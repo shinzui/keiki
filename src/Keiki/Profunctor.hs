@@ -36,33 +36,36 @@
 -- cannot be discharged by GHC at the wrapper boundary.
 module Keiki.Profunctor
   ( -- * Existential wrapper
-    SomeSymTransducer (..)
-  , someSymTransducer
+    SomeSymTransducer (..),
+    someSymTransducer,
+
     -- * Standalone variance combinators on the concrete 'SymTransducer'
-  , lmapCi
-  , rmapCo
-  , dimapTransducer
-  , lmapMaybeCi
+    lmapCi,
+    rmapCo,
+    dimapTransducer,
+    lmapMaybeCi,
+
     -- * Identity transducer (concrete form; 'Cat.id' uses the sentinel constructor)
-  , IdVertex (..)
-  , identityTransducer
+    IdVertex (..),
+    identityTransducer,
+
     -- * Arrow's @arr@ (concrete form; the 'Arr.Arrow' instance wraps it)
-  , arrTransducer
+    arrTransducer,
+
     -- * Category-instance overlap exception
-  , CategoryOverlapError (..)
-  ) where
+    CategoryOverlapError (..),
+  )
+where
 
-import qualified Control.Arrow as Arr
+import Control.Arrow qualified as Arr
+import Control.Category qualified as Cat
 import Control.Exception (Exception, throw)
-import qualified Control.Category as Cat
+import Data.Profunctor (Choice (..), Profunctor (..), Strong (..))
 import Data.Proxy (Proxy (..))
-import Data.Profunctor (Profunctor (..), Choice (..), Strong (..))
-import Unsafe.Coerce (unsafeCoerce)
-
-import Keiki.Core
 import Keiki.Composition (WeakenR, alternative, compose)
+import Keiki.Core
 import Keiki.Generics (Append)
-
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | Existential wrapper hiding @rs@ (register-file slot list) and
 -- @s@ (control vertex), exposing only the input alphabet @ci@ and
@@ -105,31 +108,29 @@ import Keiki.Generics (Append)
 -- 'SomeSymIdentity' explicitly when traversing arbitrary
 -- 'SomeSymTransducer' values.
 data SomeSymTransducer ci co where
-  SomeSymTransducer
-    :: ( WeakenR rs
-       , KnownSlotNames rs
-       , Bounded s
-       , Enum s
-       )
-    => SymTransducer (HsPred rs ci) rs s ci co
-    -> SomeSymTransducer ci co
+  SomeSymTransducer ::
+    ( WeakenR rs,
+      KnownSlotNames rs,
+      Bounded s,
+      Enum s
+    ) =>
+    SymTransducer (HsPred rs ci) rs s ci co ->
+    SomeSymTransducer ci co
   SomeSymIdentity :: SomeSymTransducer a a
-
 
 -- | Smart constructor: lift a concrete 'SymTransducer' into the
 -- wrapper. Equivalent to applying the data constructor; provided for
 -- naming consistency with the rest of @Keiki.Profunctor@'s exports
 -- and for users who prefer functions over constructors.
-someSymTransducer
-  :: ( WeakenR rs
-     , KnownSlotNames rs
-     , Bounded s
-     , Enum s
-     )
-  => SymTransducer (HsPred rs ci) rs s ci co
-  -> SomeSymTransducer ci co
+someSymTransducer ::
+  ( WeakenR rs,
+    KnownSlotNames rs,
+    Bounded s,
+    Enum s
+  ) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SomeSymTransducer ci co
 someSymTransducer = SomeSymTransducer
-
 
 -- * Standalone variance combinators ---------------------------------------
 
@@ -144,18 +145,18 @@ someSymTransducer = SomeSymTransducer
 -- 'Keiki.Core.evalTerm', 'Keiki.Core.delta', 'Keiki.Core.omega') only
 -- ever consults 'icMatch'; it is unaffected by the poisoned
 -- 'icBuild'.
-lmapCi
-  :: forall ci ci' rs s co.
-     (ci' -> ci)
-  -> SymTransducer (HsPred rs ci)  rs s ci  co
-  -> SymTransducer (HsPred rs ci') rs s ci' co
-lmapCi f t = SymTransducer
-  { edgesOut    = \s -> map (rewriteEdge f) (edgesOut t s)
-  , initial     = initial t
-  , initialRegs = initialRegs t
-  , isFinal     = isFinal t
-  }
-
+lmapCi ::
+  forall ci ci' rs s co.
+  (ci' -> ci) ->
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SymTransducer (HsPred rs ci') rs s ci' co
+lmapCi f t =
+  SymTransducer
+    { edgesOut = \s -> map (rewriteEdge f) (edgesOut t s),
+      initial = initial t,
+      initialRegs = initialRegs t,
+      isFinal = isFinal t
+    }
 
 -- | Pre-compose with a partial contramap on the input alphabet.
 -- Inputs for which @f@ returns 'Nothing' fail every guard's
@@ -164,18 +165,18 @@ lmapCi f t = SymTransducer
 --
 -- /Variance caveat:/ same as 'lmapCi' — 'Keiki.Core.solveOutput' is
 -- not preserved.
-lmapMaybeCi
-  :: forall ci ci' rs s co.
-     (ci' -> Maybe ci)
-  -> SymTransducer (HsPred rs ci)  rs s ci  co
-  -> SymTransducer (HsPred rs ci') rs s ci' co
-lmapMaybeCi f t = SymTransducer
-  { edgesOut    = \s -> map (rewriteEdgeMaybe f) (edgesOut t s)
-  , initial     = initial t
-  , initialRegs = initialRegs t
-  , isFinal     = isFinal t
-  }
-
+lmapMaybeCi ::
+  forall ci ci' rs s co.
+  (ci' -> Maybe ci) ->
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SymTransducer (HsPred rs ci') rs s ci' co
+lmapMaybeCi f t =
+  SymTransducer
+    { edgesOut = \s -> map (rewriteEdgeMaybe f) (edgesOut t s),
+      initial = initial t,
+      initialRegs = initialRegs t,
+      isFinal = isFinal t
+    }
 
 -- | Post-compose with a covariant map on the output alphabet. Walks
 -- every 'WireCtor' inside the transducer's outputs and replaces each
@@ -185,29 +186,28 @@ lmapMaybeCi f t = SymTransducer
 -- @const Nothing@ — 'Keiki.Core.solveOutput' on rewritten edges
 -- returns 'Nothing'. The forward output construction (which only
 -- uses 'wcBuild') is unaffected.
-rmapCo
-  :: forall ci co co' rs s.
-     (co -> co')
-  -> SymTransducer (HsPred rs ci) rs s ci co
-  -> SymTransducer (HsPred rs ci) rs s ci co'
-rmapCo g t = SymTransducer
-  { edgesOut    = \s -> map (rewriteEdgeOut g) (edgesOut t s)
-  , initial     = initial t
-  , initialRegs = initialRegs t
-  , isFinal     = isFinal t
-  }
-
+rmapCo ::
+  forall ci co co' rs s.
+  (co -> co') ->
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SymTransducer (HsPred rs ci) rs s ci co'
+rmapCo g t =
+  SymTransducer
+    { edgesOut = \s -> map (rewriteEdgeOut g) (edgesOut t s),
+      initial = initial t,
+      initialRegs = initialRegs t,
+      isFinal = isFinal t
+    }
 
 -- | Bidirectional map on input and output alphabets. Equivalent to
 -- @'rmapCo' g . 'lmapCi' f@. /Variance caveat/ as both 'lmapCi' and
 -- 'rmapCo': 'Keiki.Core.solveOutput' is not preserved on the result.
-dimapTransducer
-  :: (ci' -> ci)
-  -> (co  -> co')
-  -> SymTransducer (HsPred rs ci)  rs s ci  co
-  -> SymTransducer (HsPred rs ci') rs s ci' co'
+dimapTransducer ::
+  (ci' -> ci) ->
+  (co -> co') ->
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SymTransducer (HsPred rs ci') rs s ci' co'
 dimapTransducer f g = rmapCo g . lmapCi f
-
 
 -- * Profunctor / Functor instances on the wrapper -----------------------
 
@@ -225,20 +225,18 @@ instance Profunctor SomeSymTransducer where
     SomeSymTransducer (dimapTransducer f g t)
   dimap f g SomeSymIdentity =
     SomeSymTransducer (dimapTransducer f g identityTransducer)
-  lmap  f   (SomeSymTransducer t) =
+  lmap f (SomeSymTransducer t) =
     SomeSymTransducer (lmapCi f t)
-  lmap  f   SomeSymIdentity =
+  lmap f SomeSymIdentity =
     SomeSymTransducer (lmapCi f identityTransducer)
-  rmap    g (SomeSymTransducer t) =
+  rmap g (SomeSymTransducer t) =
     SomeSymTransducer (rmapCo g t)
-  rmap    g SomeSymIdentity =
+  rmap g SomeSymIdentity =
     SomeSymTransducer (rmapCo g identityTransducer)
-
 
 -- | 'Functor' on the output alphabet. @'fmap' = 'rmap'@.
 instance Functor (SomeSymTransducer ci) where
   fmap = rmap
-
 
 -- * Identity transducer (used by 'Cat.id') ------------------------------
 
@@ -249,7 +247,6 @@ instance Functor (SomeSymTransducer ci) where
 data IdVertex = IdVertex
   deriving stock (Eq, Show, Bounded, Enum)
 
-
 -- | An 'InCtor' for an arbitrary alphabet @a@. Uses a phantom
 -- one-slot register file @'[ '("payload", a) ]@ to bridge the
 -- alphabet through the inversion machinery: 'icMatch' wraps any @a@
@@ -257,13 +254,13 @@ data IdVertex = IdVertex
 -- slot exists only inside this 'InCtor''s wrapping types — the
 -- transducer's *real* @initialRegs@ stays 'RNil', so no runtime
 -- register is allocated.
-identityInCtor :: forall a. InCtor a '[ '("payload", a) ]
-identityInCtor = InCtor
-  { icName  = "Identity"
-  , icMatch = \a -> Just (RCons (Proxy @"payload") a RNil)
-  , icBuild = \(RCons _ a RNil) -> a
-  }
-
+identityInCtor :: forall a. InCtor a '[ '("payload", a)]
+identityInCtor =
+  InCtor
+    { icName = "Identity",
+      icMatch = \a -> Just (RCons (Proxy @"payload") a RNil),
+      icBuild = \(RCons _ a RNil) -> a
+    }
 
 -- | A 'WireCtor' for an arbitrary alphabet @a@. Uses the field-tuple
 -- @(a, ())@ that 'OutFields' produces for a single-element list: one
@@ -271,12 +268,12 @@ identityInCtor = InCtor
 -- @()@. Forward construction unwraps the tuple to its single
 -- payload; inversion via 'wcMatch' wraps an @a@ back up.
 identityWireCtor :: forall a. WireCtor a (a, ())
-identityWireCtor = WireCtor
-  { wcName  = "Identity"
-  , wcMatch = \a -> Just (a, ())
-  , wcBuild = \(a, ()) -> a
-  }
-
+identityWireCtor =
+  WireCtor
+    { wcName = "Identity",
+      wcMatch = \a -> Just (a, ()),
+      wcBuild = \(a, ()) -> a
+    }
 
 -- | The identity transducer for an arbitrary alphabet @a@. One vertex
 -- ('IdVertex'); one edge whose guard is @'PInCtor' 'identityInCtor'@
@@ -307,27 +304,30 @@ identityWireCtor = WireCtor
 -- becomes arm-discriminating after 'liftLPredAlt' / 'liftRPredAlt'
 -- wraps the InCtor in 'leftInCtor' / 'rightInCtor' (whose
 -- 'icMatch' returns 'Nothing' on the wrong arm).
-identityTransducer
-  :: forall a.
-     SymTransducer (HsPred '[] a) '[] IdVertex a a
-identityTransducer = SymTransducer
-  { edgesOut    = \IdVertex ->
-      [ Edge { guard  = PInCtor identityInCtor
-             , update = UKeep
-             , output = [identityOutTerm]
-             , target = IdVertex
-             }
-      ]
-  , initial     = IdVertex
-  , initialRegs = RNil
-  , isFinal     = const True
-  }
+identityTransducer ::
+  forall a.
+  SymTransducer (HsPred '[] a) '[] IdVertex a a
+identityTransducer =
+  SymTransducer
+    { edgesOut = \IdVertex ->
+        [ Edge
+            { guard = PInCtor identityInCtor,
+              update = UKeep,
+              output = [identityOutTerm],
+              target = IdVertex
+            }
+        ],
+      initial = IdVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
   where
     identityOutTerm :: OutTerm '[] a a
     identityOutTerm =
-      OPack identityInCtor identityWireCtor
-            (OFCons (TInpCtorField identityInCtor ZIdx) OFNil)
-
+      OPack
+        identityInCtor
+        identityWireCtor
+        (OFCons (TInpCtorField identityInCtor ZIdx) OFNil)
 
 -- * Disjointness escape hatch (private) ---------------------------------
 
@@ -340,18 +340,16 @@ identityTransducer = SymTransducer
 -- the throw at a controlled point in your program.
 data CategoryOverlapError = CategoryOverlapError
   { coeSlots :: [String]
-  } deriving stock (Eq, Show)
-
+  }
+  deriving stock (Eq, Show)
 
 instance Exception CategoryOverlapError
-
 
 -- | A constraint dictionary for @'Disjoint' xs ys@. Used together
 -- with 'unsafeCoerceDisjointness' to smuggle the constraint into
 -- scope after a value-level overlap check.
 data DictDisjoint xs ys where
-  DictDisjoint :: Disjoint xs ys => DictDisjoint xs ys
-
+  DictDisjoint :: (Disjoint xs ys) => DictDisjoint xs ys
 
 -- | Fabricate a 'DictDisjoint' for arbitrary @xs@ and @ys@. The
 -- only safe call site is the body of 'Cat..' on
@@ -364,12 +362,11 @@ data DictDisjoint xs ys where
 -- constraint @()@, so @DictDisjoint @'[] @'[]@ is always
 -- constructible. 'unsafeCoerce' rewrites the existential type
 -- arguments to whatever the call site demands.
-unsafeCoerceDisjointness
-  :: forall xs ys.
-     DictDisjoint xs ys
+unsafeCoerceDisjointness ::
+  forall xs ys.
+  DictDisjoint xs ys
 unsafeCoerceDisjointness =
   unsafeCoerce (DictDisjoint :: DictDisjoint '[] '[])
-
 
 -- | A constraint dictionary witnessing that a slot list satisfies
 -- the two structural classes the wrapper packs. Used together with
@@ -380,7 +377,6 @@ unsafeCoerceDisjointness =
 -- (because the spines @rs1@ and @rs2@ are skolems).
 data DictWrapper rs where
   DictWrapper :: (WeakenR rs, KnownSlotNames rs) => DictWrapper rs
-
 
 -- | Fabricate a 'DictWrapper' for an arbitrary slot list. Both
 -- 'WeakenR' and 'KnownSlotNames' are structural classes with
@@ -393,12 +389,11 @@ data DictWrapper rs where
 -- packed @WeakenR@ + @KnownSlotNames@ constraints already hold for
 -- @rs1@ and @rs2@ individually, and the composite slot list
 -- @'Append' rs1 rs2@ inherits the structural property.
-unsafeCoerceWrapperDict
-  :: forall rs.
-     DictWrapper rs
+unsafeCoerceWrapperDict ::
+  forall rs.
+  DictWrapper rs
 unsafeCoerceWrapperDict =
   unsafeCoerce (DictWrapper :: DictWrapper '[])
-
 
 -- * Category instance --------------------------------------------------
 
@@ -439,39 +434,39 @@ unsafeCoerceWrapperDict =
 instance Cat.Category SomeSymTransducer where
   id = SomeSymIdentity
 
-  SomeSymIdentity              . t                            = t
-  t                            . SomeSymIdentity              = t
-  SomeSymTransducer t2         . SomeSymTransducer t1         =
+  SomeSymIdentity . t = t
+  t . SomeSymIdentity = t
+  SomeSymTransducer t2 . SomeSymTransducer t1 =
     composeWrappers t1 t2
-
 
 -- | Compose two existentially-packed transducers, performing the
 -- runtime overlap check that 'Cat..' delegates to. Factored out so
 -- the existential @rs1@ and @rs2@ skolems are bound to named type
 -- variables (the instance method's pattern signatures cannot, on
 -- their own, name them in a form usable inside 'TypeApplications').
-composeWrappers
-  :: forall rs1 rs2 s1 s2 ci mid co.
-     ( WeakenR rs1
-     , KnownSlotNames rs1
-     , KnownSlotNames rs2
-     , Bounded s1, Enum s1
-     , Bounded s2, Enum s2
-     )
-  => SymTransducer (HsPred rs1 ci)  rs1 s1 ci  mid
-  -> SymTransducer (HsPred rs2 mid) rs2 s2 mid co
-  -> SomeSymTransducer ci co
+composeWrappers ::
+  forall rs1 rs2 s1 s2 ci mid co.
+  ( WeakenR rs1,
+    KnownSlotNames rs1,
+    KnownSlotNames rs2,
+    Bounded s1,
+    Enum s1,
+    Bounded s2,
+    Enum s2
+  ) =>
+  SymTransducer (HsPred rs1 ci) rs1 s1 ci mid ->
+  SymTransducer (HsPred rs2 mid) rs2 s2 mid co ->
+  SomeSymTransducer ci co
 composeWrappers t1 t2 =
-  let names1  = slotNames @rs1
-      names2  = slotNames @rs2
+  let names1 = slotNames @rs1
+      names2 = slotNames @rs2
       overlap = filter (`elem` names2) names1
-  in if not (null overlap)
-       then throw (CategoryOverlapError overlap)
-       else case unsafeCoerceDisjointness @(Names rs1) @(Names rs2) of
-              DictDisjoint ->
-                case unsafeCoerceWrapperDict @(Append rs1 rs2) of
-                  DictWrapper -> SomeSymTransducer (compose t1 t2)
-
+   in if not (null overlap)
+        then throw (CategoryOverlapError overlap)
+        else case unsafeCoerceDisjointness @(Names rs1) @(Names rs2) of
+          DictDisjoint ->
+            case unsafeCoerceWrapperDict @(Append rs1 rs2) of
+              DictWrapper -> SomeSymTransducer (compose t1 t2)
 
 -- * Choice instance ----------------------------------------------------
 
@@ -510,30 +505,33 @@ composeWrappers t1 t2 =
 -- 'lmapCi' / 'rmapCo' combinators (which poison @icBuild@); the
 -- Choice instance does not introduce additional loss.
 instance Choice SomeSymTransducer where
-  left' :: forall a b c. SomeSymTransducer a b
-        -> SomeSymTransducer (Either a c) (Either b c)
-  left' SomeSymIdentity        = SomeSymIdentity
-  left' (SomeSymTransducer t)  = leftWrap t
+  left' ::
+    forall a b c.
+    SomeSymTransducer a b ->
+    SomeSymTransducer (Either a c) (Either b c)
+  left' SomeSymIdentity = SomeSymIdentity
+  left' (SomeSymTransducer t) = leftWrap t
 
-  right' :: forall a b c. SomeSymTransducer a b
-         -> SomeSymTransducer (Either c a) (Either c b)
-  right' SomeSymIdentity       = SomeSymIdentity
+  right' ::
+    forall a b c.
+    SomeSymTransducer a b ->
+    SomeSymTransducer (Either c a) (Either c b)
+  right' SomeSymIdentity = SomeSymIdentity
   right' (SomeSymTransducer t) = rightWrap t
-
 
 -- | Helper for 'left'' on a wrapped concrete transducer. Factored out
 -- to bind the existentially-packed @rs@ and @s@ to named type
 -- variables so 'TypeApplications' on 'unsafeCoerceDisjointness' /
 -- 'unsafeCoerceWrapperDict' can reach them.
-leftWrap
-  :: forall rs s ci co c.
-     ( WeakenR rs
-     , KnownSlotNames rs
-     , Bounded s
-     , Enum s
-     )
-  => SymTransducer (HsPred rs ci) rs s ci co
-  -> SomeSymTransducer (Either ci c) (Either co c)
+leftWrap ::
+  forall rs s ci co c.
+  ( WeakenR rs,
+    KnownSlotNames rs,
+    Bounded s,
+    Enum s
+  ) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SomeSymTransducer (Either ci c) (Either co c)
 leftWrap t =
   case unsafeCoerceDisjointness @(Names rs) @(Names '[]) of
     DictDisjoint ->
@@ -541,25 +539,23 @@ leftWrap t =
         DictWrapper ->
           SomeSymTransducer (alternative t (identityTransducer @c))
 
-
 -- | Helper for 'right'' on a wrapped concrete transducer. Symmetric
 -- to 'leftWrap'.
-rightWrap
-  :: forall rs s ci co c.
-     ( WeakenR rs
-     , KnownSlotNames rs
-     , Bounded s
-     , Enum s
-     )
-  => SymTransducer (HsPred rs ci) rs s ci co
-  -> SomeSymTransducer (Either c ci) (Either c co)
+rightWrap ::
+  forall rs s ci co c.
+  ( WeakenR rs,
+    KnownSlotNames rs,
+    Bounded s,
+    Enum s
+  ) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SomeSymTransducer (Either c ci) (Either c co)
 rightWrap t =
   case unsafeCoerceDisjointness @(Names '[]) @(Names rs) of
     DictDisjoint ->
       case unsafeCoerceWrapperDict @(Append '[] rs) of
         DictWrapper ->
           SomeSymTransducer (alternative (identityTransducer @c) t)
-
 
 -- * Strong instance ----------------------------------------------------
 
@@ -585,26 +581,28 @@ rightWrap t =
 -- new 'WireCtor's 'wcMatch' is @const Nothing@, and 'pairSndInCtor''s
 -- 'icBuild' is poisoned. Forward processing
 -- ('Keiki.Core.delta', 'Keiki.Core.omega') is unaffected.
-firstSym
-  :: forall rs s ci co c.
-     SymTransducer (HsPred rs ci) rs s ci co
-  -> SymTransducer (HsPred rs (ci, c)) rs s (ci, c) (co, c)
-firstSym t = SymTransducer
-  { edgesOut    = \s -> map firstEdge (edgesOut t s)
-  , initial     = initial t
-  , initialRegs = initialRegs t
-  , isFinal     = isFinal t
-  }
+firstSym ::
+  forall rs s ci co c.
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SymTransducer (HsPred rs (ci, c)) rs s (ci, c) (co, c)
+firstSym t =
+  SymTransducer
+    { edgesOut = \s -> map firstEdge (edgesOut t s),
+      initial = initial t,
+      initialRegs = initialRegs t,
+      isFinal = isFinal t
+    }
   where
-    firstEdge
-      :: Edge (HsPred rs ci) rs ci co s
-      -> Edge (HsPred rs (ci, c)) rs (ci, c) (co, c) s
-    firstEdge Edge { guard = g, update = u, output = mo, target = tgt } = Edge
-      { guard  = contraPred fst g
-      , update = contraUpdate fst u
-      , output = fmap firstOutTerm mo
-      , target = tgt
-      }
+    firstEdge ::
+      Edge (HsPred rs ci) rs ci co s ->
+      Edge (HsPred rs (ci, c)) rs (ci, c) (co, c) s
+    firstEdge Edge {guard = g, update = u, output = mo, target = tgt} =
+      Edge
+        { guard = contraPred fst g,
+          update = contraUpdate fst u,
+          output = fmap firstOutTerm mo,
+          target = tgt
+        }
 
     -- EP-53: 'OutFields' is now indexed by a single input field schema,
     -- so the threaded-@c@ projection and the original fields must share
@@ -618,56 +616,59 @@ firstSym t = SymTransducer
     firstOutTerm :: OutTerm rs ci co -> OutTerm rs (ci, c) (co, c)
     firstOutTerm (OPack ic wc fields) =
       let cic = firstInCtor ic
-      in OPack cic (firstWireCtor wc) (firstOutFields cic fields)
+       in OPack cic (firstWireCtor wc) (firstOutFields cic fields)
 
     firstWireCtor :: forall fs. WireCtor co fs -> WireCtor (co, c) (c, fs)
-    firstWireCtor WireCtor { wcName = n, wcBuild = b } = WireCtor
-      { wcName  = n <> "_first"
-      , wcMatch = \_ -> Nothing
-      , wcBuild = \(cv, fs) -> (b fs, cv)
-      }
+    firstWireCtor WireCtor {wcName = n, wcBuild = b} =
+      WireCtor
+        { wcName = n <> "_first",
+          wcMatch = \_ -> Nothing,
+          wcBuild = \(cv, fs) -> (b fs, cv)
+        }
 
-    -- | Combine an @(ci)@ input constructor with the threaded @c@ into a
+    -- \| Combine an @(ci)@ input constructor with the threaded @c@ into a
     -- @(ci, c)@ constructor whose field schema is @"snd"@ (for @c@)
     -- prepended to the original @ifs@.
-    firstInCtor
-      :: forall ifs. InCtor ci ifs -> InCtor (ci, c) ('( "snd", c) ': ifs)
-    firstInCtor ic@InCtor{} = InCtor
-      { icName  = icName ic
-      , icMatch = \(civ, cv) -> case icMatch ic civ of
-          Just rf -> Just (RCons (Proxy @"snd") cv rf)
-          Nothing -> Nothing
-      , icBuild = \(RCons _ cv rf) -> (icBuild ic rf, cv)
-      }
+    firstInCtor ::
+      forall ifs. InCtor ci ifs -> InCtor (ci, c) ('("snd", c) ': ifs)
+    firstInCtor ic@InCtor {} =
+      InCtor
+        { icName = icName ic,
+          icMatch = \(civ, cv) -> case icMatch ic civ of
+            Just rf -> Just (RCons (Proxy @"snd") cv rf)
+            Nothing -> Nothing,
+          icBuild = \(RCons _ cv rf) -> (icBuild ic rf, cv)
+        }
 
-    firstOutFields
-      :: forall ifs fs.
-         InCtor (ci, c) ('( "snd", c) ': ifs)
-      -> OutFields rs ci ifs fs
-      -> OutFields rs (ci, c) ('( "snd", c) ': ifs) (c, fs)
+    firstOutFields ::
+      forall ifs fs.
+      InCtor (ci, c) ('("snd", c) ': ifs) ->
+      OutFields rs ci ifs fs ->
+      OutFields rs (ci, c) ('("snd", c) ': ifs) (c, fs)
     firstOutFields cic fields =
       OFCons (TInpCtorField cic ZIdx) (goFields fields)
       where
-        goFields
-          :: forall fs'. OutFields rs ci ifs fs'
-          -> OutFields rs (ci, c) ('( "snd", c) ': ifs) fs'
-        goFields OFNil           = OFNil
+        goFields ::
+          forall fs'.
+          OutFields rs ci ifs fs' ->
+          OutFields rs (ci, c) ('("snd", c) ': ifs) fs'
+        goFields OFNil = OFNil
         goFields (OFCons tm fs') = OFCons (goTerm tm) (goFields fs')
 
         -- Re-home each read into the combined constructor, shifting the
         -- index past the new @"snd"@ head slot. The original reads name
         -- the edge's one input constructor, so reusing @cic@ (built from
         -- the OPack's 'InCtor') preserves forward semantics.
-        goTerm
-          :: forall a. Term rs ci ifs a
-          -> Term rs (ci, c) ('( "snd", c) ': ifs) a
-        goTerm (TLit r)             = TLit r
-        goTerm (TReg ix)            = TReg ix
+        goTerm ::
+          forall a.
+          Term rs ci ifs a ->
+          Term rs (ci, c) ('("snd", c) ': ifs) a
+        goTerm (TLit r) = TLit r
+        goTerm (TReg ix) = TReg ix
         goTerm (TInpCtorField _ ix) = TInpCtorField cic (SIdx ix)
-        goTerm (TApp1 h a)          = TApp1 h (goTerm a)
-        goTerm (TApp2 h a b)        = TApp2 h (goTerm a) (goTerm b)
-        goTerm (TArith op a b)      = TArith op (goTerm a) (goTerm b)
-
+        goTerm (TApp1 h a) = TApp1 h (goTerm a)
+        goTerm (TApp2 h a b) = TApp2 h (goTerm a) (goTerm b)
+        goTerm (TArith op a b) = TArith op (goTerm a) (goTerm b)
 
 -- | Standard 'Data.Profunctor.Strong.Strong' instance. Threads an
 -- unrelated value through a transducer.
@@ -685,23 +686,24 @@ firstSym t = SymTransducer
 -- /Variance caveat:/ inherits 'firstSym''s lossy-@solveOutput@
 -- contract.
 instance Strong SomeSymTransducer where
-  first' :: forall a b c.
-            SomeSymTransducer a b
-         -> SomeSymTransducer (a, c) (b, c)
-  first' SomeSymIdentity        = SomeSymIdentity
-  first' (SomeSymTransducer t)  = SomeSymTransducer (firstSym t)
+  first' ::
+    forall a b c.
+    SomeSymTransducer a b ->
+    SomeSymTransducer (a, c) (b, c)
+  first' SomeSymIdentity = SomeSymIdentity
+  first' (SomeSymTransducer t) = SomeSymTransducer (firstSym t)
 
-  second' :: forall a b c.
-             SomeSymTransducer a b
-          -> SomeSymTransducer (c, a) (c, b)
-  second' SomeSymIdentity       = SomeSymIdentity
+  second' ::
+    forall a b c.
+    SomeSymTransducer a b ->
+    SomeSymTransducer (c, a) (c, b)
+  second' SomeSymIdentity = SomeSymIdentity
   second' (SomeSymTransducer t) =
     SomeSymTransducer
       (lmapCi swap (rmapCo swap (firstSym t)))
     where
       swap :: forall x y. (x, y) -> (y, x)
       swap (x, y) = (y, x)
-
 
 -- * Arrow instance ------------------------------------------------------
 
@@ -734,35 +736,39 @@ instance Strong SomeSymTransducer where
 -- function applications would be untranslatable). Use 'Arr.arr'
 -- standalone for adapter purposes; for actual composition, build
 -- one transducer that wraps the combined function.
-arrTransducer
-  :: forall a b.
-     (a -> b)
-  -> SymTransducer (HsPred '[] a) '[] IdVertex a b
-arrTransducer f = SymTransducer
-  { edgesOut    = \IdVertex ->
-      [ Edge { guard  = PInCtor identityInCtor
-             , update = UKeep
-             , output = [arrOut]
-             , target = IdVertex
-             }
-      ]
-  , initial     = IdVertex
-  , initialRegs = RNil
-  , isFinal     = const True
-  }
+arrTransducer ::
+  forall a b.
+  (a -> b) ->
+  SymTransducer (HsPred '[] a) '[] IdVertex a b
+arrTransducer f =
+  SymTransducer
+    { edgesOut = \IdVertex ->
+        [ Edge
+            { guard = PInCtor identityInCtor,
+              update = UKeep,
+              output = [arrOut],
+              target = IdVertex
+            }
+        ],
+      initial = IdVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
   where
     arrOut :: OutTerm '[] a b
     arrOut =
-      OPack identityInCtor arrWc
-            (OFCons (TInpCtorField identityInCtor ZIdx) OFNil)
+      OPack
+        identityInCtor
+        arrWc
+        (OFCons (TInpCtorField identityInCtor ZIdx) OFNil)
 
     arrWc :: WireCtor b (a, ())
-    arrWc = WireCtor
-      { wcName  = "arr"
-      , wcMatch = \_ -> Nothing
-      , wcBuild = \(a, ()) -> f a
-      }
-
+    arrWc =
+      WireCtor
+        { wcName = "arr",
+          wcMatch = \_ -> Nothing,
+          wcBuild = \(a, ()) -> f a
+        }
 
 -- | Standard 'Control.Arrow.Arrow' instance.
 --
@@ -780,10 +786,9 @@ arrTransducer f = SymTransducer
 -- 'arr f >>> arr g' applies — see 'arrTransducer' for the full
 -- caveat.
 instance Arr.Arrow SomeSymTransducer where
-  arr    f = SomeSymTransducer (arrTransducer f)
-  first    = first'
-  second   = second'
-
+  arr f = SomeSymTransducer (arrTransducer f)
+  first = first'
+  second = second'
 
 -- * Internal rewriters --------------------------------------------------
 
@@ -796,43 +801,43 @@ instance Arr.Arrow SomeSymTransducer where
 -- 'icBuild' is poisoned: callers must not invoke
 -- 'Keiki.Core.solveOutput' on edges built from this 'InCtor'.
 contraInCtor :: (ci' -> ci) -> InCtor ci ifs -> InCtor ci' ifs
-contraInCtor f InCtor { icName = n, icMatch = m } = InCtor
-  { icName  = n
-  , icMatch = m . f
-  , icBuild = poisonedIcBuild n
-  }
-
+contraInCtor f InCtor {icName = n, icMatch = m} =
+  InCtor
+    { icName = n,
+      icMatch = m . f,
+      icBuild = poisonedIcBuild n
+    }
 
 -- | Partial-contramap an 'InCtor'. The 'icMatch' becomes
 -- @\ci' -> f ci' >>= m@; 'icBuild' is poisoned (same caveat as
 -- 'contraInCtor').
 contraMaybeInCtor :: (ci' -> Maybe ci) -> InCtor ci ifs -> InCtor ci' ifs
-contraMaybeInCtor f InCtor { icName = n, icMatch = m } = InCtor
-  { icName  = n
-  , icMatch = \ci' -> f ci' >>= m
-  , icBuild = poisonedIcBuild n
-  }
-
+contraMaybeInCtor f InCtor {icName = n, icMatch = m} =
+  InCtor
+    { icName = n,
+      icMatch = \ci' -> f ci' >>= m,
+      icBuild = poisonedIcBuild n
+    }
 
 poisonedIcBuild :: String -> a -> b
-poisonedIcBuild icN = \_ -> error
-  ( "Keiki.Profunctor: icBuild on a contramapped InCtor \""
-    <> icN
-    <> "\" was invoked. lmapCi/lmapMaybeCi-rewritten transducers \
-       \cannot rebuild ci from a wire event via solveOutput. See \
-       \the haddock for Keiki.Profunctor.lmapCi."
-  )
-
+poisonedIcBuild icN = \_ ->
+  error
+    ( "Keiki.Profunctor: icBuild on a contramapped InCtor \""
+        <> icN
+        <> "\" was invoked. lmapCi/lmapMaybeCi-rewritten transducers \
+           \cannot rebuild ci from a wire event via solveOutput. See \
+           \the haddock for Keiki.Profunctor.lmapCi."
+    )
 
 -- | Covariant map a 'WireCtor' over its alphabet. The resulting
 -- 'WireCtor's 'wcMatch' is set to @const Nothing@.
 mapWireCtor :: (co -> co') -> WireCtor co fs -> WireCtor co' fs
-mapWireCtor g WireCtor { wcName = n, wcBuild = b } = WireCtor
-  { wcName  = n
-  , wcMatch = \_co' -> Nothing
-  , wcBuild = g . b
-  }
-
+mapWireCtor g WireCtor {wcName = n, wcBuild = b} =
+  WireCtor
+    { wcName = n,
+      wcMatch = \_co' -> Nothing,
+      wcBuild = g . b
+    }
 
 -- ** Term ---------------------------------------------------------------
 
@@ -840,25 +845,23 @@ contraTerm :: forall ci ci' rs ifs r. (ci' -> ci) -> Term rs ci ifs r -> Term rs
 contraTerm f = go
   where
     go :: forall a. Term rs ci ifs a -> Term rs ci' ifs a
-    go (TLit r)              = TLit r
-    go (TReg ix)             = TReg ix
+    go (TLit r) = TLit r
+    go (TReg ix) = TReg ix
     go (TInpCtorField ic ix) = TInpCtorField (contraInCtor f ic) ix
-    go (TApp1 h a)           = TApp1 h (go a)
-    go (TApp2 h a b)         = TApp2 h (go a) (go b)
-    go (TArith op a b)       = TArith op (go a) (go b)
-
+    go (TApp1 h a) = TApp1 h (go a)
+    go (TApp2 h a b) = TApp2 h (go a) (go b)
+    go (TArith op a b) = TArith op (go a) (go b)
 
 contraMaybeTerm :: forall ci ci' rs ifs r. (ci' -> Maybe ci) -> Term rs ci ifs r -> Term rs ci' ifs r
 contraMaybeTerm f = go
   where
     go :: forall a. Term rs ci ifs a -> Term rs ci' ifs a
-    go (TLit r)              = TLit r
-    go (TReg ix)             = TReg ix
+    go (TLit r) = TLit r
+    go (TReg ix) = TReg ix
     go (TInpCtorField ic ix) = TInpCtorField (contraMaybeInCtor f ic) ix
-    go (TApp1 h a)           = TApp1 h (go a)
-    go (TApp2 h a b)         = TApp2 h (go a) (go b)
-    go (TArith op a b)       = TArith op (go a) (go b)
-
+    go (TApp1 h a) = TApp1 h (go a)
+    go (TApp2 h a b) = TApp2 h (go a) (go b)
+    go (TArith op a b) = TArith op (go a) (go b)
 
 -- ** HsPred -------------------------------------------------------------
 
@@ -866,29 +869,27 @@ contraPred :: forall ci ci' rs. (ci' -> ci) -> HsPred rs ci -> HsPred rs ci'
 contraPred f = go
   where
     go :: HsPred rs ci -> HsPred rs ci'
-    go PTop         = PTop
-    go PBot         = PBot
-    go (PAnd p q)   = PAnd (go p) (go q)
-    go (POr  p q)   = POr  (go p) (go q)
-    go (PNot p)     = PNot (go p)
-    go (PEq  a b)   = PEq  (contraTerm f a) (contraTerm f b)
+    go PTop = PTop
+    go PBot = PBot
+    go (PAnd p q) = PAnd (go p) (go q)
+    go (POr p q) = POr (go p) (go q)
+    go (PNot p) = PNot (go p)
+    go (PEq a b) = PEq (contraTerm f a) (contraTerm f b)
     go (PInCtor ic) = PInCtor (contraInCtor f ic)
     go (PCmp op a b) = PCmp op (contraTerm f a) (contraTerm f b)
-
 
 contraMaybePred :: forall ci ci' rs. (ci' -> Maybe ci) -> HsPred rs ci -> HsPred rs ci'
 contraMaybePred f = go
   where
     go :: HsPred rs ci -> HsPred rs ci'
-    go PTop         = PTop
-    go PBot         = PBot
-    go (PAnd p q)   = PAnd (go p) (go q)
-    go (POr  p q)   = POr  (go p) (go q)
-    go (PNot p)     = PNot (go p)
-    go (PEq  a b)   = PEq  (contraMaybeTerm f a) (contraMaybeTerm f b)
+    go PTop = PTop
+    go PBot = PBot
+    go (PAnd p q) = PAnd (go p) (go q)
+    go (POr p q) = POr (go p) (go q)
+    go (PNot p) = PNot (go p)
+    go (PEq a b) = PEq (contraMaybeTerm f a) (contraMaybeTerm f b)
     go (PInCtor ic) = PInCtor (contraMaybeInCtor f ic)
     go (PCmp op a b) = PCmp op (contraMaybeTerm f a) (contraMaybeTerm f b)
-
 
 -- ** Update -------------------------------------------------------------
 
@@ -896,19 +897,17 @@ contraUpdate :: forall ci ci' rs w. (ci' -> ci) -> Update rs w ci -> Update rs w
 contraUpdate f = go
   where
     go :: forall w'. Update rs w' ci -> Update rs w' ci'
-    go UKeep            = UKeep
-    go (USet ixn term)  = USet ixn (contraTerm f term)
+    go UKeep = UKeep
+    go (USet ixn term) = USet ixn (contraTerm f term)
     go (UCombine u1 u2) = UCombine (go u1) (go u2)
-
 
 contraMaybeUpdate :: forall ci ci' rs w. (ci' -> Maybe ci) -> Update rs w ci -> Update rs w ci'
 contraMaybeUpdate f = go
   where
     go :: forall w'. Update rs w' ci -> Update rs w' ci'
-    go UKeep            = UKeep
-    go (USet ixn term)  = USet ixn (contraMaybeTerm f term)
+    go UKeep = UKeep
+    go (USet ixn term) = USet ixn (contraMaybeTerm f term)
     go (UCombine u1 u2) = UCombine (go u1) (go u2)
-
 
 -- ** OutTerm + OutFields -----------------------------------------------
 
@@ -916,64 +915,60 @@ contraOutTerm :: (ci' -> ci) -> OutTerm rs ci co -> OutTerm rs ci' co
 contraOutTerm f (OPack ic wc fields) =
   OPack (contraInCtor f ic) wc (contraOutFields f fields)
 
-
 contraOutFields :: forall ci ci' rs ifs fs. (ci' -> ci) -> OutFields rs ci ifs fs -> OutFields rs ci' ifs fs
 contraOutFields f = go
   where
     go :: forall fs'. OutFields rs ci ifs fs' -> OutFields rs ci' ifs fs'
-    go OFNil          = OFNil
-    go (OFCons t fs)  = OFCons (contraTerm f t) (go fs)
-
+    go OFNil = OFNil
+    go (OFCons t fs) = OFCons (contraTerm f t) (go fs)
 
 contraMaybeOutTerm :: (ci' -> Maybe ci) -> OutTerm rs ci co -> OutTerm rs ci' co
 contraMaybeOutTerm f (OPack ic wc fields) =
   OPack (contraMaybeInCtor f ic) wc (contraMaybeOutFields f fields)
 
-
 contraMaybeOutFields :: forall ci ci' rs ifs fs. (ci' -> Maybe ci) -> OutFields rs ci ifs fs -> OutFields rs ci' ifs fs
 contraMaybeOutFields f = go
   where
     go :: forall fs'. OutFields rs ci ifs fs' -> OutFields rs ci' ifs fs'
-    go OFNil          = OFNil
-    go (OFCons t fs)  = OFCons (contraMaybeTerm f t) (go fs)
-
+    go OFNil = OFNil
+    go (OFCons t fs) = OFCons (contraMaybeTerm f t) (go fs)
 
 -- | Covariant map of a single OPack over its co alphabet.
 mapOutTermCo :: (co -> co') -> OutTerm rs ci co -> OutTerm rs ci co'
 mapOutTermCo g (OPack ic wc fields) =
   OPack ic (mapWireCtor g wc) fields
 
-
 -- ** Edge ---------------------------------------------------------------
 
 rewriteEdge :: (ci' -> ci) -> Edge (HsPred rs ci) rs ci co s -> Edge (HsPred rs ci') rs ci' co s
-rewriteEdge f Edge { guard = g, update = u, output = mo, target = tgt } = Edge
-  { guard  = contraPred f g
-  , update = contraUpdate f u
-  , output = fmap (contraOutTerm f) mo
-  , target = tgt
-  }
+rewriteEdge f Edge {guard = g, update = u, output = mo, target = tgt} =
+  Edge
+    { guard = contraPred f g,
+      update = contraUpdate f u,
+      output = fmap (contraOutTerm f) mo,
+      target = tgt
+    }
 
+rewriteEdgeMaybe ::
+  (ci' -> Maybe ci) ->
+  Edge (HsPred rs ci) rs ci co s ->
+  Edge (HsPred rs ci') rs ci' co s
+rewriteEdgeMaybe f Edge {guard = g, update = u, output = mo, target = tgt} =
+  Edge
+    { guard = contraMaybePred f g,
+      update = contraMaybeUpdate f u,
+      output = fmap (contraMaybeOutTerm f) mo,
+      target = tgt
+    }
 
-rewriteEdgeMaybe
-  :: (ci' -> Maybe ci)
-  -> Edge (HsPred rs ci) rs ci co s
-  -> Edge (HsPred rs ci') rs ci' co s
-rewriteEdgeMaybe f Edge { guard = g, update = u, output = mo, target = tgt } = Edge
-  { guard  = contraMaybePred f g
-  , update = contraMaybeUpdate f u
-  , output = fmap (contraMaybeOutTerm f) mo
-  , target = tgt
-  }
-
-
-rewriteEdgeOut
-  :: (co -> co')
-  -> Edge (HsPred rs ci) rs ci co s
-  -> Edge (HsPred rs ci) rs ci co' s
-rewriteEdgeOut g Edge { guard = guardP, update = u, output = mo, target = tgt } = Edge
-  { guard  = guardP
-  , update = u
-  , output = fmap (mapOutTermCo g) mo
-  , target = tgt
-  }
+rewriteEdgeOut ::
+  (co -> co') ->
+  Edge (HsPred rs ci) rs ci co s ->
+  Edge (HsPred rs ci) rs ci co' s
+rewriteEdgeOut g Edge {guard = guardP, update = u, output = mo, target = tgt} =
+  Edge
+    { guard = guardP,
+      update = u,
+      output = fmap (mapOutTermCo g) mo,
+      target = tgt
+    }

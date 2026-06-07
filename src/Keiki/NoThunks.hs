@@ -3,6 +3,7 @@
 -- and the class lives in @nothunks@. See the Decision Log of
 -- @docs/plans/23-nothunks-instances-for-regfile-and-symtransducer-state.md@.
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 -- | 'NoThunks' instances for keiki state types.
 --
 -- Long-running embedders that keep aggregate state in memory across
@@ -22,19 +23,20 @@
 -- in a slot value across repeated 'Keiki.Core.runUpdate' calls.
 module Keiki.NoThunks () where
 
-import NoThunks.Class (NoThunks (..), allNoThunks)
 import Keiki.Core (RegFile (..))
-
+import NoThunks.Class (NoThunks (..), allNoThunks)
 
 instance NoThunks (RegFile '[]) where
-  showTypeOf _   = "RegFile '[]"
+  showTypeOf _ = "RegFile '[]"
   wNoThunks _ RNil = pure Nothing
 
-
-instance (NoThunks r, NoThunks (RegFile rs))
-      => NoThunks (RegFile ('(s, r) ': rs)) where
+instance
+  (NoThunks r, NoThunks (RegFile rs)) =>
+  NoThunks (RegFile ('(s, r) ': rs))
+  where
   showTypeOf _ = "RegFile (s ': rs)"
-  wNoThunks ctx (RCons _proxy r rest) = allNoThunks
-    [ noThunks ("RCons.value" : ctx) r
-    , noThunks ("RCons.tail"  : ctx) rest
-    ]
+  wNoThunks ctx (RCons _proxy r rest) =
+    allNoThunks
+      [ noThunks ("RCons.value" : ctx) r,
+        noThunks ("RCons.tail" : ctx) rest
+      ]

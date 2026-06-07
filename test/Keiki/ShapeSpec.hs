@@ -1,4 +1,3 @@
-
 -- | EP-36 M1: golden-value tests for 'Keiki.Shape'.
 --
 -- The expected strings are pinned for GHC 9.12.* (the current sole entry
@@ -11,19 +10,17 @@ module Keiki.ShapeSpec (spec) where
 
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Time.Clock (UTCTime)
 import GHC.TypeLits (Symbol)
+import Keiki.Shape
+  ( regFileShapeCanonical,
+    regFileShapeHash,
+    renderStableTypeRep,
+    sha256Hex,
+  )
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Type.Reflection (someTypeRep)
-
-import Keiki.Shape
-  ( regFileShapeCanonical
-  , regFileShapeHash
-  , renderStableTypeRep
-  , sha256Hex
-  )
-
 
 spec :: Spec
 spec = do
@@ -46,28 +43,25 @@ spec = do
         `shouldBe` T.pack "regfile:0"
 
     it "concatenates one slot in the documented R3 form" $
-      regFileShapeCanonical (Proxy @('[ '("retryCount", Int) ] :: [(Symbol, Type)]))
+      regFileShapeCanonical (Proxy @('[ '("retryCount", Int)] :: [(Symbol, Type)]))
         `shouldBe` T.pack "retryCount:GHC.Types.Int;regfile:0"
 
   describe "regFileShapeHash" $ do
     it "produces the pinned SHA-256 of \"regfile:0\" for the empty list" $
       regFileShapeHash (Proxy @('[] :: [(Symbol, Type)]))
-        `shouldBe`
-        T.pack "0b262a9e301796f7a5b36bb6ea874e9ffccf7d1b4aff78a8d4b5436bd23914a6"
+        `shouldBe` T.pack "0b262a9e301796f7a5b36bb6ea874e9ffccf7d1b4aff78a8d4b5436bd23914a6"
 
     it "produces the pinned hash for a one-slot list (retryCount :: Int)" $
-      regFileShapeHash (Proxy @('[ '("retryCount", Int) ] :: [(Symbol, Type)]))
-        `shouldBe`
-        T.pack "e2c8839d9ae8e89baebbc1adf6dfd5a35608712d9bf994c7cef4ea774e739700"
+      regFileShapeHash (Proxy @('[ '("retryCount", Int)] :: [(Symbol, Type)]))
+        `shouldBe` T.pack "e2c8839d9ae8e89baebbc1adf6dfd5a35608712d9bf994c7cef4ea774e739700"
 
     it "differs when slot order is reversed (P10: slot order is identity)" $
       regFileShapeHash
-        (Proxy @('[ '("retryCount", Int), '("cooldownUntil", UTCTime) ] :: [(Symbol, Type)]))
-        `shouldBe`
-        T.pack "944d775449408b12b78b2a41770af207bae37d0a833c046310eb6ff3902ea44f"
+        (Proxy @('[ '("retryCount", Int), '("cooldownUntil", UTCTime)] :: [(Symbol, Type)]))
+        `shouldBe` T.pack "944d775449408b12b78b2a41770af207bae37d0a833c046310eb6ff3902ea44f"
 
     it "matches its sha256Hex-of-canonical definition" $ do
-      let p = Proxy @('[ '("retryCount", Int), '("cooldownUntil", UTCTime) ] :: [(Symbol, Type)])
+      let p = Proxy @('[ '("retryCount", Int), '("cooldownUntil", UTCTime)] :: [(Symbol, Type)])
       regFileShapeHash p `shouldBe` sha256Hex (regFileShapeCanonical p)
 
   describe "sha256Hex" $ do
@@ -75,10 +69,8 @@ spec = do
     -- "abc" → ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
     it "matches the empty-string SHA-256 vector" $
       sha256Hex (T.pack "")
-        `shouldBe`
-        T.pack "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        `shouldBe` T.pack "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
     it "matches the \"abc\" SHA-256 vector" $
       sha256Hex (T.pack "abc")
-        `shouldBe`
-        T.pack "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        `shouldBe` T.pack "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

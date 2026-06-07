@@ -10,11 +10,9 @@
 module Jitsurei.UserRegistrationSymbolicSpec (spec) where
 
 import Data.Maybe (isJust, isNothing)
-import Test.Hspec
-
 import Jitsurei.UserRegistration
 import Keiki.Symbolic
-
+import Test.Hspec
 
 spec :: Spec
 spec = do
@@ -32,20 +30,23 @@ spec = do
       isJust (sat (SymPred p)) `shouldBe` True
       case sat (SymPred p) of
         Nothing -> expectationFailure "expected satisfiable"
-        Just w  -> models (SymPred p) w `shouldBe` True
+        Just w -> models (SymPred p) w `shouldBe` True
 
     it "satisfiable: isConfirm AND confirmCode == \"abc123\" (witness satisfies models)" $ do
-      let p = PAnd (PInCtor inCtorConfirm)
-                   ((inpConfirm #confirmCode) .== lit "abc123")
-              :: HsPred UserRegRegs UserCmd
+      let p =
+            PAnd
+              (PInCtor inCtorConfirm)
+              ((inpConfirm #confirmCode) .== lit "abc123") ::
+              HsPred UserRegRegs UserCmd
       isJust (sat (SymPred p)) `shouldBe` True
       case sat (SymPred p) of
         Nothing -> expectationFailure "expected satisfiable"
-        Just w  -> models (SymPred p) w `shouldBe` True
+        Just w -> models (SymPred p) w `shouldBe` True
 
     it "unsatisfiable: PInCtor inCtorConfirm AND PInCtor inCtorResend" $ do
-      let p = PAnd (PInCtor inCtorConfirm) (PInCtor inCtorResend)
-              :: HsPred UserRegRegs UserCmd
+      let p =
+            PAnd (PInCtor inCtorConfirm) (PInCtor inCtorResend) ::
+              HsPred UserRegRegs UserCmd
       isJust (sat (SymPred p)) `shouldBe` False
 
   describe "symSatExt round-trip (EP-9)" $ do
@@ -60,8 +61,9 @@ spec = do
     it "ConfirmAccount edge guard: sat → witness → models agrees" $ do
       let g = guard (head (edgesOut userReg RequiresConfirmation))
       case symSatExt g of
-        Nothing -> expectationFailure
-                     "ConfirmAccount edge guard reported unsat"
+        Nothing ->
+          expectationFailure
+            "ConfirmAccount edge guard reported unsat"
         Just (regs, cmd) ->
           evalPred g regs cmd `shouldBe` True
 
@@ -70,9 +72,11 @@ spec = do
     -- the matching register slot from a model where the solver was
     -- given freedom to pick.
     it "isConfirm AND eq lit: witness models the predicate" $ do
-      let p = PAnd (PInCtor inCtorConfirm)
-                   ((inpConfirm #confirmCode) .== lit "abc123")
-              :: HsPred UserRegRegs UserCmd
+      let p =
+            PAnd
+              (PInCtor inCtorConfirm)
+              ((inpConfirm #confirmCode) .== lit "abc123") ::
+              HsPred UserRegRegs UserCmd
       case symSatExt p of
         Nothing -> expectationFailure "predicate reported unsat"
         Just (regs, cmd) ->
@@ -80,11 +84,12 @@ spec = do
 
     -- Negative case: an unsatisfiable predicate produces Nothing.
     it "constructor mutex returns Nothing" $ do
-      let p = PAnd (PInCtor inCtorConfirm) (PInCtor inCtorResend)
-              :: HsPred UserRegRegs UserCmd
+      let p =
+            PAnd (PInCtor inCtorConfirm) (PInCtor inCtorResend) ::
+              HsPred UserRegRegs UserCmd
       isNothing (symSatExt p) `shouldBe` True
 
-    -- (EP-19 M7 retired the no-payload 'Continue' constructor that
-    -- previously demonstrated the singleton-InCtor witness path; the
-    -- ConfirmAccount edge above already exercises the symbolic
-    -- witness extractor on a payload-bearing constructor.)
+-- (EP-19 M7 retired the no-payload 'Continue' constructor that
+-- previously demonstrated the singleton-InCtor witness path; the
+-- ConfirmAccount edge above already exercises the symbolic
+-- witness extractor on a payload-bearing constructor.)

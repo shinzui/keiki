@@ -23,55 +23,50 @@
 --   * Sentinel preservation: @first' Cat.id == Cat.id@.
 module Keiki.StrongSpec (spec) where
 
-import qualified Control.Category as Cat
+import Control.Category qualified as Cat
 import Data.Profunctor (Strong (..))
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
-import Test.Hspec
-
 import Keiki.Core
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
-
+import Test.Hspec
 
 -- * Fixtures ----------------------------------------------------------------
 
 newtype RequestId = RequestId Int
   deriving stock (Eq, Show)
 
-
 sampleAt :: UTCTime
 sampleAt = UTCTime (fromGregorian 2026 5 9) (secondsToDiffTime 0)
 
-
 sampleSendEmail :: EmailCmd
-sampleSendEmail = SendEmail SendEmailData
-  { recipient = "alice@example.com"
-  , subject   = "hello"
-  , at        = sampleAt
-  }
-
+sampleSendEmail =
+  SendEmail
+    SendEmailData
+      { recipient = "alice@example.com",
+        subject = "hello",
+        at = sampleAt
+      }
 
 sampleEmailEvent :: EmailEvent
-sampleEmailEvent = EmailSent EmailSentData
-  { recipient = "alice@example.com"
-  , subject   = "hello"
-  , at        = sampleAt
-  }
-
+sampleEmailEvent =
+  EmailSent
+    EmailSentData
+      { recipient = "alice@example.com",
+        subject = "hello",
+        at = sampleAt
+      }
 
 someEmail :: SomeSymTransducer EmailCmd EmailEvent
 someEmail = someSymTransducer emailDelivery
-
 
 -- * Specs -------------------------------------------------------------------
 
 spec :: Spec
 spec = do
-
   describe "first'" $ do
-
     it "threads an unrelated RequestId through emailDelivery" $ do
       let routed :: SomeSymTransducer (EmailCmd, RequestId) (EmailEvent, RequestId)
           routed = first' someEmail
@@ -89,12 +84,11 @@ spec = do
       let lifted :: SomeSymTransducer (Int, Bool) (Int, Bool)
           lifted = first' (Cat.id :: SomeSymTransducer Int Int)
       case lifted of
-        SomeSymIdentity     -> pure ()
+        SomeSymIdentity -> pure ()
         SomeSymTransducer _ ->
           expectationFailure "first' Cat.id should preserve the identity sentinel"
 
   describe "second'" $ do
-
     it "threads an unrelated RequestId through emailDelivery on the second slot" $ do
       let routed :: SomeSymTransducer (RequestId, EmailCmd) (RequestId, EmailEvent)
           routed = second' someEmail
@@ -112,15 +106,14 @@ spec = do
       let lifted :: SomeSymTransducer (Bool, Int) (Bool, Int)
           lifted = second' (Cat.id :: SomeSymTransducer Int Int)
       case lifted of
-        SomeSymIdentity     -> pure ()
+        SomeSymIdentity -> pure ()
         SomeSymTransducer _ ->
           expectationFailure "second' Cat.id should preserve the identity sentinel"
 
   describe "isSingleValuedSym survives first' / second'" $ do
-
     it "single-valuedness is preserved across first'" $
-      case first' someEmail
-            :: SomeSymTransducer (EmailCmd, RequestId) (EmailEvent, RequestId) of
+      case first' someEmail ::
+             SomeSymTransducer (EmailCmd, RequestId) (EmailEvent, RequestId) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
         SomeSymIdentity ->
@@ -128,8 +121,8 @@ spec = do
             "first' on a non-identity wrapper returned the identity sentinel"
 
     it "single-valuedness is preserved across second'" $
-      case second' someEmail
-            :: SomeSymTransducer (RequestId, EmailCmd) (RequestId, EmailEvent) of
+      case second' someEmail ::
+             SomeSymTransducer (RequestId, EmailCmd) (RequestId, EmailEvent) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
         SomeSymIdentity ->

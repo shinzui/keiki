@@ -13,16 +13,13 @@
 -- assertions below now hold.
 module Jitsurei.OrderCartSymbolicSpec (spec) where
 
-import Test.Hspec
-
 import Jitsurei.OrderCart
 import Keiki.Symbolic
-
+import Test.Hspec
 
 -- | The money register slot, named once for reuse.
 amountPaidIdx :: Index OrderCartRegs Money
 amountPaidIdx = #amountPaid
-
 
 spec :: Spec
 spec = do
@@ -38,42 +35,53 @@ spec = do
 
   describe "Word64 money guards are solver-visible (EP-41)" $ do
     it "constant ordering contradiction over Money (10 < 5) is symIsBot" $
-      symIsBot (PCmp CmpLt (lit (10 :: Money)) (lit 5)
-                :: HsPred OrderCartRegs OrderCmd)
+      symIsBot
+        ( PCmp CmpLt (lit (10 :: Money)) (lit 5) ::
+            HsPred OrderCartRegs OrderCmd
+        )
         `shouldBe` True
     it "constant equality contradiction over Money (5 == 6) is symIsBot" $
-      symIsBot (PEq (lit (5 :: Money)) (lit 6)
-                :: HsPred OrderCartRegs OrderCmd)
+      symIsBot
+        ( PEq (lit (5 :: Money)) (lit 6) ::
+            HsPred OrderCartRegs OrderCmd
+        )
         `shouldBe` True
     it "satisfiable money ordering (10 >= 5) is not symIsBot" $
-      symIsBot (PCmp CmpGe (lit (10 :: Money)) (lit 5)
-                :: HsPred OrderCartRegs OrderCmd)
+      symIsBot
+        ( PCmp CmpGe (lit (10 :: Money)) (lit 5) ::
+            HsPred OrderCartRegs OrderCmd
+        )
         `shouldBe` False
 
     it "symSatExt reconstructs a ConfirmPayment witness with amountPaid >= 1000" $ do
       -- A single read of the #amountPaid (Word64) register, conjoined
       -- with the ConfirmPayment input-constructor match so witness
       -- reconstruction (pickCi) can rebuild a concrete OrderCmd.
-      let p = PAnd (PInCtor inCtorConfirmPayment)
-                   (PCmp CmpGe (proj amountPaidIdx) (lit (1000 :: Money)))
-              :: HsPred OrderCartRegs OrderCmd
+      let p =
+            PAnd
+              (PInCtor inCtorConfirmPayment)
+              (PCmp CmpGe (proj amountPaidIdx) (lit (1000 :: Money))) ::
+              HsPred OrderCartRegs OrderCmd
       case symSatExt p of
-        Nothing          -> expectationFailure "amountPaid >= 1000 reported unsat"
+        Nothing -> expectationFailure "amountPaid >= 1000 reported unsat"
         Just (regs, cmd) -> do
           (regs ! amountPaidIdx >= 1000) `shouldBe` True
           case cmd of
             ConfirmPayment _ -> pure ()
-            other            -> expectationFailure
-                                  ("expected a ConfirmPayment witness, got " <> show other)
+            other ->
+              expectationFailure
+                ("expected a ConfirmPayment witness, got " <> show other)
 
     it "sat (BoolAlg/Sat surface) yields the same real witness; models accepts it (EP-44)" $ do
       -- Since EP-44, `sat` on 'SymPred' is the real 'symSatExt' witness
       -- (via the 'Sat' instance), so the public algebra surface also gives
       -- a forceable witness on this shipped Word*-bearing aggregate — and
       -- 'models' on it holds.
-      let p = PAnd (PInCtor inCtorConfirmPayment)
-                   (PCmp CmpGe (proj amountPaidIdx) (lit (1000 :: Money)))
-              :: HsPred OrderCartRegs OrderCmd
+      let p =
+            PAnd
+              (PInCtor inCtorConfirmPayment)
+              (PCmp CmpGe (proj amountPaidIdx) (lit (1000 :: Money))) ::
+              HsPred OrderCartRegs OrderCmd
       case sat (SymPred p) of
         Nothing -> expectationFailure "amountPaid >= 1000 reported unsat"
-        Just w  -> models (SymPred p) w `shouldBe` True
+        Just w -> models (SymPred p) w `shouldBe` True

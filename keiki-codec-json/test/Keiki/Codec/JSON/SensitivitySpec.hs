@@ -7,23 +7,20 @@
 module Keiki.Codec.JSON.SensitivitySpec (spec) where
 
 import Data.Proxy (Proxy (..))
-import Test.Hspec (Spec, describe, it, shouldSatisfy)
-
-import Keiki.Shape (regFileShapeHash)
-
 import Keiki.Codec.JSON.Fixtures
-  ( AddSlots
-  , ExemplarSlots
-  , NewtypeWrapSlots
-  , RecordReplaceSlots
-  , RemoveSlots
-  , RenameSlots
-  , RenamedTypeSlots
-  , ReorderSlots
-  , SplitSlots
-  , TypeChangeSameJsonSlots
+  ( AddSlots,
+    ExemplarSlots,
+    NewtypeWrapSlots,
+    RecordReplaceSlots,
+    RemoveSlots,
+    RenameSlots,
+    RenamedTypeSlots,
+    ReorderSlots,
+    SplitSlots,
+    TypeChangeSameJsonSlots,
   )
-
+import Keiki.Shape (regFileShapeHash)
+import Test.Hspec (Spec, describe, it, shouldSatisfy)
 
 spec :: Spec
 spec = describe "Sensitivity (EP-36 §4 cases #1–9)" $ do

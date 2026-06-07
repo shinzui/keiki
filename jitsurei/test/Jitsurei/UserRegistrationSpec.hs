@@ -1,26 +1,23 @@
 module Jitsurei.UserRegistrationSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
-import Test.Hspec
-import Keiki.Core
 import Jitsurei.UserRegistration
-
+import Keiki.Core
+import Test.Hspec
 
 -- | Extract every register slot of 'UserRegRegs' as a tuple, since
 -- 'RegFile' does not have an 'Eq' instance. Tuples are easy to
 -- compare in tests.
 type Snapshot = (Email, ConfirmationCode, UTCTime, UTCTime, UTCTime)
 
-
 snapshot :: RegFile UserRegRegs -> Snapshot
 snapshot regs =
-  ( regs ! #email
-  , regs ! #confirmCode
-  , regs ! #registeredAt
-  , regs ! #confirmedAt
-  , regs ! #deletedAt
+  ( regs ! #email,
+    regs ! #confirmCode,
+    regs ! #registeredAt,
+    regs ! #confirmedAt,
+    regs ! #deletedAt
   )
-
 
 -- | A trivial UTC-time fixture: every test moment is on the same day,
 -- offset by N seconds. Concrete dates do not matter for replay
@@ -28,18 +25,16 @@ snapshot regs =
 t :: Integer -> UTCTime
 t s = UTCTime (fromGregorian 2026 5 1) (secondsToDiffTime s)
 
-
 -- | The synthesis §4 canonical event log, with the fix-1 schema:
 -- 'AccountConfirmed' carries @confirmCode@.
 canonicalLog :: [UserEvent]
 canonicalLog =
-  [ RegistrationStarted   (RegistrationStartedData   "alice@x" "Z9F4" (t 0))
-  , ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")
-  , ConfirmationResent    (ConfirmationResentData    "alice@x" "K2P7" (t 100))
-  , AccountConfirmed      (AccountConfirmedData      "alice@x" "K2P7" (t 200))
-  , AccountDeleted        (AccountDeletedData        "alice@x"        (t 300))
+  [ RegistrationStarted (RegistrationStartedData "alice@x" "Z9F4" (t 0)),
+    ConfirmationEmailSent (ConfirmationEmailSentData "alice@x"),
+    ConfirmationResent (ConfirmationResentData "alice@x" "K2P7" (t 100)),
+    AccountConfirmed (AccountConfirmedData "alice@x" "K2P7" (t 200)),
+    AccountDeleted (AccountDeletedData "alice@x" (t 300))
   ]
-
 
 -- | Hand-computed expected snapshot at the end of replay. Walk the log:
 --
@@ -51,13 +46,12 @@ canonicalLog =
 --   step 5: GDPR sets deletedAt=t300
 expectedSnapshot :: Snapshot
 expectedSnapshot =
-  ( "alice@x"
-  , "K2P7"
-  , t 100   -- registeredAt rotated by the resend
-  , t 200   -- confirmedAt
-  , t 300   -- deletedAt
+  ( "alice@x",
+    "K2P7",
+    t 100, -- registeredAt rotated by the resend
+    t 200, -- confirmedAt
+    t 300 -- deletedAt
   )
-
 
 spec :: Spec
 spec = do
@@ -65,7 +59,7 @@ spec = do
     it "reconstitutes to (Deleted, expectedSnapshot)" $
       case reconstitute userReg canonicalLog of
         Just (s, regs) -> (s, snapshot regs) `shouldBe` (Deleted, expectedSnapshot)
-        Nothing        -> expectationFailure "reconstitute returned Nothing"
+        Nothing -> expectationFailure "reconstitute returned Nothing"
 
   describe "userReg one-step-at-a-time replay" $ do
     -- Sanity-check each event in isolation. If anything breaks, the
@@ -77,7 +71,7 @@ spec = do
       -- atomically to RequiresConfirmation.
       case applyEvents userReg (PotentialCustomer, emptyRegs) (take 2 canonicalLog) of
         Just (s, _) -> s `shouldBe` RequiresConfirmation
-        Nothing     -> expectationFailure "step 1 returned Nothing"
+        Nothing -> expectationFailure "step 1 returned Nothing"
 
     it "step 5: Confirmed + AccountDeleted -> Deleted" $ do
       let regsBeforeDelete =
@@ -86,10 +80,10 @@ spec = do
             -- have caught it.
             case foldlEvents (initial userReg, initialRegs userReg) (init canonicalLog) of
               Just acc -> acc
-              Nothing  -> error "set-up replay failed"
+              Nothing -> error "set-up replay failed"
       case applyOne (fst regsBeforeDelete) (snd regsBeforeDelete) (last canonicalLog) of
         Just (s, _) -> s `shouldBe` Deleted
-        Nothing     -> expectationFailure "step 5 returned Nothing"
+        Nothing -> expectationFailure "step 5 returned Nothing"
   where
     applyOne s regs co = applyEvents userReg (s, regs) [co]
 

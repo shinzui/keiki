@@ -1,52 +1,45 @@
 module Keiki.SymbolicSpec (spec) where
 
+import Data.Int (Int32, Int64)
 import Data.Kind (Type)
 import Data.Maybe (isJust, isNothing)
 import Data.Proxy (Proxy (..))
-import qualified Data.SBV as SBV
+import Data.SBV qualified as SBV
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
-import Data.Word (Word8, Word16, Word32, Word64)
-import Data.Int (Int32, Int64)
-import Test.Hspec
-
+import Data.Word (Word16, Word32, Word64, Word8)
 import Keiki.Symbolic
-
+import Test.Hspec
 
 -- | A two-constructor input symbol for the 'PInCtor' tests.
 data TinyCmd = TinyFoo Int | TinyBar Int deriving (Eq, Show)
-
 
 -- * Numeric-registry fixtures (EP-41 M1) ---------------------------------
 
 -- | A single-slot register file whose value type is the money/count
 -- carrier 'Word64'. Used to prove the EP-41 numeric instances make
 -- fixed-width-integer slots solver-visible and witness-extractable.
-type AmountRegs = '[ '("amount", Word64) ]
-
+type AmountRegs = '[ '("amount", Word64)]
 
 -- | A one-constructor (empty-payload) input symbol for the numeric
 -- fixture. The 'KnownInCtors' instance lets 'symSatExt' rebuild it.
 data AmtCmd = AmtTick deriving (Eq, Show)
 
-
 inCtorAmtTick :: InCtor AmtCmd '[]
-inCtorAmtTick = InCtor
-  { icName  = "AmtTick"
-  , icMatch = \case AmtTick -> Just RNil
-  , icBuild = \RNil -> AmtTick
-  }
-
+inCtorAmtTick =
+  InCtor
+    { icName = "AmtTick",
+      icMatch = \case AmtTick -> Just RNil,
+      icBuild = \RNil -> AmtTick
+    }
 
 instance KnownInCtors AmtCmd where
-  allInCtors = [ SomeInCtor inCtorAmtTick ]
-
+  allInCtors = [SomeInCtor inCtorAmtTick]
 
 -- | The 'amount' slot index, named once for reuse.
 amountIdx :: Index AmountRegs Word64
 amountIdx = ZIdx
-
 
 -- | A two-edge transducer over a 'Word64' register. Both edges leave
 -- the @False@ vertex; the second edge carries a constant 'Word64'
@@ -57,22 +50,35 @@ amountIdx = ZIdx
 -- after EP-41 it is real SBV integer equality and the verdict is
 -- @True@. Each guard reads the register at most once, so the verdict
 -- does not depend on the deferred per-slot memoization.
-amountFixture :: SymTransducer (HsPred AmountRegs AmtCmd)
-                               AmountRegs Bool AmtCmd ()
-amountFixture = SymTransducer
-  { edgesOut = \case
-      False ->
-        [ Edge { guard  = PEq (proj amountIdx) (lit (0 :: Word64))
-               , update = UKeep, output = [], target = True }
-        , Edge { guard  = PEq (lit (5 :: Word64)) (lit (6 :: Word64))
-               , update = UKeep, output = [], target = True }
-        ]
-      True -> []
-  , initial     = False
-  , initialRegs = RCons (Proxy @"amount") 0 RNil
-  , isFinal     = (== True)
-  }
-
+amountFixture ::
+  SymTransducer
+    (HsPred AmountRegs AmtCmd)
+    AmountRegs
+    Bool
+    AmtCmd
+    ()
+amountFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge
+              { guard = PEq (proj amountIdx) (lit (0 :: Word64)),
+                update = UKeep,
+                output = [],
+                target = True
+              },
+            Edge
+              { guard = PEq (lit (5 :: Word64)) (lit (6 :: Word64)),
+                update = UKeep,
+                output = [],
+                target = True
+              }
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"amount") 0 RNil,
+      isFinal = (== True)
+    }
 
 -- | A two-edge transducer over the 'Word64' @amount@ register whose
 -- /both/ guards read the register: @PEq #amount 0@ and @PEq #amount 1@.
@@ -84,83 +90,100 @@ amountFixture = SymTransducer
 -- EP-42 the shared variable makes it a real contradiction and the
 -- verdict flips to @True@. Contrast 'amountFixture', whose second guard
 -- is a /constant/ contradiction (@5 == 6@) that needs no memoization.
-twoReadEdgeFixture :: SymTransducer (HsPred AmountRegs AmtCmd)
-                                    AmountRegs Bool AmtCmd ()
-twoReadEdgeFixture = SymTransducer
-  { edgesOut = \case
-      False ->
-        [ Edge { guard  = PEq (proj amountIdx) (lit (0 :: Word64))
-               , update = UKeep, output = [], target = True }
-        , Edge { guard  = PEq (proj amountIdx) (lit (1 :: Word64))
-               , update = UKeep, output = [], target = True }
-        ]
-      True -> []
-  , initial     = False
-  , initialRegs = RCons (Proxy @"amount") 0 RNil
-  , isFinal     = (== True)
-  }
-
+twoReadEdgeFixture ::
+  SymTransducer
+    (HsPred AmountRegs AmtCmd)
+    AmountRegs
+    Bool
+    AmtCmd
+    ()
+twoReadEdgeFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge
+              { guard = PEq (proj amountIdx) (lit (0 :: Word64)),
+                update = UKeep,
+                output = [],
+                target = True
+              },
+            Edge
+              { guard = PEq (proj amountIdx) (lit (1 :: Word64)),
+                update = UKeep,
+                output = [],
+                target = True
+              }
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"amount") 0 RNil,
+      isFinal = (== True)
+    }
 
 -- * Structural-arithmetic fixtures (EP-43) -------------------------------
 
 -- | A four-slot 'Int' register file for structural-arithmetic proofs:
 -- @#a@/@#b@ feed a sum, @#score@/@#req@ feed a multiply-cap.
-type ArithRegs = '[ '("a", Int), '("b", Int), '("score", Int), '("req", Int) ]
+type ArithRegs = '[ '("a", Int), '("b", Int), '("score", Int), '("req", Int)]
 
 aIdx, bIdx, scoreIdx, reqIdx :: Index ArithRegs Int
-aIdx     = #a
-bIdx     = #b
+aIdx = #a
+bIdx = #b
 scoreIdx = #score
-reqIdx   = #req
-
+reqIdx = #req
 
 -- | A one-constructor (empty-payload) input for the arithmetic
 -- fixtures. The 'KnownInCtors' instance lets 'symSatExt' rebuild it.
 data ArithCmd = ArithTick deriving (Eq, Show)
 
-
 inCtorArithTick :: InCtor ArithCmd '[]
-inCtorArithTick = InCtor
-  { icName  = "ArithTick"
-  , icMatch = \case ArithTick -> Just RNil
-  , icBuild = \RNil -> ArithTick
-  }
-
+inCtorArithTick =
+  InCtor
+    { icName = "ArithTick",
+      icMatch = \case ArithTick -> Just RNil,
+      icBuild = \RNil -> ArithTick
+    }
 
 instance KnownInCtors ArithCmd where
-  allInCtors = [ SomeInCtor inCtorArithTick ]
-
+  allInCtors = [SomeInCtor inCtorArithTick]
 
 -- | A full 'ArithRegs' register file from four 'Int' values, in slot
 -- order @a, b, score, req@. Used by the @evalPred@/@evalTerm@ agreement
 -- proof.
 arithRegs :: Int -> Int -> Int -> Int -> RegFile ArithRegs
 arithRegs a b s r =
-  RCons (Proxy @"a") a
-    (RCons (Proxy @"b") b
-      (RCons (Proxy @"score") s
-        (RCons (Proxy @"req") r RNil)))
+  RCons
+    (Proxy @"a")
+    a
+    ( RCons
+        (Proxy @"b")
+        b
+        ( RCons
+            (Proxy @"score")
+            s
+            (RCons (Proxy @"req") r RNil)
+        )
+    )
 
+inCtorTinyFoo :: InCtor TinyCmd '[ '("a", Int)]
+inCtorTinyFoo =
+  InCtor
+    { icName = "TinyFoo",
+      icMatch = \case
+        TinyFoo a -> Just (RCons (Proxy @"a") a RNil)
+        _ -> Nothing,
+      icBuild = \(RCons _ a RNil) -> TinyFoo a
+    }
 
-inCtorTinyFoo :: InCtor TinyCmd '[ '("a", Int) ]
-inCtorTinyFoo = InCtor
-  { icName  = "TinyFoo"
-  , icMatch = \case
-      TinyFoo a -> Just (RCons (Proxy @"a") a RNil)
-      _         -> Nothing
-  , icBuild = \(RCons _ a RNil) -> TinyFoo a
-  }
-
-
-inCtorTinyBar :: InCtor TinyCmd '[ '("b", Int) ]
-inCtorTinyBar = InCtor
-  { icName  = "TinyBar"
-  , icMatch = \case
-      TinyBar b -> Just (RCons (Proxy @"b") b RNil)
-      _         -> Nothing
-  , icBuild = \(RCons _ b RNil) -> TinyBar b
-  }
-
+inCtorTinyBar :: InCtor TinyCmd '[ '("b", Int)]
+inCtorTinyBar =
+  InCtor
+    { icName = "TinyBar",
+      icMatch = \case
+        TinyBar b -> Just (RCons (Proxy @"b") b RNil)
+        _ -> Nothing,
+      icBuild = \(RCons _ b RNil) -> TinyBar b
+    }
 
 -- | Run an 'HsPred' through the SBV translator and ask the solver
 -- whether the conjunction of the predicate translation is
@@ -173,7 +196,6 @@ satP p = do
     translatePred env p
   pure (SBV.modelExists res)
 
-
 -- | Run an 'HsPred' as a /claim/ and ask the solver whether its
 -- negation is unsatisfiable, i.e. the claim is a tautology.
 proveP :: forall rs ci. HsPred rs ci -> IO Bool
@@ -183,23 +205,22 @@ proveP p = do
     translatePred env p
   pure (not (SBV.modelExists res))
 
-
 spec :: Spec
 spec = do
   describe "discoverSym (curated registry)" $ do
-    it "discovers Sym Bool"    $ symKnown (Proxy @Bool)    `shouldBe` True
-    it "discovers Sym Int"     $ symKnown (Proxy @Int)     `shouldBe` True
+    it "discovers Sym Bool" $ symKnown (Proxy @Bool) `shouldBe` True
+    it "discovers Sym Int" $ symKnown (Proxy @Int) `shouldBe` True
     it "discovers Sym Integer" $ symKnown (Proxy @Integer) `shouldBe` True
-    it "discovers Sym Text"    $ symKnown (Proxy @Text)    `shouldBe` True
+    it "discovers Sym Text" $ symKnown (Proxy @Text) `shouldBe` True
     it "discovers Sym UTCTime" $ symKnown (Proxy @UTCTime) `shouldBe` True
     -- EP-41: fixed-width integers (money + counts).
-    it "discovers Sym Word64"  $ symKnown (Proxy @Word64)  `shouldBe` True
-    it "discovers Sym Word32"  $ symKnown (Proxy @Word32)  `shouldBe` True
-    it "discovers Sym Word16"  $ symKnown (Proxy @Word16)  `shouldBe` True
-    it "discovers Sym Word8"   $ symKnown (Proxy @Word8)   `shouldBe` True
-    it "discovers Sym Int64"   $ symKnown (Proxy @Int64)   `shouldBe` True
-    it "discovers Sym Int32"   $ symKnown (Proxy @Int32)   `shouldBe` True
-    it "rejects unknown types" $ symKnown (Proxy @())      `shouldBe` False
+    it "discovers Sym Word64" $ symKnown (Proxy @Word64) `shouldBe` True
+    it "discovers Sym Word32" $ symKnown (Proxy @Word32) `shouldBe` True
+    it "discovers Sym Word16" $ symKnown (Proxy @Word16) `shouldBe` True
+    it "discovers Sym Word8" $ symKnown (Proxy @Word8) `shouldBe` True
+    it "discovers Sym Int64" $ symKnown (Proxy @Int64) `shouldBe` True
+    it "discovers Sym Int32" $ symKnown (Proxy @Int32) `shouldBe` True
+    it "rejects unknown types" $ symKnown (Proxy @()) `shouldBe` False
 
   describe "numeric Sym registry (EP-41 M1)" $ do
     it "Word64 equality is solver-visible: isBot (PEq lit5 lit6) is True" $
@@ -221,11 +242,13 @@ spec = do
     it "symSatExt round-trips a Word64 slot (amount == 7)" $ do
       -- Single read of #amount (memoization-safe); PInCtor pins the
       -- input constructor so witness reconstruction succeeds.
-      let p = PAnd (PInCtor inCtorAmtTick)
-                   (PEq (proj amountIdx) (lit (7 :: Word64)))
-              :: HsPred AmountRegs AmtCmd
+      let p =
+            PAnd
+              (PInCtor inCtorAmtTick)
+              (PEq (proj amountIdx) (lit (7 :: Word64))) ::
+              HsPred AmountRegs AmtCmd
       case symSatExt p of
-        Nothing          -> expectationFailure "Word64 equality reported unsat"
+        Nothing -> expectationFailure "Word64 equality reported unsat"
         Just (regs, cmd) -> do
           (regs ! amountIdx) `shouldBe` (7 :: Word64)
           cmd `shouldBe` AmtTick
@@ -235,30 +258,40 @@ spec = do
     it "constant contradiction 5 >= 10 over Word64 is symIsBot" $
       -- Before M2 this guard could only be written via TApp (opaque)
       -- and would be symIsBot == False.
-      symIsBot (PAnd (PCmp CmpGe (TLit (5 :: Word64)) (TLit 10)) PTop
-                :: HsPred '[] ())
+      symIsBot
+        ( PAnd (PCmp CmpGe (TLit (5 :: Word64)) (TLit 10)) PTop ::
+            HsPred '[] ()
+        )
         `shouldBe` True
     it "satisfiable constant 10 >= 5 over Word64 is not symIsBot" $
       symIsBot (PCmp CmpGe (TLit (10 :: Word64)) (TLit 5) :: HsPred '[] ())
         `shouldBe` False
     it "symSatExt witness respects amount >= 1000" $ do
-      let p = PAnd (PInCtor inCtorAmtTick)
-                   (PCmp CmpGe (proj amountIdx) (lit (1000 :: Word64)))
-              :: HsPred AmountRegs AmtCmd
+      let p =
+            PAnd
+              (PInCtor inCtorAmtTick)
+              (PCmp CmpGe (proj amountIdx) (lit (1000 :: Word64))) ::
+              HsPred AmountRegs AmtCmd
       case symSatExt p of
-        Nothing          -> expectationFailure "amount >= 1000 reported unsat"
+        Nothing -> expectationFailure "amount >= 1000 reported unsat"
         Just (regs, cmd) -> do
           (regs ! amountIdx >= 1000) `shouldBe` True
           evalPred p regs cmd `shouldBe` True
     it "evalPred agrees with Haskell comparison for every Cmp direction" $ do
       let vals = [3, 5, 5, 7] :: [Int]
-          chk op f = and [ evalPred (PCmp op (TLit x) (TLit y) :: HsPred '[] ())
-                                    RNil ()
-                             == f x y
-                         | x <- vals, y <- vals ]
-      chk CmpLt (<)  `shouldBe` True
+          chk op f =
+            and
+              [ evalPred
+                  (PCmp op (TLit x) (TLit y) :: HsPred '[] ())
+                  RNil
+                  ()
+                  == f x y
+              | x <- vals,
+                y <- vals
+              ]
+      chk CmpLt (<) `shouldBe` True
       chk CmpLe (<=) `shouldBe` True
-      chk CmpGt (>)  `shouldBe` True
+      chk CmpGt (>) `shouldBe` True
       chk CmpGe (>=) `shouldBe` True
 
   describe "memoization (EP-42)" $ do
@@ -269,10 +302,12 @@ spec = do
     -- mirrored on #x): F1 symIsBot (x /= x) = False, symSatExt = Just;
     -- F3 the two-edge fixture verdict = False. See the plan's
     -- Surprises & Discoveries.
-    let pNeq = PNot (PEq (proj amountIdx) (proj amountIdx))
-               :: HsPred AmountRegs AmtCmd
-        pEq  = PEq (proj amountIdx) (proj amountIdx)
-               :: HsPred AmountRegs AmtCmd
+    let pNeq =
+          PNot (PEq (proj amountIdx) (proj amountIdx)) ::
+            HsPred AmountRegs AmtCmd
+        pEq =
+          PEq (proj amountIdx) (proj amountIdx) ::
+            HsPred AmountRegs AmtCmd
 
     it "x /= x is empty: symIsBot (PNot (PEq #amount #amount)) is True" $
       symIsBot pNeq `shouldBe` True
@@ -294,10 +329,14 @@ spec = do
       -- satisfy #amount==0 and #amount==1 separately, so symSatExt
       -- returned a Just whose by-name witness failed models; after EP-42
       -- the shared variable makes it a true contradiction (Nothing).
-      let pContra = PAnd (PInCtor inCtorAmtTick)
-                         (PAnd (PEq (proj amountIdx) (lit (0 :: Word64)))
-                               (PEq (proj amountIdx) (lit (1 :: Word64))))
-                    :: HsPred AmountRegs AmtCmd
+      let pContra =
+            PAnd
+              (PInCtor inCtorAmtTick)
+              ( PAnd
+                  (PEq (proj amountIdx) (lit (0 :: Word64)))
+                  (PEq (proj amountIdx) (lit (1 :: Word64)))
+              ) ::
+              HsPred AmountRegs AmtCmd
       isNothing (symSatExt pContra) `shouldBe` True
 
     it "symSatExt witness over a repeated read satisfies models" $ do
@@ -305,11 +344,13 @@ spec = do
       -- by-name witness now coincides with the single shared variable,
       -- so it satisfies models. (PInCtor pins the constructor so witness
       -- reconstruction succeeds.)
-      let p = PAnd (PInCtor inCtorAmtTick)
-                   (PEq (proj amountIdx) (proj amountIdx))
-              :: HsPred AmountRegs AmtCmd
+      let p =
+            PAnd
+              (PInCtor inCtorAmtTick)
+              (PEq (proj amountIdx) (proj amountIdx)) ::
+              HsPred AmountRegs AmtCmd
       case symSatExt p of
-        Nothing          -> expectationFailure "repeated-read predicate reported unsat"
+        Nothing -> expectationFailure "repeated-read predicate reported unsat"
         Just (regs, cmd) -> models (SymPred p) (regs, cmd) `shouldBe` True
 
   describe "structural arithmetic (EP-43)" $ do
@@ -318,53 +359,72 @@ spec = do
     -- a constant arithmetic contradiction was reported satisfiable.
 
     it "constant 2 + 3 > 10 is symIsBot (empty)" $
-      symIsBot (PCmp CmpGt (tadd (lit (2 :: Int)) (lit 3)) (lit 10)
-                :: HsPred '[] ())
+      symIsBot
+        ( PCmp CmpGt (tadd (lit (2 :: Int)) (lit 3)) (lit 10) ::
+            HsPred '[] ()
+        )
         `shouldBe` True
 
     it "constant 2 + 3 >= 5 is not symIsBot (satisfiable)" $
-      symIsBot (PCmp CmpGe (tadd (lit (2 :: Int)) (lit 3)) (lit 5)
-                :: HsPred '[] ())
+      symIsBot
+        ( PCmp CmpGe (tadd (lit (2 :: Int)) (lit 3)) (lit 5) ::
+            HsPred '[] ()
+        )
         `shouldBe` False
 
     it "constant 10 - 3 == 8 is symIsBot (contradiction)" $
-      symIsBot (PEq (tsub (lit (10 :: Int)) (lit 3)) (lit 8)
-                :: HsPred '[] ())
+      symIsBot
+        ( PEq (tsub (lit (10 :: Int)) (lit 3)) (lit 8) ::
+            HsPred '[] ()
+        )
         `shouldBe` True
 
     it "constant 4 * 3 == 12 is not symIsBot (consistent)" $
-      symIsBot (PEq (tmul (lit (4 :: Int)) (lit 3)) (lit 12)
-                :: HsPred '[] ())
+      symIsBot
+        ( PEq (tmul (lit (4 :: Int)) (lit 3)) (lit 12) ::
+            HsPred '[] ()
+        )
         `shouldBe` False
 
     it "symSatExt witness respects #a + #b >= 10" $ do
       -- #a and #b are distinct registers, so this needs no memoization;
       -- the witness sum must actually clear the bound.
-      let p = PAnd (PInCtor inCtorArithTick)
-                   (PCmp CmpGe (tadd (proj aIdx) (proj bIdx)) (lit 10))
-              :: HsPred ArithRegs ArithCmd
+      let p =
+            PAnd
+              (PInCtor inCtorArithTick)
+              (PCmp CmpGe (tadd (proj aIdx) (proj bIdx)) (lit 10)) ::
+              HsPred ArithRegs ArithCmd
       case symSatExt p of
-        Nothing          -> expectationFailure "#a + #b >= 10 reported unsat"
+        Nothing -> expectationFailure "#a + #b >= 10 reported unsat"
         Just (regs, cmd) -> do
           ((regs ! aIdx) + (regs ! bIdx) >= 10) `shouldBe` True
           evalPred p regs cmd `shouldBe` True
 
     it "symSatExt witness respects #req <= #score * 1000" $ do
-      let p = PAnd (PInCtor inCtorArithTick)
-                   (PCmp CmpLe (proj reqIdx) (tmul (proj scoreIdx) (lit 1000)))
-              :: HsPred ArithRegs ArithCmd
+      let p =
+            PAnd
+              (PInCtor inCtorArithTick)
+              (PCmp CmpLe (proj reqIdx) (tmul (proj scoreIdx) (lit 1000))) ::
+              HsPred ArithRegs ArithCmd
       case symSatExt p of
-        Nothing          -> expectationFailure "#req <= #score * 1000 reported unsat"
+        Nothing -> expectationFailure "#req <= #score * 1000 reported unsat"
         Just (regs, cmd) -> do
           ((regs ! reqIdx) <= (regs ! scoreIdx) * 1000) `shouldBe` True
           evalPred p regs cmd `shouldBe` True
 
     it "evalTerm/evalPred over tadd/tsub/tmul matches Haskell arithmetic" $ do
       let vals = [-2, 0, 3, 7] :: [Int]
-          chk f mk = and [ evalPred (PEq (mk (proj aIdx) (proj bIdx)) (lit (f a b))
-                                     :: HsPred ArithRegs ArithCmd)
-                                    (arithRegs a b 0 0) ArithTick
-                         | a <- vals, b <- vals ]
+          chk f mk =
+            and
+              [ evalPred
+                  ( PEq (mk (proj aIdx) (proj bIdx)) (lit (f a b)) ::
+                      HsPred ArithRegs ArithCmd
+                  )
+                  (arithRegs a b 0 0)
+                  ArithTick
+              | a <- vals,
+                b <- vals
+              ]
       chk (+) tadd `shouldBe` True
       chk (-) tsub `shouldBe` True
       chk (*) tmul `shouldBe` True
@@ -394,16 +454,20 @@ spec = do
       satP (PInCtor inCtorTinyFoo :: HsPred '[] TinyCmd)
         `shouldReturn` True
     it "PInCtor inCtorTinyFoo AND PInCtor inCtorTinyBar is unsatisfiable" $ do
-      satP ( PAnd (PInCtor inCtorTinyFoo)
-                  (PInCtor inCtorTinyBar)
-             :: HsPred '[] TinyCmd
-           )
+      satP
+        ( PAnd
+            (PInCtor inCtorTinyFoo)
+            (PInCtor inCtorTinyBar) ::
+            HsPred '[] TinyCmd
+        )
         `shouldReturn` False
     it "PInCtor inCtorTinyFoo AND PInCtor inCtorTinyFoo is satisfiable" $ do
-      satP ( PAnd (PInCtor inCtorTinyFoo)
-                  (PInCtor inCtorTinyFoo)
-             :: HsPred '[] TinyCmd
-           )
+      satP
+        ( PAnd
+            (PInCtor inCtorTinyFoo)
+            (PInCtor inCtorTinyFoo) ::
+            HsPred '[] TinyCmd
+        )
         `shouldReturn` True
 
   describe "SymPred BoolAlg structural ops (M4)" $ do
@@ -439,9 +503,14 @@ spec = do
       isBot (SymPred (PEq (TLit (5 :: Int)) (TLit 5)) :: SymPred '[] ())
         `shouldBe` False
     it "isBot (PInCtor TinyFoo AND PInCtor TinyBar) is True (constructor mutex)" $
-      isBot (SymPred (PAnd (PInCtor inCtorTinyFoo)
-                           (PInCtor inCtorTinyBar))
-             :: SymPred '[] TinyCmd)
+      isBot
+        ( SymPred
+            ( PAnd
+                (PInCtor inCtorTinyFoo)
+                (PInCtor inCtorTinyBar)
+            ) ::
+            SymPred '[] TinyCmd
+        )
         `shouldBe` True
     it "sat top is Just _" $ do
       let result = sat (top :: SymPred '[] ()) :: Maybe (RegFile '[], ())
@@ -450,14 +519,20 @@ spec = do
       let result = sat (bot :: SymPred '[] ()) :: Maybe (RegFile '[], ())
       isJust result `shouldBe` False
     it "sat (PEq lit5 lit5) is Just _" $ do
-      let result = sat (SymPred (PEq (TLit (5 :: Int)) (TLit 5))
-                       :: SymPred '[] ())
-                   :: Maybe (RegFile '[], ())
+      let result =
+            sat
+              ( SymPred (PEq (TLit (5 :: Int)) (TLit 5)) ::
+                  SymPred '[] ()
+              ) ::
+              Maybe (RegFile '[], ())
       isJust result `shouldBe` True
     it "sat (PEq lit5 lit6) is Nothing" $ do
-      let result = sat (SymPred (PEq (TLit (5 :: Int)) (TLit 6))
-                       :: SymPred '[] ())
-                   :: Maybe (RegFile '[], ())
+      let result =
+            sat
+              ( SymPred (PEq (TLit (5 :: Int)) (TLit 6)) ::
+                  SymPred '[] ()
+              ) ::
+              Maybe (RegFile '[], ())
       isJust result `shouldBe` False
 
   describe "real BoolAlg.sat witness (EP-44)" $ do
@@ -465,26 +540,28 @@ spec = do
     -- components crash when forced, so 'models' on the returned witness
     -- threw. These tests force the witness (via 'models', or by pattern-
     -- matching it), so each crashes before M1 and passes after.
-    let pAmt  = PEq (proj amountIdx) (lit (7 :: Word64))
-                :: HsPred AmountRegs AmtCmd
-        pCtor = PInCtor inCtorAmtTick
-                :: HsPred AmountRegs AmtCmd
+    let pAmt =
+          PEq (proj amountIdx) (lit (7 :: Word64)) ::
+            HsPred AmountRegs AmtCmd
+        pCtor =
+          PInCtor inCtorAmtTick ::
+            HsPred AmountRegs AmtCmd
 
     it "sat's witness is forceable and satisfies models (register guard)" $
       case sat (SymPred pAmt) of
         Nothing -> expectationFailure "expected pAmt satisfiable"
-        Just w  -> models (SymPred pAmt) w `shouldBe` True
+        Just w -> models (SymPred pAmt) w `shouldBe` True
 
     it "sat's witness reconstructs the command and satisfies models (PInCtor)" $
       case sat (SymPred pCtor) of
         Nothing -> expectationFailure "expected pCtor satisfiable"
-        Just w  -> models (SymPred pCtor) w `shouldBe` True
+        Just w -> models (SymPred pCtor) w `shouldBe` True
 
     it "sat on an unsatisfiable predicate is Nothing" $
       isNothing (sat (bot :: SymPred AmountRegs AmtCmd)) `shouldBe` True
 
     it "sat agrees with symSatExt on satisfiability" $ do
-      isJust (sat (SymPred pAmt))  `shouldBe` isJust (symSatExt pAmt)
+      isJust (sat (SymPred pAmt)) `shouldBe` isJust (symSatExt pAmt)
       isJust (sat (SymPred pCtor)) `shouldBe` isJust (symSatExt pCtor)
 
     it "sat over SymPred '[] () yields a real () witness (not a crashing placeholder)" $
@@ -492,7 +569,7 @@ spec = do
       -- constraint + 'KnownInCtors ()' still reconstruct a real '()'.
       -- Forcing @c@ would have thrown the placeholder error before M1.
       case sat (top :: SymPred '[] ()) of
-        Nothing     -> expectationFailure "expected top satisfiable"
+        Nothing -> expectationFailure "expected top satisfiable"
         Just (_, c) -> c `shouldBe` ()
 
   describe "isSingleValuedSym (M6)" $ do
@@ -501,14 +578,12 @@ spec = do
     it "synthetic 2-edge with overlapping guards is not single-valued" $
       isSingleValuedSym synth2Overlap `shouldBe` False
 
-
 -- | 'True' iff a 'Sym' instance is discoverable for @r@ at runtime
 -- via the curated registry.
-symKnown :: forall (r :: Type). Typeable r => Proxy r -> Bool
+symKnown :: forall (r :: Type). (Typeable r) => Proxy r -> Bool
 symKnown _ = case discoverSym :: Maybe (SymDict r) of
-  Just _  -> True
+  Just _ -> True
   Nothing -> False
-
 
 -- | Constructor-shape predicates for the M4 SymPred wrapper tests.
 -- Each one is 'True' iff the supplied 'HsPred' has the named outermost
@@ -519,9 +594,8 @@ isPBot PBot = True; isPBot _ = False
 
 isPAnd, isPOr, isPNot :: HsPred rs ci -> Bool
 isPAnd (PAnd _ _) = True; isPAnd _ = False
-isPOr  (POr  _ _) = True; isPOr  _ = False
-isPNot (PNot _)   = True; isPNot _ = False
-
+isPOr (POr _ _) = True; isPOr _ = False
+isPNot (PNot _) = True; isPNot _ = False
 
 -- * Synthetic transducers for isSingleValuedSym tests --------------------
 
@@ -530,46 +604,51 @@ isPNot (PNot _)   = True; isPNot _ = False
 -- 'True' has no outgoing edges. The expected verdict is
 -- 'isSingleValuedSym == True'.
 synth2Mutex :: SymTransducer (SymPred '[] TinyCmd) '[] Bool TinyCmd ()
-synth2Mutex = SymTransducer
-  { edgesOut = \case
-      False ->
-        [ Edge { guard  = SymPred (PInCtor inCtorTinyFoo)
-               , update = UKeep
-               , output = []
-               , target = True
-               }
-        , Edge { guard  = SymPred (PInCtor inCtorTinyBar)
-               , update = UKeep
-               , output = []
-               , target = True
-               }
-        ]
-      True -> []
-  , initial     = False
-  , initialRegs = RNil
-  , isFinal     = (== True)
-  }
-
+synth2Mutex =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge
+              { guard = SymPred (PInCtor inCtorTinyFoo),
+                update = UKeep,
+                output = [],
+                target = True
+              },
+            Edge
+              { guard = SymPred (PInCtor inCtorTinyBar),
+                update = UKeep,
+                output = [],
+                target = True
+              }
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RNil,
+      isFinal = (== True)
+    }
 
 -- | A two-edge transducer with overlapping ('PTop') guards. The
 -- expected verdict is 'isSingleValuedSym == False'.
 synth2Overlap :: SymTransducer (SymPred '[] TinyCmd) '[] Bool TinyCmd ()
-synth2Overlap = SymTransducer
-  { edgesOut = \case
-      False ->
-        [ Edge { guard = SymPred PTop
-               , update = UKeep
-               , output = []
-               , target = True
-               }
-        , Edge { guard = SymPred PTop
-               , update = UKeep
-               , output = []
-               , target = True
-               }
-        ]
-      True -> []
-  , initial     = False
-  , initialRegs = RNil
-  , isFinal     = (== True)
-  }
+synth2Overlap =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge
+              { guard = SymPred PTop,
+                update = UKeep,
+                output = [],
+                target = True
+              },
+            Edge
+              { guard = SymPred PTop,
+                update = UKeep,
+                output = [],
+                target = True
+              }
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RNil,
+      isFinal = (== True)
+    }
