@@ -8,28 +8,8 @@ and this project adheres to the
 
 ## [Unreleased]
 
-(Pre-Hackage. The next published release is 0.1.0.0.)
 
-### Added
-
-- `Keiki.Generics.TH` — zero-enumeration TH splices that retire the
-  hand-typed `(constructorName, shortName)` spec list in the common
-  case where the short name equals the constructor name:
-  - `deriveAggregateCtorsAll ''Cmd ''Regs` — enumerates every command
-    constructor and emits `inCtor<Ctor>` / `inp<Ctor>` / `is<Ctor>`
-    (singletons omit `inp<Ctor>`), defaulting each short-name suffix to
-    the constructor name.
-  - `deriveWireCtorsAll ''Event` — the event-side dual, emitting
-    `wire<Ctor>` plus, for record-payload events, the `<Ctor>TermFields`
-    record and its `ToOutFields` instance.
-  - `deriveAggregate ''Cmd ''Regs ''Event` — fuses both `*All` variants
-    into one splice covering an aggregate's command and event
-    constructors.
-  The enumerated `deriveAggregateCtors` / `deriveWireCtors` remain for
-  abbreviated short names that differ from the constructor name.
-
-
-## [0.1.0.0] — TBD
+## [0.1.0.0] — 2026-06-07
 
 Initial Hackage release. Public surface stabilised around the
 symbolic-register transducer formalism described in
@@ -62,7 +42,22 @@ symbolic-register transducer formalism described in
 - `Keiki.Generics` — `RegFieldsOf`, `GRecord`, `mkInCtor` /
   `mkInCtorVia`, `mkWireCtor` / `mkWireCtorVia`, plus `EmptyRegFile`.
 - `Keiki.Generics.TH` — `deriveAggregateCtors`, `deriveWireCtors`,
-  `deriveView` for record-payload aggregates.
+  `deriveView` for record-payload aggregates, plus zero-enumeration
+  `*All` splices that retire the hand-typed
+  `(constructorName, shortName)` spec list in the common case where
+  the short name equals the constructor name:
+  - `deriveAggregateCtorsAll ''Cmd ''Regs` — enumerates every command
+    constructor and emits `inCtor<Ctor>` / `inp<Ctor>` / `is<Ctor>`
+    (singletons omit `inp<Ctor>`), defaulting each short-name suffix to
+    the constructor name.
+  - `deriveWireCtorsAll ''Event` — the event-side dual, emitting
+    `wire<Ctor>` plus, for record-payload events, the `<Ctor>TermFields`
+    record and its `ToOutFields` instance.
+  - `deriveAggregate ''Cmd ''Regs ''Event` — fuses both `*All` variants
+    into one splice covering an aggregate's command and event
+    constructors.
+  The enumerated `deriveAggregateCtors` / `deriveWireCtors` remain for
+  abbreviated short names that differ from the constructor name.
 - `Keiki.NoThunks` — strict-evaluation discipline assertions for
   the register file and per-vertex state.
 - `Keiki.Profunctor` — `Profunctor` / `Category` / `Strong` /

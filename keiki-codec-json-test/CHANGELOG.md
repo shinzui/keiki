@@ -8,10 +8,8 @@ and this project adheres to the
 
 ## [Unreleased]
 
-(Pre-Hackage. The next published release is 0.1.0.0.)
 
-
-## [0.1.0.0] — TBD
+## [0.1.0.0] — 2026-06-07
 
 Initial Hackage release. Co-released with `keiki-0.1.0.0` and
 `keiki-codec-json-0.1.0.0`.
