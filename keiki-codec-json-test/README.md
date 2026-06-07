@@ -1,12 +1,16 @@
 # keiki-codec-json-test
 
 Property-test toolkit for downstream consumers of
-[keiki-codec-json](../keiki-codec-json/README.md). Two modules,
-each exposing helpers wired into `hspec` test suites with one line.
+[`keiki-codec-json`](../keiki-codec-json/README.md).
+
+Use this package in test suites that persist `RegFile rs` snapshots as
+JSON and want release-time protection against schema drift. Production
+code that only needs JSON encoding and decoding should depend on
+`keiki-codec-json`, not this package.
 
 ## What this is for
 
-The lede is the **case-#10 detector**: a per-slot-type golden-byte
+The primary tool is the **case-#10 detector**: a per-slot-type golden-byte
 test that catches a silent change to a slot type's `Aeson.ToJSON`
 instance. This is the schema-evolution failure mode the shape hash
 in [`Keiki.Shape`](../src/Keiki/Shape.hs) cannot detect by design —
@@ -16,50 +20,51 @@ shape, the hash stays the same and old snapshots silently fail to
 decode. `slotGoldenSpec` is the contract anchor that makes the drift
 loud and obvious.
 
-The secondary helpers re-expose the EP-36 M3 in-tree property
-disciplines (Value-path / Encoding-path round-trip, within-path
-determinism, structural sensitivity) as library functions
-parameterised over the consumer's own slot list, so they don't have
-to be re-authored downstream.
+The secondary helpers expose the in-tree property disciplines as
+library functions parameterised over the consumer's own slot list:
+Value-path and Encoding-path round-trip, within-path determinism, and
+structural sensitivity.
 
 ## Using
 
-    import Data.Proxy (Proxy (..))
-    import qualified Data.Text as T
-    import Test.Hspec (Spec, describe, hspec)
+```haskell
+import Data.Proxy (Proxy (..))
+import qualified Data.Text as T
+import Test.Hspec (describe, hspec)
 
-    import Keiki.Codec.JSON.Test
-      ( regFileCodecProps
-      , regFileShapeSensitivitySpec
-      , someKnownShape
-      )
-    import Keiki.Codec.JSON.Test.Golden
-      ( SlotGolden (..)
-      , slotGoldenSpec
-      )
+import Keiki.Codec.JSON.Test
+  ( regFileCodecProps
+  , regFileShapeSensitivitySpec
+  , someKnownShape
+  )
+import Keiki.Codec.JSON.Test.Golden
+  ( SlotGolden (..)
+  , slotGoldenSpec
+  )
 
-    -- Your slot type and slot lists:
-    -- data Email = Email Text deriving (...)
-    -- type MySlots = '[ '("email", Email), '("count", Int) ]
-    -- type MySlotsRenamed = '[ '("emailAddress", Email), '("count", Int) ]
+-- Your slot type and slot lists:
+-- data Email = Email Text deriving (...)
+-- type MySlots = '[ '("email", Email), '("count", Int) ]
+-- type MySlotsRenamed = '[ '("emailAddress", Email), '("count", Int) ]
 
-    main :: IO ()
-    main = hspec $ do
-      -- Case-#10 detector. One slotGoldenSpec per slot type whose
-      -- ToJSON / FromJSON instances you want to pin.
-      slotGoldenSpec "Email" (SlotGolden
-        { sgInput = Email (T.pack "alice@example.com")
-        , sgBytes = "\"alice@example.com\""
-        })
+main :: IO ()
+main = hspec $ do
+  -- Case-#10 detector. Add one slotGoldenSpec per slot type whose
+  -- ToJSON / FromJSON instances you want to pin.
+  slotGoldenSpec "Email" (SlotGolden
+    { sgInput = Email (T.pack "alice@example.com")
+    , sgBytes = "\"alice@example.com\""
+    })
 
-      -- Round-trip + determinism over the snapshot's slot list.
-      describe "props: MySlots" (regFileCodecProps @MySlots)
+  -- Round-trip + determinism over the snapshot's slot list.
+  describe "props: MySlots" (regFileCodecProps @MySlots)
 
-      -- Sensitivity: every named mutation must flip the shape hash.
-      describe "sensitivity: MySlots" $
-        regFileShapeSensitivitySpec
-          (Proxy @MySlots)
-          [ ("rename email", someKnownShape @MySlotsRenamed) ]
+  -- Sensitivity: every named mutation must flip the shape hash.
+  describe "sensitivity: MySlots" $
+    regFileShapeSensitivitySpec
+      (Proxy @MySlots)
+      [ ("rename email", someKnownShape @MySlotsRenamed) ]
+```
 
 The toolkit assumes each slot type has `Aeson.ToJSON`,
 `Aeson.FromJSON`, `Arbitrary` (for the property suite),
@@ -77,7 +82,9 @@ want the codec in production, do not depend on this package.
 
 ## Running the self-test
 
-    cabal test keiki-codec-json-test:keiki-codec-json-test-test
+```sh
+cabal test keiki-codec-json-test:keiki-codec-json-test-test
+```
 
 The self-test exercises every public helper against a small toy
 fixture (`Email`, `DemoSlots`, `DemoSlotsRenamed`). Expected

@@ -3,15 +3,16 @@
 These notes record earlier directions the project explored before
 landing on the symbolic-register transducer as the keiki core. They
 are preserved here because they document the reasoning that produced
-the current design, but they are *not* references for the shipped
-library:
+the current design.
+
+They are **not** references for the shipped library:
 
 - Code examples typically use the toy `Transducer s c e` shape, the
   rejected `ExtTransducer` (EFSM) formalism, or the v1 prototype DSL
   with retired escape hatches (`OFn`, `PMatchC`, `unsafeCombine`,
   `TInpField`).
 - Type signatures and module names predate the keiki rename.
-- "Future directions" listed here have shipped, been deferred, or
+- "Future directions" listed here may have shipped, been deferred, or
   been declined under different names.
 
 For the current design, read in order:
@@ -25,7 +26,7 @@ For the current design, read in order:
 5. `docs/guide/user-guide.md` — how to author a transducer in
    practice.
 
-## What's in this folder
+## Index
 
 | File | Subject | Superseded by |
 |------|---------|---------------|

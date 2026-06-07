@@ -1,8 +1,14 @@
 # keiki-codec-json
 
-Optional JSON codec and shape hash interop for [keiki](https://hackage.haskell.org/package/keiki)'s
-type-level register file `RegFile rs`. Sibling package — keiki itself
-remains aeson-free.
+Optional JSON codec support for
+[`keiki`](https://hackage.haskell.org/package/keiki)'s type-level
+register file, `RegFile rs`.
+
+This package is separate by design: the `keiki` core remains
+`aeson`-free, while applications that persist snapshots as JSON can opt
+in here. The structural shape hash
+(`Keiki.Shape.regFileShapeHash`) stays in `keiki` so consumers can
+discriminate snapshot shapes without pulling in a JSON dependency.
 
 This package ships:
 
@@ -11,30 +17,34 @@ This package ships:
   - `regFileFromJSON :: Aeson.Value -> Either String (RegFile rs)`
     (strict decoder; missing / extra / type-mismatched fields are
     rejected with a per-slot error message)
-  - `regFileToEncoding :: RegFile rs -> Aeson.Encoding` (streaming
+  - `regFileToEncoding :: RegFile rs -> Aeson.Encoding` — streaming
     encoder over `Aeson.Series`, avoiding the O(output-size)
     intermediate `Aeson.Value` allocation for users with multi-MB slot
-    values)
-- The structural shape hash (`Keiki.Shape.regFileShapeHash`) ships in
-  `keiki` core so consumers of the hash do not pull `aeson` in.
+    values
+- `Keiki.Codec.JSON.TH` — Template Haskell helpers for deriving record
+  codecs through the same `RegFileToJSON` path
+- `Keiki.Codec.JSON.Event` — Template Haskell helpers for generating a
+  `kind`-discriminated event codec skeleton from event sum types
 
 ## Using
 
-    import Data.Proxy (Proxy (..))
-    import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
-    import Keiki.Shape (regFileShapeHash)
+```haskell
+import Data.Proxy (Proxy (..))
+import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
+import Keiki.Shape (regFileShapeHash)
 
-    type Snapshot = '[ '("retryCount", Int), '("note", Text) ]
+type Snapshot = '[ '("retryCount", Int), '("note", Text) ]
 
-    -- snapshot persister:
-    let bytes = encodingToLazyByteString (regFileToEncoding rf)
-        hash = regFileShapeHash (Proxy @Snapshot)
-    writeRow (snapshotTable hash bytes)
+-- Snapshot persister:
+let bytes = encodingToLazyByteString (regFileToEncoding rf)
+    hash = regFileShapeHash (Proxy @Snapshot)
+writeRow (snapshotTable hash bytes)
 
-    -- hydration:
-    case Aeson.decode bytes of
-      Nothing -> Left "snapshot bytes not JSON"
-      Just v  -> regFileFromJSON @Snapshot v
+-- Hydration:
+case Aeson.decode bytes of
+  Nothing -> Left "snapshot bytes not JSON"
+  Just v  -> regFileFromJSON @Snapshot v
+```
 
 ## Deriving the codec for a record type
 
@@ -42,24 +52,27 @@ If you have a plain Haskell record and want the three codec functions
 without writing them by hand, use the TH splice from
 `Keiki.Codec.JSON.TH`:
 
-    {-# LANGUAGE DeriveGeneric #-}
-    {-# LANGUAGE TemplateHaskell #-}
-    import qualified Data.Aeson as Aeson
-    import Data.Text (Text)
-    import GHC.Generics (Generic)
-    import Keiki.Codec.JSON.TH (deriveRegFileCodec)
+```haskell
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-    data Snapshot = Snapshot
-      { retryCount :: Int
-      , note       :: Text
-      }
-      deriving stock (Eq, Show, Generic)
+import qualified Data.Aeson as Aeson
+import Data.Text (Text)
+import GHC.Generics (Generic)
+import Keiki.Codec.JSON.TH (deriveRegFileCodec)
 
-    $(deriveRegFileCodec ''Snapshot)
-    --  emits:
-    --    snapshotToJSON     :: Snapshot -> Aeson.Value
-    --    snapshotToEncoding :: Snapshot -> Aeson.Encoding
-    --    snapshotFromJSON   :: Aeson.Value -> Either String Snapshot
+data Snapshot = Snapshot
+  { retryCount :: Int
+  , note       :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+$(deriveRegFileCodec ''Snapshot)
+-- emits:
+--   snapshotToJSON     :: Snapshot -> Aeson.Value
+--   snapshotToEncoding :: Snapshot -> Aeson.Encoding
+--   snapshotFromJSON   :: Aeson.Value -> Either String Snapshot
+```
 
 The emitted functions route through the same `RegFileToJSON` class as
 the hand-written path: the record's field names become the JSON object's
@@ -81,46 +94,60 @@ splice time with a precise error message.
 
 A service that stores its events as JSON usually hand-writes a
 `kind`-discriminated encoder/decoder per event *sum* type — a large
-`\case` with one branch per constructor and one `.=` per payload field,
-plus a matching parser. That is the boilerplate `deriveEventCodecSkeleton`
-(from `Keiki.Codec.JSON.Event`) removes. Given a sum type whose
-constructors each wrap a single record payload (or are no-arg
-singletons):
+`case` with one branch per constructor and one `.=` per payload field,
+plus a matching parser. `deriveEventCodecSkeleton` (from
+`Keiki.Codec.JSON.Event`) removes that boilerplate. Given a sum type whose
+constructors each wrap a single record payload, or are no-argument
+singletons:
 
-    {-# LANGUAGE TemplateHaskell #-}
-    import qualified Data.Aeson as Aeson
-    import qualified Data.Map.Strict as Map
-    import qualified Data.Set as Set
-    import Data.Text (Text)
-    import Keiki.Codec.JSON.Event
-      ( deriveEventCodecSkeleton, defaultEventCodecOptions
-      , EventCodecOptions (..), FieldCodec (..) )
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
 
-    newtype OrderId = OrderId Int deriving stock (Eq, Show)
-    orderIdToJSON   :: OrderId -> Aeson.Value
-    orderIdFromJSON :: Aeson.Value -> Either String OrderId
+import qualified Data.Aeson as Aeson
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
+import Data.Text (Text)
+import Keiki.Codec.JSON.Event
+  ( EventCodecOptions (..)
+  , FieldCodec (..)
+  , defaultEventCodecOptions
+  , deriveEventCodecSkeleton
+  )
 
-    data PlacedData  = PlacedData  { orderId :: OrderId, qty :: Int } deriving stock (Eq, Show)
-    data ShippedData = ShippedData { trackingNo :: Text }            deriving stock (Eq, Show)
+newtype OrderId = OrderId Int deriving stock (Eq, Show)
+orderIdToJSON   :: OrderId -> Aeson.Value
+orderIdFromJSON :: Aeson.Value -> Either String OrderId
 
-    data OrderEvent
-      = Placed PlacedData
-      | Shipped ShippedData
-      | Cancelled                     -- singleton
-      deriving stock (Eq, Show)
+data PlacedData = PlacedData
+  { orderId :: OrderId
+  , qty     :: Int
+  }
+  deriving stock (Eq, Show)
 
-    $(deriveEventCodecSkeleton
-        defaultEventCodecOptions
-          { fieldCodecOverrides =
-              Map.fromList [("orderId", FieldCodec 'orderIdToJSON 'orderIdFromJSON)]
-          , passthroughFields = Set.fromList ["qty", "trackingNo"]
-          }
-        ''OrderEvent)
-    --  emits (prefix = lower-cased type name):
-    --    orderEventToJSON     :: OrderEvent -> Aeson.Value
-    --    orderEventFromJSON   :: Aeson.Value -> Either String OrderEvent
-    --    orderEventEventTypes :: [Text]            -- ctor names, in order
-    --    orderEventKindMap    :: [(Text, Text)]    -- (ctor, kind string)
+data ShippedData = ShippedData
+  { trackingNo :: Text
+  }
+  deriving stock (Eq, Show)
+
+data OrderEvent
+  = Placed PlacedData
+  | Shipped ShippedData
+  | Cancelled
+  deriving stock (Eq, Show)
+
+$(deriveEventCodecSkeleton
+    defaultEventCodecOptions
+      { fieldCodecOverrides =
+          Map.fromList [("orderId", FieldCodec 'orderIdToJSON 'orderIdFromJSON)]
+      , passthroughFields = Set.fromList ["qty", "trackingNo"]
+      }
+    ''OrderEvent)
+-- emits, using the lower-cased type name as prefix:
+--   orderEventToJSON     :: OrderEvent -> Aeson.Value
+--   orderEventFromJSON   :: Aeson.Value -> Either String OrderEvent
+--   orderEventEventTypes :: [Text]
+--   orderEventKindMap    :: [(Text, Text)]
+```
 
 Each constructor encodes to an object carrying a `"kind"` discriminator
 (its constructor name) plus one entry per payload field, so
@@ -136,9 +163,9 @@ aeson instances (`passthroughFields`), or — for a field in neither —
 whatever `onMissingCodec` says. The default `FailAtCompileTime` aborts the
 splice listing every unhandled `<Event>.<field> :: <Type>`; the
 alternative `EmitTodoBindings` emits a `_todo_<Event>_<field>` placeholder
-that compiles but is `error "TODO: ..."`-bodied. Adding a field to a
-payload record therefore forces a compile-time decision instead of
-silently changing (or dropping) the stored JSON.
+that compiles but fails when evaluated. Adding a field to a payload
+record therefore forces a compile-time decision instead of silently
+changing, or dropping, the stored JSON.
 
 Constructors that are multi-argument, use record syntax directly, or are
 GADT/infix are rejected at splice time with a precise message; wrap a
@@ -159,25 +186,24 @@ bytes).
 
 ## Benchmarks
 
-    cabal bench keiki-codec-json:keiki-codec-json-bench
+```sh
+cabal bench keiki-codec-json:keiki-codec-json-bench
+```
 
-Four fixtures condensed from EP-36 §10:
+Four fixtures cover representative snapshot sizes:
 
-| Fixture                | Source     | Condensed size           |
-|------------------------|------------|--------------------------|
-| `BenchA_ContractSign`  | §10 Case A | 5 parties, 50 audit rows |
-| `BenchB_BatchRecon`    | §10 Case B | 5,000 processedItems     |
-| `BenchC_TicketAgg`     | §10 Case C | 100 comments             |
-| `BenchD_Auction`       | §10 Case D | 1,000 bids               |
+| Fixture                | Scenario                 | Condensed size           |
+|------------------------|--------------------------|--------------------------|
+| `BenchA_ContractSign`  | Contract signing         | 5 parties, 50 audit rows |
+| `BenchB_BatchRecon`    | Batch reconciliation     | 5,000 processedItems     |
+| `BenchC_TicketAgg`     | Ticket aggregate         | 100 comments             |
+| `BenchD_Auction`       | Auction                  | 1,000 bids               |
 
 Per fixture: `encode-via-Value`, `encode-via-Encoding`, `decode`, `hash`.
 
-`bench/baseline.csv` carries the reference numbers from a GHC 9.12.2
-run on macOS aarch64. CI runs the bench on pull requests as a tracked,
-non-blocking job; reviewers compare the output against the committed
-baseline and treat >20% drift on any fixture/path pair as worth
-investigating. The GHC-9.12 golden hash gate is the release-blocking
-check; the bench is a tracked metric.
+`bench/baseline.csv` carries reference numbers from a GHC 9.12.2 run on
+macOS aarch64. The benchmark is a tracked metric, not a correctness
+gate; the golden shape-hash tests are the release-blocking checks.
 
 ## Test toolkit for downstream consumers
 
@@ -187,15 +213,16 @@ silent change to a slot type's `Aeson.ToJSON` instance — see the
 sibling package
 [`keiki-codec-json-test`](../keiki-codec-json-test/README.md). It
 ships a per-slot-type golden-byte detector (`slotGoldenSpec`) plus
-library-ised versions of the EP-36 M3 round-trip and sensitivity
-disciplines, parameterised over your own slot list. Production
-consumers of `keiki-codec-json` do not need to depend on it.
+library versions of the round-trip and sensitivity disciplines,
+parameterised over your own slot list. Production consumers of
+`keiki-codec-json` do not need to depend on it.
 
 ## Test suite
 
-    cabal test keiki-codec-json:keiki-codec-json-test
+```sh
+cabal test keiki-codec-json:keiki-codec-json-test
+```
 
-Covers M2 unit tests (16 cases), M3 properties (4 properties × 100
-QuickCheck samples each), M3 schema-evolution sensitivity assertions
-(9 cases, one per EP-36 §4 mutation #1–#9), and the M3 golden hash
-fixture pinned for GHC 9.12.*.
+Covers unit tests, four QuickCheck properties, schema-evolution
+sensitivity assertions, and the golden hash fixture pinned for
+GHC 9.12.*.

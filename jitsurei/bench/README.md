@@ -1,15 +1,17 @@
 # keiki-bench
 
-`tasty-bench`-driven measurements for `keiki`'s pure core. Built by
-EP-22 to give us numbers for the three pure operations we ship —
-`delta`, `omega`, `step`, `applyEvent`, `reconstitute` — on two
-example aggregates, in both authoring forms.
+`tasty-bench` measurements for `keiki`'s pure core. The benchmarks cover
+the shipped pure operations — `delta`, `omega`, `step`, `applyEvent`,
+and `reconstitute` — on two example aggregates, in both builder and AST
+authoring forms.
 
 ## Run
 
 From the repository root:
 
-    cabal bench
+```sh
+cabal bench
+```
 
 Total wall-clock is ~50 seconds on a development laptop. Every row
 ends `OK`; rows in `head-to-head` print a relative ratio (`Nx`)
@@ -50,12 +52,16 @@ events on the happy path.
 
 Capture the current numbers as a CSV:
 
-    cabal bench --benchmark-options "--csv baseline.csv"
+```sh
+cabal bench --benchmark-options "--csv baseline.csv"
+```
 
 Make a change, then re-run with the baseline as a comparison
 target:
 
-    cabal bench --benchmark-options "--baseline baseline.csv"
+```sh
+cabal bench --benchmark-options "--baseline baseline.csv"
+```
 
 Each row prints both the new measurement and a multiplicative ratio
 against the baseline.
@@ -64,8 +70,8 @@ against the baseline.
 
 Within `head-to-head`, the comparison is AST-form vs builder-form
 of the same operation. A ratio less than 1 means the AST form is
-faster; greater than 1 means the builder form is faster. As of
-EP-22 close, `step` ratios are ≈ 0.55 (AST is ~2× faster on the
+faster; greater than 1 means the builder form is faster. In the
+initial baseline, `step` ratios are ≈ 0.55 (AST is ~2× faster on the
 per-step path); `reconstitute` ratios are ≈ 0.90 (the gap nearly
 vanishes once per-step setup amortises over the 32-event log).
 
@@ -73,7 +79,9 @@ vanishes once per-step setup amortises over the 32-event log).
 
 To enable allocation reporting, pass `-T` through to the RTS:
 
-    cabal bench --benchmark-options "+RTS -T -RTS"
+```sh
+cabal bench --benchmark-options "+RTS -T -RTS"
+```
 
 Each row gains "X B allocated, Y B copied, Z MB peak memory"
 columns.
@@ -86,9 +94,9 @@ columns.
   transducer.
 - **SBV-backed analyses** (`solveOutput`, `symIsBot`,
   `symSatExt`) — solver wall-clock dominates everything else and
-  belongs in a separate plan focused on symbolic-perf
+  belongs in separate work focused on symbolic-performance
   characterisation.
-- **`Keiki.Composition.compose`** — out of scope for EP-22.
+- **`Keiki.Composition.compose`** — not covered by this benchmark suite.
 
 ## Adding a new aggregate
 
