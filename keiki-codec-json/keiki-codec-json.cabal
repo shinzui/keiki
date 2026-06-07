@@ -45,6 +45,11 @@ extra-doc-files:
 
 extra-source-files: bench/baseline.csv
 
+source-repository head
+  type:     git
+  location: https://github.com/shinzui/keiki.git
+  subdir:   keiki-codec-json
+
 common warnings
   ghc-options:
     -Wall -Wcompat -Widentities -Wincomplete-record-updates

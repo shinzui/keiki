@@ -33,6 +33,11 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
+source-repository head
+  type:     git
+  location: https://github.com/shinzui/keiki.git
+  subdir:   keiki-codec-json-test
+
 common warnings
   ghc-options:
     -Wall -Wcompat -Widentities -Wincomplete-record-updates
