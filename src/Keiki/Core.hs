@@ -155,6 +155,7 @@ module Keiki.Core
     hiddenInputWarnings,
     headRecoverabilityWarnings,
     inversionAmbiguityWarnings,
+    guardImpliesInputReadWarnings,
     opaqueGuardWarnings,
     DeterminismWarning (..),
     checkTransitionDeterminism,
@@ -1602,6 +1603,14 @@ data TransducerValidationWarning s
         tvwWireCtor :: String,
         tvwDetail :: String
       }
+  | -- | An edge reads a field of an input constructor without first
+    --       establishing the matching top-level 'PInCtor' guard. A different
+    --       command can reach the read and make 'evalTerm' throw.
+    UnguardedInputRead
+      { tvwEdge :: EdgeRef s,
+        tvwInCtor :: Maybe String,
+        tvwDetail :: String
+      }
   | -- | Two outgoing edges of the same vertex whose guards can both hold
     --       for one command — a runtime nondeterminism / single-valuedness
     --       violation (its dynamic witness is EP-55's @AmbiguousEdges@).
@@ -1653,7 +1662,10 @@ data ValidationOptions = ValidationOptions
     checkHeadRecoverability :: Bool,
     -- | conservatively flag outgoing edge pairs with the same head wire
     --     constructor
-    checkInversionAmbiguity :: Bool
+    checkInversionAmbiguity :: Bool,
+    -- | require every input-field read to be protected by an earlier matching
+    --     constructor guard
+    checkGuardImpliesInputRead :: Bool
   }
   deriving stock (Eq, Show)
 
@@ -1666,7 +1678,8 @@ defaultValidationOptions =
       checkReachability = True,
       warnOpaqueGuards = False,
       checkHeadRecoverability = True,
-      checkInversionAmbiguity = True
+      checkInversionAmbiguity = True,
+      checkGuardImpliesInputRead = True
     }
 
 -- | The build-time validation umbrella. Runs the enabled checks over the
@@ -1692,6 +1705,7 @@ validateTransducer opts t =
     [ if failOnEpsilonReadsInput opts then hiddenInputWarnings t else [],
       if checkHeadRecoverability opts then headRecoverabilityWarnings t else [],
       if checkInversionAmbiguity opts then inversionAmbiguityWarnings t else [],
+      if checkGuardImpliesInputRead opts then guardImpliesInputReadWarnings t else [],
       if checkDeterminism opts then determinismWarnings t else [],
       if checkReachability opts
         then
@@ -1801,6 +1815,111 @@ opaqueGuardWarnings t =
     (n, e) <- zip [(0 :: Int) ..] (edgesOut t s),
     predHasOpaqueTerm (guard e)
   ]
+
+-- ** Guarded input-read diagnostics
+
+termInCtorNames :: Term rs ci ifs r -> [String]
+termInCtorNames (TLit _) = []
+termInCtorNames (TReg _) = []
+termInCtorNames (TInpCtorField ic _) = [icName ic]
+termInCtorNames (TApp1 _ t) = termInCtorNames t
+termInCtorNames (TApp2 _ a b) = termInCtorNames a ++ termInCtorNames b
+termInCtorNames (TArith _ a b) = termInCtorNames a ++ termInCtorNames b
+
+predInCtorReadNames :: HsPred rs ci -> [String]
+predInCtorReadNames PTop = []
+predInCtorReadNames PBot = []
+predInCtorReadNames (PAnd p q) = predInCtorReadNames p ++ predInCtorReadNames q
+predInCtorReadNames (POr p q) = predInCtorReadNames p ++ predInCtorReadNames q
+predInCtorReadNames (PNot p) = predInCtorReadNames p
+predInCtorReadNames (PEq a b) = termInCtorNames a ++ termInCtorNames b
+predInCtorReadNames (PInCtor _) = []
+predInCtorReadNames (PCmp _ a b) = termInCtorNames a ++ termInCtorNames b
+
+updateInCtorNames :: Update rs w ci -> [String]
+updateInCtorNames UKeep = []
+updateInCtorNames (USet _ term) = termInCtorNames term
+updateInCtorNames (UCombine a b) = updateInCtorNames a ++ updateInCtorNames b
+
+outFieldsInCtorNames :: OutFields rs ci ifs fs -> [String]
+outFieldsInCtorNames OFNil = []
+outFieldsInCtorNames (OFCons term rest) =
+  termInCtorNames term ++ outFieldsInCtorNames rest
+
+outTermInCtorNames :: OutTerm rs ci co -> [String]
+outTermInCtorNames (OPack _ _ fields) = outFieldsInCtorNames fields
+
+-- | Check that every 'TInpCtorField' read is protected by a matching
+-- top-level 'PInCtor' conjunct. Guard reads are order-sensitive: the guard is
+-- walked along its top-level 'PAnd' spine from left to right, matching Haskell's
+-- lazy @(&&)@ evaluation. A constructor established to the right of a read is
+-- too late. Reads in updates and outputs run after the complete guard succeeds,
+-- so any constructor established on the spine protects them.
+--
+-- 'POr', 'PNot', comparisons, and nested boolean forms establish nothing; a
+-- constructor atom inside them does not imply that the whole guard matched that
+-- constructor. Builder 'onCmd' edges are safe by construction because their
+-- guard starts with the appropriate 'PInCtor'. An unsatisfiable conjunction of
+-- different constructors may pass this crash-safety check and is left to the
+-- dead-edge analyses.
+guardImpliesInputReadWarnings ::
+  forall rs s ci co.
+  (Bounded s, Enum s, Show s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  [TransducerValidationWarning s]
+guardImpliesInputReadWarnings t =
+  [ UnguardedInputRead
+      { tvwEdge = EdgeRef {edgeSource = s, edgeIndex = n},
+        tvwInCtor = Just icN,
+        tvwDetail =
+          location
+            <> " reads InCtor \""
+            <> icN
+            <> "\" but edge #"
+            <> show n
+            <> " out of "
+            <> show s
+            <> " does not establish PInCtor \""
+            <> icN
+            <> "\" before it; a non-\""
+            <> icN
+            <> "\" command reaching this edge crashes instead of being rejected"
+      }
+  | s <- [minBound .. maxBound],
+    (n, edge) <- zip [(0 :: Int) ..] (edgesOut t s),
+    (icN, location) <- edgeViolations edge
+  ]
+  where
+    edgeViolations :: Edge (HsPred rs ci) rs ci co s -> [(String, String)]
+    edgeViolations Edge {guard = edgeGuard, update = edgeUpdate, output = edgeOutput} =
+      nub (guardViolations ++ updateViolations ++ outputViolations)
+      where
+        (guardViolations, established) = checkGuard [] edgeGuard
+        updateViolations =
+          [ (icN, "update")
+          | icN <- nub (updateInCtorNames edgeUpdate),
+            icN `notElem` established
+          ]
+        outputViolations =
+          [ (icN, "output")
+          | icN <- nub (concatMap outTermInCtorNames edgeOutput),
+            icN `notElem` established
+          ]
+
+    checkGuard :: [String] -> HsPred rs ci -> ([(String, String)], [String])
+    checkGuard established (PAnd p q) =
+      let (leftViolations, afterLeft) = checkGuard established p
+          (rightViolations, afterRight) = checkGuard afterLeft q
+       in (leftViolations ++ rightViolations, afterRight)
+    checkGuard established (PInCtor ic) =
+      ([], nub (established ++ [icName ic]))
+    checkGuard established predicate =
+      ( [ (icN, "guard")
+        | icN <- nub (predInCtorReadNames predicate),
+          icN `notElem` established
+        ],
+        established
+      )
 
 -- ** Replay inversion diagnostics
 

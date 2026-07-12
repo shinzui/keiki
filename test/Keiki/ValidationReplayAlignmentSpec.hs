@@ -1,5 +1,6 @@
 module Keiki.ValidationReplayAlignmentSpec (spec) where
 
+import Control.Exception (evaluate)
 import Control.Monad (foldM)
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
@@ -106,6 +107,51 @@ ambiguousTransducer = ambiguousTransducerWith wireLogged
 
 distinctHeadTransducer :: SymTransducer (HsPred '[] AmbiguousCmd) '[] Bool AmbiguousCmd AmbiguousEvent
 distinctHeadTransducer = ambiguousTransducerWith wireLoggedY
+
+type ReadRegs = '[ '("seen", Int)]
+
+readGuardTransducer :: HsPred ReadRegs AmbiguousCmd -> SymTransducer (HsPred ReadRegs AmbiguousCmd) ReadRegs Bool AmbiguousCmd ()
+readGuardTransducer edgeGuard =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge
+              { guard = edgeGuard,
+                update =
+                  USet
+                    (#seen :: IndexN "seen" ReadRegs Int)
+                    (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int)),
+                output = [],
+                target = True
+              }
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"seen") 0 RNil,
+      isFinal = id
+    }
+
+unguardedReadTransducer :: SymTransducer (HsPred ReadRegs AmbiguousCmd) ReadRegs Bool AmbiguousCmd ()
+unguardedReadTransducer = readGuardTransducer PTop
+
+safeReadTransducer :: SymTransducer (HsPred ReadRegs AmbiguousCmd) ReadRegs Bool AmbiguousCmd ()
+safeReadTransducer = readGuardTransducer (PAnd (matchInCtor inCtorX) PTop)
+
+wrongOrderReadTransducer :: SymTransducer (HsPred ReadRegs AmbiguousCmd) ReadRegs Bool AmbiguousCmd ()
+wrongOrderReadTransducer =
+  readGuardTransducer
+    ( PAnd
+        (PEq (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int)) (TLit 7))
+        (matchInCtor inCtorX)
+    )
+
+rightOrderReadTransducer :: SymTransducer (HsPred ReadRegs AmbiguousCmd) ReadRegs Bool AmbiguousCmd ()
+rightOrderReadTransducer =
+  readGuardTransducer
+    ( PAnd
+        (matchInCtor inCtorX)
+        (PEq (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int)) (TLit 7))
+    )
 
 spec :: Spec
 spec = do
@@ -224,3 +270,37 @@ spec = do
       case reconstitute distinctHeadTransducer emitted of
         Just (True, RNil) -> pure ()
         _ -> expectationFailure "distinct-head transducer did not replay"
+
+  describe "guard implies input reads" $ do
+    let isUnguarded
+          ( UnguardedInputRead
+              { tvwEdge = EdgeRef {edgeSource = False, edgeIndex = 0},
+                tvwInCtor = Just "CmdX"
+              }
+            ) = True
+        isUnguarded _ = False
+
+    it "flags a PTop-guarded update read" $
+      guardImpliesInputReadWarnings unguardedReadTransducer
+        `shouldSatisfy` any isUnguarded
+
+    it "accepts a read protected by an earlier constructor guard" $ do
+      guardImpliesInputReadWarnings safeReadTransducer `shouldBe` []
+      case step safeReadTransducer (False, initialRegs safeReadTransducer) (CmdY 3) of
+        Nothing -> pure ()
+        Just _ -> expectationFailure "safe constructor guard accepted CmdY"
+
+    it "flags a guard read that appears before its constructor guard" $
+      guardImpliesInputReadWarnings wrongOrderReadTransducer
+        `shouldSatisfy` any isUnguarded
+
+    it "accepts a guard read after its constructor guard" $
+      guardImpliesInputReadWarnings rightOrderReadTransducer `shouldBe` []
+
+    it "predicts the runtime TInpCtorField crash" $
+      evaluate
+        ( case step unguardedReadTransducer (False, initialRegs unguardedReadTransducer) (CmdY 3) of
+            Just (_, regs, _) -> regs ! (#seen :: Index ReadRegs Int)
+            Nothing -> 0
+        )
+        `shouldThrow` errorCall "evalTerm: TInpCtorField guard violation: CmdX"

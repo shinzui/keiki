@@ -86,8 +86,9 @@ here, splitting partially-done items into "done" and "remaining" parts.
 - [x] Milestone 3: `InversionAmbiguity` check implemented
       (`inversionAmbiguityWarnings`), wired into `validateTransducer`, specs added.
       (completed 2026-07-12 16:21 -0700)
-- [ ] Milestone 4: `UnguardedInputRead` check implemented
+- [x] Milestone 4: `UnguardedInputRead` check implemented
       (`guardImpliesInputReadWarnings`), wired into `validateTransducer`, specs added.
+      (completed 2026-07-12 16:25 -0700)
 - [ ] Milestone 5: `StateChangingEpsilon` warning and
       `checkStateChangingEpsilon` option added; no-op `UKeep` self-loop remains clean;
       state-changing cases and replay divergence tested.
