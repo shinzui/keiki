@@ -241,6 +241,32 @@ spec = do
               <> "must end with exactly one goto V."
           )
 
+    it "bare goto in onCmd (no emit/noEmit) fires the new error" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.goto B
+      evaluate tr
+        `shouldThrow` errorCall
+          ( "Keiki.Builder: edge #0 from A: no emit or noEmit. "
+              <> "Each onCmd/onEpsilon body must call 'emit' "
+              <> "(or 'emitWith') to produce an event, or 'noEmit' "
+              <> "to declare the edge deliberately silent (ε-edge)."
+          )
+
+    it "bare goto in onEpsilon (no emit/noEmit) fires the new error" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onEpsilon B.do
+                B.goto B
+      evaluate tr
+        `shouldThrow` errorCall
+          ( "Keiki.Builder: edge #0 from A: no emit or noEmit. "
+              <> "Each onCmd/onEpsilon body must call 'emit' "
+              <> "(or 'emitWith') to produce an event, or 'noEmit' "
+              <> "to declare the edge deliberately silent (ε-edge)."
+          )
+
     -- Case 9: requireEq extends the guard. The starting guard from
     -- onCmd is matchInCtor (a PInCtor); requireEq adds a PAnd-PEq
     -- conjunct. We assert this by structural inspection.
@@ -263,6 +289,7 @@ spec = do
       let tr = B.buildTransducer A emptyR (const False) do
             B.from A do
               B.onEpsilon B.do
+                B.noEmit
                 B.goto B
       case edgesOut tr A of
         [e] -> case guard e of

@@ -165,6 +165,7 @@ coffeeBuilt = B.buildTransducer Idle emptyCoffeeRegs (const False) do
 
   B.from Brewing do
     B.onCmd inCtorContinue $ \_d -> B.do
+      B.noEmit
       B.goto Idle
 
 -- * Misuse demonstrations --------------------------------------------------

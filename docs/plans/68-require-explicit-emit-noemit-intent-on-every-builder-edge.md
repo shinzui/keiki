@@ -84,14 +84,14 @@ This section must always reflect the actual current state of the work.
   - [x] Update the `noEmit` haddock (it is no longer a documentation no-op).
   - [x] Update the `finalizeEdge` haddock to mention the output-intent requirement.
   - [x] `cabal build all` succeeds.
-- [ ] **M2 — Migrate the two in-repo silent edges and prove the new rule with tests.**
-  - [ ] Add `B.noEmit` to `coffeeBuilt`'s Brewing→Idle edge in `test/Keiki/BuilderSpike.hs`.
-  - [ ] Add `B.noEmit` to case 10 (`onEpsilon`) in `test/Keiki/BuilderSpec.hs`.
-  - [ ] Add a positive regression test: `onCmd` bare `goto` (no emit/noEmit) is rejected when the transducer is evaluated to WHNF.
-  - [ ] Add a positive regression test: `onEpsilon` bare `goto` is rejected when the transducer is evaluated to WHNF.
-  - [ ] Confirm existing double-goto and missing-goto tests still pass unchanged (goto-arity check precedes the output-intent check).
-  - [ ] `cabal test all` is green (both `keiki-test` and `jitsurei-test`).
-  - [ ] Re-run the silent-edge audit; confirm zero silent blocks remain across `src`, `test`, and `jitsurei`.
+- [x] **M2 — Migrate the two in-repo silent edges and prove the new rule with tests.** (completed 2026-07-12 16:03 -0700)
+  - [x] Add `B.noEmit` to `coffeeBuilt`'s Brewing→Idle edge in `test/Keiki/BuilderSpike.hs`.
+  - [x] Add `B.noEmit` to case 10 (`onEpsilon`) in `test/Keiki/BuilderSpec.hs`.
+  - [x] Add a positive regression test: `onCmd` bare `goto` (no emit/noEmit) is rejected when the transducer is evaluated to WHNF.
+  - [x] Add a positive regression test: `onEpsilon` bare `goto` is rejected when the transducer is evaluated to WHNF.
+  - [x] Confirm existing double-goto and missing-goto tests still pass unchanged (goto-arity check precedes the output-intent check).
+  - [x] `cabal test all` is green (all four suites: `keiki-test`, `jitsurei-test`, and both codec suites).
+  - [x] Re-run the silent-edge audit; confirm zero unintended silent blocks remain across `src`, `test`, and `jitsurei` (the five reported blocks are deliberate negative tests).
 - [ ] **M3 — Documentation and changelog.**
   - [ ] Update `docs/research/edge-builder-dsl-shape.md` (the `noEmit` paragraph + a design-decision note).
   - [ ] Add a `### Changed` entry under `## [Unreleased]` in `CHANGELOG.md`.
@@ -133,6 +133,13 @@ implementation. Provide concise evidence.
   examples. Every failure carried the exact new diagnostic, while the existing
   missing- and double-`goto` tests remained green. Evidence: `cabal test
   keiki-test` completed 386 examples with 6 expected failures before M2 migration.
+
+- **Discovery (implementation, 2026-07-12): the plan's raw silent-edge audit
+  cannot reach an empty or double-`goto`-only result after adding the required
+  regressions.** It reports five deliberate malformed bodies: three double-`goto`
+  fixtures (including EP-70's structured-error aggregation case) and the two new
+  bare-`goto` EP-68 tests. Manual inspection confirmed that no production, example,
+  or positive-test edge omits output intent.
 
 
 ## Decision Log
@@ -203,6 +210,13 @@ Record every decision made while working on the plan.
   program shape (bare `goto`) into an error, so it is a behavioral change worth
   recording, even though no in-tree consumer is affected.
   Date: 2026-07-03
+
+- Decision: interpret the post-M2 audit acceptance as zero *unintended* silent
+  blocks, with deliberate malformed-edge tests retained.
+  Rationale: the plan itself requires two bare-`goto` regression tests, and EP-70
+  added a third double-`goto` fixture after the original audit expectation was
+  written. Removing or disguising those cases would weaken validation coverage.
+  Date: 2026-07-12
 
 
 ## Outcomes & Retrospective
@@ -464,9 +478,9 @@ Edits:
    new message instead, the branch ordering in `finalizeEdge` is wrong — fix M1,
    do not edit these tests.
 
-Acceptance for M2: `cabal test all` is green for both `keiki-test` and
-`jitsurei-test`. The silent-edge audit (see Concrete Steps) reports zero silent
-blocks.
+Acceptance for M2: `cabal test all` is green for all four suites. The silent-edge
+audit (see Concrete Steps) reports only deliberate malformed-edge tests; manual
+inspection confirms that no production, example, or positive-test edge omits intent.
 
 ### Milestone M3 — Documentation and changelog
 
@@ -521,16 +535,17 @@ Expected before the change (double-goto blocks are reported too because they nev
 emit; they are handled by the goto-arity branch and need no edit):
 
 ```text
+test/Keiki/BuilderSpec.hs:234: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:265: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:346: SILENT (goto, no emit/noEmit)
 test/Keiki/BuilderSpike.hs:167: SILENT (goto, no emit/noEmit)
 test/Keiki/BuilderSpike.hs:198: SILENT (goto, no emit/noEmit)
-test/Keiki/BuilderSpec.hs:233: SILENT (goto, no emit/noEmit)
-test/Keiki/BuilderSpec.hs:264: SILENT (goto, no emit/noEmit)
 ```
 
-Of these, lines 167 (BuilderSpike `coffeeBuilt`) and 264 (BuilderSpec case 10) are
-the real ε-edges to migrate with `noEmit`; lines 198 and 233 are the double-goto
-misuse fixtures, which stay untouched. After M2 the two migrated ones disappear
-from this report and only the two double-goto fixtures remain.
+Of these, lines 167 (BuilderSpike `coffeeBuilt`) and 265 (BuilderSpec case 10) are
+the real ε-edges to migrate with `noEmit`; the other three are double-`goto`
+misuse fixtures, including EP-70's structured-error aggregation case, and stay
+untouched.
 
 **M1 — build the library after the code edits:**
 
@@ -566,7 +581,7 @@ Expected: both suites pass. Look for the two new example lines, e.g.:
 
 and no failures.
 
-**M2 — re-run the audit; expect only the two double-goto fixtures to remain:**
+**M2 — re-run the audit; expect only deliberate negative fixtures to remain:**
 
 ```bash
 for f in $(grep -rln --include='*.hs' 'B\.goto\|B\.onEpsilon\|B\.onCmd' src test jitsurei); do
@@ -581,13 +596,17 @@ done
 Expected:
 
 ```text
-test/Keiki/BuilderSpike.hs:199: SILENT (goto, no emit/noEmit)
 test/Keiki/BuilderSpec.hs:234: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:247: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:260: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:373: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpike.hs:199: SILENT (goto, no emit/noEmit)
 ```
 
-(Line numbers shift by the inserted `B.noEmit` lines; these two are the
-double-goto fixtures, which are handled by the goto-arity branch and are correct
-as-is.)
+The entries at BuilderSpec lines 247 and 260 are the new bare-`goto` regressions.
+The other three are double-`goto` fixtures handled by the goto-arity branch. All
+five are intentionally malformed and correct as-is; there must be no additional
+entry from a production, example, or positive-test edge.
 
 **Commits.** Commit once per milestone. Every commit message must carry all three
 trailers:
@@ -637,11 +656,11 @@ The change is validated by behavior, not just compilation:
    pass with their original messages, proving the new check does not shadow the
    goto diagnostics.
 
-5. **Whole-suite green.** `cabal test all` passes for `keiki-test` and
-   `jitsurei-test`, demonstrating no real consumer regressed.
+5. **Whole-suite green.** `cabal test all` passes all four test suites,
+   demonstrating no real consumer or codec regressed.
 
 Acceptance is the conjunction of all five, plus the silent-edge audit reporting
-only the two double-goto fixtures.
+only the five deliberate malformed-edge fixtures described above.
 
 
 ## Idempotence and Recovery
