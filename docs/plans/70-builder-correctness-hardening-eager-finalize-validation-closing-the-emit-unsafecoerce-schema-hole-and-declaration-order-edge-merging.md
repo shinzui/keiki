@@ -66,10 +66,10 @@ recompiles without a single call-site change.
 - [x] (2026-07-12T15:33:59-07:00) M2 (prototype): EmailDelivery fixture + jitsurei EmailDelivery compile unchanged;
       mismatched-schema `emit` repro captured failing to compile (transcript in
       Surprises & Discoveries).
-- [ ] M3: full library + all suites green under the pin change; jitsurei unchanged.
-- [ ] M3: `emitWith` guard/output constructor-mismatch defect added to `finalizeEdge`;
+- [x] (2026-07-12T15:37:42-07:00) M3: full library + all suites green under the pin change; jitsurei unchanged.
+- [x] (2026-07-12T15:37:42-07:00) M3: `emitWith` guard/output constructor-mismatch defect added to `finalizeEdge`;
       `slotNamesOf` exported from `Keiki.Core`; runtime spec for the mismatch.
-- [ ] M3: `test/Keiki/BuilderTypeErrorsSpec.hs` (deferred-type-errors regression module)
+- [x] (2026-07-12T15:37:42-07:00) M3: `test/Keiki/BuilderTypeErrorsSpec.hs` (deferred-type-errors regression module)
       added and wired into `Spec.hs` + `keiki.cabal`.
 - [ ] M4: `DistinctNames` TypeError family in `src/Keiki/Internal/Slots.hs`; constraint
       on `buildTransducer`/`buildTransducerEither`; duplicate-slot spec; Slots haddock fixed.
@@ -146,6 +146,14 @@ recompiles without a single call-site change.
   This promotes the type-level design: the old implementation silently accepted
   the schema mismatch because `reIndexPinnedInCtor` coerced the pinned constructor;
   the new one rejects it before a transducer can be built.
+- **M3 validation (2026-07-12): the deferred-type-error regression technique works
+  under GHC 9.12.4.** The dedicated module catches `Control.Exception.TypeError`
+  when the mismatched-schema transducer is evaluated, so the permanent suite
+  exercises the negative compile case without weakening type checking elsewhere.
+  The new eager `emitWith` mismatch case also passes, the previous matching
+  `emitWith` case remains green, and `nix develop -c cabal build all` plus `nix
+  develop -c cabal test all` report 386 keiki examples, 96 jitsurei examples, 50
+  codec examples, and 7 codec-toolkit examples with zero failures.
 
 (Add entries with evidence as implementation proceeds.)
 
@@ -1006,3 +1014,7 @@ were already erroring later.
   through `EdgeBuilder`, removed `reIndexPinnedInCtor` and the builder's
   `unsafeCoerce`, verified unchanged consumer compilation, and captured the
   fail-before/pass-after schema-mismatch compiler evidence.
+- 2026-07-12: Completed Milestone 3. Promoted the schema pin across the full
+  repository, added eager `emitWith` constructor/slot consistency, exported
+  `slotNamesOf`, and installed runtime plus deferred-type-error regressions with a
+  green whole-repository validation run.

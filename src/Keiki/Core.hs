@@ -60,6 +60,7 @@ module Keiki.Core
     InCtor (..),
     AssembleRegFile,
     KnownSlotNames (..),
+    slotNamesOf,
 
     -- * Slot-name machinery (re-exported from "Keiki.Internal.Slots")
     IndexN (..),

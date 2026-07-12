@@ -1,0 +1,53 @@
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
+
+module Keiki.BuilderTypeErrorsSpec (spec) where
+
+import Control.Exception (TypeError, evaluate)
+import GHC.Generics (Generic)
+import Keiki.Builder qualified as B
+import Keiki.Core (HsPred, OutFields (..), RegFile, SymTransducer)
+import Keiki.Generics (emptyRegFile)
+import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
+import Test.Hspec
+
+type Regs = '[ '("value", Int)]
+
+data Vertex = Start | Done
+  deriving (Eq, Show)
+
+data OneData = OneData {value :: Int}
+  deriving (Eq, Show, Generic)
+
+data TwoData = TwoData {other :: Int}
+  deriving (Eq, Show, Generic)
+
+data Cmd = One OneData | Two TwoData
+  deriving (Eq, Show, Generic)
+
+data EventData = EventData {value :: Int}
+  deriving (Eq, Show, Generic)
+
+data Event = Emitted EventData
+  deriving (Eq, Show, Generic)
+
+$(deriveAggregateCtors ''Cmd ''Regs [("One", "One"), ("Two", "Two")])
+$(deriveWireCtors ''Event [("Emitted", "Emitted")])
+
+mismatchedSchemaEmit :: SymTransducer (HsPred Regs Cmd) Regs Vertex Cmd Event
+mismatchedSchemaEmit =
+  B.buildTransducer Start (emptyRegFile :: RegFile Regs) (const False) do
+    B.from Start do
+      B.onCmd inCtorOne $ \_d -> B.do
+        B.emit wireEmitted (OFCons (inpTwo #other) OFNil)
+        B.goto Done
+
+isTypeError :: TypeError -> Bool
+isTypeError _ = True
+
+spec :: Spec
+spec =
+  it "rejects emit fields projected from a different command schema" $
+    evaluate mismatchedSchemaEmit `shouldThrow` isTypeError

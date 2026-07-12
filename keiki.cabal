@@ -103,6 +103,7 @@ test-suite keiki-test
     Keiki.ArrowSpec
     Keiki.BuilderSpec
     Keiki.BuilderSpike
+    Keiki.BuilderTypeErrorsSpec
     Keiki.CategorySpec
     Keiki.ChoiceSpec
     Keiki.CollectionSpike

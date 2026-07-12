@@ -4,6 +4,7 @@ import Keiki.AcceptorSpec qualified
 import Keiki.ArrowSpec qualified
 import Keiki.BuilderSpec qualified
 import Keiki.BuilderSpike qualified
+import Keiki.BuilderTypeErrorsSpec qualified
 import Keiki.CategorySpec qualified
 import Keiki.ChoiceSpec qualified
 import Keiki.CollectionSpike qualified
@@ -40,6 +41,7 @@ main = hspec $ do
   describe "Keiki.Acceptor" Keiki.AcceptorSpec.spec
   describe "Keiki.Builder (EP-15 M6)" Keiki.BuilderSpec.spec
   describe "Keiki.BuilderSpike (EP-15 M2)" Keiki.BuilderSpike.spec
+  describe "Keiki.Builder type errors (EP-70)" Keiki.BuilderTypeErrorsSpec.spec
   describe "Keiki.Profunctor (Category, EP-28)" Keiki.CategorySpec.spec
   describe "Keiki.Profunctor (Choice, EP-29 M1)" Keiki.ChoiceSpec.spec
   describe "Keiki.Composition" Keiki.CompositionSpec.spec

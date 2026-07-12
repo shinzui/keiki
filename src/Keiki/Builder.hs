@@ -208,10 +208,10 @@ import Keiki.Core
   ( Cmp (..),
     Edge (..),
     HsPred (..),
-    InCtor,
+    InCtor (..),
     Index,
     OutFields (..),
-    OutTerm,
+    OutTerm (..),
     RegFile,
     Slot,
     SymTransducer (..),
@@ -223,6 +223,7 @@ import Keiki.Core
     matchInCtor,
     oNil,
     pack,
+    slotNamesOf,
     (*:),
   )
 import Keiki.Core qualified as K
@@ -442,9 +443,8 @@ goto v = EdgeBuilder $ \pe ->
 -- either a per-event @\<CtorName\>TermFields rs ci@ record (emitted
 -- by 'Keiki.Generics.TH.deriveWireCtors') or a bare 'OutFields'
 -- HList constructed with '(*:)' / 'oNil'. The input-side 'InCtor'
--- is recovered from the enclosing 'onCmd'; an 'emit' inside
--- 'onEpsilon' (where no 'InCtor' is bound) raises a finalize-time
--- error directing the user to 'emitWith'.
+-- is recovered at its real schema from the enclosing 'onCmd'. An
+-- 'emit' inside 'onEpsilon' is a compile error; use 'emitWith' there.
 --
 -- == Multi-event commands (EP-19)
 --
@@ -472,12 +472,14 @@ emit wc rec = EdgeBuilder $ \pe -> case pePinned pe of
         }
     )
 
--- | Emit an event with an explicit 'InCtor'. The escape hatch for
--- 'onEpsilon' bodies (which do not pin an 'InCtor') and for any
--- caller that needs to override the one bound by the enclosing
--- 'onCmd'. Inside 'onCmd' the InCtor-less 'emit' is preferred.
--- Like 'emit', accumulates into the edge's output list — multiple
--- calls produce a multi-event edge.
+-- | Emit an event with an explicit 'InCtor'. This is the output form
+-- for 'onEpsilon' bodies, which have no pinned constructor. Inside
+-- 'onCmd', the supplied constructor must have the same name and slot
+-- names as the pinned constructor; 'buildTransducer' rejects a
+-- mismatch eagerly because it would invert replay to another command.
+-- The InCtor-less 'emit' is preferred inside 'onCmd'. Like 'emit',
+-- accumulates into the edge's output list — multiple calls produce a
+-- multi-event edge.
 emitWith ::
   forall co fs rs ci v pin w ifs rec.
   (ToOutFields rec rs ci ifs fs) =>
@@ -686,6 +688,8 @@ data BuilderDefect
     DefectMissingGoto
   | -- | The body called 'goto' more than once; carries the count.
     DefectMultipleGoto Int
+  | -- | An output constructor contradicts the enclosing 'onCmd'.
+    DefectOutputCtorMismatch String [String] String [String]
   deriving stock (Eq, Show)
 
 -- | A defect located at a specific edge of a specific source vertex.
@@ -707,16 +711,37 @@ finalizeEdge ::
   PartialEdge rs ci co v pin w ->
   Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)
 finalizeEdge pe = case peTargets pe of
-  [t] ->
-    Right
-      Edge
-        { guard = peGuard pe,
-          update = peUpdate pe,
-          output = peOutput pe,
-          target = t
-        }
+  [t] -> case outputCtorMismatch (pePinned pe) (peOutput pe) of
+    Just defect -> Left defect
+    Nothing ->
+      Right
+        Edge
+          { guard = peGuard pe,
+            update = peUpdate pe,
+            output = peOutput pe,
+            target = t
+          }
   [] -> Left DefectMissingGoto
   ts@(_ : _ : _) -> Left (DefectMultipleGoto (length ts))
+
+outputCtorMismatch :: Pinned ci pin -> [OutTerm rs ci co] -> Maybe BuilderDefect
+outputCtorMismatch PinNone _ = Nothing
+outputCtorMismatch (PinCtor pinned) outputs = go outputs
+  where
+    expectedName = icName pinned
+    expectedSlots = slotNamesOf pinned
+
+    go [] = Nothing
+    go (OPack actual _ _ : rest)
+      | icName actual /= expectedName || slotNamesOf actual /= expectedSlots =
+          Just
+            ( DefectOutputCtorMismatch
+                expectedName
+                expectedSlots
+                (icName actual)
+                (slotNamesOf actual)
+            )
+      | otherwise = go rest
 
 -- * Vertex builder --------------------------------------------------------
 
@@ -860,6 +885,19 @@ renderBuilderError (BuilderError src n defect) =
         ": goto missing. Each onCmd/onEpsilon body must end with exactly one goto V."
       DefectMultipleGoto _ ->
         ": goto called more than once. Each onCmd/onEpsilon body must end with exactly one goto V."
+      DefectOutputCtorMismatch expectedName expectedSlots actualName actualSlots ->
+        ": emitWith InCtor "
+          <> show actualName
+          <> " (slots "
+          <> renderSlotNames actualSlots
+          <> ") contradicts the enclosing onCmd's InCtor "
+          <> show expectedName
+          <> " (slots "
+          <> renderSlotNames expectedSlots
+          <> "). An onCmd edge's outputs must pack the command constructor the edge matches on, or replay will invert the event to a different command."
+
+renderSlotNames :: [String] -> String
+renderSlotNames names = "[" <> intercalate "," names <> "]"
 
 forceBuilderErrors :: [BuilderError v] -> ()
 forceBuilderErrors [] = ()

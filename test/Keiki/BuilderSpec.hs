@@ -430,6 +430,21 @@ spec = do
           cmd = Tick (TickData 5)
       omega trEmitWith A emptyR cmd `shouldBe` omega trEmit A emptyR cmd
 
+    it "EP-70: emitWith contradicting onCmd fails eagerly" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.emitWith inCtorIdle wireTicked (OFCons (lit 0) OFNil)
+                B.goto B
+      evaluate tr
+        `shouldThrow` errorCall
+          ( "Keiki.Builder: edge #0 from A: emitWith InCtor \"Idle\" "
+              <> "(slots []) contradicts the enclosing onCmd's InCtor \"Tick\" "
+              <> "(slots [count]). An onCmd edge's outputs must pack the command "
+              <> "constructor the edge matches on, or replay will invert the event "
+              <> "to a different command."
+          )
+
   describe "EP-49: (=:) is a synonym for (.=)" $
     -- Authoring the same single-slot edge with `.=` and with `=:`
     -- produces the identical register write. `Update` carries `Term`s
