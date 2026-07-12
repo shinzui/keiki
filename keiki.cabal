@@ -119,6 +119,8 @@ test-suite keiki-test
     Keiki.DeciderSpec
     Keiki.Fixtures.CounterPipeline
     Keiki.Fixtures.EmailDelivery
+    Keiki.Fixtures.RegisterEmission
+    Keiki.Fixtures.SplitCoverage
     Keiki.Fixtures.UserRegistration
     Keiki.Generics.THSpec
     Keiki.NoThunksSpec
@@ -135,6 +137,7 @@ test-suite keiki-test
     Keiki.StepEitherSpec
     Keiki.StrongSpec
     Keiki.SymbolicSpec
+    Keiki.ValidationReplayAlignmentSpec
     Keiki.ValidationSpec
 
   build-depends:

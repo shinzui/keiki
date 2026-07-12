@@ -69,12 +69,13 @@ recipe).
 Use this checklist to track granular steps. Every stopping point must be documented
 here, splitting partially-done items into "done" and "remaining" parts.
 
-- [ ] Milestone 1: shared fixtures `test/Keiki/Fixtures/SplitCoverage.hs` and
+- [x] Milestone 1: shared fixtures `test/Keiki/Fixtures/SplitCoverage.hs` and
       `test/Keiki/Fixtures/RegisterEmission.hs` created, registered in `keiki.cabal`,
-      and compiling.
-- [ ] Milestone 1: red spec `test/Keiki/ValidationReplayAlignmentSpec.hs` added; the
-      "validate-clean implies replays-own-log" test FAILS on the split-coverage fixture
-      (proving the defect) before any validator change.
+      and compiling. (completed 2026-07-12 16:14 -0700)
+- [x] Milestone 1: defect spec `test/Keiki/ValidationReplayAlignmentSpec.hs` added;
+      the current validator-clean/replay-fails behavior is pinned and the future
+      warning assertion is the sole pending example, keeping milestone commits green.
+      (completed 2026-07-12 16:14 -0700)
 - [ ] Milestone 2: `hiddenInputReasons` reworked to head-based analysis;
       `HirHeadUnrecoverable` reason added; `HeadUnrecoverable` constructor added to
       `TransducerValidationWarning`; `checkHeadRecoverability` option added.
@@ -133,6 +134,17 @@ implementation, with concise evidence.
   current keiro only. The previous production-edge claim came from an outdated
   runtime example and has been removed. The in-tree SplitCoverage fixture is the
   reproducible worked example for head recoverability.
+
+- **(implementation, 2026-07-12)** The canonical `EmailVertex` and User
+  Registration `Vertex` fixtures did not derive `Ord`, so they could not be passed
+  to `validateTransducer`, whose reachability check uses an ordered set. Both shared
+  fixtures and the new `RegisterVertex` now derive `Ord`; no runtime behavior changed.
+
+- **(implementation, 2026-07-12)** `userReg` is not validation-clean before
+  Milestone 5 because its pre-confirmation GDPR edge is a state-changing ε-edge whose
+  update reads the command. Milestone 1 therefore pins replay agreement on the
+  persisted canonical path without claiming the whole fixture is clean; Milestone 6
+  will migrate the ε-edge and add the clean assertion.
 
 
 ## Decision Log
@@ -223,6 +235,14 @@ implementation, with concise evidence.
   will reuse the stateful/multi-event shapes. They must therefore export their
   transducers, commands, events, and (for the bad variant) the specific defective
   edge shape by name, with haddocks saying which plan consumes what.
+  Date: 2026-07-12
+
+- Decision: keep Milestone 1 green by asserting the current split-coverage defect
+  and marking only the future `HeadUnrecoverable` expectation pending.
+  Rationale: the plan explicitly permits a pending red assertion when CI policy
+  requires working commits. The test still proves both halves of the defect:
+  forward execution emits `[OutAB 1 2, OutBC 2 3]`, replay returns `Nothing`, and
+  current default validation returns `[]`.
   Date: 2026-07-12
 
 

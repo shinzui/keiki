@@ -33,6 +33,7 @@ import Keiki.ShapeSpec qualified
 import Keiki.StepEitherSpec qualified
 import Keiki.StrongSpec qualified
 import Keiki.SymbolicSpec qualified
+import Keiki.ValidationReplayAlignmentSpec qualified
 import Keiki.ValidationSpec qualified
 import Test.Hspec
 
@@ -72,3 +73,4 @@ main = hspec $ do
   describe "Keiki.Symbolic" Keiki.SymbolicSpec.spec
   describe "Keiki.CollectionSpike (EP-60 M1 ratification gate)" Keiki.CollectionSpike.spec
   describe "Keiki.Core.validateTransducer (EP-56)" Keiki.ValidationSpec.spec
+  describe "Keiki.ValidationReplayAlignmentSpec" Keiki.ValidationReplayAlignmentSpec.spec
