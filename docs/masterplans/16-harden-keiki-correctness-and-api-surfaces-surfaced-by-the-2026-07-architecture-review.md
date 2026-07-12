@@ -277,12 +277,12 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   should treat keiro's implementations as prior art rather than designing in a vacuum.
 - Plan authoring (2026-07-12) surfaced discoveries that shaped the plans:
   - The naive decide/replay round-trip law is FALSE in the presence of ε-edges: the
-    existing UserRegistration fixture's silent GDPR edge (`B.noEmit`) advances state
-    without emitting, so replay cannot reach post-ε states. The selected correction is
-    not to truncate the property: EP-71 emits a default-on warning for state-changing
-    epsilon, EP-73 tests complete runs of validation-clean fixtures, and keiro rejects
-    the warning at its durable-stream boundary. A deliberately invalid fixture keeps
-    the divergence visible as teeth.
+    former UserRegistration fixture's silent GDPR edge (`B.noEmit`) advanced state
+    without emitting, so replay could not reach post-ε states. EP-71 migrated that
+    durable edge to `AccountDeleted` and added a default-on warning for remaining
+    state-changing epsilon. EP-73 tests complete runs of validation-clean fixtures,
+    keiro rejects the warning at its durable-stream boundary, and a deliberately
+    invalid fixture keeps the divergence visible as teeth.
   - `TLit` carries no `Eq`/`Typeable` evidence, so EP-71's cross-edge
     inversion-ambiguity check cannot distinguish edges by differing literal fields —
     the criterion is constructor-name-based with documented blind spots.
@@ -440,7 +440,14 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Four child plans are complete: EP-69, EP-70, the adopted EP-68, and EP-71. The core
+memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
+validator half. EP-71 aligned default validation with replay through four default-on
+checks, migrated the durable User Registration epsilon path, left an explicit
+non-durable classification on the Loan tutorial's process-control edge, and produced
+the shared fixtures EP-73 will consume. The full workspace test suite, formatter,
+GHCi counterexample, and keiki Haddocks pass. EP-72 is the next independent Phase 2
+plan; EP-73 is now unblocked on EP-71 but still waits on EP-72.
 
 ## Revision Notes
 
