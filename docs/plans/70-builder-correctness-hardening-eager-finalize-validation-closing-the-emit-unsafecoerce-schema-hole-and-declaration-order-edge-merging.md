@@ -53,14 +53,14 @@ recompiles without a single call-site change.
 
 ## Progress
 
-- [ ] M1: `finalizeEdge` returns `Either BuilderDefect Edge`; defects aggregated.
-- [ ] M1: `buildTransducerEither` added; `buildTransducer` re-expressed on top of it.
-- [ ] M1: validation forced when the `SymTransducer` is evaluated to WHNF (eager).
-- [ ] M1: duplicate `from` blocks merge in declaration order; indices global per vertex.
-- [ ] M1: `(Bounded v, Enum v)` constraints dropped from `buildTransducer`.
-- [ ] M1: BuilderSpec cases 7/8 updated to force only the transducer; new eager,
+- [x] (2026-07-12T15:29:03-07:00) M1: `finalizeEdge` returns `Either BuilderDefect Edge`; defects aggregated.
+- [x] (2026-07-12T15:29:03-07:00) M1: `buildTransducerEither` added; `buildTransducer` re-expressed on top of it.
+- [x] (2026-07-12T15:29:03-07:00) M1: validation forced when the `SymTransducer` is evaluated to WHNF (eager).
+- [x] (2026-07-12T15:29:03-07:00) M1: duplicate `from` blocks merge in declaration order; indices global per vertex.
+- [x] (2026-07-12T15:29:03-07:00) M1: `(Bounded v, Enum v)` constraints dropped from `buildTransducer`.
+- [x] (2026-07-12T15:29:03-07:00) M1: BuilderSpec cases 7/8 updated to force only the transducer; new eager,
       declaration-order, index-numbering, and `buildTransducerEither` specs added.
-- [ ] M1: `cabal build all` and `cabal test all` green.
+- [x] (2026-07-12T15:29:03-07:00) M1: `cabal build all` and `cabal test all` green.
 - [ ] M2 (prototype): `pin :: Maybe [Slot]` phantom threaded through `EdgeBuilder`;
       `emit` reads the pinned `InCtor` without coercion; `reIndexPinnedInCtor` deleted.
 - [ ] M2 (prototype): EmailDelivery fixture + jitsurei EmailDelivery compile unchanged;
@@ -110,6 +110,13 @@ recompiles without a single call-site change.
   instance. The `ifs` is pinned by the `d.field` projections the user writes, so
   tying `emit`'s `ifs` to the `onCmd` pin (M2) requires **zero** TH changes and zero
   call-site changes.
+- **M1 validation (2026-07-12): eager structured validation composes with every
+  existing consumer.** `nix develop -c cabal build all` and `nix develop -c cabal
+  test all` passed after the change. The keiki suite now reports 384 examples (four
+  new EP-70 cases), all passing; the jitsurei suite remains at 96 examples, all
+  passing. A `mori`-located audit of current keiro found only the standard
+  `buildTransducer` plus schema-matched `B.emit` authoring pattern and no `emitWith`
+  call sites.
 
 (Add entries with evidence as implementation proceeds.)
 
@@ -959,3 +966,10 @@ integration point 6): the authoring surface listed in Context and Orientation st
 source-compatible; the only new compile errors hit programs that were latently
 unsound; the only new runtime errors fire earlier (at construction) on programs that
 were already erroring later.
+
+## Revision Notes
+
+- 2026-07-12: Completed Milestone 1. Added the eager structured defect pass,
+  declaration-ordered duplicate-vertex merging, stable per-vertex indices, the
+  `buildTransducerEither` API, behavioral regressions, and recorded the green
+  whole-repository validation and current-keiro consumer audit.

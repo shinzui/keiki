@@ -138,6 +138,10 @@
 module Keiki.Builder
   ( -- * Top-level entry point
     buildTransducer,
+    buildTransducerEither,
+    BuilderDefect (..),
+    BuilderError (..),
+    renderBuilderErrors,
 
     -- * Vertex-level builder
     VertexBuilder,
@@ -194,6 +198,9 @@ module Keiki.Builder
   )
 where
 
+import Data.List (intercalate)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Typeable (Typeable)
 import GHC.Records (HasField (..))
 import GHC.TypeLits (KnownSymbol, Symbol)
@@ -635,8 +642,8 @@ indexNToIndex (IS i) = K.SIdx (indexNToIndex i)
 newtype EdgeListBuilder rs ci co v a = EdgeListBuilder
   { runEdgeListBuilder ::
       v ->
-      [Edge (HsPred rs ci) rs ci co v] ->
-      (a, [Edge (HsPred rs ci) rs ci co v])
+      [Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)] ->
+      (a, [Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)])
   }
 
 instance Functor (EdgeListBuilder rs ci co v) where
@@ -662,11 +669,10 @@ instance Monad (EdgeListBuilder rs ci co v) where
 -- into a closed 'Edge'.
 onCmd ::
   forall ci ifs rs co v w.
-  (Show v) =>
   InCtor ci ifs ->
   (PayloadProj rs ci ifs -> EdgeBuilder rs ci co v '[] w ()) ->
   EdgeListBuilder rs ci co v ()
-onCmd ic body = EdgeListBuilder $ \src acc ->
+onCmd ic body = EdgeListBuilder $ \_src acc ->
   let initial =
         PartialEdge
           { peGuard = matchInCtor ic,
@@ -676,8 +682,7 @@ onCmd ic body = EdgeListBuilder $ \src acc ->
             peInCtor = Just (PeInCtor ic)
           }
       (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
-      edgeIx = length acc
-      edge = finalizeEdge edgeIx src finalPE
+      edge = finalizeEdge finalPE
    in ((), edge : acc)
 
 -- | ε-edge entry: no input projection, no input-ctor match-guard.
@@ -688,10 +693,9 @@ onCmd ic body = EdgeListBuilder $ \src acc ->
 -- directly with an explicit 'InCtor' if needed.
 onEpsilon ::
   forall rs ci co v w.
-  (Show v) =>
   EdgeBuilder rs ci co v '[] w () ->
   EdgeListBuilder rs ci co v ()
-onEpsilon body = EdgeListBuilder $ \src acc ->
+onEpsilon body = EdgeListBuilder $ \_src acc ->
   let initial =
         PartialEdge
           { peGuard = PTop,
@@ -701,47 +705,46 @@ onEpsilon body = EdgeListBuilder $ \src acc ->
             peInCtor = Nothing
           }
       (_, finalPE) = runEdgeBuilder body initial
-      edgeIx = length acc
-      edge = finalizeEdge edgeIx src finalPE
+      edge = finalizeEdge finalPE
    in ((), edge : acc)
 
+-- | One structural problem found while closing a single edge body.
+data BuilderDefect
+  = -- | The body never called 'goto'.
+    DefectMissingGoto
+  | -- | The body called 'goto' more than once; carries the count.
+    DefectMultipleGoto Int
+  deriving stock (Eq, Show)
+
+-- | A defect located at a specific edge of a specific source vertex.
+-- The edge index is assigned after duplicate-'from' merging.
+data BuilderError v = BuilderError
+  { beVertex :: v,
+    beEdgeIndex :: Int,
+    beDefect :: BuilderDefect
+  }
+  deriving stock (Eq, Show)
+
 -- | Close a 'PartialEdge' into an 'Edge'. Validation: 'peTargets'
--- must have exactly one entry; missing or duplicated 'goto' calls
--- raise a runtime 'error' naming the source vertex and edge index.
+-- must have exactly one entry; missing or duplicated 'goto' calls are
+-- returned structurally. 'buildTransducerEither' attaches location.
 -- The 'peOutput' list (zero or more 'OutTerm's accumulated by
 -- 'emit' / 'emitWith' calls) flows directly into the resulting
 -- 'Edge.output' field.
 finalizeEdge ::
-  (Show v) =>
-  Int ->
-  v ->
   PartialEdge rs ci co v w ->
-  Edge (HsPred rs ci) rs ci co v
-finalizeEdge n src pe = case peTargets pe of
+  Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)
+finalizeEdge pe = case peTargets pe of
   [t] ->
-    Edge
-      { guard = peGuard pe,
-        update = peUpdate pe,
-        output = peOutput pe,
-        target = t
-      }
-  [] ->
-    error $
-      "Keiki.Builder: edge #"
-        <> show n
-        <> " from "
-        <> show src
-        <> ": goto missing. Each onCmd/"
-        <> "onEpsilon body must end with exactly one goto V."
-  (_ : _ : _) ->
-    error $
-      "Keiki.Builder: edge #"
-        <> show n
-        <> " from "
-        <> show src
-        <> ": goto called more than once. "
-        <> "Each onCmd/onEpsilon body must end with "
-        <> "exactly one goto V."
+    Right
+      Edge
+        { guard = peGuard pe,
+          update = peUpdate pe,
+          output = peOutput pe,
+          target = t
+        }
+  [] -> Left DefectMissingGoto
+  ts@(_ : _ : _) -> Left (DefectMultipleGoto (length ts))
 
 -- * Vertex builder --------------------------------------------------------
 
@@ -751,8 +754,8 @@ finalizeEdge n src pe = case peTargets pe of
 -- default for unmentioned vertices.
 newtype VertexBuilder rs ci co v a = VertexBuilder
   { runVertexBuilder ::
-      [(v, [Edge (HsPred rs ci) rs ci co v])] ->
-      (a, [(v, [Edge (HsPred rs ci) rs ci co v])])
+      [(v, [Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)])] ->
+      (a, [(v, [Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)])])
   }
 
 instance Functor (VertexBuilder rs ci co v) where
@@ -780,7 +783,6 @@ instance Monad (VertexBuilder rs ci co v) where
 -- (terminal). To assert "this vertex is terminal" explicitly,
 -- write @from V (Prelude.pure ())@.
 from ::
-  (Eq v, Show v) =>
   v ->
   EdgeListBuilder rs ci co v () ->
   VertexBuilder rs ci co v ()
@@ -799,24 +801,105 @@ from v eb = VertexBuilder $ \vs ->
 -- returns the concatenation of every entry's edges in declaration
 -- order.
 --
--- The @Bounded v@ / @Enum v@ constraints are not currently used by
--- 'buildTransducer' itself but are recorded as reserved for a
--- future @withCompletenessCheck@ combinator that would assert every
--- vertex appears in some 'from' block.
+-- Every declared edge is validated before the result is returned.
+-- Forcing the returned transducer to weak head normal form therefore
+-- reports malformed edges even when their source vertices are never
+-- otherwise inspected. Use 'buildTransducerEither' for structured
+-- diagnostics instead of an exception.
 buildTransducer ::
   forall rs ci co v.
-  (Bounded v, Enum v, Eq v, Show v) =>
+  (Eq v, Show v) =>
   v ->
   RegFile rs ->
   (v -> Bool) ->
   VertexBuilder rs ci co v () ->
   SymTransducer (HsPred rs ci) rs v ci co
 buildTransducer initS initR isF vb =
-  SymTransducer
-    { edgesOut = \v -> Prelude.concatMap snd (Prelude.filter ((== v) . fst) vmap),
-      initial = initS,
-      initialRegs = initR,
-      isFinal = isF
-    }
+  case buildTransducerEither initS initR isF vb of
+    Left errs -> error (renderBuilderErrors errs)
+    Right tr -> tr
+
+-- | Validating entry point. Runs the complete 'VertexBuilder', merges
+-- duplicate vertices in declaration order, assigns stable per-vertex
+-- edge indices, and returns every structural defect found.
+buildTransducerEither ::
+  forall rs ci co v.
+  (Eq v) =>
+  v ->
+  RegFile rs ->
+  (v -> Bool) ->
+  VertexBuilder rs ci co v () ->
+  Either
+    (NonEmpty (BuilderError v))
+    (SymTransducer (HsPred rs ci) rs v ci co)
+buildTransducerEither initS initR isF vb =
+  forceBuilderErrors errors `seq`
+    forceEdgeTable cleanTable `seq`
+      case NonEmpty.nonEmpty errors of
+        Just errs -> Left errs
+        Nothing ->
+          Right
+            SymTransducer
+              { edgesOut = \v -> maybe [] id (lookup v cleanTable),
+                initial = initS,
+                initialRegs = initR,
+                isFinal = isF
+              }
   where
-    (_, vmap) = runVertexBuilder vb []
+    (_, rawEntries) = runVertexBuilder vb []
+    mergedEntries = foldl' mergeEntry [] (Prelude.reverse rawEntries)
+    locatedEntries =
+      [ (v, zipWith (locate v) [0 ..] results)
+      | (v, results) <- mergedEntries
+      ]
+    errors =
+      [ builderError
+      | (_, results) <- locatedEntries,
+        Left builderError <- results
+      ]
+    cleanTable =
+      [ (v, [edge | Right edge <- results])
+      | (v, results) <- locatedEntries
+      ]
+
+    mergeEntry acc (v, edges) =
+      case break ((== v) . fst) acc of
+        (_, []) -> acc ++ [(v, edges)]
+        (before, (existingV, existingEdges) : after) ->
+          before ++ (existingV, existingEdges ++ edges) : after
+
+    locate v edgeIndex = \case
+      Left defect -> Left (BuilderError v edgeIndex defect)
+      Right edge -> Right edge
+
+-- | Render structured builder errors in the historical message format.
+-- Multiple errors are joined by newlines in declaration order.
+renderBuilderErrors :: (Show v) => NonEmpty (BuilderError v) -> String
+renderBuilderErrors = intercalate "\n" . fmap renderBuilderError . NonEmpty.toList
+
+renderBuilderError :: (Show v) => BuilderError v -> String
+renderBuilderError (BuilderError src n defect) =
+  "Keiki.Builder: edge #"
+    <> show n
+    <> " from "
+    <> show src
+    <> case defect of
+      DefectMissingGoto ->
+        ": goto missing. Each onCmd/onEpsilon body must end with exactly one goto V."
+      DefectMultipleGoto _ ->
+        ": goto called more than once. Each onCmd/onEpsilon body must end with exactly one goto V."
+
+forceBuilderErrors :: [BuilderError v] -> ()
+forceBuilderErrors [] = ()
+forceBuilderErrors (builderError : rest) = builderError `seq` forceBuilderErrors rest
+
+forceEdgeTable :: [(v, [Edge p rs ci co v])] -> ()
+forceEdgeTable [] = ()
+forceEdgeTable ((_, edges) : rest) = forceEdges edges `seq` forceEdgeTable rest
+  where
+    forceEdges [] = ()
+    forceEdges (edge : more) =
+      edge `seq` forceOutputSpine (output edge) `seq` forceEdges more
+
+    forceOutputSpine [] = ()
+    forceOutputSpine (_ : outputs) = forceOutputSpine outputs

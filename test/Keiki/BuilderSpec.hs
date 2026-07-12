@@ -9,6 +9,7 @@
 module Keiki.BuilderSpec (spec) where
 
 import Control.Exception (evaluate)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import GHC.Generics (Generic)
 import Keiki.Builder ((.=), (=:))
@@ -218,7 +219,7 @@ spec = do
             B.from A do
               B.onCmd inCtorTick $ \_d -> B.do
                 B.noEmit -- intentional: no goto
-      evaluate (head (edgesOut tr A))
+      evaluate tr
         `shouldThrow` errorCall
           ( "Keiki.Builder: edge #0 from A: goto missing. "
               <> "Each onCmd/onEpsilon body must end with "
@@ -233,7 +234,7 @@ spec = do
               B.onCmd inCtorTick $ \_d -> B.do
                 B.goto B
                 B.goto A
-      evaluate (head (edgesOut tr A))
+      evaluate tr
         `shouldThrow` errorCall
           ( "Keiki.Builder: edge #0 from A: goto called "
               <> "more than once. Each onCmd/onEpsilon body "
@@ -287,6 +288,82 @@ spec = do
           target e1 `shouldBe` B -- Tick goes to B (first onCmd)
           target e2 `shouldBe` A -- Idle goes to A (second onCmd)
         es -> expectationFailure ("expected exactly 2 edges, got " <> show (length es))
+
+    it "EP-70: missing goto on an undriven vertex fails at construction" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.noEmit
+                B.goto A
+            B.from B do
+              B.onCmd inCtorIdle $ \_d -> B.do
+                B.noEmit
+      evaluate tr
+        `shouldThrow` errorCall
+          ( "Keiki.Builder: edge #0 from B: goto missing. "
+              <> "Each onCmd/onEpsilon body must end with "
+              <> "exactly one goto V."
+          )
+
+    it "EP-70: duplicate `from` blocks merge in declaration order" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.noEmit
+                B.goto B
+            B.from A do
+              B.onCmd inCtorIdle $ \_d -> B.do
+                B.noEmit
+                B.goto A
+      case edgesOut tr A of
+        [e1, e2] -> do
+          target e1 `shouldBe` B
+          target e2 `shouldBe` A
+        es -> expectationFailure ("expected exactly 2 edges, got " <> show (length es))
+
+    it "EP-70: merged blocks report globally consistent edge indices" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.noEmit
+                B.goto B
+            B.from A do
+              B.onCmd inCtorIdle $ \_d -> B.do
+                B.noEmit
+      evaluate tr
+        `shouldThrow` errorCall
+          ( "Keiki.Builder: edge #1 from A: goto missing. "
+              <> "Each onCmd/onEpsilon body must end with "
+              <> "exactly one goto V."
+          )
+
+    it "EP-70: buildTransducerEither returns every defect structurally" $ do
+      let malformed = B.buildTransducerEither A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.noEmit
+            B.from B do
+              B.onCmd inCtorIdle $ \_d -> B.do
+                B.goto A
+                B.goto B
+          expected =
+            [ B.BuilderError A 0 B.DefectMissingGoto,
+              B.BuilderError B 0 (B.DefectMultipleGoto 2)
+            ]
+      case malformed of
+        Left errors -> NonEmpty.toList errors `shouldBe` expected
+        Right _ -> expectationFailure "expected structured builder defects"
+
+      let wellFormed = B.buildTransducerEither A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \_d -> B.do
+                B.noEmit
+                B.goto B
+      case wellFormed of
+        Left errors -> expectationFailure ("unexpected errors: " <> show errors)
+        Right tr -> case edgesOut tr A of
+          [edge] -> target edge `shouldBe` B
+          edges -> expectationFailure ("expected exactly 1 edge, got " <> show (length edges))
 
   describe "EP-21 M4: field-keyed record sugar for B.emit" $ do
     -- Case 12: emit with the per-event record form produces the
