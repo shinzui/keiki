@@ -213,6 +213,7 @@ import Keiki.Core
     OutFields (..),
     OutTerm,
     RegFile,
+    Slot,
     SymTransducer (..),
     Term (TReg),
     Update (..),
@@ -231,7 +232,6 @@ import Keiki.Internal.Slots
     HasIndexN (..),
     IndexN (..),
   )
-import Unsafe.Coerce (unsafeCoerce)
 import Prelude hiding (pure, return, (>>), (>>=))
 import Prelude qualified
 
@@ -253,7 +253,7 @@ import Prelude qualified
 -- fields; 'finalizeEdge' validates that exactly one 'goto' was
 -- called and packages the result into a closed 'Edge'. The
 -- existential @w@ on 'Edge''s 'update' field closes here.
-data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
+data PartialEdge rs ci co v (pin :: Maybe [Slot]) (w :: [Symbol]) = PartialEdge
   { peGuard :: HsPred rs ci,
     peUpdate :: Update rs w ci,
     -- | Output terms accumulated by 'emit' / 'emitWith' calls in
@@ -265,23 +265,16 @@ data PartialEdge rs ci co v (w :: [Symbol]) = PartialEdge
     -- | Reverse-order list of every 'goto' invocation in the body.
     -- Finalization requires exactly one element.
     peTargets :: [v],
-    -- | The 'InCtor' bound by the enclosing 'onCmd', so that the
-    -- 2-argument 'emit' can recover it without the user repeating
-    -- it. 'Nothing' inside an 'onEpsilon' body — 'emit' there must
-    -- use 'emitWith' to supply the 'InCtor' explicitly.
-    peInCtor :: Maybe (PeInCtor ci)
+    -- | The 'InCtor' bound by the enclosing 'onCmd', indexed by its
+    -- real input-field schema. 'PinNone' marks an 'onEpsilon' body.
+    pePinned :: Pinned ci pin
   }
 
--- | Existential wrapper hiding the @ifs@ slot list of an 'InCtor'.
--- Stored on 'PartialEdge' by 'onCmd' and read back by 'emit'.
---
--- This is a builder-local existential rather than a reuse of
--- 'Keiki.Symbolic.SomeInCtor' because the latter carries an
--- 'ExtractRegFile' constraint the builder does not need and lives
--- in a module that pulls SBV; reusing it would add an SBV edge to
--- every consumer of "Keiki.Builder".
-data PeInCtor ci where
-  PeInCtor :: InCtor ci ifs -> PeInCtor ci
+-- | Whether an edge body has an enclosing input constructor. The
+-- schema index preserves the equality that 'emit' needs.
+data Pinned ci (pin :: Maybe [Slot]) where
+  PinNone :: Pinned ci 'Nothing
+  PinCtor :: InCtor ci ifs -> Pinned ci ('Just ifs)
 
 -- | The per-edge indexed-state monad. The two phantom slot-set
 -- indices @(w :: [Symbol])@ (before this step) and @(w' :: [Symbol])@
@@ -296,11 +289,11 @@ data PeInCtor ci where
 -- requires a separate type-class hierarchy. Instead, this module
 -- exports its own @(>>=)@ / @(>>)@ / 'pure' / 'return' for use
 -- with @QualifiedDo@.
-newtype EdgeBuilder rs ci co v (w :: [Symbol]) (w' :: [Symbol]) a
+newtype EdgeBuilder rs ci co v (pin :: Maybe [Slot]) (w :: [Symbol]) (w' :: [Symbol]) a
   = EdgeBuilder
   { runEdgeBuilder ::
-      PartialEdge rs ci co v w ->
-      (a, PartialEdge rs ci co v w')
+      PartialEdge rs ci co v pin w ->
+      (a, PartialEdge rs ci co v pin w')
   }
 
 -- * QualifiedDo bind/return exports ----------------------------------------
@@ -309,9 +302,9 @@ newtype EdgeBuilder rs ci co v (w :: [Symbol]) (w' :: [Symbol]) a
 -- the second argument's @w@ argument, and the second argument's @w'@
 -- index becomes the result's @w'@. Re-export for @QualifiedDo@.
 (>>=) ::
-  EdgeBuilder rs ci co v w1 w2 a ->
-  (a -> EdgeBuilder rs ci co v w2 w3 b) ->
-  EdgeBuilder rs ci co v w1 w3 b
+  EdgeBuilder rs ci co v pin w1 w2 a ->
+  (a -> EdgeBuilder rs ci co v pin w2 w3 b) ->
+  EdgeBuilder rs ci co v pin w1 w3 b
 EdgeBuilder f >>= k = EdgeBuilder $ \pe ->
   let (a, pe1) = f pe
       EdgeBuilder g = k a
@@ -321,19 +314,19 @@ infixl 1 >>=
 
 -- | Sequence. Defined in terms of '(>>=)'.
 (>>) ::
-  EdgeBuilder rs ci co v w1 w2 a ->
-  EdgeBuilder rs ci co v w2 w3 b ->
-  EdgeBuilder rs ci co v w1 w3 b
+  EdgeBuilder rs ci co v pin w1 w2 a ->
+  EdgeBuilder rs ci co v pin w2 w3 b ->
+  EdgeBuilder rs ci co v pin w1 w3 b
 m >> n = m Keiki.Builder.>>= \_ -> n
 
 infixl 1 >>
 
 -- | Embed a value. Slot-set unchanged.
-pure :: a -> EdgeBuilder rs ci co v w w a
+pure :: a -> EdgeBuilder rs ci co v pin w w a
 pure a = EdgeBuilder $ \pe -> (a, pe)
 
 -- | Synonym for 'pure'. Re-exported for @QualifiedDo@.
-return :: a -> EdgeBuilder rs ci co v w w a
+return :: a -> EdgeBuilder rs ci co v pin w w a
 return = Keiki.Builder.pure
 
 -- * Slot writes ----------------------------------------------------------
@@ -401,11 +394,11 @@ reg = TReg (indexNToIndex (indexN @name @rs @r))
 -- 'Keiki.Core.lit' / 'Keiki.Core.proj' / 'Keiki.Core.inpCtor' or
 -- @d.fieldName@ via 'PayloadProj' to construct it.
 (.=) ::
-  forall name r rs ci ifs co v w.
+  forall name r rs ci ifs co v pin w.
   (KnownSymbol name, Disjoint '[name] w) =>
   IndexN name rs r ->
   Term rs ci ifs r ->
-  EdgeBuilder rs ci co v w (Concat '[name] w) ()
+  EdgeBuilder rs ci co v pin w (Concat '[name] w) ()
 ix .= t = EdgeBuilder $ \pe ->
   ((), pe {peUpdate = USet ix t `combine` peUpdate pe})
 
@@ -423,11 +416,11 @@ infixr 6 .=
 -- reserves operators beginning with a colon for data constructors, so a
 -- value-level synonym must start with another symbol — hence @=:@.)
 (=:) ::
-  forall name r rs ci ifs co v w.
+  forall name r rs ci ifs co v pin w.
   (KnownSymbol name, Disjoint '[name] w) =>
   IndexN name rs r ->
   Term rs ci ifs r ->
-  EdgeBuilder rs ci co v w (Concat '[name] w) ()
+  EdgeBuilder rs ci co v pin w (Concat '[name] w) ()
 (=:) = (.=)
 
 infixr 6 =:
@@ -438,7 +431,7 @@ infixr 6 =:
 -- body; missing 'goto' produces a finalize-time runtime error
 -- naming the source vertex and edge index, and so does multiple
 -- 'goto's in the same body.
-goto :: v -> EdgeBuilder rs ci co v w w ()
+goto :: v -> EdgeBuilder rs ci co v pin w w ()
 goto v = EdgeBuilder $ \pe ->
   ((), pe {peTargets = v : peTargets pe})
 
@@ -468,37 +461,16 @@ emit ::
   (ToOutFields rec rs ci ifs fs) =>
   WireCtor co fs ->
   rec ->
-  EdgeBuilder rs ci co v w w ()
-emit wc rec = EdgeBuilder $ \pe -> case peInCtor pe of
-  Just (PeInCtor ic) ->
-    -- 'onCmd' pins the same 'InCtor' into 'peInCtor' /and/ into the
-    -- 'PayloadProj' the body projects through, so the record's input
-    -- field schema 'ifs' (from 'ToOutFields') equals the pinned
-    -- 'InCtor''s schema. The existential 'PeInCtor' hides that
-    -- equality; 'reIndexPinnedInCtor' re-establishes it. This does not
-    -- weaken replay soundness: the resulting 'OPack''s 'InCtor' and
-    -- 'OutFields' share 'ifs', so 'solveOutput' recovers fields with no
-    -- coercion (EP-53). Mirrors 'Keiki.Composition.unsafeCoerceInCtor'.
+  EdgeBuilder rs ci co v ('Just ifs) w w ()
+emit wc rec = EdgeBuilder $ \pe -> case pePinned pe of
+  PinCtor ic ->
     ( (),
       pe
         { peOutput =
             peOutput pe
-              ++ [pack (reIndexPinnedInCtor @ci @_ @ifs ic) wc (toOutFields rec)]
+              ++ [pack ic wc (toOutFields rec)]
         }
     )
-  Nothing ->
-    error
-      "Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. \
-      \Use 'emitWith ic wc fs' inside 'onEpsilon', or move the \
-      \emit inside an 'onCmd' block."
-
--- | Re-establish the (existentially hidden) equality between a pinned
--- 'InCtor''s field schema and the schema the enclosing 'onCmd''s
--- 'PayloadProj' exposes. Unsound in general; justified at the single
--- 'emit' call site by 'onCmd' storing one and the same 'InCtor' in both
--- places (see 'emit'). The runtime representation is identical.
-reIndexPinnedInCtor :: forall ci ifs0 ifs. InCtor ci ifs0 -> InCtor ci ifs
-reIndexPinnedInCtor = unsafeCoerce
 
 -- | Emit an event with an explicit 'InCtor'. The escape hatch for
 -- 'onEpsilon' bodies (which do not pin an 'InCtor') and for any
@@ -507,12 +479,12 @@ reIndexPinnedInCtor = unsafeCoerce
 -- Like 'emit', accumulates into the edge's output list — multiple
 -- calls produce a multi-event edge.
 emitWith ::
-  forall co fs rs ci v w ifs rec.
+  forall co fs rs ci v pin w ifs rec.
   (ToOutFields rec rs ci ifs fs) =>
   InCtor ci ifs ->
   WireCtor co fs ->
   rec ->
-  EdgeBuilder rs ci co v w w ()
+  EdgeBuilder rs ci co v pin w w ()
 emitWith ic wc rec = EdgeBuilder $ \pe ->
   ((), pe {peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)]})
 
@@ -522,7 +494,7 @@ emitWith ic wc rec = EdgeBuilder $ \pe ->
 -- 'noEmit' and 'emit' in the same body is allowed but the 'noEmit'
 -- is a documentation no-op (the 'emit's still produce a non-empty
 -- output list).
-noEmit :: EdgeBuilder rs ci co v w w ()
+noEmit :: EdgeBuilder rs ci co v pin w w ()
 noEmit = EdgeBuilder $ \pe -> ((), pe)
 
 -- * Field-keyed record sugar ---------------------------------------------
@@ -562,7 +534,7 @@ instance ToOutFields (OutFields rs ci ifs fs) rs ci ifs fs where
 -- Use this when the structural sugar of 'requireEq' is not enough
 -- (e.g. for negated predicates, disjunctions, or guards constructed
 -- by helper functions).
-requireGuard :: HsPred rs ci -> EdgeBuilder rs ci co v w w ()
+requireGuard :: HsPred rs ci -> EdgeBuilder rs ci co v pin w w ()
 requireGuard p = EdgeBuilder $ \pe ->
   ((), pe {peGuard = PAnd (peGuard pe) p})
 
@@ -572,7 +544,7 @@ requireEq ::
   (Eq r, Typeable r) =>
   Term rs ci ifs1 r ->
   Term rs ci ifs2 r ->
-  EdgeBuilder rs ci co v w w ()
+  EdgeBuilder rs ci co v pin w w ()
 requireEq a b = requireGuard (PEq a b)
 
 -- | Conjoin an ordering predicate (@a `op` b@ for the relation named
@@ -586,7 +558,7 @@ requireCmp ::
   Cmp ->
   Term rs ci ifs1 r ->
   Term rs ci ifs2 r ->
-  EdgeBuilder rs ci co v w w ()
+  EdgeBuilder rs ci co v pin w w ()
 requireCmp op a b = requireGuard (PCmp op a b)
 
 -- | Require @a < b@. See 'requireCmp'.
@@ -597,7 +569,7 @@ requireLt,
     (Ord r, Typeable r) =>
     Term rs ci ifs1 r ->
     Term rs ci ifs2 r ->
-    EdgeBuilder rs ci co v w w ()
+    EdgeBuilder rs ci co v pin w w ()
 requireLt = requireCmp CmpLt
 requireLe = requireCmp CmpLe
 requireGt = requireCmp CmpGt
@@ -670,7 +642,7 @@ instance Monad (EdgeListBuilder rs ci co v) where
 onCmd ::
   forall ci ifs rs co v w.
   InCtor ci ifs ->
-  (PayloadProj rs ci ifs -> EdgeBuilder rs ci co v '[] w ()) ->
+  (PayloadProj rs ci ifs -> EdgeBuilder rs ci co v ('Just ifs) '[] w ()) ->
   EdgeListBuilder rs ci co v ()
 onCmd ic body = EdgeListBuilder $ \_src acc ->
   let initial =
@@ -679,7 +651,7 @@ onCmd ic body = EdgeListBuilder $ \_src acc ->
             peUpdate = UKeep,
             peOutput = [],
             peTargets = [],
-            peInCtor = Just (PeInCtor ic)
+            pePinned = PinCtor ic
           }
       (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
       edge = finalizeEdge finalPE
@@ -693,7 +665,7 @@ onCmd ic body = EdgeListBuilder $ \_src acc ->
 -- directly with an explicit 'InCtor' if needed.
 onEpsilon ::
   forall rs ci co v w.
-  EdgeBuilder rs ci co v '[] w () ->
+  EdgeBuilder rs ci co v 'Nothing '[] w () ->
   EdgeListBuilder rs ci co v ()
 onEpsilon body = EdgeListBuilder $ \_src acc ->
   let initial =
@@ -702,7 +674,7 @@ onEpsilon body = EdgeListBuilder $ \_src acc ->
             peUpdate = UKeep,
             peOutput = [],
             peTargets = [],
-            peInCtor = Nothing
+            pePinned = PinNone
           }
       (_, finalPE) = runEdgeBuilder body initial
       edge = finalizeEdge finalPE
@@ -732,7 +704,7 @@ data BuilderError v = BuilderError
 -- 'emit' / 'emitWith' calls) flows directly into the resulting
 -- 'Edge.output' field.
 finalizeEdge ::
-  PartialEdge rs ci co v w ->
+  PartialEdge rs ci co v pin w ->
   Either BuilderDefect (Edge (HsPred rs ci) rs ci co v)
 finalizeEdge pe = case peTargets pe of
   [t] ->

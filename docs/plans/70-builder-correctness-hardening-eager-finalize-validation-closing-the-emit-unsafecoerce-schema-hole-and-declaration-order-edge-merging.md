@@ -61,9 +61,9 @@ recompiles without a single call-site change.
 - [x] (2026-07-12T15:29:03-07:00) M1: BuilderSpec cases 7/8 updated to force only the transducer; new eager,
       declaration-order, index-numbering, and `buildTransducerEither` specs added.
 - [x] (2026-07-12T15:29:03-07:00) M1: `cabal build all` and `cabal test all` green.
-- [ ] M2 (prototype): `pin :: Maybe [Slot]` phantom threaded through `EdgeBuilder`;
+- [x] (2026-07-12T15:33:59-07:00) M2 (prototype): `pin :: Maybe [Slot]` phantom threaded through `EdgeBuilder`;
       `emit` reads the pinned `InCtor` without coercion; `reIndexPinnedInCtor` deleted.
-- [ ] M2 (prototype): EmailDelivery fixture + jitsurei EmailDelivery compile unchanged;
+- [x] (2026-07-12T15:33:59-07:00) M2 (prototype): EmailDelivery fixture + jitsurei EmailDelivery compile unchanged;
       mismatched-schema `emit` repro captured failing to compile (transcript in
       Surprises & Discoveries).
 - [ ] M3: full library + all suites green under the pin change; jitsurei unchanged.
@@ -117,6 +117,35 @@ recompiles without a single call-site change.
   passing. A `mori`-located audit of current keiro found only the standard
   `buildTransducer` plus schema-matched `B.emit` authoring pattern and no `emitWith`
   call sites.
+- **M2 prototype (2026-07-12): GHC 9.12 accepts the schema pin across the full
+  builder consumer surface.** `nix develop -c cabal build keiki`, `nix develop -c
+  cabal build jitsurei`, and `nix develop -c cabal test keiki-test` all passed with
+  no consumer edits; the keiki suite remained at 384 passing examples. The same
+  scratch module intentionally emitted an output field projected from constructor
+  `Two` while inside `onCmd inCtorOne`. Against pre-M2 commit `1e4bff2`, GHC loaded
+  it successfully:
+
+  ```text
+  [1 of 1] Compiling EmitMismatchRepro
+  Ok, one module loaded.
+  ```
+
+  With the schema-pinned `EdgeBuilder`, the identical source fails at `B.emit`:
+
+  ```text
+  error: [GHC-18872]
+    • Couldn't match type ‘"other"’ with ‘"value"’
+        arising from a functional dependency between:
+          constraint ‘ToOutFields
+                        (OutFields Regs Cmd '[ '("other", Int)] (Int, ()))
+                        Regs Cmd '[ '("value", Int)] (Int, ())’
+    • In a stmt of a 'do' block:
+        B.emit wireEmitted (OFCons (inpTwo #other) OFNil)
+  ```
+
+  This promotes the type-level design: the old implementation silently accepted
+  the schema mismatch because `reIndexPinnedInCtor` coerced the pinned constructor;
+  the new one rejects it before a transducer can be built.
 
 (Add entries with evidence as implementation proceeds.)
 
@@ -973,3 +1002,7 @@ were already erroring later.
   declaration-ordered duplicate-vertex merging, stable per-vertex indices, the
   `buildTransducerEither` API, behavioral regressions, and recorded the green
   whole-repository validation and current-keiro consumer audit.
+- 2026-07-12: Completed the Milestone 2 prototype. Threaded the input-schema pin
+  through `EdgeBuilder`, removed `reIndexPinnedInCtor` and the builder's
+  `unsafeCoerce`, verified unchanged consumer compilation, and captured the
+  fail-before/pass-after schema-mismatch compiler evidence.
