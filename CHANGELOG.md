@@ -20,6 +20,26 @@ and this project adheres to the
 
 ### Changed
 
+- `validateTransducer defaultValidationOptions` now enforces four additional
+  replay-safety checks: head-event recoverability, cross-edge inversion
+  ambiguity, constructor guards before input-field reads, and state-changing
+  ε-edges. The corresponding warning constructors are `HeadUnrecoverable`,
+  `InversionAmbiguity`, `UnguardedInputRead`, and `StateChangingEpsilon`; the
+  new default-on option fields are `checkHeadRecoverability`,
+  `checkInversionAmbiguity`, `checkGuardImpliesInputRead`, and
+  `checkStateChangingEpsilon`. Code that exhaustively matches
+  `TransducerValidationWarning` must add these four cases, and code that
+  constructs `ValidationOptions` should record-update `defaultValidationOptions`
+  so future checks remain enabled.
+- `checkHiddenInputs` now requires the first event of a multi-event edge to
+  recover every consumed command field. Coverage spread across the union of the
+  head and tail is no longer accepted because streaming replay inverts only the
+  head; tail-only fields produce `HeadUnrecoverable` through
+  `validateTransducer` and an equivalent legacy string warning through
+  `checkHiddenInputs`.
+- The canonical User Registration pre-confirmation deletion now emits
+  `AccountDeleted` instead of changing vertex and registers silently, so its
+  forward result is recoverable from its persisted log.
 - `Keiki.Builder` now requires every `onCmd`/`onEpsilon` edge body to
   declare its output intent explicitly. A body that reaches `goto` without
   calling `emit`/`emitWith` or `noEmit` is an eager construction error instead

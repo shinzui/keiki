@@ -15,7 +15,7 @@ stateDiagram-v2
     PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent
     RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed
     RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent
-    RequiresConfirmation --> Deleted : FulfillGDPRRequest / ε
+    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted
     Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted
     Deleted --> [*]
 ```
@@ -30,7 +30,6 @@ edges use Mermaid's `<br/>` multi-line label). See
 [`multi-event-commands.md`](../multi-event-commands.md) for the
 authoring guide.
 
-The `RequiresConfirmation --> Deleted` edge labelled `FulfillGDPRRequest /
-ε` is an ε-edge (no event emitted) — a GDPR delete request received before
-confirmation tears the account down silently. Every other edge produces
-one or more wire events named after the slash's right-hand side.
+Both deletion edges emit `AccountDeleted`. In particular, a GDPR request received
+before confirmation is not silent: deleting state without an event would make a
+persisted log replay to `RequiresConfirmation` instead of `Deleted`.

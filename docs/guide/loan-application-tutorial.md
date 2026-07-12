@@ -205,7 +205,14 @@ emitting a public event. There is no business meaning in
 "`ApplicationStateChangedToReadyForReview`"; the change is purely
 internal book-keeping. That is exactly the use case for an **ε-edge**
 (see [user-guide.md §10.1](user-guide.md)) — an edge whose `output`
-field is `Nothing`.
+list is empty.
+
+This particular worked edge is process-control state, not a persist-only event
+stream: its driver must retain the `UnderReview` control state across the internal
+tick. `validateTransducer defaultValidationOptions loanApplication` therefore
+reports `StateChangingEpsilon` by design. At a durable event-store boundary, do not
+disable `checkStateChangingEpsilon`; emit the reserved `ReadyForReview` domain event
+instead so replay can recover the promotion.
 
 The keiki encoding uses `B.onCmd inCtorContinue` plus `B.noEmit`:
 
@@ -224,8 +231,7 @@ when *any* user command arrives, both the user-keyed edge and the
 ε-edge match, and `delta` returns `Nothing` for the ambiguity.
 Keying the silent transition on `Continue` (an internal command the
 runtime issues between user commands) keeps the symbolic mutual-
-exclusion check honest. The same pattern appears in
-`Jitsurei.UserRegistration`'s GDPR-from-`RequiresConfirmation` edge.
+exclusion check honest.
 
 ---
 
@@ -340,7 +346,9 @@ aggregate evaluate its guards and react. Two distinct cases:
 
 - **`CollectingDocuments → UnderReview`** — a silent ε-edge: when
   `readyForReviewGuard` holds (all four thresholds met), `Continue`
-  advances the vertex without emitting an event.
+  advances the vertex without emitting an event. This is valid only under the
+  process-control retention caveat in section 4; a persisted stream must emit
+  `ReadyForReview`.
 - **`UnderReview → Approved | Declined`** — genuine branching:
   `Continue` at `UnderReview` evaluates `approvalGuard`. If it
   holds, the approve edge fires and emits `ApplicationApproved`;

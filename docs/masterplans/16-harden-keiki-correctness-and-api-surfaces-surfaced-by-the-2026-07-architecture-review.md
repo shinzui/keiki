@@ -122,7 +122,7 @@ fire through).
 | 69 | Replace the fabricated WeakenR and KnownSlotNames dictionary in Category composition with real induction witnesses | docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md | None | None | Complete |
 | 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | Complete |
 | 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Complete |
-| 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | In Progress |
+| 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Complete |
 | 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Not Started |
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Not Started |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Not Started |
@@ -251,8 +251,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-70: `buildTransducer` validates eagerly; malformed edges fail at construction, matching the documented contract
 - [x] EP-70: `emit`'s `unsafeCoerce` eliminated; duplicate-`from` merge order fixed and documented
 - [x] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
-- [ ] EP-71: hidden-input check demands head-recoverability; the GHCi counterexample transducer is rejected
-- [ ] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
+- [x] EP-71: hidden-input check demands head-recoverability; the GHCi counterexample transducer is rejected
+- [x] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
 - [ ] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
 - [ ] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
 - [ ] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
@@ -318,6 +318,14 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   contains two bare-`goto` and three double-`goto` bodies; the durable invariant is
   zero unintended omissions, and every production, example, and positive-test edge
   now declares output intent.
+- EP-71 made default validation agree with streaming replay's head-only inversion
+  contract and exposed the canonical User Registration pre-confirmation deletion as
+  a real persistence defect; it now emits `AccountDeleted`. The Loan Application
+  silent promotion remains intentionally process-control-only and is documented as
+  invalid for a persist-only stream. Current keiro's default constructors inherit the
+  stricter checks, but its caller-options paths pass options through unchanged, so
+  keiro EP-99 must force-enable head recoverability and state-changing-epsilon checks
+  at the durable boundary as already specified.
 
 
 ## Decision Log
@@ -435,6 +443,12 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 (To be filled during and after implementation.)
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-71. Added four default-on replay-safety diagnostics,
+  shared replay-alignment fixtures, targeted regression coverage, corrected the User
+  Registration and Loan Application documentation, verified the keiro migration
+  against its registered current source, and passed formatting, all four test suites,
+  and library Haddock generation.
 
 - 2026-07-12: Completed EP-68. Required every builder edge to choose
   `emit`/`emitWith` or `noEmit`, added eager located diagnostics and regressions,

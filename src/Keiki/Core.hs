@@ -1095,6 +1095,12 @@ data InFlight s co
 -- The 'Eq' constraint on @co@ supports the queue equality check.
 -- Most aggregate event types derive 'Eq' (a documented expectation
 -- of the foundations).
+--
+-- Inversion is deliberately head-only: 'solveOutput' is applied to the first
+-- 'OutTerm' before the tail queue exists, and later events are equality-checked
+-- only. Tail events therefore cannot supply command fields missing from the
+-- head. 'validateTransducer' reports that authoring error as
+-- 'HeadUnrecoverable'.
 applyEventStreaming ::
   (BoolAlg phi (RegFile rs, ci), Eq co) =>
   SymTransducer phi rs s ci co ->
@@ -1218,6 +1224,11 @@ applyEvents t (s0, regs0) cos_ = go (Settled s0) regs0 cos_
 -- only inside a derived field (a hidden input), so the command remains
 -- recoverable from invertible fields alone — "the event determines the
 -- command" is preserved.
+--
+-- Streaming replay calls this function only for an edge's head 'OutTerm'. It
+-- never combines evidence from later outputs, so every command field needed by
+-- replay must be recoverable here; 'HeadUnrecoverable' diagnoses a field found
+-- only in the tail.
 solveOutput :: (Eq co) => OutTerm rs ci co -> RegFile rs -> co -> Maybe ci
 solveOutput (OPack ic@InCtor {} ctor fields) regs co = do
   fs_obs <- wcMatch ctor co
@@ -1569,9 +1580,9 @@ slotNamesOf InCtor {} = slotNames @ifs
 -- (the runtime explainer 'stepEither'), so the runtime and build-time
 -- diagnostics speak one vocabulary.
 --
--- Produced by 'validateTransducer'. The three kinds correspond to the three
--- authoring mistakes the consumer audit flagged: hidden replay inputs,
--- nondeterministic (overlapping) guards, and edges that can never fire.
+-- Produced by 'validateTransducer'. The warning constructors cover replay
+-- recoverability, safe input reads, deterministic inversion, and structural
+-- reachability.
 data TransducerValidationWarning s
   = -- | An edge consumes command information that its output does not
     --       emit, so the command cannot be reconstructed on replay.
@@ -1684,7 +1695,7 @@ data ValidationOptions = ValidationOptions
   }
   deriving stock (Eq, Show)
 
--- | The three soundness checks enabled; the opt-in opaque-guard audit off.
+-- | Replay-safety checks enabled; the advisory opaque-guard audit off.
 defaultValidationOptions :: ValidationOptions
 defaultValidationOptions =
   ValidationOptions
@@ -1703,6 +1714,14 @@ defaultValidationOptions =
 -- warnings, so a project can put @validateTransducer defaultValidationOptions t
 -- == []@ directly in a unit test and have it pass or fail in microseconds with
 -- no external z3 process.
+--
+-- Subject to honest 'InCtor' and 'WireCtor' implementations, a transducer for
+-- which this returns @[]@ under 'defaultValidationOptions' can replay every log
+-- it produces via 'reconstitute'. 'HeadUnrecoverable',
+-- 'InversionAmbiguity', 'UnguardedInputRead', and
+-- 'StateChangingEpsilon' exist to align build-time acceptance with the
+-- head-first semantics of 'applyEventStreaming'. Disabling those checks weakens
+-- that replay guarantee.
 --
 -- The default path is deliberately specialised to the 'HsPred' carrier and is
 -- /cheap and pure/: the determinism component flags only structurally-provable

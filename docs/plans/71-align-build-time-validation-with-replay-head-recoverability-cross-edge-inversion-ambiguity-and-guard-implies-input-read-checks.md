@@ -96,11 +96,12 @@ here, splitting partially-done items into "done" and "remaining" parts.
 - [x] Milestone 6: full-suite audit — every pre-existing fixture/spec that now warns is
       classified and fixed; `cabal test all` green; `nix fmt -- --no-cache` clean.
       (completed 2026-07-12 16:36 -0700)
-- [ ] Milestone 7: haddocks updated (replay contract stated on `validateTransducer`,
+- [x] Milestone 7: haddocks updated (replay contract stated on `validateTransducer`,
       `applyEventStreaming`, `solveOutput`); `CHANGELOG.md` entry written; keiro
       migration section below confirmed against keiro's actual source.
-- [ ] Master plan registry row for EP-71 flipped to Complete; Outcomes &
-      Retrospective written.
+      (completed 2026-07-12 16:47 -0700)
+- [x] Master plan registry row for EP-71 flipped to Complete; Outcomes &
+      Retrospective written. (completed 2026-07-12 16:47 -0700)
 
 
 ## Surprises & Discoveries
@@ -279,10 +280,27 @@ implementation, with concise evidence.
 
 ## Outcomes & Retrospective
 
+EP-71 closed all four build-time/replay alignment gaps in scope. The original
+split-coverage counterexample is now rejected as `HeadUnrecoverable`; equal head wire
+constructors produce `InversionAmbiguity`; unsafe `TInpCtorField` reads produce
+`UnguardedInputRead`; and output-free state or register changes produce
+`StateChangingEpsilon`. Each check is default-on, independently callable, and covered
+by a forward-failure or replay-divergence witness plus a clean repair.
 
-(To be filled during and after implementation. Compare the result against the Purpose
-section: does the red spec from Milestone 1 pass, does the GHCi counterexample warn,
-is the keiro migration complete?)
+The suite audit found real latent bugs rather than test-only expectation drift. User
+Registration's pre-confirmation deletion now emits `AccountDeleted`, while the Loan
+Application tutorial explicitly classifies its retained epsilon edge as non-durable
+process-control state. Validation fixtures that claimed to be clean were repaired to
+emit reconstructable events. The dependent EP-73 plan was updated to place the fixed
+User Registration fixture in its green property corpus.
+
+Acceptance evidence is complete: the GHCi counterexample reports one
+`HeadUnrecoverable` with tail-only slot `c`; `cabal test all` passes (408 keiki, 96
+jitsurei, and both codec suites); `nix fmt -- --no-cache` is stable; and `cabal haddock
+keiki` succeeds with full `Keiki.Core` documentation coverage. Keiro was not edited.
+Its exact exhaustive match and unchanged caller-options forwarding were re-read from
+the mori-registered source, and the migration section now distinguishes stricter
+default constructors from the force-enable work owned by keiro EP-99.
 
 
 ## Context and Orientation
@@ -879,22 +897,22 @@ to "All eight constructors carry @tvwDetail@":
         "state-changing-epsilon @" <> showT (edgeSource e) <> ": " <> Text.pack d
 ```
 
-No other keiro change is required: keiro never constructs `ValidationOptions`
-literally (it imports `defaultValidationOptions` and threads caller-supplied values),
-so the four new record fields are source-compatible there; `mkEventStream` /
-`mkEventStreamOrThrow` automatically become stricter, which is the point. Operational
-impact to communicate to keiro: any keiro stream whose transducer trips a new check
-will now fail `mkEventStream` at startup instead of failing hydration in production.
-Current keiro's aggregate and process-manager streams will receive these checks at
-their existing `ValidatedEventStream` boundary. Its follow-up MasterPlan 14 EP-95
-owns the exhaustive warning-renderer migration and runtime adoption after keiki
-MP-16 lands. Its EP-99 must consume and pin this default-on warning at the durable
-stream boundary rather than implement a second silent-edge AST traversal.
-Enforcement there is non-negotiable (master plan Decision Log, 2026-07-12): keiro
-force-enables `checkStateChangingEpsilon` and `checkHeadRecoverability` regardless
-of caller-supplied `ValidationOptions` — caller options may only strengthen
-validation at the durable boundary — and its only bypass is a separately named
-unchecked constructor, not an options field.
+Keiro never constructs `ValidationOptions` literally (it imports
+`defaultValidationOptions` and threads caller-supplied values), so the four new record
+fields are source-compatible there. Its default paths (`validateEventStream`,
+`mkEventStream`, and `mkEventStreamOrThrow`, lines 76, 104, and 132–140) automatically
+become stricter, which is the point: a stream that trips a new check fails startup
+instead of later hydration.
+
+The caller-options paths are not yet equally strict: `validateEventStreamWith` passes
+`opts` unchanged to `validateTransducer` at lines 88–92, and `mkEventStreamWith`
+delegates to it at lines 117–120. Keiro MasterPlan 14 EP-95 owns the exhaustive
+warning-renderer migration and runtime adoption after keiki MP-16 lands. Its EP-99
+must force-enable `checkStateChangingEpsilon` and `checkHeadRecoverability` at the
+durable `ValidatedEventStream` boundary rather than implement a second silent-edge
+AST traversal. Per the master-plan Decision Log, caller options may only strengthen
+durable validation; the only bypass should be a separately named unchecked
+constructor, not an options field.
 
 
 ## Coordination with plan 76 (symbolic posture)
@@ -1102,10 +1120,16 @@ MasterPlan 14 EP-95.
 ---
 
 Revision note (2026-07-12): added default-on `StateChangingEpsilon` detection while
-preserving explicit opt-out for pure non-persisted transducers. Current keiro enforces
-the warning for durable aggregate and process-manager streams through its follow-up
-MasterPlan 14; EP-73 now tests complete validation-clean runs instead of truncating at
+preserving explicit opt-out for pure non-persisted transducers. Keiro's follow-up
+MasterPlan 14 must enforce the warning for durable aggregate and process-manager
+streams; EP-73 now tests complete validation-clean runs instead of truncating at
 epsilon.
+
+Revision note (2026-07-12): completed implementation. Added the four default-on
+warning producers and fixtures, migrated durable epsilon paths, refreshed dependent
+goldens and EP-73 assumptions, documented the positive replay contract and keiro
+migration, and passed the full test, formatting, GHCi, changelog-grep, and Haddock
+acceptance gates.
 
 Revision note (2026-07-12): replaced the skeleton with the full plan. Authored from a
 fresh read of `src/Keiki/Core.hs` (evaluators, replay, and validation sections),
