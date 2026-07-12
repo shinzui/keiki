@@ -134,9 +134,13 @@ module Keiki.Core
     EdgeRef (..),
     RejectedEdgeSummary (..),
     MatchedEdgeSummary (..),
+    ReplayStepFailure (..),
+    ReplayFailureReason (..),
+    ReplayFailure (..),
     reconstitute,
     applyEvent,
     applyEventStreaming,
+    applyEventStreamingEither,
     applyEvents,
 
     -- * Streaming-replay state wrapper (EP-19 M3)
@@ -1053,9 +1057,8 @@ applyEvent t s regs co =
     [single] -> Just single
     _ -> Nothing
 
--- | Streaming-replay state wrapper. Used by 'applyEventStreaming'
--- (the InFlight-aware replay) and exposed as the carrier of the
--- 'Keiki.Decider.evolveStreaming' field added in EP-19 M5.
+-- | Streaming-replay state wrapper. Used by 'applyEventStreamingEither'
+-- and its 'applyEventStreaming' compatibility wrapper.
 --
 -- @'Settled' s@ is the state at a stable vertex — the next event
 -- must be the first emission of /some/ outgoing edge of @s@.
@@ -1074,7 +1077,45 @@ data InFlight s co
   | InFlight !s ![co]
   deriving (Eq, Show)
 
--- | Apply one observed output to a streaming-replay state. Two arms:
+-- | Why one observed event could not be replayed. Mirrors 'StepFailure'
+-- and deliberately carries NO register values: diagnostics summarize,
+-- they do not dump state. Events are carried where they identify the
+-- failure because the event log is already observable data.
+--
+-- 'ReplayNoInvertingEdge' carries one rejected summary per outgoing
+-- edge in declaration order, including edges with no output. An empty
+-- list means the vertex had no outgoing edges. 'rejectedGuard' is
+-- currently always 'False', matching 'NoMatchingEdge'.
+data ReplayStepFailure s co
+  = ReplayNoInvertingEdge s [RejectedEdgeSummary s]
+  | ReplayAmbiguousInversions s [MatchedEdgeSummary s]
+  | ReplayQueueMismatch s co [co]
+  deriving stock (Eq, Show)
+
+-- | Why replaying a list of observed events failed. A step failure
+-- identifies an event that could not be consumed; truncation means the
+-- input ended while a multi-event output chain still had pending events.
+data ReplayFailureReason s co
+  = ReplayEventFailed (ReplayStepFailure s co)
+  | ReplayLogTruncated [co]
+  deriving stock (Eq, Show)
+
+-- | A list-level replay failure with its zero-based input position and
+-- wrapper state immediately before the failure. For 'ReplayLogTruncated',
+-- 'replayFailedIndex' is the input length: the position where the next
+-- expected event was missing.
+data ReplayFailure s co = ReplayFailure
+  { replayFailedIndex :: Int,
+    replayFailedState :: InFlight s co,
+    replayFailureReason :: ReplayFailureReason s co
+  }
+  deriving stock (Eq, Show)
+
+-- | Compatibility wrapper around 'applyEventStreamingEither'. Prefer the
+-- structured 'Either' variant for new code; this function preserves the
+-- historical @Maybe@ signature and semantics.
+--
+-- Apply one observed output to a streaming-replay state. Two arms:
 --
 --   1. @'Settled' s@ — walk outgoing edges of @s@; find the unique
 --      edge whose @output@'s *head* inverts to a valid @ci@ via
@@ -1108,29 +1149,67 @@ applyEventStreaming ::
   RegFile rs ->
   co ->
   Maybe (InFlight s co, RegFile rs)
-applyEventStreaming t (Settled s) regs co =
-  case [ (e, ci)
-       | e <- edgesOut t s,
-         o : _ <- [output e],
-         Just ci <- [solveOutput o regs co],
-         models (guard e) (regs, ci)
-       ] of
-    [(e, ci)] ->
+applyEventStreaming t wrapper regs co =
+  either (const Nothing) Just (applyEventStreamingEither t wrapper regs co)
+
+-- | Apply one observed event to a streaming-replay state, returning a
+-- structured explanation when replay cannot advance.
+applyEventStreamingEither ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  InFlight s co ->
+  RegFile rs ->
+  co ->
+  Either (ReplayStepFailure s co) (InFlight s co, RegFile rs)
+applyEventStreamingEither t (Settled s) regs co =
+  case matched of
+    [] ->
+      Left $
+        ReplayNoInvertingEdge
+          s
+          [ RejectedEdgeSummary
+              { rejectedEdge = EdgeRef {edgeSource = s, edgeIndex = i},
+                rejectedTarget = target e,
+                rejectedGuard = False
+              }
+          | (i, e) <- indexed
+          ]
+    [(_, e, ci)] ->
       let regs' = applyEdgeUpdate e regs ci
           evaluatedTail = [evalOut o regs ci | o <- drop 1 (output e)]
           wrapped = case evaluatedTail of
             [] -> Settled (target e)
             xs -> InFlight (target e) xs
-       in Just (wrapped, regs')
-    _ -> Nothing
-applyEventStreaming _ (InFlight s queue) regs co = case queue of
-  [] -> Nothing
-  [q1]
-    | q1 == co -> Just (Settled s, regs)
-    | otherwise -> Nothing
-  (q1 : rest)
-    | q1 == co -> Just (InFlight s rest, regs)
-    | otherwise -> Nothing
+       in Right (wrapped, regs')
+    _ ->
+      Left $
+        ReplayAmbiguousInversions
+          s
+          [ MatchedEdgeSummary
+              { matchedEdge = EdgeRef {edgeSource = s, edgeIndex = i},
+                matchedTarget = target e
+              }
+          | (i, e, _) <- matched
+          ]
+  where
+    indexed = zip [0 ..] (edgesOut t s)
+    matched =
+      [ (i, e, ci)
+      | (i, e) <- indexed,
+        o : _ <- [output e],
+        Just ci <- [solveOutput o regs co],
+        models (guard e) (regs, ci)
+      ]
+applyEventStreamingEither _ (InFlight s queue) regs co = case queue of
+  q1 : rest
+    | q1 == co ->
+        Right
+          ( case rest of
+              [] -> Settled s
+              _ -> InFlight s rest,
+            regs
+          )
+  _ -> Left (ReplayQueueMismatch s co queue)
 
 -- | Reconstitute @(state, registers)@ from a log of outputs by
 -- replaying each event through the InFlight-aware

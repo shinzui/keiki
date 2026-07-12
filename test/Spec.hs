@@ -29,6 +29,7 @@ import Keiki.Render.MarkdownSpec qualified
 import Keiki.Render.MermaidSpec qualified
 import Keiki.Render.PrettySpec qualified
 import Keiki.Render.ValidateSpec qualified
+import Keiki.ReplayEitherSpec qualified
 import Keiki.ShapeSpec qualified
 import Keiki.StepEitherSpec qualified
 import Keiki.StrongSpec qualified
@@ -64,6 +65,7 @@ main = hspec $ do
   describe "Keiki.Profunctor (Strong, EP-29 M2)" Keiki.StrongSpec.spec
   describe "Keiki.Profunctor (Arrow, EP-29 M3)" Keiki.ArrowSpec.spec
   describe "Keiki.RecomputeVerify (EP-47)" Keiki.RecomputeVerifySpec.spec
+  describe "Keiki.Core structured replay (EP-72)" Keiki.ReplayEitherSpec.spec
   describe "Keiki.Render.Inspector (EP-62)" Keiki.Render.InspectorSpec.spec
   describe "Keiki.Render.Markdown (EP-65)" Keiki.Render.MarkdownSpec.spec
   describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec

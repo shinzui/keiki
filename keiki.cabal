@@ -133,6 +133,7 @@ test-suite keiki-test
     Keiki.Render.MermaidSpec
     Keiki.Render.PrettySpec
     Keiki.Render.ValidateSpec
+    Keiki.ReplayEitherSpec
     Keiki.ShapeSpec
     Keiki.StepEitherSpec
     Keiki.StrongSpec
