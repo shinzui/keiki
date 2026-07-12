@@ -4,6 +4,7 @@ slug: event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on
 title: "Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding"
 kind: exec-plan
 created_at: 2026-07-12T04:16:45Z
+intention: "intention_01kxc5whw1en3ra4nh728m53ka"
 master_plan: "docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md"
 ---
 

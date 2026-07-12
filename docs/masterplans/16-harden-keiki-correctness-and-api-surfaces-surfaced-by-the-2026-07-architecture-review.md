@@ -4,6 +4,7 @@ slug: harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architec
 title: "Harden keiki correctness and API surfaces surfaced by the 2026-07 architecture review"
 kind: master-plan
 created_at: 2026-07-12T04:16:16Z
+intention: intention_01kxc5whw1en3ra4nh728m53ka
 ---
 
 # Harden keiki correctness and API surfaces surfaced by the 2026-07 architecture review
@@ -413,6 +414,9 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 (To be filled during and after implementation.)
 
 ## Revision Notes
+
+- 2026-07-12: Associated this MasterPlan and all registered child ExecPlans with
+  intention `intention_01kxc5whw1en3ra4nh728m53ka` at the user's request.
 
 - 2026-07-12: Recorded the enforcement posture for the keiki-detects/keiro-enforces
   division (integration point 7 and the new Decision Log entry): replay-contract

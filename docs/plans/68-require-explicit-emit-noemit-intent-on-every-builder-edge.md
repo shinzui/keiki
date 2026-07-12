@@ -4,7 +4,7 @@ slug: require-explicit-emit-noemit-intent-on-every-builder-edge
 title: "Require explicit emit/noEmit intent on every Builder edge"
 kind: exec-plan
 created_at: 2026-07-03T22:59:17Z
-intention: "intention_01kwn3a8rzeav9vbmgg4r31f0w"
+intention: "intention_01kxc5whw1en3ra4nh728m53ka"
 master_plan: docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md
 ---
 
