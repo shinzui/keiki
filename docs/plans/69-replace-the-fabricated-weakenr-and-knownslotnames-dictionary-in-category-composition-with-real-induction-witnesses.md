@@ -64,29 +64,40 @@ the constraints on its constructor may therefore change freely.
 Use this checklist to track granular steps. Every stopping point must be documented
 here, splitting partially-done items into "done" and "remaining" parts as needed.
 
-- [ ] M1: `test/Keiki/Fixtures/CounterPipeline.hs` created with three stateful stages and registered in `keiki.cabal`
-- [ ] M1: vacuous associativity test at `test/Keiki/CategorySpec.hs:118-125` replaced with the real three-stage stateful test
-- [ ] M1: nested-composition slot-correctness regression test added to `test/Keiki/CategorySpec.hs`
-- [ ] M1: composite-slot-names and nested-overlap regression tests added to `test/Keiki/CategorySpec.hs`
-- [ ] M1: `left'`/`right'` compose-afterwards tests added to `test/Keiki/ChoiceSpec.hs`
-- [ ] M1: test suite run; new tests observed failing against the current code; corrupted outputs recorded in Surprises & Discoveries
-- [ ] M2: witness toolkit (`SlotListWitness`, `KnownSlots`, `appendWitness`, `withKnownSlots`, `withDisjointNil`, `witnessNames`) added to `src/Keiki/Composition.hs` and exported
-- [ ] M2: witness-toolkit sanity assertions added and green
-- [ ] M3: `SomeSymTransducer` repacked over `KnownSlots`; `composeWrappers`, `leftWrap`, `rightWrap` rewritten; `DictWrapper`/`unsafeCoerceWrapperDict` deleted
-- [ ] M3: full test suite green, including every M1 test
-- [ ] M4: haddocks corrected (wrapper docs, `unsafeCoerceDisjointness` docs, module header)
-- [ ] M4: `CHANGELOG.md` entry written; master plan registry row 69 and its two progress boxes updated
-- [ ] M4: `nix fmt -- --no-cache` clean; final `cabal build all && cabal test all` green; work committed
+- [x] (2026-07-12 01:13 PDT) M1: `test/Keiki/Fixtures/CounterPipeline.hs` created with three stateful stages and registered in `keiki.cabal`
+- [x] (2026-07-12 01:13 PDT) M1: vacuous associativity test at `test/Keiki/CategorySpec.hs:118-125` replaced with the real three-stage stateful test
+- [x] (2026-07-12 01:13 PDT) M1: nested-composition slot-correctness regression test added to `test/Keiki/CategorySpec.hs`
+- [x] (2026-07-12 01:13 PDT) M1: composite-slot-names and nested-overlap regression tests added to `test/Keiki/CategorySpec.hs`
+- [x] (2026-07-12 01:13 PDT) M1: `left'`/`right'` compose-afterwards tests added to `test/Keiki/ChoiceSpec.hs`
+- [x] (2026-07-12 01:13 PDT) M1: targeted suite run; five new tests failed against the current code and the actual corruptions are recorded below
+- [x] (2026-07-12 01:17 PDT) M2: witness toolkit (`SlotListWitness`, `KnownSlots`, `appendWitness`, `withKnownSlots`, `withDisjointNil`, `witnessNames`) added to `src/Keiki/Composition.hs` and exported
+- [x] (2026-07-12 01:18 PDT) M2: witness-toolkit sanity assertions added; targeted `slot-list` run passed 3 examples with 0 failures
+- [x] (2026-07-12 01:23 PDT) M3: `SomeSymTransducer` repacked over `KnownSlots`; `composeWrappers`, `leftWrap`, `rightWrap` rewritten; `DictWrapper`/`unsafeCoerceWrapperDict` deleted
+- [x] (2026-07-12 01:24 PDT) M3: full test suite green, including every M1 test; keiki reported 380 examples and 0 failures
+- [x] (2026-07-12 01:26 PDT) M4: haddocks corrected (wrapper docs, `unsafeCoerceDisjointness` docs, module header)
+- [x] (2026-07-12 01:26 PDT) M4: `CHANGELOG.md` entry written; master plan registry row 69 and its two progress boxes updated
+- [x] (2026-07-12 01:30 PDT) M4: `nix fmt -- --no-cache` clean on a second run; final `cabal build all && cabal test all` green; work committed
 
 ## Surprises & Discoveries
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation, with concise evidence (test output is ideal).
 
-(None yet. M1 must record here the *actual* corrupted output sequence produced by the
-right-associated pipeline before the fix — the prediction in the Plan of Work is
-`[MsgD 3, MsgD 15, MsgD 25]` against a correct `[MsgD 3, MsgD 14, MsgD 19]` — and the
-actual behavior of the pre-fix overlap and slot-name regression tests.)
+- Observation: the fail-before Category run matched the predicted corruption exactly.
+  `c . (b . a)` emitted `[MsgD 3, MsgD 15, MsgD 25]` while `(c . b) . a` emitted
+  the correct `[MsgD 3, MsgD 14, MsgD 19]`; the nested wrapper reported `[]` rather
+  than `["regA", "regB", "regC"]`; and composing the conflicting `regA` stage did
+  not raise `CategoryOverlapError`.
+  Evidence: `cabal test keiki-test --test-show-details=direct --test-options='--match Keiki.Profunctor'`
+  reported the three value/name mismatches and the missing exception on 2026-07-12.
+
+- Observation: the fail-before Choice behavior is asymmetric. Composing two `left'`
+  results produced the predicted final `Left (MsgD 6)` instead of `Left (MsgD 5)`,
+  but the corresponding `right'` composition already produced the correct sequence.
+  `Append '[] rs` reduces definitionally to `rs`, so GHC can retain enough real
+  structure on this path despite the unnecessary fabricated dictionary. The test is
+  retained to prevent a future regression, and M3 still removes the coercion because
+  it is unjustified and unnecessary.
 
 
 ## Decision Log
@@ -163,13 +174,36 @@ actual behavior of the pre-fix overlap and slot-name regression tests.)
   `wrapperSlotNames` helper, which pins consequence (b) of the defect.
   Date: 2026-07-12
 
+- Decision: keep the small `runSteps` fold local to `CategorySpec` and `ChoiceSpec`
+  rather than exporting it from `CounterPipeline`.
+  Rationale: the fixture remains a concrete-transducer module with no dependency on
+  the existential `Keiki.Profunctor` wrapper, while each spec owns the observation
+  helper appropriate to the API it tests. The duplicated helper is seven lines and
+  avoids coupling a reusable fixture to Category/Choice machinery.
+  Date: 2026-07-12
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion,
 comparing the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-69 is complete. `SomeSymTransducer` now packs a real `KnownSlots` witness, and
+`composeWrappers` appends the hidden witnesses before structurally re-deriving the
+composite's `KnownSlots`, `WeakenR`, and `KnownSlotNames` dictionaries. `leftWrap`
+uses the same witness induction to prove its empty-right disjointness; `rightWrap`
+now relies on the definitional empty-left reductions. `DictWrapper` and
+`unsafeCoerceWrapperDict` are gone, leaving one checked use of
+`unsafeCoerceDisjointness` for the methodless runtime-validated constraint.
+
+The new three-stage fixture makes register state externally observable across three
+steps. Before the fix, right-associated composition emitted `[MsgD 3, MsgD 15,
+MsgD 25]`, reported no slot names, and missed a deliberate `regA` collision. After
+the fix, both associations emit `[MsgD 3, MsgD 14, MsgD 19]`, the wrapper reports
+all three names, the collision raises `CategoryOverlapError`, and both Choice
+composition regressions pass. The full pre-format suite reported 380 keiki examples,
+96 jitsurei examples, 50 codec examples, and 7 codec-toolkit examples with zero
+failures.
 
 
 ## Context and Orientation
@@ -1077,3 +1111,11 @@ composition operators have zero downstream consumers, so this constraint change
 requires no coordination; the changelog entry from M4 is the only external notice
 needed. EP-75 (composition alignment validation) soft-depends on this plan and
 should be written against the `KnownSlots`-witness representation defined here.
+
+
+## Revision Notes
+
+- 2026-07-12: Implemented all four milestones. Added fail-before/pass-after
+  stateful composition coverage, introduced and exported the slot-list witness
+  toolkit, repacked `SomeSymTransducer`, removed the fabricated method dictionaries,
+  updated public documentation and changelog, and recorded final validation evidence.

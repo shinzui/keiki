@@ -27,6 +27,7 @@ import Data.Profunctor (Choice (..))
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import Keiki.Core
+import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
@@ -57,6 +58,17 @@ sampleEmailEvent =
 
 someEmail :: SomeSymTransducer EmailCmd EmailEvent
 someEmail = someSymTransducer emailDelivery
+
+-- | Fold 'step' over inputs, retaining state between steps and
+-- collecting each step's emissions.
+runSteps :: SomeSymTransducer ci co -> [ci] -> Maybe [[co]]
+runSteps (SomeSymTransducer t) inputs = go (initial t, initialRegs t) inputs
+  where
+    go _ [] = Just []
+    go st (ci : rest) = case step t st ci of
+      Nothing -> Nothing
+      Just (s', regs', cos_) -> (cos_ :) <$> go (s', regs') rest
+runSteps SomeSymIdentity inputs = Just (map (: []) inputs)
 
 -- * Specs -------------------------------------------------------------------
 
@@ -95,6 +107,16 @@ spec = do
         SomeSymTransducer _ ->
           expectationFailure "left' Cat.id should preserve the identity sentinel"
 
+    it "composes statefully with another left' result" $ do
+      let bL =
+            left' (someSymTransducer stageB) ::
+              SomeSymTransducer (Either MsgB Bool) (Either MsgC Bool)
+          cL =
+            left' (someSymTransducer stageC) ::
+              SomeSymTransducer (Either MsgC Bool) (Either MsgD Bool)
+      runSteps (cL Cat.. bL) [Left (MsgB 1), Right True, Left (MsgB 2)]
+        `shouldBe` Just [[Left (MsgD 2)], [Right True], [Left (MsgD 5)]]
+
   describe "right'" $ do
     it "Right input routes through the wrapped transducer" $ do
       let routedRight :: SomeSymTransducer (Either Int EmailCmd) (Either Int EmailEvent)
@@ -127,6 +149,16 @@ spec = do
         SomeSymIdentity -> pure ()
         SomeSymTransducer _ ->
           expectationFailure "right' Cat.id should preserve the identity sentinel"
+
+    it "composes statefully with another right' result" $ do
+      let bR =
+            right' (someSymTransducer stageB) ::
+              SomeSymTransducer (Either Bool MsgB) (Either Bool MsgC)
+          cR =
+            right' (someSymTransducer stageC) ::
+              SomeSymTransducer (Either Bool MsgC) (Either Bool MsgD)
+      runSteps (cR Cat.. bR) [Right (MsgB 1), Left False, Right (MsgB 2)]
+        `shouldBe` Just [[Right (MsgD 2)], [Left False], [Right (MsgD 5)]]
 
   describe "isSingleValuedSym survives left' / right'" $ do
     it "single-valuedness is preserved across left'" $

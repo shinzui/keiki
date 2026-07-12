@@ -116,6 +116,7 @@ test-suite keiki-test
     Keiki.CoreInFlightSpec
     Keiki.CoreSpec
     Keiki.DeciderSpec
+    Keiki.Fixtures.CounterPipeline
     Keiki.Fixtures.EmailDelivery
     Keiki.Fixtures.UserRegistration
     Keiki.Generics.THSpec

@@ -13,12 +13,14 @@
 module Keiki.CategorySpec (spec) where
 
 import Control.Category (id, (.))
-import Control.Category qualified as Cat
 import Control.Exception (evaluate)
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
+import Keiki.Composition
 import Keiki.Core
+import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
+import Keiki.Generics (Append)
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 import Test.Hspec
@@ -89,6 +91,24 @@ runOmega (SomeSymTransducer t) ci =
   omega t (initial t) (initialRegs t) ci
 runOmega SomeSymIdentity ci = [ci]
 
+-- | Fold 'step' over an input sequence from the initial state,
+-- collecting each step's emissions. 'Nothing' means a step rejected.
+runSteps :: SomeSymTransducer ci co -> [ci] -> Maybe [[co]]
+runSteps (SomeSymTransducer t) inputs = go (initial t, initialRegs t) inputs
+  where
+    go _ [] = Just []
+    go st (ci : rest) = case step t st ci of
+      Nothing -> Nothing
+      Just (s', regs', cos_) -> (cos_ :) <$> go (s', regs') rest
+runSteps SomeSymIdentity inputs = Just (map (: []) inputs)
+
+-- | The slot names the wrapper's hidden register file reports.
+wrapperSlotNames :: SomeSymTransducer ci co -> [String]
+wrapperSlotNames someT = case someT of
+  SomeSymTransducer (_ :: SymTransducer (HsPred rs ci) rs s ci co) ->
+    slotNames @rs
+  SomeSymIdentity -> []
+
 -- * Specs -------------------------------------------------------------------
 
 spec :: Spec
@@ -115,14 +135,17 @@ spec = do
       runOmega (someEmail . id) sampleSendEmail
         `shouldBe` runOmega someEmail sampleSendEmail
 
-    it "L3 associativity: (t3 . t2) . t1 == t3 . (t2 . t1) on a representative input" $
-      let t1 = someEmail
-          t2 = id :: SomeSymTransducer EmailEvent EmailEvent
-          t3 = id :: SomeSymTransducer EmailEvent EmailEvent
-          left = (t3 . t2) . t1
-          right = t3 . (t2 . t1)
-       in runOmega left sampleSendEmail
-            `shouldBe` runOmega right sampleSendEmail
+    it "L3 associativity: three stateful stages agree under both associations" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          wc = someSymTransducer stageC
+          inputs = [MsgA 1, MsgA 5, MsgA 2]
+          expected = Just [[MsgD 3], [MsgD 14], [MsgD 19]]
+          left = runSteps ((wc . wb) . wa) inputs
+          right = runSteps (wc . (wb . wa)) inputs
+      left `shouldBe` right
+      left `shouldBe` expected
+      right `shouldBe` expected
 
     it "L1 with concrete output: id . someEmail still emits the wire EmailEvent" $
       runOmega (id . someEmail) sampleSendEmail
@@ -150,6 +173,44 @@ spec = do
           composedR = someEmail . id
       runOmega composedL sampleSendEmail `shouldBe` [sampleEmailEvent]
       runOmega composedR sampleSendEmail `shouldBe` [sampleEmailEvent]
+
+  describe "nested stateful composition regressions" $ do
+    it "touches the final stage's slots after a nested upstream composite" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          wc = someSymTransducer stageC
+      runSteps (wc . (wb . wa)) [MsgA 1, MsgA 5, MsgA 2]
+        `shouldBe` Just [[MsgD 3], [MsgD 14], [MsgD 19]]
+
+    it "reports the real concatenated slot names" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          wc = someSymTransducer stageC
+      wrapperSlotNames (wc . (wb . wa))
+        `shouldBe` ["regA", "regB", "regC"]
+
+    it "detects slot overlap against a nested composite" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          wc = someSymTransducer stageC
+          conflict = someSymTransducer stageConflict
+          composed = conflict . (wc . (wb . wa))
+      evaluate composed
+        `shouldThrow` (\e -> "regA" `elem` coeSlots e)
+
+  describe "slot-list witness toolkit" $ do
+    it "reports names for a concrete witness" $
+      witnessNames (slotWitness @ARegs) `shouldBe` ["regA"]
+
+    it "appends concrete witnesses in register order" $
+      witnessNames (appendWitness (slotWitness @ARegs) (slotWitness @BRegs))
+        `shouldBe` ["regA", "regB"]
+
+    it "derives KnownSlots for an appended witness" $
+      withKnownSlots
+        (appendWitness (slotWitness @ARegs) (slotWitness @BRegs))
+        (slotNames @(Append ARegs BRegs))
+        `shouldBe` ["regA", "regB"]
 
   describe "isSingleValuedSym survives id . t" $ do
     it "single-valuedness is preserved across left identity" $

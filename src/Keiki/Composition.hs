@@ -48,6 +48,14 @@ module Keiki.Composition
     weakenRUpdate,
     weakenROutFields,
 
+    -- * Slot-list witnesses
+    SlotListWitness (..),
+    KnownSlots (..),
+    appendWitness,
+    withKnownSlots,
+    withDisjointNil,
+    witnessNames,
+
     -- * Substitution (exposed for advanced uses)
     substTerm,
     substPred,
@@ -84,6 +92,7 @@ module Keiki.Composition
   )
 where
 
+import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
 import NoThunks.Class (NoThunks (..), allNoThunks)
@@ -157,6 +166,59 @@ instance WeakenR '[] where
 instance (WeakenR rs1) => WeakenR ('(s, t) ': rs1) where
   weakenR i = SIdx (weakenR @rs1 i)
   weakenRIndexN i = IS (weakenRIndexN @rs1 i)
+
+-- * Slot-list witnesses ---------------------------------------------------
+
+-- | Value-level singleton of a slot-list spine. 'WNil' mirrors @'[]@;
+-- 'WCons' mirrors one cons cell, capturing the slot name's
+-- 'KnownSymbol'. Packed by 'Keiki.Profunctor.SomeSymTransducer' at
+-- wrap time (where @rs@ is concrete) so that instance dictionaries
+-- for hidden slot lists can later be re-derived by structural
+-- recursion instead of fabricated with @unsafeCoerce@.
+data SlotListWitness (rs :: [Slot]) where
+  WNil :: SlotListWitness '[]
+  WCons :: (KnownSymbol s) => SlotListWitness rs -> SlotListWitness ('(s, t) ': rs)
+
+-- | Conjure a 'SlotListWitness' for a concrete slot list. The
+-- superclasses bundle the two structural classes every wrapper
+-- consumer needs, so a packed @KnownSlots rs@ also supplies
+-- 'WeakenR' and 'KnownSlotNames'.
+class (WeakenR rs, KnownSlotNames rs) => KnownSlots (rs :: [Slot]) where
+  slotWitness :: SlotListWitness rs
+
+instance KnownSlots '[] where
+  slotWitness = WNil
+
+instance (KnownSymbol s, KnownSlots rs) => KnownSlots ('(s, t) ': rs) where
+  slotWitness = WCons (slotWitness @rs)
+
+-- | Append two witnesses. This is the value-level mirror of
+-- 'Keiki.Generics.appendRegFile'; each equation matches one
+-- 'Append' reduction step.
+appendWitness ::
+  SlotListWitness rs1 ->
+  SlotListWitness rs2 ->
+  SlotListWitness (Append rs1 rs2)
+appendWitness WNil w2 = w2
+appendWitness (WCons w1) w2 = WCons (appendWitness w1 w2)
+
+-- | Discharge @KnownSlots rs@, and therefore 'WeakenR rs' and
+-- 'KnownSlotNames rs', from a witness by induction on its spine.
+withKnownSlots :: SlotListWitness rs -> ((KnownSlots rs) => r) -> r
+withKnownSlots WNil k = k
+withKnownSlots (WCons w) k = withKnownSlots w k
+
+-- | Discharge @Disjoint (Names rs) '[]@: no slot name collides with
+-- the empty list. This replaces the fabricated evidence formerly
+-- used by 'Keiki.Profunctor.left''.
+withDisjointNil :: SlotListWitness rs -> ((Disjoint (Names rs) '[]) => r) -> r
+withDisjointNil WNil k = k
+withDisjointNil (WCons w) k = withDisjointNil w k
+
+-- | Return the names described by a witness, using the same induction
+-- that re-derives the structural dictionaries.
+witnessNames :: forall rs. SlotListWitness rs -> [String]
+witnessNames w = withKnownSlots w (slotNames @rs)
 
 -- * weakenL: lift an Index over rs1 to (Append rs1 rs2) -------------------
 

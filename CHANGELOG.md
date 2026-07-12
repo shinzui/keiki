@@ -8,6 +8,16 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Changed
+
+- `Keiki.Profunctor` no longer fabricates method-carrying `WeakenR` and
+  `KnownSlotNames` dictionaries with `unsafeCoerce`. Nested stateful Category
+  composition previously misindexed register reads and writes and hid slot names
+  from `CategoryOverlapError`. `SomeSymTransducer` now carries the exported
+  `KnownSlots`/`SlotListWitness` evidence from `Keiki.Composition`, and composite
+  evidence is derived by structural induction. The smart constructor's structural
+  constraints are now expressed as `KnownSlots rs`.
+
 
 ## [0.1.0.0] — 2026-06-07
 

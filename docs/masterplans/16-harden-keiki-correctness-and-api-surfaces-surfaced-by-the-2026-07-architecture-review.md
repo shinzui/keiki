@@ -119,7 +119,7 @@ fire through).
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 69 | Replace the fabricated WeakenR and KnownSlotNames dictionary in Category composition with real induction witnesses | docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md | None | None | Not Started |
+| 69 | Replace the fabricated WeakenR and KnownSlotNames dictionary in Category composition with real induction witnesses | docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md | None | None | Complete |
 | 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | Not Started |
 | 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Not Started |
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Not Started |
@@ -246,8 +246,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Progress
 
-- [ ] EP-69: real induction witnesses replace `unsafeCoerceWrapperDict`; nested stateful `c . b . a` composes correctly
-- [ ] EP-69: three-transducer stateful associativity test replaces the vacuous `id`-based one
+- [x] EP-69: real induction witnesses replace `unsafeCoerceWrapperDict`; nested stateful `c . b . a` composes correctly
+- [x] EP-69: three-transducer stateful associativity test replaces the vacuous `id`-based one
 - [ ] EP-70: `buildTransducer` validates eagerly; malformed edges fail at construction, matching the documented contract
 - [ ] EP-70: `emit`'s `unsafeCoerce` eliminated or its failure mode reduced to a diagnostic; duplicate-`from` merge order fixed and documented
 - [ ] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
@@ -297,6 +297,12 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   - EP-76's module audit found `symSatExt` is the only other SBV result inspection
     and is already conservative in the correct direction; the Unknown inversion is
     confined to `symIsBot`.
+- EP-69's fail-before tests confirmed the fabricated composite dictionary emitted
+  `[MsgD 3, MsgD 15, MsgD 25]` instead of `[MsgD 3, MsgD 14, MsgD 19]`, erased
+  composite slot names to `[]`, and bypassed nested overlap detection. The analogous
+  `left'` path was also corrupt, while `right'` already behaved correctly because
+  its `Append '[] rs` shape reduces definitionally. Both coercions were removed;
+  the right-side test remains as regression coverage.
 
 
 ## Decision Log
@@ -414,6 +420,11 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 (To be filled during and after implementation.)
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-69. Replaced the fabricated `WeakenR` and
+  `KnownSlotNames` dictionaries with real `KnownSlots` induction witnesses, added
+  stateful nested-composition regressions, updated the registry and aggregate
+  progress, and recorded the fail-before corruption evidence.
 
 - 2026-07-12: Associated this MasterPlan and all registered child ExecPlans with
   intention `intention_01kxc5whw1en3ra4nh728m53ka` at the user's request.

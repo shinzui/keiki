@@ -62,9 +62,16 @@ import Control.Category qualified as Cat
 import Control.Exception (Exception, throw)
 import Data.Profunctor (Choice (..), Profunctor (..), Strong (..))
 import Data.Proxy (Proxy (..))
-import Keiki.Composition (WeakenR, alternative, compose)
+import Keiki.Composition
+  ( KnownSlots (..),
+    SlotListWitness (WNil),
+    alternative,
+    appendWitness,
+    compose,
+    withDisjointNil,
+    withKnownSlots,
+  )
 import Keiki.Core
-import Keiki.Generics (Append)
 import Unsafe.Coerce (unsafeCoerce)
 
 -- | Existential wrapper hiding @rs@ (register-file slot list) and
@@ -72,11 +79,12 @@ import Unsafe.Coerce (unsafeCoerce)
 -- output alphabet @co@. Predicate carrier is fixed to 'HsPred' since
 -- "Keiki.Composition"'s combinators are pinned to that carrier.
 --
--- The packed constraints @WeakenR rs@ and @KnownSlotNames rs@ are
--- needed by the 'Cat.Category' instance: 'compose' demands
--- @WeakenR rs1@, and the runtime slot-overlap check that guards
--- 'Cat..' reads each transducer's slot names at the value level
--- via @KnownSlotNames@. The packed constraints @Bounded s@ and
+-- The packed 'KnownSlots' constraint supplies a value-level witness
+-- for the hidden slot-list spine and bundles 'WeakenR' and
+-- 'KnownSlotNames' as superclasses. Composite wrappers append the
+-- real witnesses and re-derive all three dictionaries by structural
+-- induction; no method-carrying dictionary is fabricated. The
+-- packed constraints @Bounded s@ and
 -- @Enum s@ let pattern-matched-out transducers participate in the
 -- symbolic analyses ('Keiki.Symbolic.isSingleValuedSym',
 -- 'Keiki.Core.checkHiddenInputs'), which both enumerate the vertex
@@ -109,8 +117,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- 'SomeSymTransducer' values.
 data SomeSymTransducer ci co where
   SomeSymTransducer ::
-    ( WeakenR rs,
-      KnownSlotNames rs,
+    ( KnownSlots rs,
       Bounded s,
       Enum s
     ) =>
@@ -123,8 +130,7 @@ data SomeSymTransducer ci co where
 -- naming consistency with the rest of @Keiki.Profunctor@'s exports
 -- and for users who prefer functions over constructors.
 someSymTransducer ::
-  ( WeakenR rs,
-    KnownSlotNames rs,
+  ( KnownSlots rs,
     Bounded s,
     Enum s
   ) =>
@@ -351,12 +357,13 @@ instance Exception CategoryOverlapError
 data DictDisjoint xs ys where
   DictDisjoint :: (Disjoint xs ys) => DictDisjoint xs ys
 
--- | Fabricate a 'DictDisjoint' for arbitrary @xs@ and @ys@. The
--- only safe call site is the body of 'Cat..' on
--- 'SomeSymTransducer', after the value-level check has confirmed
--- the slot lists are disjoint. The 'CategoryOverlapError' exception
--- raised on overlap is the *only* safety net; calling this without
--- a prior check can produce a semantically broken composite.
+-- | Fabricate a 'DictDisjoint' for arbitrary @xs@ and @ys@. This is
+-- the only fabricated dictionary in this module, and its only call
+-- site is the body of 'Cat..' after the value-level check has
+-- confirmed the slot lists are disjoint. Composite wrappers carry
+-- real 'KnownSlots' witnesses, so the checked names remain accurate
+-- under arbitrary nesting. Calling this without that check can
+-- produce a semantically broken composite.
 --
 -- Implementation: @'Disjoint' '[] '[]@ reduces to the trivially-true
 -- constraint @()@, so @DictDisjoint @'[] @'[]@ is always
@@ -367,33 +374,6 @@ unsafeCoerceDisjointness ::
   DictDisjoint xs ys
 unsafeCoerceDisjointness =
   unsafeCoerce (DictDisjoint :: DictDisjoint '[] '[])
-
--- | A constraint dictionary witnessing that a slot list satisfies
--- the two structural classes the wrapper packs. Used together with
--- 'unsafeCoerceWrapperDict' to wrap a freshly-composed
--- @SymTransducer ... (Append rs1 rs2) ...@ back into
--- 'SomeSymTransducer' when 'GHC' cannot reduce
--- @WeakenR (Append rs1 rs2)@ / @KnownSlotNames (Append rs1 rs2)@
--- (because the spines @rs1@ and @rs2@ are skolems).
-data DictWrapper rs where
-  DictWrapper :: (WeakenR rs, KnownSlotNames rs) => DictWrapper rs
-
--- | Fabricate a 'DictWrapper' for an arbitrary slot list. Both
--- 'WeakenR' and 'KnownSlotNames' are structural classes with
--- automatic instances for every concrete @[Slot]@: whenever both
--- @rs1@ and @rs2@ have these instances, so does @'Append' rs1 rs2@
--- (provable by induction on @rs1@'s spine, which we cannot perform
--- without a value-level witness — hence the 'unsafeCoerce').
---
--- Safe at the 'Cat..' call site because both inner transducers'
--- packed @WeakenR@ + @KnownSlotNames@ constraints already hold for
--- @rs1@ and @rs2@ individually, and the composite slot list
--- @'Append' rs1 rs2@ inherits the structural property.
-unsafeCoerceWrapperDict ::
-  forall rs.
-  DictWrapper rs
-unsafeCoerceWrapperDict =
-  unsafeCoerce (DictWrapper :: DictWrapper '[])
 
 -- * Category instance --------------------------------------------------
 
@@ -411,13 +391,13 @@ unsafeCoerceWrapperDict =
 -- 'Keiki.Composition.compose'. The wrapper hides @rs@, so
 -- @compose@'s static @Disjoint (Names rs1) (Names rs2)@ constraint
 -- cannot be discharged by GHC; instead, the operator reads each
--- transducer's slot names at the value level via 'KnownSlotNames',
+-- transducer's slot names at the value level via 'KnownSlots',
 -- checks for overlap, and either:
 --
 --   * raises 'CategoryOverlapError' (synchronously, on overlap), or
---   * uses 'unsafeCoerceDisjointness' to fabricate the constraint
---     evidence and calls 'compose' with the existential @rs@'s
---     restored as the composite @'Append' rs1 rs2@.
+--   * uses 'unsafeCoerceDisjointness' for the methodless constraint,
+--     calls 'compose', and re-derives the composite's method-carrying
+--     dictionaries from the appended slot-list witnesses.
 --
 -- /Why a sentinel rather than a real identity transducer:/
 -- 'Keiki.Composition.compose' substitutes t2's @TInpCtorField ic2@
@@ -446,9 +426,8 @@ instance Cat.Category SomeSymTransducer where
 -- their own, name them in a form usable inside 'TypeApplications').
 composeWrappers ::
   forall rs1 rs2 s1 s2 ci mid co.
-  ( WeakenR rs1,
-    KnownSlotNames rs1,
-    KnownSlotNames rs2,
+  ( KnownSlots rs1,
+    KnownSlots rs2,
     Bounded s1,
     Enum s1,
     Bounded s2,
@@ -465,8 +444,9 @@ composeWrappers t1 t2 =
         then throw (CategoryOverlapError overlap)
         else case unsafeCoerceDisjointness @(Names rs1) @(Names rs2) of
           DictDisjoint ->
-            case unsafeCoerceWrapperDict @(Append rs1 rs2) of
-              DictWrapper -> SomeSymTransducer (compose t1 t2)
+            withKnownSlots
+              (appendWitness (slotWitness @rs1) (slotWitness @rs2))
+              (SomeSymTransducer (compose t1 t2))
 
 -- * Choice instance ----------------------------------------------------
 
@@ -483,13 +463,10 @@ composeWrappers t1 t2 =
 --
 -- /No slot-name overlap risk:/ 'identityTransducer' has @rs = '[]@,
 -- so the @'Disjoint' (Names rs) (Names '[])@ side condition on
--- 'alternative' reduces to a vacuous constraint — no
--- 'CategoryOverlapError' path is needed (unlike 'Cat..'). The
--- 'unsafeCoerceDisjointness' call below fabricates the constraint
--- evidence purely because GHC cannot reduce the type family with
--- @rs@ being a skolem; the underlying claim
--- (@Disjoint xs '[]@ is always vacuously true) is sound by the
--- definition of 'Disjoint' in "Keiki.Internal.Slots".
+-- 'alternative' is proved by induction over the packed 'KnownSlots'
+-- witness — no 'CategoryOverlapError' path and no coercion are needed.
+-- For 'right'', the left register list is empty, so both append and
+-- disjointness reduce definitionally and the original witness applies.
 --
 -- /Sentinel handling:/ when the input is the 'SomeSymIdentity'
 -- sentinel, both @'left''@ and @'right''@ return 'SomeSymIdentity' —
@@ -521,41 +498,33 @@ instance Choice SomeSymTransducer where
 
 -- | Helper for 'left'' on a wrapped concrete transducer. Factored out
 -- to bind the existentially-packed @rs@ and @s@ to named type
--- variables so 'TypeApplications' on 'unsafeCoerceDisjointness' /
--- 'unsafeCoerceWrapperDict' can reach them.
+-- variables for the witness induction.
 leftWrap ::
   forall rs s ci co c.
-  ( WeakenR rs,
-    KnownSlotNames rs,
+  ( KnownSlots rs,
     Bounded s,
     Enum s
   ) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   SomeSymTransducer (Either ci c) (Either co c)
 leftWrap t =
-  case unsafeCoerceDisjointness @(Names rs) @(Names '[]) of
-    DictDisjoint ->
-      case unsafeCoerceWrapperDict @(Append rs '[]) of
-        DictWrapper ->
-          SomeSymTransducer (alternative t (identityTransducer @c))
+  let w = slotWitness @rs
+   in withDisjointNil w $
+        withKnownSlots
+          (appendWitness w WNil)
+          (SomeSymTransducer (alternative t (identityTransducer @c)))
 
 -- | Helper for 'right'' on a wrapped concrete transducer. Symmetric
 -- to 'leftWrap'.
 rightWrap ::
   forall rs s ci co c.
-  ( WeakenR rs,
-    KnownSlotNames rs,
+  ( KnownSlots rs,
     Bounded s,
     Enum s
   ) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   SomeSymTransducer (Either c ci) (Either c co)
-rightWrap t =
-  case unsafeCoerceDisjointness @(Names '[]) @(Names rs) of
-    DictDisjoint ->
-      case unsafeCoerceWrapperDict @(Append '[] rs) of
-        DictWrapper ->
-          SomeSymTransducer (alternative (identityTransducer @c) t)
+rightWrap t = SomeSymTransducer (alternative (identityTransducer @c) t)
 
 -- * Strong instance ----------------------------------------------------
 
