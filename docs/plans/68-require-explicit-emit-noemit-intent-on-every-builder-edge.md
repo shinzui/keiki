@@ -71,19 +71,19 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] **M1 — Enforce explicit output intent in the builder.**
-  - [ ] Add `peOutputDecided :: Bool` field to `PartialEdge` in `src/Keiki/Builder.hs`.
-  - [ ] Initialize `peOutputDecided = False` in the `onCmd` initial record.
-  - [ ] Initialize `peOutputDecided = False` in the `onEpsilon` initial record.
-  - [ ] Set `peOutputDecided = True` in `emit` (the `PinCtor` branch).
-  - [ ] Set `peOutputDecided = True` in `emitWith`.
-  - [ ] Change `noEmit` from a no-op to setting `peOutputDecided = True`.
-  - [ ] Add `DefectMissingOutputIntent` to `BuilderDefect` and return it from the
+- [x] **M1 — Enforce explicit output intent in the builder.** (completed 2026-07-12 16:01 -0700)
+  - [x] Add `peOutputDecided :: Bool` field to `PartialEdge` in `src/Keiki/Builder.hs`.
+  - [x] Initialize `peOutputDecided = False` in the `onCmd` initial record.
+  - [x] Initialize `peOutputDecided = False` in the `onEpsilon` initial record.
+  - [x] Set `peOutputDecided = True` in `emit` (the `PinCtor` branch).
+  - [x] Set `peOutputDecided = True` in `emitWith`.
+  - [x] Change `noEmit` from a no-op to setting `peOutputDecided = True`.
+  - [x] Add `DefectMissingOutputIntent` to `BuilderDefect` and return it from the
         structured defect produced from the `[t]` branch of `finalizeEdge`.
-  - [ ] Update the module-header "Misuse diagnostics" haddock to list the new diagnostic.
-  - [ ] Update the `noEmit` haddock (it is no longer a documentation no-op).
-  - [ ] Update the `finalizeEdge` haddock to mention the output-intent requirement.
-  - [ ] `cabal build all` succeeds.
+  - [x] Update the module-header "Misuse diagnostics" haddock to list the new diagnostic.
+  - [x] Update the `noEmit` haddock (it is no longer a documentation no-op).
+  - [x] Update the `finalizeEdge` haddock to mention the output-intent requirement.
+  - [x] `cabal build all` succeeds.
 - [ ] **M2 — Migrate the two in-repo silent edges and prove the new rule with tests.**
   - [ ] Add `B.noEmit` to `coffeeBuilt`'s Brewing→Idle edge in `test/Keiki/BuilderSpike.hs`.
   - [ ] Add `B.noEmit` to case 10 (`onEpsilon`) in `test/Keiki/BuilderSpec.hs`.
@@ -126,6 +126,13 @@ implementation. Provide concise evidence.
   error rather than the new one. `finalizeEdge` already cases on `peTargets`
   first (`[t]` / `[]` / `(_:_:_)`); nesting the new check inside the `[t]` branch
   preserves that precedence for free. See Decision Log.
+
+- **Discovery (implementation, 2026-07-12): the fail-before test run reports six
+  failing examples but only two omitted-intent edges.** `BuilderSpec` case 10 owns
+  one edge; the top-level `coffeeBuilt` edge is forced by five independent spike
+  examples. Every failure carried the exact new diagnostic, while the existing
+  missing- and double-`goto` tests remained green. Evidence: `cabal test
+  keiki-test` completed 386 examples with 6 expected failures before M2 migration.
 
 
 ## Decision Log

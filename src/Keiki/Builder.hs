@@ -131,6 +131,11 @@
 --   differs in name or slot names from the enclosing constructor:
 --   rejected by the same eager validation pass.
 --
+-- * An edge with neither 'emit' / 'emitWith' nor 'noEmit': rejected
+--   by eager validation with a located structured defect directing
+--   the user to declare whether the edge emits or is deliberately
+--   silent.
+--
 -- == When to drop down to the AST
 --
 -- Use the AST directly when:
@@ -265,7 +270,8 @@ import Prelude qualified
 -- 'PTop' or @'matchInCtor' ic@ as guard, 'UKeep' as update, no
 -- output, no targets); each step in the body modifies one or more
 -- fields; 'finalizeEdge' validates that exactly one 'goto' was
--- called and packages the result into a closed 'Edge'. The
+-- called and that output intent was declared, then packages the
+-- result into a closed 'Edge'. The
 -- existential @w@ on 'Edge''s 'update' field closes here.
 data PartialEdge rs ci co v (pin :: Maybe [Slot]) (w :: [Symbol]) = PartialEdge
   { peGuard :: HsPred rs ci,
@@ -281,7 +287,10 @@ data PartialEdge rs ci co v (pin :: Maybe [Slot]) (w :: [Symbol]) = PartialEdge
     peTargets :: [v],
     -- | The 'InCtor' bound by the enclosing 'onCmd', indexed by its
     -- real input-field schema. 'PinNone' marks an 'onEpsilon' body.
-    pePinned :: Pinned ci pin
+    pePinned :: Pinned ci pin,
+    -- | Whether the body explicitly chose to emit or remain silent.
+    -- Any 'emit', 'emitWith', or 'noEmit' call sets this to 'True'.
+    peOutputDecided :: Bool
   }
 
 -- | Whether an edge body has an enclosing input constructor. The
@@ -480,7 +489,8 @@ emit wc rec = EdgeBuilder $ \pe -> case pePinned pe of
       pe
         { peOutput =
             peOutput pe
-              ++ [pack ic wc (toOutFields rec)]
+              ++ [pack ic wc (toOutFields rec)],
+          peOutputDecided = True
         }
     )
 
@@ -500,16 +510,20 @@ emitWith ::
   rec ->
   EdgeBuilder rs ci co v pin w w ()
 emitWith ic wc rec = EdgeBuilder $ \pe ->
-  ((), pe {peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)]})
+  ( (),
+    pe
+      { peOutput = peOutput pe ++ [pack ic wc (toOutFields rec)],
+        peOutputDecided = True
+      }
+  )
 
--- | Mark the edge as ε-output (no event). Idempotent: an edge with
--- no 'emit' or 'noEmit' call is also an ε-edge by default; 'noEmit'
--- exists only so the user can be explicit about intent. Mixing
--- 'noEmit' and 'emit' in the same body is allowed but the 'noEmit'
--- is a documentation no-op (the 'emit's still produce a non-empty
--- output list).
+-- | Declare the edge deliberately silent (an ε-edge with
+-- @output = []@). Every body that does not call 'emit' or 'emitWith'
+-- must call 'noEmit'; otherwise eager builder validation rejects the
+-- edge. Mixing 'noEmit' and 'emit' in one body is allowed, and the
+-- emitted terms still populate the output list.
 noEmit :: EdgeBuilder rs ci co v pin w w ()
-noEmit = EdgeBuilder $ \pe -> ((), pe)
+noEmit = EdgeBuilder $ \pe -> ((), pe {peOutputDecided = True})
 
 -- * Field-keyed record sugar ---------------------------------------------
 
@@ -665,7 +679,8 @@ onCmd ic body = EdgeListBuilder $ \_src acc ->
             peUpdate = UKeep,
             peOutput = [],
             peTargets = [],
-            pePinned = PinCtor ic
+            pePinned = PinCtor ic,
+            peOutputDecided = False
           }
       (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
       edge = finalizeEdge finalPE
@@ -688,7 +703,8 @@ onEpsilon body = EdgeListBuilder $ \_src acc ->
             peUpdate = UKeep,
             peOutput = [],
             peTargets = [],
-            pePinned = PinNone
+            pePinned = PinNone,
+            peOutputDecided = False
           }
       (_, finalPE) = runEdgeBuilder body initial
       edge = finalizeEdge finalPE
@@ -702,6 +718,8 @@ data BuilderDefect
     DefectMultipleGoto Int
   | -- | An output constructor contradicts the enclosing 'onCmd'.
     DefectOutputCtorMismatch String [String] String [String]
+  | -- | The body neither emitted nor explicitly declared silence.
+    DefectMissingOutputIntent
   deriving stock (Eq, Show)
 
 -- | A defect located at a specific edge of a specific source vertex.
@@ -715,7 +733,9 @@ data BuilderError v = BuilderError
 
 -- | Close a 'PartialEdge' into an 'Edge'. Validation: 'peTargets'
 -- must have exactly one entry; missing or duplicated 'goto' calls are
--- returned structurally. 'buildTransducerEither' attaches location.
+-- returned structurally. A single-target edge must also declare output
+-- intent with 'emit', 'emitWith', or 'noEmit'; otherwise finalization
+-- returns 'DefectMissingOutputIntent'. 'buildTransducerEither' attaches location.
 -- The 'peOutput' list (zero or more 'OutTerm's accumulated by
 -- 'emit' / 'emitWith' calls) flows directly into the resulting
 -- 'Edge.output' field.
@@ -725,14 +745,16 @@ finalizeEdge ::
 finalizeEdge pe = case peTargets pe of
   [t] -> case outputCtorMismatch (pePinned pe) (peOutput pe) of
     Just defect -> Left defect
-    Nothing ->
-      Right
-        Edge
-          { guard = peGuard pe,
-            update = peUpdate pe,
-            output = peOutput pe,
-            target = t
-          }
+    Nothing
+      | not (peOutputDecided pe) -> Left DefectMissingOutputIntent
+      | otherwise ->
+          Right
+            Edge
+              { guard = peGuard pe,
+                update = peUpdate pe,
+                output = peOutput pe,
+                target = t
+              }
   [] -> Left DefectMissingGoto
   ts@(_ : _ : _) -> Left (DefectMultipleGoto (length ts))
 
@@ -907,6 +929,8 @@ renderBuilderError (BuilderError src n defect) =
           <> " (slots "
           <> renderSlotNames expectedSlots
           <> "). An onCmd edge's outputs must pack the command constructor the edge matches on, or replay will invert the event to a different command."
+      DefectMissingOutputIntent ->
+        ": no emit or noEmit. Each onCmd/onEpsilon body must call 'emit' (or 'emitWith') to produce an event, or 'noEmit' to declare the edge deliberately silent (ε-edge)."
 
 renderSlotNames :: [String] -> String
 renderSlotNames names = "[" <> intercalate "," names <> "]"
