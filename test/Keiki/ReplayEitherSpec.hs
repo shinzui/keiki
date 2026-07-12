@@ -16,6 +16,29 @@ headEvent =
 tailEvent :: UserEvent
 tailEvent = ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")
 
+canonicalLog :: [UserEvent]
+canonicalLog =
+  [ headEvent,
+    tailEvent,
+    ConfirmationResent (ConfirmationResentData "alice@x" "K2P7" (t 100)),
+    AccountConfirmed (AccountConfirmedData "alice@x" "K2P7" (t 200)),
+    AccountDeleted (AccountDeletedData "alice@x" (t 300))
+  ]
+
+type Snapshot = (Email, ConfirmationCode, UTCTime, UTCTime, UTCTime)
+
+snapshot :: RegFile UserRegRegs -> Snapshot
+snapshot regs =
+  ( regs ! #email,
+    regs ! #confirmCode,
+    regs ! #registeredAt,
+    regs ! #confirmedAt,
+    regs ! #deletedAt
+  )
+
+expectedSnapshot :: Snapshot
+expectedSnapshot = ("alice@x", "K2P7", t 100, t 200, t 300)
+
 duplicateEntrance :: [Edge (HsPred UserRegRegs UserCmd) UserRegRegs UserCmd UserEvent Vertex]
 duplicateEntrance = case edgesOut userRegAST PotentialCustomer of
   [edge] -> [edge, edge {target = Confirmed}]
@@ -36,8 +59,8 @@ ambiguousUserReg =
           else edgesOut userRegAST source
     }
 
-spec :: Spec
-spec = describe "applyEventStreamingEither" $ do
+singleStepSpec :: Spec
+singleStepSpec = describe "applyEventStreamingEither" $ do
   it "reports every rejected outgoing edge when no head output inverts" $
     case applyEventStreamingEither
       userReg
@@ -111,3 +134,116 @@ spec = describe "applyEventStreamingEither" $ do
       headEvent of
       Nothing -> pure ()
       Just _ -> expectationFailure "expected Nothing from compatibility wrapper"
+
+spec :: Spec
+spec = do
+  singleStepSpec
+
+  describe "reconstituteEither" $ do
+    it "replays the canonical log to Deleted with the expected snapshot" $
+      case reconstituteEither userReg canonicalLog of
+        Right (finalVertex, finalRegs) ->
+          (finalVertex, snapshot finalRegs)
+            `shouldBe` (Deleted, expectedSnapshot)
+        Left failure -> expectationFailure ("unexpected replay failure: " <> show failure)
+
+    it "names the exact corrupted event index and queue mismatch" $
+      let observed = AccountDeleted (AccountDeletedData "alice@x" (t 999))
+          corrupted = headEvent : observed : drop 2 canonicalLog
+       in case reconstituteEither userReg corrupted of
+            Left failure ->
+              failure
+                `shouldBe` ReplayFailure
+                  { replayFailedIndex = 1,
+                    replayFailedState = InFlight RequiresConfirmation [tailEvent],
+                    replayFailureReason =
+                      ReplayEventFailed
+                        ( ReplayQueueMismatch
+                            RequiresConfirmation
+                            observed
+                            [tailEvent]
+                        )
+                  }
+            Right _ -> expectationFailure "expected corrupted log to fail"
+
+    it "reports a foreign first event at index zero" $
+      let foreignEvent = AccountConfirmed (AccountConfirmedData "alice@x" "Z9F4" (t 0))
+       in case reconstituteEither userReg [foreignEvent] of
+            Left failure ->
+              failure
+                `shouldBe` ReplayFailure
+                  { replayFailedIndex = 0,
+                    replayFailedState = Settled PotentialCustomer,
+                    replayFailureReason =
+                      ReplayEventFailed
+                        ( ReplayNoInvertingEdge
+                            PotentialCustomer
+                            [ RejectedEdgeSummary
+                                { rejectedEdge =
+                                    EdgeRef
+                                      { edgeSource = PotentialCustomer,
+                                        edgeIndex = 0
+                                      },
+                                  rejectedTarget = RequiresConfirmation,
+                                  rejectedGuard = False
+                                }
+                            ]
+                        )
+                  }
+            Right _ -> expectationFailure "expected foreign event to fail"
+
+    it "reports a truncated multi-event chain at the input length" $
+      case reconstituteEither userReg [headEvent] of
+        Left failure ->
+          failure
+            `shouldBe` ReplayFailure
+              { replayFailedIndex = 1,
+                replayFailedState = InFlight RequiresConfirmation [tailEvent],
+                replayFailureReason = ReplayLogTruncated [tailEvent]
+              }
+        Right _ -> expectationFailure "expected truncated chain to fail"
+
+  describe "replayEvents" $ do
+    it "resumes from a caller-supplied mid-chain seed" $
+      case applyEventStreamingEither
+        userReg
+        (Settled PotentialCustomer)
+        (initialRegs userReg)
+        headEvent of
+        Left failure -> expectationFailure ("could not build seed: " <> show failure)
+        Right (wrapper, regsAfterHead) ->
+          case replayEvents userReg (wrapper, regsAfterHead) [tailEvent] of
+            Right (Settled RequiresConfirmation, regsAfterTail) -> do
+              regsAfterTail ! #email `shouldBe` "alice@x"
+              regsAfterTail ! #confirmCode `shouldBe` "Z9F4"
+              regsAfterTail ! #registeredAt `shouldBe` t 0
+            Right (other, _) ->
+              expectationFailure ("expected settled state, got " <> show other)
+            Left failure ->
+              expectationFailure ("mid-chain resume failed: " <> show failure)
+
+    it "returns a final InFlight wrapper without treating it as truncation" $
+      case replayEvents
+        userReg
+        (Settled PotentialCustomer, initialRegs userReg)
+        [headEvent] of
+        Right (wrapper, _) ->
+          wrapper `shouldBe` InFlight RequiresConfirmation [tailEvent]
+        Left failure -> expectationFailure ("unexpected fold failure: " <> show failure)
+
+  describe "Maybe compatibility wrappers" $
+    it "return Nothing exactly where the strict variants return Left" $ do
+      let observed = AccountDeleted (AccountDeletedData "alice@x" (t 999))
+          corrupted = headEvent : observed : drop 2 canonicalLog
+      case reconstitute userReg corrupted of
+        Nothing -> pure ()
+        Just _ -> expectationFailure "reconstitute accepted corrupted log"
+      case applyEvents userReg (initial userReg, initialRegs userReg) corrupted of
+        Nothing -> pure ()
+        Just _ -> expectationFailure "applyEvents accepted corrupted log"
+      case reconstituteEither userReg corrupted of
+        Left _ -> pure ()
+        Right _ -> expectationFailure "reconstituteEither accepted corrupted log"
+      case applyEventsEither userReg (initial userReg, initialRegs userReg) corrupted of
+        Left _ -> pure ()
+        Right _ -> expectationFailure "applyEventsEither accepted corrupted log"

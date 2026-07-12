@@ -138,10 +138,13 @@ module Keiki.Core
     ReplayFailureReason (..),
     ReplayFailure (..),
     reconstitute,
+    reconstituteEither,
     applyEvent,
     applyEventStreaming,
     applyEventStreamingEither,
     applyEvents,
+    applyEventsEither,
+    replayEvents,
 
     -- * Streaming-replay state wrapper (EP-19 M3)
     InFlight (..),
@@ -1211,11 +1214,34 @@ applyEventStreamingEither _ (InFlight s queue) regs co = case queue of
           )
   _ -> Left (ReplayQueueMismatch s co queue)
 
--- | Reconstitute @(state, registers)@ from a log of outputs by
--- replaying each event through the InFlight-aware
--- 'applyEventStreaming', which threads mid-chain state through
--- multi-event edges invisibly and unwraps to 'Settled' at the log's
--- end.
+-- | Strictly replay a list of observed events from an arbitrary wrapper
+-- state and register-file seed. A list that ends mid-chain succeeds with
+-- a final 'InFlight' wrapper so paginated callers can resume with the next
+-- page. Use 'applyEventsEither' when ending mid-chain must be an error.
+replayEvents ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  (InFlight s co, RegFile rs) ->
+  [co] ->
+  Either (ReplayFailure s co) (InFlight s co, RegFile rs)
+replayEvents t = go 0
+  where
+    go !_ seed [] = Right seed
+    go !eventIndex (wrapper, regs) (co : rest) =
+      case applyEventStreamingEither t wrapper regs co of
+        Left stepFailure ->
+          Left
+            ReplayFailure
+              { replayFailedIndex = eventIndex,
+                replayFailedState = wrapper,
+                replayFailureReason = ReplayEventFailed stepFailure
+              }
+        Right next -> go (eventIndex + 1) next rest
+
+-- | Compatibility wrapper around 'reconstituteEither'. Prefer the
+-- structured 'Either' variant for new code. This function reconstitutes
+-- @(state, registers)@ from a log of outputs while preserving the
+-- historical @Maybe@ signature and semantics.
 --
 -- For letter-only transducers (every edge has @output@ of length 0
 -- or 1) the streaming wrapper is always 'Settled' and the result is
@@ -1227,14 +1253,23 @@ reconstitute ::
   SymTransducer phi rs s ci co ->
   [co] ->
   Maybe (s, RegFile rs)
-reconstitute t = applyEvents t (initial t, initialRegs t)
+reconstitute t events =
+  either (const Nothing) Just (reconstituteEither t events)
 
--- | Replay a chunk of events from a caller-supplied
--- @(state, registers)@ start. Structurally similar to 'reconstitute'
--- except that the start state is an argument rather than the
--- transducer's initial state, so a runtime adapter can chunk-replay
--- the events corresponding to one logical command from any current
--- state.
+-- | Reconstitute @(state, registers)@ from the transducer's initial
+-- state, returning the exact event index, wrapper state, and structured
+-- reason when replay fails.
+reconstituteEither ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  [co] ->
+  Either (ReplayFailure s co) (s, RegFile rs)
+reconstituteEither t = applyEventsEither t (initial t, initialRegs t)
+
+-- | Compatibility wrapper around 'applyEventsEither'. Prefer the
+-- structured 'Either' variant for new code. This function replays a
+-- chunk of events from a caller-supplied @(state, registers)@ start while
+-- preserving the historical @Maybe@ signature and semantics.
 --
 -- Useful when the runtime preserves command boundaries (event store
 -- with command-id tags, transactional batches, deterministic test
@@ -1264,13 +1299,29 @@ applyEvents ::
   (s, RegFile rs) ->
   [co] ->
   Maybe (s, RegFile rs)
-applyEvents t (s0, regs0) cos_ = go (Settled s0) regs0 cos_
-  where
-    go (Settled s) regs [] = Just (s, regs)
-    go (InFlight _ _) _ [] = Nothing -- chunk ended mid-flight
-    go inFlight regs (co : rest) = do
-      (inFlight', regs') <- applyEventStreaming t inFlight regs co
-      go inFlight' regs' rest
+applyEvents t seed events =
+  either (const Nothing) Just (applyEventsEither t seed events)
+
+-- | Replay a complete chunk from a caller-supplied settled state. Unlike
+-- 'replayEvents', this strict facade rejects a chunk that ends while a
+-- multi-event output chain still has pending events.
+applyEventsEither ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  (s, RegFile rs) ->
+  [co] ->
+  Either (ReplayFailure s co) (s, RegFile rs)
+applyEventsEither t (s0, regs0) events =
+  case replayEvents t (Settled s0, regs0) events of
+    Left failure -> Left failure
+    Right (Settled s, regs) -> Right (s, regs)
+    Right (wrapper@(InFlight _ pending), _regs) ->
+      Left
+        ReplayFailure
+          { replayFailedIndex = length events,
+            replayFailedState = wrapper,
+            replayFailureReason = ReplayLogTruncated pending
+          }
 
 -- * Build-time analyses ----------------------------------------------------
 

@@ -69,9 +69,9 @@ must produce.
 - [x] (2026-07-12 23:53Z) M1: `ReplayStepFailure`, `ReplayFailureReason`, `ReplayFailure` types added to `src/Keiki/Core.hs` and exported
 - [x] (2026-07-12 23:53Z) M1: `applyEventStreamingEither` implemented; `applyEventStreaming` re-expressed as a thin wrapper; existing suites stay green
 - [x] (2026-07-12 23:53Z) M1: `test/Keiki/ReplayEitherSpec.hs` created and registered (cabal `other-modules` + `test/Spec.hs`); single-step failure cases covered (no-inverting-edge, ambiguous inversion, queue mismatch)
-- [ ] M2: `replayEvents` seedable fold implemented with strict index accounting
-- [ ] M2: `applyEventsEither` and `reconstituteEither` implemented; `applyEvents` and `reconstitute` re-expressed as thin wrappers
-- [ ] M2: list-level specs: corrupted-log index/reason, truncated multi-event chain, mid-chain seed resume, fold returns final `InFlight` wrapper without failing
+- [x] (2026-07-12 23:58Z) M2: `replayEvents` seedable fold implemented with strict index accounting
+- [x] (2026-07-12 23:58Z) M2: `applyEventsEither` and `reconstituteEither` implemented; `applyEvents` and `reconstitute` re-expressed as thin wrappers
+- [x] (2026-07-12 23:58Z) M2: list-level specs: corrupted-log index/reason, truncated multi-event chain, mid-chain seed resume, fold returns final `InFlight` wrapper without failing
 - [ ] M3: `Keiki.Decider` removed from `keiki.cabal`, source, tests, exports, and documentation
 - [ ] M3: uniquely valuable replay assertions from `DeciderSpec` moved to Core replay specs before the obsolete spec is deleted
 - [ ] M4: `outputAcceptor` state carrier changed to `(InFlight s co, RegFile rs)`; equivalence haddock now true
