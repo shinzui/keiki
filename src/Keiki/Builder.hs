@@ -114,11 +114,22 @@
 --   the 'Keiki.Internal.Slots.Disjoint' 'GHC.TypeError.TypeError',
 --   which names the duplicated slot.
 --
--- * Missing 'goto': caught at finalize time (when 'buildTransducer'
---   evaluates the 'VertexBuilder' do-block) with a runtime error
---   naming the source vertex and edge index.
+-- * Duplicate names in the register file: caught at compile time by
+--   the 'Keiki.Internal.Slots.DistinctNames' constraint on the two
+--   build entry points.
 --
--- * Multiple 'goto's in the same edge body: caught the same way.
+-- * An 'emit' whose term-fields schema differs from its enclosing
+--   'onCmd', or an 'emit' inside 'onEpsilon': caught at compile time.
+--
+-- * Missing or multiple 'goto's: every declared edge is checked when
+--   the transducer returned by 'buildTransducer' is first evaluated,
+--   even if its source vertex is never inspected. All defects are
+--   reported together with source vertices and edge indices. Use
+--   'buildTransducerEither' to receive them as structured values.
+--
+-- * An 'emitWith' inside 'onCmd' whose explicit input constructor
+--   differs in name or slot names from the enclosing constructor:
+--   rejected by the same eager validation pass.
 --
 -- == When to drop down to the AST
 --
@@ -431,9 +442,8 @@ infixr 6 =:
 -- * Termination -----------------------------------------------------------
 
 -- | Set the edge's target vertex. Required exactly once per edge
--- body; missing 'goto' produces a finalize-time runtime error
--- naming the source vertex and edge index, and so does multiple
--- 'goto's in the same body.
+-- body; missing or multiple 'goto's are reported by the eager
+-- validation pass, with the source vertex and edge index.
 goto :: v -> EdgeBuilder rs ci co v pin w w ()
 goto v = EdgeBuilder $ \pe ->
   ((), pe {peTargets = v : peTargets pe})

@@ -40,7 +40,7 @@ rendering that result.
 
 After this change, **every edge body must state its output intent explicitly.**
 An edge that calls `B.goto` but neither `B.emit`/`B.emitWith` nor `B.noEmit`
-becomes a hard error at builder finalize time, with a message naming the source
+becomes a hard error during eager builder validation, with a message naming the source
 vertex and edge index and telling the developer exactly what to add. Developers
 who genuinely want a silent transition keep writing `B.noEmit` — which, for the
 first time, becomes a *load-bearing* keyword instead of pure documentation.
@@ -48,7 +48,8 @@ Deliberate ε-edges remain fully expressible; only *silence-by-omission* becomes
 impossible.
 
 You can see the new behavior working by writing an `onCmd` block that ends with
-`B.goto` and no output call, forcing the resulting transducer's edges, and
+`B.goto` and no output call, evaluating the resulting transducer to weak head normal
+form, and
 observing a runtime error like:
 
 ```text
@@ -74,10 +75,10 @@ This section must always reflect the actual current state of the work.
   - [ ] Add `peOutputDecided :: Bool` field to `PartialEdge` in `src/Keiki/Builder.hs`.
   - [ ] Initialize `peOutputDecided = False` in the `onCmd` initial record.
   - [ ] Initialize `peOutputDecided = False` in the `onEpsilon` initial record.
-  - [ ] Set `peOutputDecided = True` in `emit` (the `Just` branch).
+  - [ ] Set `peOutputDecided = True` in `emit` (the `PinCtor` branch).
   - [ ] Set `peOutputDecided = True` in `emitWith`.
   - [ ] Change `noEmit` from a no-op to setting `peOutputDecided = True`.
-  - [ ] Add `MissingOutputIntent` (final name follows EP-70 conventions) to the
+  - [ ] Add `DefectMissingOutputIntent` to `BuilderDefect` and return it from the
         structured defect produced from the `[t]` branch of `finalizeEdge`.
   - [ ] Update the module-header "Misuse diagnostics" haddock to list the new diagnostic.
   - [ ] Update the `noEmit` haddock (it is no longer a documentation no-op).
@@ -86,8 +87,8 @@ This section must always reflect the actual current state of the work.
 - [ ] **M2 — Migrate the two in-repo silent edges and prove the new rule with tests.**
   - [ ] Add `B.noEmit` to `coffeeBuilt`'s Brewing→Idle edge in `test/Keiki/BuilderSpike.hs`.
   - [ ] Add `B.noEmit` to case 10 (`onEpsilon`) in `test/Keiki/BuilderSpec.hs`.
-  - [ ] Add a positive regression test: `onCmd` bare `goto` (no emit/noEmit) throws the new error.
-  - [ ] Add a positive regression test: `onEpsilon` bare `goto` throws the new error.
+  - [ ] Add a positive regression test: `onCmd` bare `goto` (no emit/noEmit) is rejected when the transducer is evaluated to WHNF.
+  - [ ] Add a positive regression test: `onEpsilon` bare `goto` is rejected when the transducer is evaluated to WHNF.
   - [ ] Confirm existing double-goto and missing-goto tests still pass unchanged (goto-arity check precedes the output-intent check).
   - [ ] `cabal test all` is green (both `keiki-test` and `jitsurei-test`).
   - [ ] Re-run the silent-edge audit; confirm zero silent blocks remain across `src`, `test`, and `jitsurei`.
@@ -138,6 +139,17 @@ Record every decision made while working on the plan.
   Either BuilderDefect Edge`, and `buildTransducerEither`. Reusing that path makes the
   documented construction-time timing true and preserves uniform diagnostics.
   Date: 2026-07-12 (supersedes the 2026-07-03 runtime-error decision)
+
+- Decision (EP-70 handoff landed): add `DefectMissingOutputIntent` to the existing
+  `BuilderDefect` sum, return it from `finalizeEdge`'s exactly-one-`goto` branch when
+  `peOutputDecided` is false, and render this plan's exact message in
+  `renderBuilderErrors`. Tests force `evaluate tr`, not
+  `evaluate (head (edgesOut tr A))`.
+  Rationale: EP-70 now evaluates every declared edge eagerly, aggregates located
+  defects, and preserves goto-arity precedence through `finalizeEdge`'s case order.
+  Reusing that path makes missing output intent visible even when the affected vertex
+  is never queried and gives `buildTransducerEither` the structured defect.
+  Date: 2026-07-12
 
 - Decision: Track intent with a single `Bool` field `peOutputDecided` on
   `PartialEdge`, set by `emit`, `emitWith`, and `noEmit`.
@@ -213,7 +225,7 @@ edge-authoring DSL. The pieces you need to understand:
   through one edge body. It has fields `peGuard`, `peUpdate`, `peOutput`
   (the list of events this edge emits — empty list means "no event"),
   `peTargets` (the list of `goto` targets seen — must end up length 1), and
-  `peInCtor` (bookkeeping for `emit`). Each builder step updates one or more
+  `pePinned` (schema-indexed bookkeeping for `emit`). Each builder step updates one or more
   fields.
 
 - **`emit` / `emitWith`** (around lines 459 and 502): append one event to
@@ -236,10 +248,10 @@ edge-authoring DSL. The pieces you need to understand:
   at `PTop`) and pins no `InCtor`.
 
 - **`finalizeEdge`** (around line 714): validates the accumulated `PartialEdge`
-  and packages it into a closed `Edge`. It currently cases on `peTargets`:
-  exactly one target builds the `Edge`; zero targets raises
-  "`goto missing`"; two-or-more raises "`goto called more than once`". **This is
-  where the new check goes.**
+  and returns `Either BuilderDefect Edge`. It cases on `peTargets`: exactly one
+  target proceeds to output-constructor validation and builds the `Edge`; zero
+  targets returns `DefectMissingGoto`; two-or-more returns `DefectMultipleGoto`.
+  **The new check goes inside the exactly-one-target branch.**
 
 **Key term — "ε-edge" (epsilon edge):** an edge whose `output` list is empty, so
 it changes state (and may write registers) but emits no event. In `Keiki.Core`,
@@ -248,10 +260,11 @@ is a multi-event edge. ε-edges are a legitimate, needed concept — this plan d
 **not** forbid them. It only forbids reaching one *by accident* (omitting both
 `emit` and `noEmit`).
 
-**Key term — "finalize time":** the moment when `buildTransducer` evaluates the
-builder do-block to produce the transducer's edge lists. The existing `goto`
-diagnostics are raised here as lazy `error` calls; forcing the edges (e.g. with
-`head (edgesOut tr V)`) triggers them. The new diagnostic is raised the same way.
+**Key term — "eager builder validation":** EP-70 runs the complete builder,
+merges duplicate `from` blocks, finalizes every edge, and forces the resulting
+defect list before returning a transducer. `buildTransducerEither` returns located
+structured defects; `buildTransducer` renders and raises them when its returned
+transducer is evaluated to weak head normal form. No `edgesOut` lookup is needed.
 
 **The migration surface** (established by research, see Surprises & Discoveries):
 every real consumer already declares output intent. Only two test edges are
@@ -317,62 +330,52 @@ Edits, all in `src/Keiki/Builder.hs`:
    ```
 
    Add it as the last field. Remember to add a comma after the preceding
-   `peInCtor` field's type.
+   `pePinned` field's type.
 
 2. **Initialize it to `False` in both edge starters.** In `onCmd` (initial record
    around lines 670–677) and in `onEpsilon` (initial record around lines 695–702),
    add `peOutputDecided = False` to each `PartialEdge { … }` literal.
 
 3. **Flip it to `True` where output intent is declared.**
-   - In `emit` (around lines 465–481), the `Just (PeInCtor ic)` branch returns
+   - In `emit` (around lines 465–481), the `PinCtor ic` branch returns
      `pe { peOutput = … }`; add `, peOutputDecided = True` to that record update.
    - In `emitWith` (around lines 509–510), change the record update from
      `pe {peOutput = …}` to also set `, peOutputDecided = True`.
    - In `noEmit` (around lines 518–519), change the body from `((), pe)` to
      `((), pe {peOutputDecided = True})`.
 
-4. **Add the check in `finalizeEdge`.** In the `[t]` branch (around lines
-   721–727), guard the successful `Edge` construction on `peOutputDecided pe` and
-   add an `otherwise` case that raises the new error:
+4. **Add the structured defect and check.** Add
+   `DefectMissingOutputIntent` to `BuilderDefect`. In `finalizeEdge`'s `[t]`
+   branch, after the existing `outputCtorMismatch` check, return that defect when
+   `peOutputDecided pe` is false; otherwise build the edge:
 
    ```haskell
-   [t]
-     | peOutputDecided pe ->
-         Edge
-           { guard = peGuard pe,
-             update = peUpdate pe,
-             output = peOutput pe,
-             target = t
-           }
-     | otherwise ->
-         error $
-           "Keiki.Builder: edge #"
-             <> show n
-             <> " from "
-             <> show src
-             <> ": no emit or noEmit. Each onCmd/onEpsilon body must "
-             <> "call 'emit' (or 'emitWith') to produce an event, or "
-             <> "'noEmit' to declare the edge deliberately silent "
-             <> "(ε-edge)."
+   [t] -> case outputCtorMismatch (pePinned pe) (peOutput pe) of
+     Just defect -> Left defect
+     Nothing
+       | not (peOutputDecided pe) -> Left DefectMissingOutputIntent
+       | otherwise -> Right Edge { ... }
    ```
 
-   Leave the `[]` (goto missing) and `(_ : _ : _)` (goto too many) branches
-   exactly as they are, and keep them positioned so goto-arity is checked first.
+   Add the exact message from Purpose / Big Picture to the
+   `DefectMissingOutputIntent` case of `renderBuilderError`. Leave the `[]` (goto
+   missing) and `(_ : _ : _)` (goto too many) branches exactly as they are, and
+   keep the output-intent check inside `[t]` so goto arity retains precedence.
 
 5. **Update the haddocks so the docs match the behavior.**
    - Module-header "== Misuse diagnostics" section (around lines 111–121): add a
      fourth bullet, e.g. "Edge with neither `emit`/`emitWith` nor `noEmit`: caught
-     at finalize time with a runtime error naming the source vertex and edge index
-     and directing the user to add `emit` or `noEmit`."
+     by eager validation with a located structured defect directing the user to add
+     `emit` or `noEmit`."
    - `noEmit` haddock (around lines 512–517): rewrite. It is no longer idempotent
      documentation; it now *satisfies a requirement*. New text, in substance:
      "Declare the edge deliberately silent (ε-edge, `output = []`). Required in any
      edge body that does not `emit`: an edge reaching `goto` with neither `emit`
-     nor `noEmit` is a finalize-time error. Mixing `noEmit` and `emit` in one body
+     nor `noEmit` is an eager builder error. Mixing `noEmit` and `emit` in one body
      is allowed; the `emit`s still populate the output list."
    - `finalizeEdge` haddock (around lines 708–713): add a sentence noting that a
      valid edge must also have declared output intent (`emit`/`emitWith`/`noEmit`),
-     else it raises a runtime error.
+     else it returns `DefectMissingOutputIntent`.
 
 Acceptance for M1: `cabal build all` succeeds (see Concrete Steps). The library
 change is complete. `cabal test all` is expected to show the two silent test edges
@@ -410,9 +413,8 @@ Edits:
 
 3. **Add two positive regression tests in `test/Keiki/BuilderSpec.hs`.** Place
    them near the existing goto diagnostics ("case 7", "case 8"). They build a
-   transducer with a bare `goto` and assert the new error fires when the edges are
-   forced. Follow the existing pattern in the file: build with
-   `B.buildTransducer`, force with `evaluate (head (edgesOut tr V))`, and match
+   transducer with a bare `goto` and assert the new error fires when the transducer
+   is evaluated. Build with `B.buildTransducer`, force with `evaluate tr`, and match
    with `shouldThrow` / `errorCall`. Sketch:
 
    ```haskell
@@ -421,7 +423,7 @@ Edits:
            B.from A do
              B.onCmd inCtorTick $ \_d -> B.do
                B.goto B
-     evaluate (head (edgesOut tr A))
+     evaluate tr
        `shouldThrow` errorCall
          ( "Keiki.Builder: edge #0 from A: no emit or noEmit. "
              <> "Each onCmd/onEpsilon body must call 'emit' "
@@ -434,7 +436,7 @@ Edits:
            B.from A do
              B.onEpsilon B.do
                B.goto B
-     evaluate (head (edgesOut tr A))
+     evaluate tr
        `shouldThrow` errorCall
          ( "Keiki.Builder: edge #0 from A: no emit or noEmit. "
              <> "Each onCmd/onEpsilon body must call 'emit' "
@@ -466,11 +468,11 @@ Scope: bring the prose in line with the new rule.
 1. **`docs/research/edge-builder-dsl-shape.md`.** Around lines 209–218 the doc
    says an edge with neither `emit` nor `noEmit` "is treated as an ε-edge."
    Update that paragraph to state that `noEmit` is now required to declare a
-   silent edge and that omitting both is a finalize-time error. Add a short
+   silent edge and that omitting both is an eager builder error. Add a short
    dated design-decision note (near the Q6 "goto and termination" section around
-   line 346, which is the closest existing discussion of finalize-time
+   line 346, which is the closest existing discussion of builder
    diagnostics) recording *why* — forgotten `emit` is a likely bug in an
-   event-sourcing DSL, and the fix reuses the existing finalize-time error
+   event-sourcing DSL, and the fix reuses EP-70's eager structured defect
    mechanism and gives `noEmit` a real purpose.
 
 2. **`CHANGELOG.md`.** Under `## [Unreleased]`, add a `### Changed` subsection:
@@ -481,7 +483,7 @@ Scope: bring the prose in line with the new rule.
    - `Keiki.Builder` now requires every edge body to declare its output
      intent explicitly. An `onCmd`/`onEpsilon` body that reaches `goto`
      without calling `emit`/`emitWith` (produce an event) or `noEmit`
-     (declare a deliberately silent ε-edge) is now a finalize-time error,
+     (declare a deliberately silent ε-edge) is now an eager construction error,
      rather than silently becoming an ε-edge. Deliberately silent edges
      keep working by adding `noEmit`.
    ```
@@ -580,12 +582,13 @@ test/Keiki/BuilderSpec.hs:234: SILENT (goto, no emit/noEmit)
 double-goto fixtures, which are handled by the goto-arity branch and are correct
 as-is.)
 
-**Commits.** Commit once per milestone. Every commit message must carry both
+**Commits.** Commit once per milestone. Every commit message must carry all three
 trailers:
 
 ```text
+MasterPlan: docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md
 ExecPlan: docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md
-Intention: intention_01kwn3a8rzeav9vbmgg4r31f0w
+Intention: intention_01kxc5whw1en3ra4nh728m53ka
 ```
 
 Suggested commit subjects (Conventional Commits):
@@ -602,7 +605,7 @@ The `!` on M1 marks the behavioral tightening.
 The change is validated by behavior, not just compilation:
 
 1. **The new error fires for a forgotten emit.** After M1+M2, an `onCmd` body that
-   ends in `B.goto` with no output call causes `evaluate (head (edgesOut tr A))`
+   ends in `B.goto` with no output call causes `evaluate tr`
    to throw an `errorCall` whose message is exactly:
 
    ```text
@@ -671,13 +674,15 @@ Signatures and shapes that must exist at the end of each milestone (all in
 - **After M1:**
   - `PartialEdge` gains `peOutputDecided :: Bool` (its public-facing type is
     internal to the module; `PartialEdge` is not exported).
-  - `noEmit :: EdgeBuilder rs ci co v w w ()` — unchanged signature, new behavior
+  - `noEmit :: EdgeBuilder rs ci co v pin w w ()` — unchanged signature, new behavior
     (sets `peOutputDecided = True`).
   - `emit`, `emitWith` — unchanged signatures, each now also sets
     `peOutputDecided = True`.
-  - `finalizeEdge :: (Show v) => Int -> v -> PartialEdge rs ci co v w -> Edge …`
-    — unchanged signature, new finalize-time error when an edge has exactly one
+  - `BuilderDefect` gains `DefectMissingOutputIntent`.
+  - `finalizeEdge :: PartialEdge rs ci co v pin w -> Either BuilderDefect (Edge …)`
+    — unchanged EP-70 signature, with a new defect when an edge has exactly one
     `goto` but `peOutputDecided == False`.
+  - `renderBuilderErrors` renders the exact missing-output-intent message.
   - The public exports of `Keiki.Builder` (the module export list) are unchanged;
     this is purely an added runtime precondition, not an API surface change.
 
@@ -703,3 +708,8 @@ Signatures and shapes that must exist at the end of each milestone (all in
   longer allowed. Frontmatter gained the
   `master_plan` field. No change to the diagnostic's design (`peOutputDecided`
   flag, message text, test list).
+- 2026-07-12: Applied EP-70's completed handoff. Rewrote the implementation and
+  acceptance instructions around `DefectMissingOutputIntent`,
+  `Either BuilderDefect Edge`, `renderBuilderErrors`, and `evaluate tr`; removed
+  the obsolete lazy `finalizeEdge` forcing assumptions while preserving exact
+  message text and goto-arity precedence.

@@ -97,7 +97,7 @@ Pragmatic shape:
     (.=) :: (Disjoint '[s] w, KnownSymbol s)
          => IndexN s rs r
          -> Term rs ci r
-         -> EdgeBuilder rs ci co s_vert w ('[s] `Concat` w) ()
+         -> EdgeBuilder rs ci co s_vert pin w ('[s] `Concat` w) ()
     infixr 6 .=
 
 The `(Disjoint '[s] w)` constraint is what the type error
@@ -150,17 +150,21 @@ type (the *primary* surface) and a bare `OutFields` value (the
 by an event ctor). Both produce the same AST node (`OPack`),
 consumed unchanged by every downstream module.
 
-Final signature:
+Current signature (EP-70 pins the enclosing input schema in the
+builder index):
 
-    emit :: ToOutFields rec rs ci fs
+    emit :: ToOutFields rec rs ci ifs fs
          => WireCtor co fs
          -> rec
-         -> EdgeBuilder rs ci co v w w ()
+         -> EdgeBuilder rs ci co v ('Just ifs) w w ()
 
 The InCtor is recovered from the lexically-enclosing `onCmd`
-(stored on `PartialEdge` as `peInCtor`); an explicit-InCtor
-escape hatch `emitWith` is retained for `onEpsilon` and ad-hoc
-overrides.
+(stored on `PartialEdge` as a schema-indexed pin). This makes a
+term-fields record from another command schema fail to type-check,
+and makes `emit` inside `onEpsilon` a compile error. The
+explicit-InCtor form `emitWith` remains available for `onEpsilon`;
+inside `onCmd`, eager validation rejects a constructor whose name or
+slot-name list differs from the enclosing constructor.
 
 The two `ToOutFields` instances:
 
@@ -208,14 +212,14 @@ resolutions.
 For the ε-output case (the edge consumes input but emits no event),
 the surface is `noEmit`:
 
-    noEmit :: EdgeBuilder rs ci co s_vert w w ()
+    noEmit :: EdgeBuilder rs ci co s_vert pin w w ()
 
-`noEmit` leaves the edge's `output` field as `Nothing`. It is
-optional — the default state of `output` in a fresh edge is
-`Nothing`. `noEmit` exists only so the user can be explicit about
-intent (and so unit tests have a syntactic anchor to assert
-against). An edge with neither `emit` nor `noEmit` is treated as an
-ε-edge.
+`noEmit` leaves the edge's `output` list empty. It is optional in the
+current EP-70 surface: a fresh edge also starts with an empty output
+list, so an edge with neither `emit` nor `noEmit` is an ε-edge. EP-68
+is the dependency-ready follow-up that makes this marker load-bearing
+and rejects silent output intent by omission through the eager defect
+pass described in Q6.
 
 
 ## Q4 — Vertex grouping (`from`)
@@ -228,7 +232,7 @@ layer* construction:
 2. **`EdgeListBuilder rs ci co v a`** — per-source-vertex, plain
    `Monad`. The runtime state is `[Edge ...]`; `onCmd` and
    `onEpsilon` each prepend one Edge.
-3. **`EdgeBuilder rs ci co v w w' a`** — per-edge body, *indexed*
+3. **`EdgeBuilder rs ci co v pin w w' a`** — per-edge body, *indexed*
    monad. The type-level slot-set `(w :: [Symbol])` threads through
    every `(.=)` so the `Disjoint` check fires at compile time.
 
@@ -248,7 +252,7 @@ three-layer design verbatim.
     -- Top-level entry: produce a SymTransducer from an initial vertex,
     -- initial register file, and a do-block of `from V $ do …` clauses.
     buildTransducer
-      :: (Bounded s, Enum s, Show s)
+      :: (DistinctNames (Names rs), Eq s, Show s)
       => s
       -> RegFile rs
       -> (s -> Bool)              -- isFinal predicate
@@ -256,8 +260,7 @@ three-layer design verbatim.
       -> SymTransducer (HsPred rs ci) rs s ci co
 
     -- Group edges by source vertex.
-    from :: Show s
-         => s
+    from :: s
          -> EdgeListBuilder rs ci co s ()
          -> VertexBuilder rs ci co s ()
 
@@ -272,12 +275,12 @@ them.
     onCmd
       :: forall ci ifs rs co s w.
          InCtor ci ifs
-      -> (PayloadProj rs ci ifs -> EdgeBuilder rs ci co s '[] w ())
+      -> (PayloadProj rs ci ifs -> EdgeBuilder rs ci co s ('Just ifs) '[] w ())
       -> EdgeListBuilder rs ci co s ()
 
     onEpsilon
       :: forall rs ci co s w.
-         EdgeBuilder rs ci co s '[] w ()
+         EdgeBuilder rs ci co s 'Nothing '[] w ()
       -> EdgeListBuilder rs ci co s ()
 
 `PayloadProj rs ci ifs` is a record-shaped wrapper that gives the
@@ -346,42 +349,52 @@ comment, mirroring `Keiki.Core` and `Keiki.Composition`.
 ## Q6 — `goto` and termination
 
 **Decision.** Every `onCmd`/`onEpsilon` body must call `goto V`
-exactly once. Missing or duplicate `goto`s are caught at builder
-finalize time and produce a runtime error naming the source vertex
-and the edge's positional index within that vertex.
+exactly once. Missing or duplicate `goto`s are collected by the eager
+builder validation pass and produce diagnostics naming the source
+vertex and the edge's positional index within that vertex.
 
-    goto :: s -> EdgeBuilder rs ci co s_vert w w ()
+    goto :: s -> EdgeBuilder rs ci co s_vert pin w w ()
 
-`goto` writes `peTarget = Just v` into the threaded edge state.
-Calling it twice produces a `peTarget` already-`Just` situation;
-the finalize-time check (run when `from V $ do { … }` collapses
-the inner builder into a list of `Edge`s) raises:
+`goto` prepends to `peTargets` in the threaded edge state. Calling it
+twice leaves two targets; `finalizeEdge` returns a structured defect:
 
     Keiki.Builder: edge #<n> from <show vertex>: goto called more
     than once. Each onCmd/onEpsilon body must end with exactly one
     goto V.
 
-A missing `goto` (peTarget still `Nothing` at finalize) raises:
+A missing `goto` (an empty `peTargets`) returns the companion defect:
 
     Keiki.Builder: edge #<n> from <show vertex>: goto missing.
     Each onCmd/onEpsilon body must end with exactly one goto V.
 
-The error is a plain `error` call (not a typed exception); it
-fires at `buildTransducer` time, which on a typical aggregate is
-during top-level binding evaluation in the `Examples` module.
-Aggregates that build correctly never see the error.
+`buildTransducerEither` returns every located `BuilderError` in
+declaration order. The compatibility entry point `buildTransducer`
+renders the same messages and raises them when the returned
+transducer is first evaluated to weak head normal form. Validation
+does not wait for `edgesOut` to inspect the affected vertex.
 
-`requireGuard`, `requireEq`, `(.=)`, `emit`, `noEmit` all leave
-`peTarget` untouched. Only `goto` writes it.
+`requireGuard`, `requireEq`, `(.=)`, `emit`, and `noEmit` all leave
+`peTargets` untouched. Only `goto` writes it.
 
-The `goto`-must-be-called-exactly-once invariant is enforced at
-runtime rather than at the type level because doing it at the
-type level would require pushing a "target set?" boolean into
-the indexed-monad's index alongside `w`. That doubles the noise
-in every type signature for a check the user encounters once
-during initial debug. The runtime error fires at top-level
-evaluation, fails loud, and names the offender precisely — the
-ergonomic cost is acceptable.
+The `goto`-must-be-called-exactly-once invariant is enforced by an
+eager value-level pass rather than at the type level because doing it
+at the type level would require pushing a "target set?" boolean into
+the indexed-monad's index alongside `w`. That doubles the noise in
+every type signature for a check the user encounters once during
+initial debug. The structured pass fails loudly, names every
+offender precisely, and remains available to tooling without
+exception plumbing.
+
+**Design update (2026-07-12, EP-70).** Builder construction now has
+one eager `Either`-based validation pass. It merges duplicate `from`
+blocks in declaration order, assigns indices after merging, and no
+longer needs `Bounded`/`Enum` vertex constraints. `EdgeBuilder` also
+carries the enclosing input schema as a phantom pin, eliminating the
+builder's `unsafeCoerce`; ordinary `emit` mismatches are compile-time
+errors, while `emitWith` constructor overrides are rejected eagerly.
+Finally, `DistinctNames (Names rs)` makes duplicate register slot
+names a compile-time `TypeError`. The standard keiro authoring shape
+(`B.emit wireCtorX XTermFields {..}`) remains source-compatible.
 
 
 ## Q7 — Module placement and naming
@@ -435,12 +448,12 @@ side-by-side with the AST form that
                   `combine`
                 USet (#emailSentAt :: IndexN "emailSentAt" EmailRegs UTCTime)
                      (inpSendEmail #at)
-            , output = Just $ pack
+            , output = [pack
                 inCtorSendEmail
                 wireEmailSent
                 (OFCons (inpSendEmail #recipient)
                   (OFCons (inpSendEmail #subject)
-                    (OFCons (inpSendEmail #at) OFNil)))
+                    (OFCons (inpSendEmail #at) OFNil)))]
             , target = EmailSentVertex
             }
         ]
@@ -479,13 +492,12 @@ The visible differences:
   joined by the indexed-monad's `(>>)` (which itself emits a
   `combine` in the threaded `Update`).
 - The `pack inCtorSendEmail wireEmailSent` prefix on `OPack` is no
-  longer hand-written; `emit` packages the `OPack` itself, with the
-  enclosing `onCmd`'s InCtor passed explicitly as the first
-  argument (M3 retains the explicit InCtor parameter so a future
-  ε-emit, where the InCtor is not in scope, can use a different
-  wire-side helper).
-- The `Just $` wrapper around the OutTerm is gone. `emit` writes
-  `peOutput = Just …`; `noEmit` (or omission) leaves it `Nothing`.
+  longer hand-written; `emit` packages the `OPack` itself using the
+  schema-pinned `InCtor` from its enclosing `onCmd`. `emitWith` is
+  the explicit-constructor form for `onEpsilon`.
+- The list wrapper around the `OutTerm` is gone. Each `emit`
+  snoc-appends to `peOutput`; `noEmit` (or omission, until EP-68)
+  leaves that list empty.
 - Field names appear once each in the body of an edge, instead of
   twice (once on the LHS of `USet`, once via `IndexN "name"`).
 

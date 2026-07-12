@@ -8,8 +8,34 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `Keiki.Builder.buildTransducerEither` returns all eagerly located builder
+  defects as structured `BuilderError` values. `BuilderDefect` and
+  `renderBuilderErrors` expose the same validation and historical message format
+  without exception plumbing.
+- `DistinctNames` provides the canonical compile-time duplicate register-slot
+  check, and `slotNamesOf` is now exported from `Keiki.Core` for structural
+  constructor validation.
+
 ### Changed
 
+- `Keiki.Builder` now validates every declared edge when the returned transducer
+  is evaluated to weak head normal form. Missing/multiple `goto` calls and
+  mismatched explicit `emitWith` constructors no longer remain latent until an
+  affected `edgesOut` branch is demanded; duplicate `from` blocks merge in
+  declaration order with stable per-vertex edge indices.
+- The builder pins the enclosing `onCmd` input schema in `EdgeBuilder`. Passing
+  another command's term-fields record to `emit`, or calling `emit` inside
+  `onEpsilon`, is now a compile-time error. `emitWith` remains the explicit form
+  for `onEpsilon` and must agree with the enclosing constructor inside `onCmd`.
+- `buildTransducer` and `buildTransducerEither` require
+  `DistinctNames (Names rs)`, rejecting register files with duplicated slot
+  names instead of silently resolving the first occurrence. Vertex grouping now
+  requires `Eq v`; the unused `Bounded v` and `Enum v` constraints were removed.
+- Current keiro authoring remains source-compatible: the standard
+  `B.emit wireCtorX XTermFields {..}` shape and both build call forms are
+  unchanged for valid aggregates.
 - `Keiki.Profunctor` no longer fabricates method-carrying `WeakenR` and
   `KnownSlotNames` dictionaries with `unsafeCoerce`. Nested stateful Category
   composition previously misindexed register reads and writes and hid slot names
@@ -17,6 +43,11 @@ and this project adheres to the
   `KnownSlots`/`SlotListWitness` evidence from `Keiki.Composition`, and composite
   evidence is derived by structural induction. The smart constructor's structural
   constraints are now expressed as `KnownSlots rs`.
+
+### Removed
+
+- `Keiki.Builder` no longer uses `unsafeCoerce` to reinterpret the input schema
+  recovered by `emit`; the schema relationship is represented in its types.
 
 
 ## [0.1.0.0] — 2026-06-07

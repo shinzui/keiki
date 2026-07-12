@@ -73,9 +73,9 @@ recompiles without a single call-site change.
       added and wired into `Spec.hs` + `keiki.cabal`.
 - [x] (2026-07-12T15:45:30-07:00) M4: `DistinctNames` TypeError family in `src/Keiki/Internal/Slots.hs`; constraint
       on `buildTransducer`/`buildTransducerEither`; duplicate-slot spec; Slots haddock fixed.
-- [ ] M5: module haddocks corrected (finalize timing, merge order, emit, noEmit refs);
+- [x] (2026-07-12T15:49:50-07:00) M5: module haddocks corrected (finalize timing, merge order, emit, noEmit refs);
       `docs/research/edge-builder-dsl-shape.md` updated; CHANGELOG entries.
-- [ ] M5: handoff note recorded in
+- [x] (2026-07-12T15:49:50-07:00) M5: handoff note recorded in
       `docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md`;
       master plan registry row updated; `nix fmt -- --no-cache` clean.
 
@@ -167,6 +167,12 @@ recompiles without a single call-site change.
   M3, evaluating the duplicate-slot repro under `-fdefer-type-errors` did not throw:
   GHC eliminated the unused `DistinctNames` dictionary. The plan's documented
   compile-only fallback is therefore used for this negative regression.
+- **M5 validation (2026-07-12): the final documentation and consumer gate is
+  clean.** `nix fmt -- --no-cache` reported 108 files processed and zero changed;
+  `git diff --check` passed; `nix develop -c cabal build all` succeeded; and the
+  full test run passed with 386 keiki, 96 jitsurei, 50 codec, and 7 codec-toolkit
+  examples. EP-68 now names `DefectMissingOutputIntent`, renders through
+  `renderBuilderErrors`, and forces `evaluate tr`.
 
 (Add entries with evidence as implementation proceeds.)
 
@@ -285,7 +291,21 @@ recompiles without a single call-site change.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-70 achieved its purpose. Builder structure is validated eagerly through one
+structured `Either` path, so defects cannot hide behind an unvisited `edgesOut`
+branch; duplicate `from` blocks retain declaration order and stable per-vertex
+indices. `emit` now carries the enclosing command schema in `EdgeBuilder`'s type,
+which removes the builder's `unsafeCoerce` and turns schema misuse (including
+`emit` inside `onEpsilon`) into compile-time errors. The remaining explicit
+`emitWith` surface is checked eagerly against the pin.
+
+The public surface gained `buildTransducerEither`, `BuilderDefect`, `BuilderError`,
+`renderBuilderErrors`, the canonical `DistinctNames` constraint, and exported
+`slotNamesOf`; it shed unused `Bounded`/`Enum` vertex constraints. Valid in-tree
+and current-keiro authoring remained source-compatible. The only testing gap is
+mechanical rather than behavioral: GHC erases unused deferred type-family evidence,
+so the duplicate-slot negative fixture is compile-only and its exact custom error
+was verified with a non-deferred scratch compile. All four repository suites pass.
 
 
 ## Context and Orientation
@@ -1038,3 +1058,7 @@ were already erroring later.
   enforced it on both builder entry points, documented `HasIndexN`'s first-match
   behavior, retained the duplicate-slot negative case as a compile-only regression,
   and recorded the successful whole-repository validation.
+- 2026-07-12: Completed Milestone 5 and EP-70. Corrected the Builder/research API
+  narrative, added complete Unreleased changelog entries, converted EP-68's handoff
+  to the landed eager defect API, completed the master-plan registry/progress, and
+  passed formatting, build, and every repository test suite.

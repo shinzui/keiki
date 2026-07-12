@@ -120,7 +120,7 @@ fire through).
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 69 | Replace the fabricated WeakenR and KnownSlotNames dictionary in Category composition with real induction witnesses | docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md | None | None | Complete |
-| 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | In Progress |
+| 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | Complete |
 | 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Not Started |
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Not Started |
 | 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Not Started |
@@ -248,8 +248,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 - [x] EP-69: real induction witnesses replace `unsafeCoerceWrapperDict`; nested stateful `c . b . a` composes correctly
 - [x] EP-69: three-transducer stateful associativity test replaces the vacuous `id`-based one
-- [ ] EP-70: `buildTransducer` validates eagerly; malformed edges fail at construction, matching the documented contract
-- [ ] EP-70: `emit`'s `unsafeCoerce` eliminated or its failure mode reduced to a diagnostic; duplicate-`from` merge order fixed and documented
+- [x] EP-70: `buildTransducer` validates eagerly; malformed edges fail at construction, matching the documented contract
+- [x] EP-70: `emit`'s `unsafeCoerce` eliminated; duplicate-`from` merge order fixed and documented
 - [ ] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
 - [ ] EP-71: hidden-input check demands head-recoverability; the GHCi counterexample transducer is rejected
 - [ ] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
@@ -303,6 +303,16 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   `left'` path was also corrupt, while `right'` already behaved correctly because
   its `Append '[] rs` shape reduces definitionally. Both coercions were removed;
   the right-side test remains as regression coverage.
+- EP-70 established one eager `BuilderDefect` pass for all builder structure and a
+  schema pin that removes the builder's `unsafeCoerce` without changing valid keiki
+  or keiro authoring. Duplicate `from` blocks now preserve declaration order and
+  receive global per-vertex indices. Its `DistinctNames (Names rs)` family is the
+  canonical duplicate-slot constraint for EP-78, and its completed handoff rewrites
+  EP-68 around `DefectMissingOutputIntent` plus `evaluate tr`.
+- GHC 9.12 erases unused deferred type-family constraint evidence, so EP-70's
+  duplicate-slot negative regression is compile-only; a non-deferred scratch compile
+  verified the exact custom `TypeError`. Term-level deferred type errors remain
+  executable and cover the mismatched-schema `emit` case.
 
 
 ## Decision Log
@@ -420,6 +430,11 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 (To be filled during and after implementation.)
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-70. Added eager structured builder validation,
+  declaration-ordered merging and stable indices, schema-pinned `emit`, guarded
+  `emitWith`, and the canonical `DistinctNames` boundary; updated API documentation,
+  changelog, EP-68's implementation handoff, registry, and aggregate progress.
 
 - 2026-07-12: Completed EP-69. Replaced the fabricated `WeakenR` and
   `KnownSlotNames` dictionaries with real `KnownSlots` induction witnesses, added
