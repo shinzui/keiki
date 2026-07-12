@@ -1,0 +1,700 @@
+---
+id: 68
+slug: require-explicit-emit-noemit-intent-on-every-builder-edge
+title: "Require explicit emit/noEmit intent on every Builder edge"
+kind: exec-plan
+created_at: 2026-07-03T22:59:17Z
+intention: "intention_01kwn3a8rzeav9vbmgg4r31f0w"
+master_plan: docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md
+---
+
+# Require explicit emit/noEmit intent on every Builder edge
+
+This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
+Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
+
+
+## Purpose / Big Picture
+
+`Keiki.Builder` is a small embedded language (a "DSL", domain-specific language)
+for writing the state machines that this project calls **transducers**. A
+developer describes each transition ("edge") as a short block: which register
+slots it writes, which event it emits, and which target state it moves to. The
+block is written with `B.do { … }` and ends with `B.goto SomeState`.
+
+Today the language lets a developer write an edge that moves to a new state but
+says *nothing* about output — they call `B.goto` without ever calling `B.emit`
+(produce an event) or `B.noEmit` (declare "this edge deliberately produces no
+event"). When that happens the builder silently treats the edge as an **ε-edge**
+(pronounced "epsilon edge"): a transition that changes state but emits no event
+on the wire. That silence is indistinguishable from a bug — the developer may
+simply have *forgotten* to emit. In an event-sourcing system, where the usual
+reason to take an edge is to record an event, a forgotten `emit` is a real and
+easy mistake, and nothing catches it.
+
+After this change, **every edge body must state its output intent explicitly.**
+An edge that calls `B.goto` but neither `B.emit`/`B.emitWith` nor `B.noEmit`
+becomes a hard error at builder finalize time, with a message naming the source
+vertex and edge index and telling the developer exactly what to add. Developers
+who genuinely want a silent transition keep writing `B.noEmit` — which, for the
+first time, becomes a *load-bearing* keyword instead of pure documentation.
+Deliberate ε-edges remain fully expressible; only *silence-by-omission* becomes
+impossible.
+
+You can see the new behavior working by writing an `onCmd` block that ends with
+`B.goto` and no output call, forcing the resulting transducer's edges, and
+observing a runtime error like:
+
+```text
+Keiki.Builder: edge #0 from A: no emit or noEmit. Each onCmd/onEpsilon body
+must call 'emit' (or 'emitWith') to produce an event, or 'noEmit' to declare
+the edge deliberately silent (ε-edge).
+```
+
+This mirrors the existing "goto missing" and "goto called more than once"
+diagnostics: same mechanism (a runtime `error` raised when `buildTransducer`
+evaluates the builder), same shape of message, same finalize-time timing.
+
+
+## Progress
+
+Use a checklist to summarize granular steps. Every stopping point must be documented here,
+even if it requires splitting a partially completed task into two ("done" vs. "remaining").
+This section must always reflect the actual current state of the work.
+
+- [ ] **M1 — Enforce explicit output intent in the builder.**
+  - [ ] Add `peOutputDecided :: Bool` field to `PartialEdge` in `src/Keiki/Builder.hs`.
+  - [ ] Initialize `peOutputDecided = False` in the `onCmd` initial record.
+  - [ ] Initialize `peOutputDecided = False` in the `onEpsilon` initial record.
+  - [ ] Set `peOutputDecided = True` in `emit` (the `Just` branch).
+  - [ ] Set `peOutputDecided = True` in `emitWith`.
+  - [ ] Change `noEmit` from a no-op to setting `peOutputDecided = True`.
+  - [ ] Add the "no emit or noEmit" guard + error to the `[t]` branch of `finalizeEdge`.
+  - [ ] Update the module-header "Misuse diagnostics" haddock to list the new diagnostic.
+  - [ ] Update the `noEmit` haddock (it is no longer a documentation no-op).
+  - [ ] Update the `finalizeEdge` haddock to mention the output-intent requirement.
+  - [ ] `cabal build all` succeeds.
+- [ ] **M2 — Migrate the two in-repo silent edges and prove the new rule with tests.**
+  - [ ] Add `B.noEmit` to `coffeeBuilt`'s Brewing→Idle edge in `test/Keiki/BuilderSpike.hs`.
+  - [ ] Add `B.noEmit` to case 10 (`onEpsilon`) in `test/Keiki/BuilderSpec.hs`.
+  - [ ] Add a positive regression test: `onCmd` bare `goto` (no emit/noEmit) throws the new error.
+  - [ ] Add a positive regression test: `onEpsilon` bare `goto` throws the new error.
+  - [ ] Confirm existing double-goto and missing-goto tests still pass unchanged (goto-arity check precedes the output-intent check).
+  - [ ] `cabal test all` is green (both `keiki-test` and `jitsurei-test`).
+  - [ ] Re-run the silent-edge audit; confirm zero silent blocks remain across `src`, `test`, and `jitsurei`.
+- [ ] **M3 — Documentation and changelog.**
+  - [ ] Update `docs/research/edge-builder-dsl-shape.md` (the `noEmit` paragraph + a design-decision note).
+  - [ ] Add a `### Changed` entry under `## [Unreleased]` in `CHANGELOG.md`.
+
+
+## Surprises & Discoveries
+
+Document unexpected behaviors, bugs, optimizations, or insights discovered during
+implementation. Provide concise evidence.
+
+- **Discovery (research, 2026-07-03): the change is effectively non-breaking for
+  real consumers.** Every worked example in `jitsurei/src/Jitsurei/*.hs` and every
+  fixture in `test/Keiki/Fixtures/*.hs` already calls `emit`/`emitWith`/`noEmit`
+  at least once per `goto`. A per-block scan found the only *silent* edges (a
+  `goto` with no output call) live in two test modules. Evidence — emit/noEmit
+  count is `>=` goto count in every consumer file:
+
+  ```text
+  jitsurei/src/Jitsurei/EmailDelivery.hs    goto=1   emit/noEmit=1
+  jitsurei/src/Jitsurei/Loan.hs             goto=2   emit/noEmit=2
+  jitsurei/src/Jitsurei/CoreBankingSync.hs  goto=2   emit/noEmit=2
+  jitsurei/src/Jitsurei/OrderCart.hs        goto=12  emit/noEmit=12
+  jitsurei/src/Jitsurei/LoanApplication.hs  goto=11  emit/noEmit=11
+  test/Keiki/Fixtures/EmailDelivery.hs      goto=1   emit/noEmit=1
+  test/Keiki/Fixtures/UserRegistration.hs   goto=5   emit/noEmit=6
+  jitsurei/src/Jitsurei/UserRegistration.hs goto=5   emit/noEmit=6
+  ```
+
+- **Discovery (research, 2026-07-03): the goto-arity check must run *before* the
+  output-intent check** so that the existing double-goto test
+  (`coffeeDoubleGoto`, two `goto`s and no `emit`) keeps throwing the *double-goto*
+  error rather than the new one. `finalizeEdge` already cases on `peTargets`
+  first (`[t]` / `[]` / `(_:_:_)`); nesting the new check inside the `[t]` branch
+  preserves that precedence for free. See Decision Log.
+
+
+## Decision Log
+
+Record every decision made while working on the plan.
+
+- Decision: Enforce output intent at **finalize time via a runtime `error`**, not
+  at the type level.
+  Rationale: The builder already enforces `goto`-exactly-once this way
+  (`finalizeEdge` in `src/Keiki/Builder.hs`). A type-level guarantee would require
+  threading another phantom index through the indexed `EdgeBuilder` monad and its
+  `QualifiedDo` `(>>=)`, a much larger change for a diagnostic that fires the
+  moment `buildTransducer` is evaluated (typically at module load in a test or
+  `main`). Matching the existing mechanism keeps the surface uniform and the
+  message style consistent.
+  Date: 2026-07-03
+
+- Decision: Track intent with a single `Bool` field `peOutputDecided` on
+  `PartialEdge`, set by `emit`, `emitWith`, and `noEmit`.
+  Rationale: An explicit `noEmit` and a forgotten output both leave `peOutput`
+  empty, so the empty output list alone cannot distinguish them — a dedicated
+  flag is required. A `Bool` is the minimal representation; there is no need to
+  count or order output decisions.
+  Date: 2026-07-03
+
+- Decision: The new check lives **inside the `[t]` (exactly-one-goto) branch** of
+  `finalizeEdge`, so goto-arity errors take precedence.
+  Rationale: An edge that both omits output *and* misuses `goto` is more usefully
+  reported as a `goto` problem first (it has no valid target at all). This also
+  preserves the existing `coffeeDoubleGoto` / "case 8" tests without edits.
+  Date: 2026-07-03
+
+- Decision: This plan is adopted into
+  `docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`
+  (Phase 1) with a soft dependency on
+  `docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md`.
+  The first Decision above ("finalize time via a runtime `error`") rests on an
+  assumption the 2026-07 architecture review disproved: `buildTransducer` does
+  NOT evaluate the builder eagerly — `finalizeEdge`'s errors are lazy thunks
+  forced only when `edgesOut` is first demanded for the affected vertex, so the
+  diagnostic "fires the moment `buildTransducer` is evaluated" only after plan 70
+  makes finalization eager. Implementation guidance: if plan 70 has landed,
+  register the missing-intent diagnostic as a case of its eager validation pass
+  (its structured error path), keeping this plan's message text; if this plan is
+  implemented first, keep the `finalizeEdge` placement as written and note that
+  plan 70 will subsequently make the error eager — the `peOutputDecided`
+  tracking and message shape are unaffected either way.
+  Date: 2026-07-12
+
+- Decision: Migrate the two in-repo silent edges by adding `B.noEmit` (rather than
+  by inventing events to emit).
+  Rationale: Both are genuinely silent by design — `coffeeBuilt`'s Brewing→Idle
+  edge mirrors an AST reference whose `output = []` (`test/Keiki/BuilderSpike.hs`
+  line 140), and "case 10" exists to assert `onEpsilon` produces a `PTop`
+  guard-only edge, not to emit. `B.noEmit` records that intent without changing
+  observable output.
+  Date: 2026-07-03
+
+- Decision: Ship this as a `### Changed` (behavioral) entry in the `[Unreleased]`
+  section of `CHANGELOG.md`.
+  Rationale: The package is at `0.1.0.0`. This tightens a previously-accepted
+  program shape (bare `goto`) into an error, so it is a behavioral change worth
+  recording, even though no in-tree consumer is affected.
+  Date: 2026-07-03
+
+
+## Outcomes & Retrospective
+
+Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
+Compare the result against the original purpose.
+
+(To be filled during and after implementation.)
+
+
+## Context and Orientation
+
+This section assumes no prior knowledge of the repository. Read it fully before editing.
+
+**What this project is.** `keiki` is a Haskell library for building *transducers*:
+pure state machines that read commands, update an internal register file, emit
+events, and move between states. The relevant packages here are the main library
+(`keiki.cabal`, source under `src/`) and a companion package of worked examples,
+`jitsurei` (`jitsurei/jitsurei.cabal`, source under `jitsurei/src/`). Both build
+with Cabal; there is no custom test runner (the `justfile` only has website
+recipes), so tests run with `cabal test`.
+
+**The one file that changes behavior:** `src/Keiki/Builder.hs`. It defines the
+edge-authoring DSL. The pieces you need to understand:
+
+- **`PartialEdge`** (around line 249): a mutable-feeling accumulator threaded
+  through one edge body. It has fields `peGuard`, `peUpdate`, `peOutput`
+  (the list of events this edge emits — empty list means "no event"),
+  `peTargets` (the list of `goto` targets seen — must end up length 1), and
+  `peInCtor` (bookkeeping for `emit`). Each builder step updates one or more
+  fields.
+
+- **`emit` / `emitWith`** (around lines 459 and 502): append one event to
+  `peOutput`. `emit` recovers the input constructor from the enclosing `onCmd`;
+  `emitWith` takes it explicitly (needed inside `onEpsilon`, which pins none).
+
+- **`noEmit`** (around line 512): **currently a no-op** — `noEmit = EdgeBuilder $
+  \pe -> ((), pe)`. Its haddock even says "an edge with no `emit` or `noEmit`
+  call is also an ε-edge by default; `noEmit` exists only so the user can be
+  explicit about intent." This plan makes that statement false: `noEmit` becomes
+  the *required* way to declare a silent edge.
+
+- **`goto`** (around line 434): appends a target to `peTargets`. Required exactly
+  once per body.
+
+- **`onCmd` / `onEpsilon`** (around lines 663 and 689): start an edge body by
+  constructing an initial `PartialEdge`, run the user's body over it, then call
+  `finalizeEdge`. `onCmd` matches on an input command constructor and pins its
+  `InCtor` (so `emit` can recover it); `onEpsilon` matches nothing (guard starts
+  at `PTop`) and pins no `InCtor`.
+
+- **`finalizeEdge`** (around line 714): validates the accumulated `PartialEdge`
+  and packages it into a closed `Edge`. It currently cases on `peTargets`:
+  exactly one target builds the `Edge`; zero targets raises
+  "`goto missing`"; two-or-more raises "`goto called more than once`". **This is
+  where the new check goes.**
+
+**Key term — "ε-edge" (epsilon edge):** an edge whose `output` list is empty, so
+it changes state (and may write registers) but emits no event. In `Keiki.Core`,
+`output = []` *is* the ε-edge; `[o]` is a single-event ("letter") edge; `[o1,o2,…]`
+is a multi-event edge. ε-edges are a legitimate, needed concept — this plan does
+**not** forbid them. It only forbids reaching one *by accident* (omitting both
+`emit` and `noEmit`).
+
+**Key term — "finalize time":** the moment when `buildTransducer` evaluates the
+builder do-block to produce the transducer's edge lists. The existing `goto`
+diagnostics are raised here as lazy `error` calls; forcing the edges (e.g. with
+`head (edgesOut tr V)`) triggers them. The new diagnostic is raised the same way.
+
+**The migration surface** (established by research, see Surprises & Discoveries):
+every real consumer already declares output intent. Only two test edges are
+silent today and must be migrated:
+
+1. `test/Keiki/BuilderSpike.hs`, the `coffeeBuilt` transducer, Brewing→Idle edge
+   (around lines 166–168):
+
+   ```haskell
+   B.from Brewing do
+     B.onCmd inCtorContinue $ \_d -> B.do
+       B.goto Idle
+   ```
+
+   This mirrors an AST reference (`coffeeAST`, same file) whose Brewing edge has
+   `output = []` (line 140). Migration: insert `B.noEmit` before `B.goto Idle`.
+   Because `noEmit` leaves `peOutput` empty, the transducer's observable output is
+   unchanged and the existing "delta and omega agree on Brewing + Continue" test
+   (lines 223–229) keeps passing.
+
+2. `test/Keiki/BuilderSpec.hs`, "case 10" (around lines 261–270):
+
+   ```haskell
+   B.from A do
+     B.onEpsilon B.do
+       B.goto B
+   ```
+
+   This test asserts `onEpsilon` yields a `PTop` guard-only edge. Migration:
+   insert `B.noEmit` before `B.goto B`.
+
+The double-goto cases (`coffeeDoubleGoto` in `BuilderSpike.hs`, "case 8" in
+`BuilderSpec.hs`) are silent too, but they hit the two-or-more-`goto` branch of
+`finalizeEdge`, which fires *before* the new output-intent check. They require no
+edits and must keep passing unchanged — that is a correctness check on ordering.
+
+
+## Plan of Work
+
+The work is one small library change plus its migration and documentation, split
+into three independently verifiable milestones. Total code delta in the library is
+roughly a dozen lines; the rest is tests and prose.
+
+### Milestone M1 — Enforce explicit output intent in the builder
+
+Scope: make `src/Keiki/Builder.hs` reject an edge that reaches `goto` without
+declaring output intent. At the end of this milestone the library compiles and the
+new rule is implemented, but the two in-repo silent test edges will fail until M2 —
+that is expected and called out in acceptance.
+
+Edits, all in `src/Keiki/Builder.hs`:
+
+1. **Add the intent field to `PartialEdge`.** In the record (around lines
+   249–266), add a `Bool` field with a haddock comment:
+
+   ```haskell
+   -- | Whether the body made an explicit output decision. Set to
+   -- 'True' by any 'emit', 'emitWith', or 'noEmit' call and checked by
+   -- 'finalizeEdge': an edge that reaches 'goto' with this still 'False'
+   -- (neither emitted an event nor declared 'noEmit') is rejected,
+   -- rather than silently becoming an ε-edge.
+   peOutputDecided :: Bool
+   ```
+
+   Add it as the last field. Remember to add a comma after the preceding
+   `peInCtor` field's type.
+
+2. **Initialize it to `False` in both edge starters.** In `onCmd` (initial record
+   around lines 670–677) and in `onEpsilon` (initial record around lines 695–702),
+   add `peOutputDecided = False` to each `PartialEdge { … }` literal.
+
+3. **Flip it to `True` where output intent is declared.**
+   - In `emit` (around lines 465–481), the `Just (PeInCtor ic)` branch returns
+     `pe { peOutput = … }`; add `, peOutputDecided = True` to that record update.
+   - In `emitWith` (around lines 509–510), change the record update from
+     `pe {peOutput = …}` to also set `, peOutputDecided = True`.
+   - In `noEmit` (around lines 518–519), change the body from `((), pe)` to
+     `((), pe {peOutputDecided = True})`.
+
+4. **Add the check in `finalizeEdge`.** In the `[t]` branch (around lines
+   721–727), guard the successful `Edge` construction on `peOutputDecided pe` and
+   add an `otherwise` case that raises the new error:
+
+   ```haskell
+   [t]
+     | peOutputDecided pe ->
+         Edge
+           { guard = peGuard pe,
+             update = peUpdate pe,
+             output = peOutput pe,
+             target = t
+           }
+     | otherwise ->
+         error $
+           "Keiki.Builder: edge #"
+             <> show n
+             <> " from "
+             <> show src
+             <> ": no emit or noEmit. Each onCmd/onEpsilon body must "
+             <> "call 'emit' (or 'emitWith') to produce an event, or "
+             <> "'noEmit' to declare the edge deliberately silent "
+             <> "(ε-edge)."
+   ```
+
+   Leave the `[]` (goto missing) and `(_ : _ : _)` (goto too many) branches
+   exactly as they are, and keep them positioned so goto-arity is checked first.
+
+5. **Update the haddocks so the docs match the behavior.**
+   - Module-header "== Misuse diagnostics" section (around lines 111–121): add a
+     fourth bullet, e.g. "Edge with neither `emit`/`emitWith` nor `noEmit`: caught
+     at finalize time with a runtime error naming the source vertex and edge index
+     and directing the user to add `emit` or `noEmit`."
+   - `noEmit` haddock (around lines 512–517): rewrite. It is no longer idempotent
+     documentation; it now *satisfies a requirement*. New text, in substance:
+     "Declare the edge deliberately silent (ε-edge, `output = []`). Required in any
+     edge body that does not `emit`: an edge reaching `goto` with neither `emit`
+     nor `noEmit` is a finalize-time error. Mixing `noEmit` and `emit` in one body
+     is allowed; the `emit`s still populate the output list."
+   - `finalizeEdge` haddock (around lines 708–713): add a sentence noting that a
+     valid edge must also have declared output intent (`emit`/`emitWith`/`noEmit`),
+     else it raises a runtime error.
+
+Acceptance for M1: `cabal build all` succeeds (see Concrete Steps). The library
+change is complete. `cabal test all` is expected to show the two silent test edges
+now failing with the new error; that is the proof the check fires, and M2 fixes
+them.
+
+### Milestone M2 — Migrate silent edges and lock the rule with tests
+
+Scope: update the two in-repo silent edges to declare intent, add positive
+regression tests that prove the new error fires for both `onCmd` and `onEpsilon`,
+confirm the goto-arity tests are unaffected, and re-run the repo-wide silent-edge
+audit. At the end, `cabal test all` is fully green and no silent edge remains.
+
+Edits:
+
+1. **`test/Keiki/BuilderSpike.hs`** — in `coffeeBuilt`, the Brewing block (around
+   lines 166–168), insert `B.noEmit` before `B.goto Idle`:
+
+   ```haskell
+   B.from Brewing do
+     B.onCmd inCtorContinue $ \_d -> B.do
+       B.noEmit
+       B.goto Idle
+   ```
+
+2. **`test/Keiki/BuilderSpec.hs`** — in "case 10" (around lines 261–270), insert
+   `B.noEmit` before `B.goto B`:
+
+   ```haskell
+   B.from A do
+     B.onEpsilon B.do
+       B.noEmit
+       B.goto B
+   ```
+
+3. **Add two positive regression tests in `test/Keiki/BuilderSpec.hs`.** Place
+   them near the existing goto diagnostics ("case 7", "case 8"). They build a
+   transducer with a bare `goto` and assert the new error fires when the edges are
+   forced. Follow the existing pattern in the file: build with
+   `B.buildTransducer`, force with `evaluate (head (edgesOut tr V))`, and match
+   with `shouldThrow` / `errorCall`. Sketch:
+
+   ```haskell
+   it "bare goto in onCmd (no emit/noEmit) fires the new error" $ do
+     let tr = B.buildTransducer A emptyR (const False) do
+           B.from A do
+             B.onCmd inCtorTick $ \_d -> B.do
+               B.goto B
+     evaluate (head (edgesOut tr A))
+       `shouldThrow` errorCall
+         ( "Keiki.Builder: edge #0 from A: no emit or noEmit. "
+             <> "Each onCmd/onEpsilon body must call 'emit' "
+             <> "(or 'emitWith') to produce an event, or 'noEmit' "
+             <> "to declare the edge deliberately silent (ε-edge)."
+         )
+
+   it "bare goto in onEpsilon (no emit/noEmit) fires the new error" $ do
+     let tr = B.buildTransducer A emptyR (const False) do
+           B.from A do
+             B.onEpsilon B.do
+               B.goto B
+     evaluate (head (edgesOut tr A))
+       `shouldThrow` errorCall
+         ( "Keiki.Builder: edge #0 from A: no emit or noEmit. "
+             <> "Each onCmd/onEpsilon body must call 'emit' "
+             <> "(or 'emitWith') to produce an event, or 'noEmit' "
+             <> "to declare the edge deliberately silent (ε-edge)."
+         )
+   ```
+
+   The exact string in the assertion **must** match the string produced in M1
+   step 4 byte-for-byte (including the `ε` character and spacing). If the test
+   fails only on the message text, reconcile the two literals — do not weaken the
+   test to a prefix match.
+
+4. **Confirm no edits are needed to the double-goto / missing-goto tests.**
+   `coffeeDoubleGoto` ("duplicated goto…" in `BuilderSpike.hs`) and "case 8"
+   (`BuilderSpec.hs`) must still pass with their *existing* messages, proving the
+   goto-arity check runs before the output-intent check. If either now throws the
+   new message instead, the branch ordering in `finalizeEdge` is wrong — fix M1,
+   do not edit these tests.
+
+Acceptance for M2: `cabal test all` is green for both `keiki-test` and
+`jitsurei-test`. The silent-edge audit (see Concrete Steps) reports zero silent
+blocks.
+
+### Milestone M3 — Documentation and changelog
+
+Scope: bring the prose in line with the new rule.
+
+1. **`docs/research/edge-builder-dsl-shape.md`.** Around lines 209–218 the doc
+   says an edge with neither `emit` nor `noEmit` "is treated as an ε-edge."
+   Update that paragraph to state that `noEmit` is now required to declare a
+   silent edge and that omitting both is a finalize-time error. Add a short
+   dated design-decision note (near the Q6 "goto and termination" section around
+   line 346, which is the closest existing discussion of finalize-time
+   diagnostics) recording *why* — forgotten `emit` is a likely bug in an
+   event-sourcing DSL, and the fix reuses the existing finalize-time error
+   mechanism and gives `noEmit` a real purpose.
+
+2. **`CHANGELOG.md`.** Under `## [Unreleased]`, add a `### Changed` subsection:
+
+   ```markdown
+   ### Changed
+
+   - `Keiki.Builder` now requires every edge body to declare its output
+     intent explicitly. An `onCmd`/`onEpsilon` body that reaches `goto`
+     without calling `emit`/`emitWith` (produce an event) or `noEmit`
+     (declare a deliberately silent ε-edge) is now a finalize-time error,
+     rather than silently becoming an ε-edge. Deliberately silent edges
+     keep working by adding `noEmit`.
+   ```
+
+Acceptance for M3: the two documents read consistently with the code; a reader of
+either the changelog or the research doc learns that `noEmit` is now required for
+silent edges.
+
+
+## Concrete Steps
+
+All commands run from the repository root, `/Users/shinzui/Keikaku/bokuno/keiki`.
+
+**Before starting — reproduce the research audit** (establishes the migration
+surface; should print exactly the two known silent test blocks):
+
+```bash
+for f in $(grep -rln --include='*.hs' 'B\.goto\|B\.onEpsilon\|B\.onCmd' src test jitsurei); do
+  awk -v F="$f" '
+    /B\.onCmd|B\.onEpsilon/ { inblk=1; start=NR; hasterm=0; next }
+    inblk && /B\.emit|B\.emitWith|B\.noEmit/ { hasterm=1 }
+    inblk && /B\.goto/ { if (!hasterm) print F":"start": SILENT (goto, no emit/noEmit)"; inblk=0 }
+  ' "$f"
+done
+```
+
+Expected before the change (double-goto blocks are reported too because they never
+emit; they are handled by the goto-arity branch and need no edit):
+
+```text
+test/Keiki/BuilderSpike.hs:167: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpike.hs:198: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:233: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:264: SILENT (goto, no emit/noEmit)
+```
+
+Of these, lines 167 (BuilderSpike `coffeeBuilt`) and 264 (BuilderSpec case 10) are
+the real ε-edges to migrate with `noEmit`; lines 198 and 233 are the double-goto
+misuse fixtures, which stay untouched. After M2 the two migrated ones disappear
+from this report and only the two double-goto fixtures remain.
+
+**M1 — build the library after the code edits:**
+
+```bash
+cabal build all
+```
+
+Expected: compiles with no errors. Warnings about the new field are not expected
+(record construction is total in all three `PartialEdge` sites).
+
+**M1 — confirm the check fires (before M2 migration):**
+
+```bash
+cabal test keiki-test 2>&1 | tail -40
+```
+
+Expected at this point: failures in the spike's "Brewing + Continue" agreement
+test and in "case 10", each surfacing the new "no emit or noEmit" error. This is
+the intended proof that the check is live; M2 resolves it.
+
+**M2 — after migrating and adding tests, run the full suite:**
+
+```bash
+cabal test all 2>&1 | tail -60
+```
+
+Expected: both suites pass. Look for the two new example lines, e.g.:
+
+```text
+  bare goto in onCmd (no emit/noEmit) fires the new error
+  bare goto in onEpsilon (no emit/noEmit) fires the new error
+```
+
+and no failures.
+
+**M2 — re-run the audit; expect only the two double-goto fixtures to remain:**
+
+```bash
+for f in $(grep -rln --include='*.hs' 'B\.goto\|B\.onEpsilon\|B\.onCmd' src test jitsurei); do
+  awk -v F="$f" '
+    /B\.onCmd|B\.onEpsilon/ { inblk=1; start=NR; hasterm=0; next }
+    inblk && /B\.emit|B\.emitWith|B\.noEmit/ { hasterm=1 }
+    inblk && /B\.goto/ { if (!hasterm) print F":"start": SILENT (goto, no emit/noEmit)"; inblk=0 }
+  ' "$f"
+done
+```
+
+Expected:
+
+```text
+test/Keiki/BuilderSpike.hs:199: SILENT (goto, no emit/noEmit)
+test/Keiki/BuilderSpec.hs:234: SILENT (goto, no emit/noEmit)
+```
+
+(Line numbers shift by the inserted `B.noEmit` lines; these two are the
+double-goto fixtures, which are handled by the goto-arity branch and are correct
+as-is.)
+
+**Commits.** Commit once per milestone. Every commit message must carry both
+trailers:
+
+```text
+ExecPlan: docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md
+Intention: intention_01kwn3a8rzeav9vbmgg4r31f0w
+```
+
+Suggested commit subjects (Conventional Commits):
+
+- M1: `feat(builder)!: require explicit emit/noEmit intent on every edge`
+- M2: `test(builder): migrate silent edges to noEmit; cover the new error`
+- M3: `docs(builder): document required output intent and changelog entry`
+
+The `!` on M1 marks the behavioral tightening.
+
+
+## Validation and Acceptance
+
+The change is validated by behavior, not just compilation:
+
+1. **The new error fires for a forgotten emit.** After M1+M2, an `onCmd` body that
+   ends in `B.goto` with no output call causes `evaluate (head (edgesOut tr A))`
+   to throw an `errorCall` whose message is exactly:
+
+   ```text
+   Keiki.Builder: edge #0 from A: no emit or noEmit. Each onCmd/onEpsilon body must call 'emit' (or 'emitWith') to produce an event, or 'noEmit' to declare the edge deliberately silent (ε-edge).
+   ```
+
+   This is asserted by the two new regression tests (`onCmd` and `onEpsilon`
+   forms).
+
+2. **Deliberate silence still works.** "case 5" in `test/Keiki/BuilderSpec.hs`
+   (`noEmit` yields `output = []`) continues to pass, proving `noEmit` still
+   produces an ε-edge — now as the *sanctioned* way to do so. The migrated
+   `coffeeBuilt` edge (with `noEmit`) keeps `output = []`, so the spike's
+   delta/omega agreement tests for "Brewing + Continue" continue to pass.
+
+3. **Emit still works and is unaffected.** All existing `emit`-based cases
+   (cases 1, 2, 4 in `BuilderSpec.hs`, the Idle+Insert agreement in
+   `BuilderSpike.hs`, and every `jitsurei` example) pass unchanged, proving the
+   new flag does not disturb the emit path.
+
+4. **Goto-arity precedence is preserved.** The double-goto and missing-goto tests
+   pass with their original messages, proving the new check does not shadow the
+   goto diagnostics.
+
+5. **Whole-suite green.** `cabal test all` passes for `keiki-test` and
+   `jitsurei-test`, demonstrating no real consumer regressed.
+
+Acceptance is the conjunction of all five, plus the silent-edge audit reporting
+only the two double-goto fixtures.
+
+
+## Idempotence and Recovery
+
+Every step is safe to repeat. The code edits are small and local; re-running
+`cabal build` / `cabal test` is idempotent. The audit scripts are read-only.
+
+If M1's build fails because the new `peOutputDecided` field was added to the record
+type but not to one of the three construction sites (`onCmd`, `onEpsilon`, and the
+error is a "fields not initialised" warning-as-error or a type error), add the
+missing `peOutputDecided = False`/`= True` to the offending `PartialEdge { … }`
+literal. GHC names the site.
+
+If M2's new tests fail *only* on message text, the assertion string and the
+`error` string have drifted — reconcile them character-for-character (the `ε`
+symbol is easy to lose in a copy). Do not relax the test to a substring match; the
+exact message is part of the contract.
+
+If, after M1, one of the double-goto tests reports the *new* message instead of the
+double-goto message, the branch ordering in `finalizeEdge` is wrong: ensure the
+`(_ : _ : _)` case still precedes nothing that could catch two targets, and that
+the output-intent guard lives strictly inside the single-target `[t]` branch.
+
+To roll back entirely, revert the commits for M1–M3; there are no migrations,
+generated artifacts, or external state involved.
+
+
+## Interfaces and Dependencies
+
+No new libraries. All work is inside the existing `keiki` package (`src/`,
+`test/`) and its documentation, plus a changelog entry. The `jitsurei` package is
+only *exercised* (via `cabal test all`) to confirm no regression; it is not edited.
+
+Signatures and shapes that must exist at the end of each milestone (all in
+`src/Keiki/Builder.hs` unless noted):
+
+- **After M1:**
+  - `PartialEdge` gains `peOutputDecided :: Bool` (its public-facing type is
+    internal to the module; `PartialEdge` is not exported).
+  - `noEmit :: EdgeBuilder rs ci co v w w ()` — unchanged signature, new behavior
+    (sets `peOutputDecided = True`).
+  - `emit`, `emitWith` — unchanged signatures, each now also sets
+    `peOutputDecided = True`.
+  - `finalizeEdge :: (Show v) => Int -> v -> PartialEdge rs ci co v w -> Edge …`
+    — unchanged signature, new finalize-time error when an edge has exactly one
+    `goto` but `peOutputDecided == False`.
+  - The public exports of `Keiki.Builder` (the module export list) are unchanged;
+    this is purely an added runtime precondition, not an API surface change.
+
+- **After M2:** `test/Keiki/BuilderSpec.hs` contains two new `it "…"` regression
+  tests asserting the new error for `onCmd` and `onEpsilon`; `BuilderSpike.hs` and
+  `BuilderSpec.hs` case 10 carry an added `B.noEmit`. Test suites `keiki-test` and
+  `jitsurei-test` both pass.
+
+- **After M3:** `CHANGELOG.md` has a `### Changed` entry under `[Unreleased]`;
+  `docs/research/edge-builder-dsl-shape.md` states that `noEmit` is required for
+  silent edges and carries a dated decision note.
+
+
+## Revision Notes
+
+- 2026-07-12: Adopted into MasterPlan 16
+  (`docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`)
+  with a soft dependency on plan 70 (eager builder validation). Added a Decision
+  Log entry correcting this plan's assumption that `buildTransducer` evaluates
+  the builder eagerly — the 2026-07 architecture review showed `finalizeEdge`
+  errors are lazy thunks until plan 70 makes finalization eager — and stating
+  how to implement in either landing order. Frontmatter gained the
+  `master_plan` field. No change to the diagnostic's design (`peOutputDecided`
+  flag, message text, test list).
