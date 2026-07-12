@@ -102,7 +102,15 @@ spec = do
       case reconstitute splitCoverageBad emitted of
         Nothing -> pure ()
         Just _ -> expectationFailure "splitCoverageBad unexpectedly replayed its own log"
-      validateTransducer defaultValidationOptions splitCoverageBad `shouldBe` []
 
-    it "validator flags the head-unrecoverable edge" $
-      pendingWith "EP-71 Milestone 2 adds HeadUnrecoverable"
+    it "validator flags the head-unrecoverable edge" $ do
+      let warnings = validateTransducer defaultValidationOptions splitCoverageBad
+          isHeadWarning
+            ( HeadUnrecoverable
+                { tvwEdge = EdgeRef {edgeSource = False, edgeIndex = 0},
+                  tvwInCtor = Just "Begin",
+                  tvwTailOnlySlots = ["c"]
+                }
+              ) = True
+          isHeadWarning _ = False
+      warnings `shouldSatisfy` any isHeadWarning

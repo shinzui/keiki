@@ -76,12 +76,13 @@ here, splitting partially-done items into "done" and "remaining" parts.
       the current validator-clean/replay-fails behavior is pinned and the future
       warning assertion is the sole pending example, keeping milestone commits green.
       (completed 2026-07-12 16:14 -0700)
-- [ ] Milestone 2: `hiddenInputReasons` reworked to head-based analysis;
+- [x] Milestone 2: `hiddenInputReasons` reworked to head-based analysis;
       `HirHeadUnrecoverable` reason added; `HeadUnrecoverable` constructor added to
       `TransducerValidationWarning`; `checkHeadRecoverability` option added.
-- [ ] Milestone 2: `test/Keiki/CoreHiddenInputsGSMSpec.hs` rewritten against the new
+      (completed 2026-07-12 16:18 -0700)
+- [x] Milestone 2: `test/Keiki/CoreHiddenInputsGSMSpec.hs` rewritten against the new
       semantics (the old union-passes-clean pin is deleted); red spec from Milestone 1
-      goes green.
+      goes green. (completed 2026-07-12 16:18 -0700)
 - [ ] Milestone 3: `InversionAmbiguity` check implemented
       (`inversionAmbiguityWarnings`), wired into `validateTransducer`, specs added.
 - [ ] Milestone 4: `UnguardedInputRead` check implemented

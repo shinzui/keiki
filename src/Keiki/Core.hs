@@ -153,6 +153,7 @@ module Keiki.Core
     defaultValidationOptions,
     validateTransducer,
     hiddenInputWarnings,
+    headRecoverabilityWarnings,
     opaqueGuardWarnings,
     DeterminismWarning (..),
     checkTransitionDeterminism,
@@ -166,6 +167,8 @@ module Keiki.Core
     termReadsInput,
     updateReadsInput,
     outFieldsHaveInpCtorField,
+    HiddenInputReason (..),
+    hiddenInputReasons,
     detectMissingInCtorFields,
     MissingInCtorFields (..),
   )
@@ -1317,18 +1320,15 @@ data HiddenInputWarning = HiddenInputWarning
 --   * If @output@ is @[]@ (an ε-edge), and @update@ reads the input
 --     symbol, that contribution is silent on the wire and
 --     unrecoverable.
---   * If @output@ is non-empty, the per-edge check groups the
---     'OPack's by 'InCtor' name (via 'icName') and computes the
---     *union* of slots visited across every 'OPack' naming the same
---     'InCtor'. If the union still leaves any of the 'InCtor''s
---     slots unvisited, the warning names the 'InCtor' and the
---     missing slot(s).
+--   * If @output@ is non-empty, the per-edge check distinguishes data
+--     absent from the entire output union ('HirUnionMiss') from data
+--     present only after the head event ('HirHeadUnrecoverable'). Replay
+--     cannot use tail-only data because 'applyEventStreaming' inverts only
+--     the head and equality-checks the tail.
 --
--- For length-1 edges this matches the legacy per-'OPack' check
--- (there is only one 'OPack' so the union is trivial). For length-2+
--- edges the union strengthening means an 'InCtor' jointly recovered
--- by multiple 'OPack's in the same edge — none of which covers all
--- slots alone, but together they do — does *not* fire the warning.
+-- For length-1 edges this matches the legacy per-'OPack' check. For
+-- length-2+ edges, union coverage is retained only to classify the fix:
+-- add absent data to the output, or move tail-only data into the head.
 --
 -- The check is intentionally conservative: it flags candidates for
 -- the author to inspect, not theorems.
@@ -1361,27 +1361,43 @@ data HiddenInputReason
     --       never recovers (after unioning every same-constructor 'OPack').
     --       Carries the constructor name and the missing slot names.
     HirUnionMiss String [String]
+  | -- | The named input constructor's slots appear in the output union but
+    --       not in the head event, so replay cannot reach them. Carries the
+    --       constructor name and the tail-only slot names.
+    HirHeadUnrecoverable String [String]
   deriving (Eq, Show)
 
 -- | The per-edge hidden-input analysis, factored out of 'checkHiddenInputs'
 -- so the legacy string warnings and the structured 'hiddenInputWarnings' share
 -- one implementation. For an ε-edge it reports 'HirEpsilonReadsInput' iff the
 -- update reads the input; for a non-empty output it groups 'OPack's by input
--- constructor name, unions the recovered slots, and reports a 'HirUnionMiss' for
--- any constructor with uncovered slots (first-seen order, deterministic).
+-- constructor name, unions the recovered slots, and classifies misses as absent
+-- from the union or present only after the head event (first-seen order,
+-- deterministic).
 hiddenInputReasons ::
   forall phi rs ci co s. Edge phi rs ci co s -> [HiddenInputReason]
 hiddenInputReasons e = case output e of
   []
     | edgeReadsInput e -> [HirEpsilonReadsInput]
     | otherwise -> []
-  outs ->
-    [ HirUnionMiss icN missing
-    | (icN, allSlots, visitedUnion) <- groupByInCtorName outs,
-      let missing = allSlots \\ nub visitedUnion,
-      not (null missing)
-    ]
+  outs@(headOut : _) -> concatMap (reasonsFor headOut) (groupByInCtorName outs)
   where
+    reasonsFor ::
+      OutTerm rs ci co ->
+      (String, [String], [String]) ->
+      [HiddenInputReason]
+    reasonsFor headOut (icN, allSlots, visitedUnion) =
+      [HirUnionMiss icN missingFromUnion | not (null missingFromUnion)]
+        ++ [HirHeadUnrecoverable icN tailOnly | not (null tailOnly)]
+      where
+        missingFromUnion = allSlots \\ nub visitedUnion
+        missingFromHead = case headOut of
+          OPack headIc _ headFields
+            | icName headIc == icN ->
+                maybe [] mifMissing (detectMissingInCtorFields headIc headFields)
+            | otherwise -> allSlots
+        tailOnly = missingFromHead \\ missingFromUnion
+
     -- Walk the output list, accumulating per-InCtor (slot list, visited
     -- slots). First seen wins on the slot list; subsequent OPacks with the
     -- same InCtor name extend the visited list.
@@ -1442,6 +1458,21 @@ formatHiddenInputReason n (HirUnionMiss icN missing) =
     <> "{"
     <> showMissing missing
     <> "} unrecovered"
+  where
+    showMissing :: [String] -> String
+    showMissing [] = ""
+    showMissing [x] = "\"" <> x <> "\""
+    showMissing (x : xs) = "\"" <> x <> "\", " <> showMissing xs
+formatHiddenInputReason n (HirHeadUnrecoverable icN missing) =
+  "edge #"
+    <> show n
+    <> ": head event does not recover InCtor \""
+    <> icN
+    <> "\" field"
+    <> (if length missing == 1 then " " else "s ")
+    <> "{"
+    <> showMissing missing
+    <> "}; the data appears only in later events of this edge, which replay cannot invert - move the field(s) into the FIRST emitted event"
   where
     showMissing :: [String] -> String
     showMissing [] = ""
@@ -1550,6 +1581,16 @@ data TransducerValidationWarning s
         -- | human-readable summary
         tvwDetail :: String
       }
+  | -- | A multi-event edge whose first event cannot recover all command
+    --       fields even though later events carry the missing data. Streaming
+    --       replay inverts only the first event, so the edge produces a log it
+    --       cannot replay.
+    HeadUnrecoverable
+      { tvwEdge :: EdgeRef s,
+        tvwInCtor :: Maybe String,
+        tvwTailOnlySlots :: [String],
+        tvwDetail :: String
+      }
   | -- | Two outgoing edges of the same vertex whose guards can both hold
     --       for one command — a runtime nondeterminism / single-valuedness
     --       violation (its dynamic witness is EP-55's @AmbiguousEdges@).
@@ -1582,8 +1623,8 @@ data TransducerValidationWarning s
       }
   deriving stock (Eq, Show)
 
--- | Which checks 'validateTransducer' runs. All default to 'True' (see
--- 'defaultValidationOptions').
+-- | Which checks 'validateTransducer' runs. Construct options by updating
+-- 'defaultValidationOptions'; new fields are added as new checks land.
 data ValidationOptions = ValidationOptions
   { -- | run the hidden-input check
     failOnEpsilonReadsInput :: Bool,
@@ -1595,7 +1636,10 @@ data ValidationOptions = ValidationOptions
     --     guard branches on an opaque 'TApp' term the symbolic analyses cannot
     --     see through. Off by default so 'defaultValidationOptions' keeps its
     --     meaning for existing consumers.
-    warnOpaqueGuards :: Bool
+    warnOpaqueGuards :: Bool,
+    -- | require the first emitted event to recover every command field used
+    --     by replay
+    checkHeadRecoverability :: Bool
   }
   deriving stock (Eq, Show)
 
@@ -1606,7 +1650,8 @@ defaultValidationOptions =
     { failOnEpsilonReadsInput = True,
       checkDeterminism = True,
       checkReachability = True,
-      warnOpaqueGuards = False
+      warnOpaqueGuards = False,
+      checkHeadRecoverability = True
     }
 
 -- | The build-time validation umbrella. Runs the enabled checks over the
@@ -1630,6 +1675,7 @@ validateTransducer ::
 validateTransducer opts t =
   concat
     [ if failOnEpsilonReadsInput opts then hiddenInputWarnings t else [],
+      if checkHeadRecoverability opts then headRecoverabilityWarnings t else [],
       if checkDeterminism opts then determinismWarnings t else [],
       if checkReachability opts
         then
@@ -1659,13 +1705,39 @@ hiddenInputWarnings t =
       }
   | s <- [minBound .. maxBound],
     (n, e) <- zip [(0 :: Int) ..] (edgesOut t s),
-    r <- hiddenInputReasons e
+    r <- hiddenInputReasons e,
+    isHiddenReason r
   ]
   where
     inCtorOf (HirUnionMiss icN _) = Just icN
     inCtorOf HirEpsilonReadsInput = Nothing
+    inCtorOf (HirHeadUnrecoverable _ _) = Nothing
     missingSlotsOf (HirUnionMiss _ ms) = ms
     missingSlotsOf HirEpsilonReadsInput = []
+    missingSlotsOf (HirHeadUnrecoverable _ _) = []
+    isHiddenReason HirEpsilonReadsInput = True
+    isHiddenReason (HirUnionMiss _ _) = True
+    isHiddenReason (HirHeadUnrecoverable _ _) = False
+
+-- | Warn when a multi-event edge's head event cannot alone recover command
+-- fields that appear later in the same output chain. 'applyEventStreaming'
+-- inverts only the head output; tail events are equality-checked after the edge
+-- has already been selected.
+headRecoverabilityWarnings ::
+  (Bounded s, Enum s) =>
+  SymTransducer phi rs s ci co ->
+  [TransducerValidationWarning s]
+headRecoverabilityWarnings t =
+  [ HeadUnrecoverable
+      { tvwEdge = EdgeRef {edgeSource = s, edgeIndex = n},
+        tvwInCtor = Just icN,
+        tvwTailOnlySlots = missing,
+        tvwDetail = formatHiddenInputReason n reason
+      }
+  | s <- [minBound .. maxBound],
+    (n, e) <- zip [(0 :: Int) ..] (edgesOut t s),
+    reason@(HirHeadUnrecoverable icN missing) <- hiddenInputReasons e
+  ]
 
 -- ** Opaque-guard diagnostics
 
