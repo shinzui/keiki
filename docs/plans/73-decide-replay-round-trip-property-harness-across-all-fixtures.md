@@ -82,14 +82,12 @@ implementation. Provide concise evidence.
 Authoring-time findings that shaped the design (recorded here because they are
 observations about the code, not choices):
 
-- The naive round-trip law is already false on an in-tree fixture: the
-  GDPR-before-confirmation edge of `Keiki.Fixtures.UserRegistration`
-  (`test/Keiki/Fixtures/UserRegistration.hs`, lines 354-358) is a silent ε-edge
-  (`B.noEmit`) that moves `RequiresConfirmation → Deleted` while emitting nothing.
-  Forward execution ends at `Deleted`; the log records nothing; replay ends at
-  `RequiresConfirmation`. EP-71 now detects this shape by default. The fixture must
-  emit a domain event or move to the invalid teeth group; the green property is not
-  truncated to hide it.
+- During EP-71 implementation, the naive round-trip law exposed the
+  GDPR-before-confirmation edge of `Keiki.Fixtures.UserRegistration`: it moved
+  `RequiresConfirmation → Deleted` while emitting nothing. EP-71 migrated that edge
+  to emit `AccountDeleted`, so the fixture now belongs in this plan's green property
+  corpus. Keep the regression in the corpus; do not recreate the old silent edge or
+  truncate generated command sequences to hide it.
 - `Keiki.Render.Inspector` (`src/Keiki/Render/Inspector.hs`) renders edge *structure*
   (guards, written-slot names via `writtenSlots`, output field terms), not the runtime
   *values* in a `RegFile`, so it cannot serve as the state-comparison vehicle.
@@ -283,9 +281,9 @@ aggregate (`EmailPending → EmailSentVertex` on `SendEmail`, emitting `EmailSen
 `test/Keiki/Fixtures/UserRegistration.hs` is the canonical worked example: vertices
 `PotentialCustomer | RequiresConfirmation | Confirmed | Deleted`; a multi-event
 `StartRegistration` edge; a `ConfirmAccount` edge guarded by `requireEq` on the stored
-`confirmCode`; a code-rotating `ResendConfirmation` self-loop; a *silent ε GDPR edge*
-from `RequiresConfirmation` (lines 354-358) and an event-emitting GDPR edge from
-`Confirmed`. EP-71 adds further fixtures under `test/Keiki/Fixtures/` whose outputs
+`confirmCode`; a code-rotating `ResendConfirmation` self-loop; and event-emitting GDPR
+edges from both `RequiresConfirmation` and `Confirmed`. EP-71 adds further fixtures
+under `test/Keiki/Fixtures/` whose outputs
 read registers (`TReg` fields) and whose multi-event edges are the review's risk
 shapes; this plan must reuse them, not fork them (master plan integration point 4).
 The `jitsurei/` package holds eight larger worked-example aggregates under

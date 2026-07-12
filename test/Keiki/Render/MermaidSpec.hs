@@ -251,7 +251,7 @@ userRegCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted",
       "    Deleted --> [*]"
     ]
@@ -273,7 +273,7 @@ userRegAnnotatedCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [w: registeredAt; confirmCode; email; g: PInCtor]",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [w: confirmedAt; g: PAnd PInCtor PEq]",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [w: registeredAt; confirmCode; g: PInCtor]",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [w: deletedAt; g: PInCtor]",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted [w: deletedAt; g: PInCtor]",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [w: deletedAt; g: PInCtor]",
       "    Deleted --> [*]"
     ]
@@ -294,7 +294,7 @@ userRegPrettyGuardCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [g: StartRegistration]",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [g: (ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)]",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [g: ResendConfirmation]",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [g: FulfillGDPRRequest]",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted [g: FulfillGDPRRequest]",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [g: FulfillGDPRRequest]",
       "    Deleted --> [*]"
     ]
@@ -316,7 +316,7 @@ userRegMultilineCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent<br/>w: registeredAt; confirmCode; email<br/>g: PInCtor",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed<br/>w: confirmedAt<br/>g: PAnd PInCtor PEq",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent<br/>w: registeredAt; confirmCode<br/>g: PInCtor",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5<br/>w: deletedAt<br/>g: PInCtor",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>w: deletedAt<br/>g: PInCtor",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>w: deletedAt<br/>g: PInCtor",
       "    Deleted --> [*]"
     ]
@@ -335,7 +335,7 @@ userRegSlotTruncCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [w: registeredAt; confirmCode; +1 more]",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [w: confirmedAt]",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [w: registeredAt; confirmCode]",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [w: deletedAt]",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted [w: deletedAt]",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [w: deletedAt]",
       "    Deleted --> [*]"
     ]
@@ -354,7 +354,7 @@ userRegGuardTruncCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [g: PInCtor]",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [g: PAnd PInCt\x2026]",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [g: PInCtor]",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5 [g: PInCtor]",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted [g: PInCtor]",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [g: PInCtor]",
       "    Deleted --> [*]"
     ]
@@ -446,7 +446,7 @@ userRegLabeledCanonical =
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent",
       "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent",
-      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / \x03B5",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted",
       "    Deleted --> [*]"
     ]

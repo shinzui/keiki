@@ -87,10 +87,9 @@ spec = do
         [RegistrationStarted _, ConfirmationEmailSent _] -> pure ()
         _ -> expectationFailure ("unexpected event sequence: " <> show evs)
 
-    it "ε-edge limitation: GDPR from RequiresConfirmation yields [] from decide" $ do
+    it "GDPR from RequiresConfirmation emits AccountDeleted and evolves to Deleted" $ do
       -- Drive the aggregate to RequiresConfirmation by chunk-replaying
-      -- StartRegistration's two-event chain, then attempt the silent
-      -- ε-edge (FulfillGDPRRequest before the user has confirmed).
+      -- StartRegistration's two-event chain, then delete before confirmation.
       let d = toDecider userReg
           startCmd = StartRegistration (StartRegistrationData "bob@x" "S0E1" (t 0))
           startEvs = decide d startCmd (initialState d)
@@ -102,17 +101,10 @@ spec = do
           afterGdpr = foldl (evolve d) preGdpr evs
       length startEvs `shouldBe` 2
       fst preGdpr `shouldBe` RequiresConfirmation
-      evs `shouldBe` []
-      -- The ε-edge limitation: with no event, evolve is a no-op, so
-      -- the façade leaves the state at RequiresConfirmation even
-      -- though the keiki delta would transition to Deleted.
-      fst afterGdpr `shouldBe` RequiresConfirmation
+      evs `shouldBe` [AccountDeleted (AccountDeletedData "bob@x" (t 999))]
+      fst afterGdpr `shouldBe` Deleted
 
-    it "ε-edge cross-check: delta does transition the same input to Deleted" $ do
-      -- Companion to the previous case: confirm that the keiki
-      -- transducer itself can drive the ε-edge via 'delta'. The point
-      -- is that the limitation lives at the façade boundary, not in
-      -- the underlying transducer.
+    it "delta agrees with the durable pre-confirmation deletion path" $ do
       let d = toDecider userReg
           startCmd = StartRegistration (StartRegistrationData "carol@x" "T1V2" (t 0))
           startEvs = decide d startCmd (initialState d)

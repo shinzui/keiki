@@ -6,8 +6,7 @@
 -- @CollectingDocuments -> UnderReview@ transition (and the
 -- subsequent 'ApplicationApproved' produced by 'Continue' from
 -- 'UnderReview') cannot be reconstituted from a public event log
--- alone. Those steps are tested with 'delta' directly below; the
--- full multi-event drive end-to-end belongs to M3.
+-- alone. Those steps are tested with 'delta' directly below.
 module Jitsurei.LoanApplicationSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
@@ -77,13 +76,13 @@ spec = do
               expectationFailure "delta with Continue returned Nothing"
         _ -> expectationFailure "evidence log did not land at CollectingDocuments"
 
-    it "step with Continue produces no event (the silent ε-edge)" $
+    it "step with Continue produces no event (the process-control ε-edge)" $
       case reconstitute loanApplication canonicalEvidenceLog of
         Just (CollectingDocuments, regs) ->
           case step loanApplication (CollectingDocuments, regs) Continue of
-            Just (s, _, mco) -> do
+            Just (s, _, emitted) -> do
               s `shouldBe` UnderReview
-              mco `shouldBe` []
+              emitted `shouldBe` []
             Nothing ->
               expectationFailure "step with Continue returned Nothing"
         _ -> expectationFailure "evidence log did not land at CollectingDocuments"

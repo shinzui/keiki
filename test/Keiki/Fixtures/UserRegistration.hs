@@ -351,10 +351,16 @@ userReg = B.buildTransducer
             }
         B.goto RequiresConfirmation
 
-      -- GDPR before confirmation: silent ε-edge (no event).
+      -- GDPR before confirmation is durable just like post-confirmation
+      -- deletion: changing state without an event would be lost on replay.
       B.onCmd inCtorGdpr $ \d -> B.do
         B.slot @"deletedAt" .= d.at
-        B.noEmit
+        B.emit
+          wireAccountDeleted
+          AccountDeletedTermFields
+            { email = #email,
+              at = d.at
+            }
         B.goto Deleted
 
     B.from Confirmed do
@@ -479,14 +485,23 @@ userRegASTEdges = \case
             ],
           target = RequiresConfirmation
         },
-      -- GDPR before confirmation: silent ε-edge (no event).
+      -- GDPR before confirmation emits the deletion event so replay observes
+      -- the state and register change.
       Edge
         { guard = isGdpr,
           update =
             USet
               (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
               (inpGdpr #at),
-          output = [],
+          output =
+            [ pack
+                inCtorGdpr
+                wireAccountDeleted
+                ( OFCons
+                    (proj (#email :: Index UserRegRegs Email))
+                    (OFCons (inpGdpr #at) OFNil)
+                )
+            ],
           target = Deleted
         }
     ]

@@ -51,7 +51,7 @@ spec = do
           builtStates = [fmap fst (reconstitute loanApplication p) | p <- prefixes]
       astStates `shouldBe` builtStates
 
-  describe "EP-34 M2: silent Continue advance" $ do
+  describe "EP-34 M2: process-control Continue advance" $ do
     it "delta with Continue at threshold-met regs lands at UnderReview in both forms" $
       case ( reconstitute loanApplicationAST canonicalEvidenceLog,
              reconstitute loanApplication canonicalEvidenceLog

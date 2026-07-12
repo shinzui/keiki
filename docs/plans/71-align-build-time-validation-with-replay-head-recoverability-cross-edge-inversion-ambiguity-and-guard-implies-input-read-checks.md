@@ -89,11 +89,13 @@ here, splitting partially-done items into "done" and "remaining" parts.
 - [x] Milestone 4: `UnguardedInputRead` check implemented
       (`guardImpliesInputReadWarnings`), wired into `validateTransducer`, specs added.
       (completed 2026-07-12 16:25 -0700)
-- [ ] Milestone 5: `StateChangingEpsilon` warning and
+- [x] Milestone 5: `StateChangingEpsilon` warning and
       `checkStateChangingEpsilon` option added; no-op `UKeep` self-loop remains clean;
       state-changing cases and replay divergence tested.
-- [ ] Milestone 6: full-suite audit — every pre-existing fixture/spec that now warns is
+      (completed 2026-07-12 16:29 -0700)
+- [x] Milestone 6: full-suite audit — every pre-existing fixture/spec that now warns is
       classified and fixed; `cabal test all` green; `nix fmt -- --no-cache` clean.
+      (completed 2026-07-12 16:36 -0700)
 - [ ] Milestone 7: haddocks updated (replay contract stated on `validateTransducer`,
       `applyEventStreaming`, `solveOutput`); `CHANGELOG.md` entry written; keiro
       migration section below confirmed against keiro's actual source.
@@ -155,6 +157,25 @@ implementation, with concise evidence.
   implement the planned literal-bottom exemption. `inversionAmbiguityWarnings`
   directly exempts a pair when either guard itself is literal `PBot`, which is the
   intended sound case.
+
+- **(implementation, 2026-07-12)** The default-on epsilon check exposed two
+  validation specs that called output-free vertex-changing transducers "clean".
+  Their fixtures now emit distinct reconstructable events; the clean assertions were
+  preserved. It also exposed the durable pre-confirmation deletion in both User
+  Registration fixtures. That edge now emits `AccountDeleted`, and the decider,
+  inspector, Mermaid, and dependent EP-73 expectations were migrated with it.
+
+- **(implementation, 2026-07-12)** `Jitsurei.LoanApplication` deliberately retains
+  one output-free `Continue` promotion. The example is a process-control tutorial
+  whose driver retains control state, not a persist-only stream; its source and specs
+  now say so explicitly and direct durable users to emit the reserved
+  `ReadyForReview` event while keeping `checkStateChangingEpsilon` enabled.
+
+- **(verification, 2026-07-12)** The acceptance GHCi session reports exactly one
+  `HeadUnrecoverable` warning for `splitCoverageBad`, with
+  `tvwTailOnlySlots = ["c"]`; legacy `checkHiddenInputs` includes the phrase
+  `head event does not recover`. `cabal test all` passed with 408 keiki examples,
+  96 jitsurei examples, and both codec suites green after a no-error formatting run.
 
 
 ## Decision Log

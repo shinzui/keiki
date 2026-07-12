@@ -581,11 +581,11 @@ loanApplication = B.buildTransducer
       -- than 'onEpsilon' so the symbolic-mutex check ('isSingleValuedSym')
       -- can reason about it as a regular Continue-keyed edge: the
       -- inCtor witness disambiguates this edge from the five
-      -- evidence-collection edges out of the same vertex. Echoes the
-      -- pattern in 'Jitsurei.UserRegistration's GDPR-from-
-      -- 'RequiresConfirmation' edge ('onCmd inCtorGdpr' with
-      -- 'noEmit'). See the plan's Decision Log entry for the
-      -- onEpsilon -> onCmd inCtorContinue rationale.
+      -- evidence-collection edges out of the same vertex. This aggregate is
+      -- a process-control tutorial model, not a persist-only event stream:
+      -- its driver must retain the control state across this internal step.
+      -- A durable boundary should instead emit the reserved ReadyForReview
+      -- domain event and keep checkStateChangingEpsilon enabled.
       B.onCmd inCtorContinue $ \_d -> B.do
         B.requireGuard readyForReviewGuard
         B.noEmit
@@ -836,7 +836,7 @@ loanApplicationASTEdges = \case
           target = Withdrawn
         },
       -- "ε-edge" — no public event — fired by Continue when the
-      -- threshold guards hold. See builder-form comment.
+      -- threshold guards hold. See builder-form durability caveat.
       Edge
         { guard = isContinue .&& readyForReviewGuard,
           update = UKeep,

@@ -156,6 +156,7 @@ module Keiki.Core
     headRecoverabilityWarnings,
     inversionAmbiguityWarnings,
     guardImpliesInputReadWarnings,
+    stateChangingEpsilonWarnings,
     opaqueGuardWarnings,
     DeterminismWarning (..),
     checkTransitionDeterminism,
@@ -1611,6 +1612,15 @@ data TransducerValidationWarning s
         tvwInCtor :: Maybe String,
         tvwDetail :: String
       }
+  | -- | An output-free edge changes control state or can write registers.
+    --       Persisting only emitted events loses that transition, so replay of
+    --       the resulting log cannot reproduce the forward state.
+    StateChangingEpsilon
+      { tvwEdge :: EdgeRef s,
+        tvwChangesVertex :: Bool,
+        tvwWritesRegisters :: Bool,
+        tvwDetail :: String
+      }
   | -- | Two outgoing edges of the same vertex whose guards can both hold
     --       for one command — a runtime nondeterminism / single-valuedness
     --       violation (its dynamic witness is EP-55's @AmbiguousEdges@).
@@ -1665,7 +1675,12 @@ data ValidationOptions = ValidationOptions
     checkInversionAmbiguity :: Bool,
     -- | require every input-field read to be protected by an earlier matching
     --     constructor guard
-    checkGuardImpliesInputRead :: Bool
+    checkGuardImpliesInputRead :: Bool,
+    -- | reject output-free edges that change vertex or can write registers.
+    --     Never disable this for a transducer whose events are persisted:
+    --     downstream durable boundaries must force-enable it rather than let
+    --     callers opt out.
+    checkStateChangingEpsilon :: Bool
   }
   deriving stock (Eq, Show)
 
@@ -1679,7 +1694,8 @@ defaultValidationOptions =
       warnOpaqueGuards = False,
       checkHeadRecoverability = True,
       checkInversionAmbiguity = True,
-      checkGuardImpliesInputRead = True
+      checkGuardImpliesInputRead = True,
+      checkStateChangingEpsilon = True
     }
 
 -- | The build-time validation umbrella. Runs the enabled checks over the
@@ -1706,6 +1722,7 @@ validateTransducer opts t =
       if checkHeadRecoverability opts then headRecoverabilityWarnings t else [],
       if checkInversionAmbiguity opts then inversionAmbiguityWarnings t else [],
       if checkGuardImpliesInputRead opts then guardImpliesInputReadWarnings t else [],
+      if checkStateChangingEpsilon opts then stateChangingEpsilonWarnings t else [],
       if checkDeterminism opts then determinismWarnings t else [],
       if checkReachability opts
         then
@@ -1920,6 +1937,56 @@ guardImpliesInputReadWarnings t =
         ],
         established
       )
+
+-- ** State-changing epsilon diagnostics
+
+updateWritesRegisters :: Update rs w ci -> Bool
+updateWritesRegisters UKeep = False
+updateWritesRegisters USet {} = True
+updateWritesRegisters (UCombine a b) =
+  updateWritesRegisters a || updateWritesRegisters b
+
+-- | Flag output-free edges that change control state or are structurally
+-- capable of writing registers. Such an edge can be meaningful when a
+-- transducer is used only as an in-memory state machine, but it is not durable:
+-- persisting the empty output loses the transition and replay cannot reproduce
+-- its result.
+--
+-- Control-state detection is exact. Register detection is conservative:
+-- 'USet', or any 'UCombine' containing one, warns even when a particular write
+-- happens to store the value already present. A self-loop with 'UKeep' remains
+-- clean.
+stateChangingEpsilonWarnings ::
+  forall rs s ci co.
+  (Bounded s, Enum s, Eq s, Show s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  [TransducerValidationWarning s]
+stateChangingEpsilonWarnings t =
+  [ StateChangingEpsilon
+      { tvwEdge = EdgeRef {edgeSource = source, edgeIndex = edgeNumber},
+        tvwChangesVertex = changesVertex,
+        tvwWritesRegisters = writesRegisters,
+        tvwDetail =
+          "output-free edge #"
+            <> show edgeNumber
+            <> " out of "
+            <> show source
+            <> changeSummary changesVertex writesRegisters
+            <> "; persisted replay cannot reproduce that transition without an emitted event"
+      }
+  | source <- [minBound .. maxBound],
+    (edgeNumber, Edge {update = edgeUpdate, output = edgeOutput, target = edgeTarget}) <-
+      zip [(0 :: Int) ..] (edgesOut t source),
+    null edgeOutput,
+    let changesVertex = edgeTarget /= source,
+    let writesRegisters = updateWritesRegisters edgeUpdate,
+    changesVertex || writesRegisters
+  ]
+  where
+    changeSummary True True = " changes vertex and can write registers"
+    changeSummary True False = " changes vertex"
+    changeSummary False True = " can write registers"
+    changeSummary False False = ""
 
 -- ** Replay inversion diagnostics
 

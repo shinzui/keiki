@@ -153,6 +153,40 @@ rightOrderReadTransducer =
         (PEq (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int)) (TLit 7))
     )
 
+data EpsilonVertex = EpsilonStart | EpsilonEnd
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+data EpsilonCase
+  = ChangesVertexOnly
+  | WritesRegistersOnly
+  | ChangesBoth
+  | NoOpSelfLoop
+
+epsilonTransducer :: EpsilonCase -> SymTransducer (HsPred ReadRegs AmbiguousCmd) ReadRegs EpsilonVertex AmbiguousCmd ()
+epsilonTransducer epsilonCase =
+  SymTransducer
+    { edgesOut = \case
+        EpsilonStart ->
+          case epsilonCase of
+            ChangesVertexOnly ->
+              [Edge (matchInCtor inCtorX) UKeep [] EpsilonEnd]
+            WritesRegistersOnly ->
+              [Edge (matchInCtor inCtorX) setSeen [] EpsilonStart]
+            ChangesBoth ->
+              [Edge (matchInCtor inCtorX) setSeen [] EpsilonEnd]
+            NoOpSelfLoop ->
+              [Edge (matchInCtor inCtorX) UKeep [] EpsilonStart]
+        EpsilonEnd -> [],
+      initial = EpsilonStart,
+      initialRegs = RCons (Proxy @"seen") 0 RNil,
+      isFinal = (== EpsilonEnd)
+    }
+  where
+    setSeen =
+      USet
+        (#seen :: IndexN "seen" ReadRegs Int)
+        (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int))
+
 spec :: Spec
 spec = do
   describe "validate-clean transducers replay their own logs" $ do
@@ -209,6 +243,7 @@ spec = do
               FulfillGDPRRequest (FulfillGDPRRequestData (atTime 300))
             ]
       Just (forwardVertex, forwardRegs, emitted) <- pure (runCommands userReg commands)
+      validateTransducer defaultValidationOptions userReg `shouldBe` []
       case reconstitute userReg emitted of
         Just (replayVertex, replayRegs) -> do
           replayVertex `shouldBe` forwardVertex
@@ -304,3 +339,42 @@ spec = do
             Nothing -> 0
         )
         `shouldThrow` errorCall "evalTerm: TInpCtorField guard violation: CmdX"
+
+  describe "state-changing epsilon" $ do
+    let warningShape transducer =
+          [ (tvwChangesVertex, tvwWritesRegisters)
+          | StateChangingEpsilon
+              { tvwEdge = EdgeRef {edgeSource = EpsilonStart, edgeIndex = 0},
+                tvwChangesVertex,
+                tvwWritesRegisters
+              } <-
+              stateChangingEpsilonWarnings transducer
+          ]
+
+    it "reports vertex-only, register-only, and combined changes exactly" $ do
+      warningShape (epsilonTransducer ChangesVertexOnly) `shouldBe` [(True, False)]
+      warningShape (epsilonTransducer WritesRegistersOnly) `shouldBe` [(False, True)]
+      warningShape (epsilonTransducer ChangesBoth) `shouldBe` [(True, True)]
+
+    it "keeps a UKeep self-loop clean" $
+      validateTransducer defaultValidationOptions (epsilonTransducer NoOpSelfLoop)
+        `shouldBe` []
+
+    it "allows only this check to be disabled explicitly" $
+      validateTransducer
+        defaultValidationOptions {checkStateChangingEpsilon = False}
+        (epsilonTransducer ChangesVertexOnly)
+        `shouldBe` []
+
+    it "predicts empty-log replay divergence" $ do
+      let transducer = epsilonTransducer ChangesVertexOnly
+      Just (EpsilonEnd, _, emitted) <- pure (runCommands transducer [CmdX 7])
+      emitted `shouldBe` []
+      case reconstitute transducer emitted of
+        Just (EpsilonStart, _) -> pure ()
+        _ -> expectationFailure "empty log unexpectedly reproduced the forward vertex"
+
+    it "does not let the hidden-input and state-change checks mask each other" $ do
+      let warnings = validateTransducer defaultValidationOptions (epsilonTransducer ChangesBoth)
+      warnings `shouldSatisfy` any (\case HiddenInput {} -> True; _ -> False)
+      warnings `shouldSatisfy` any (\case StateChangingEpsilon {} -> True; _ -> False)

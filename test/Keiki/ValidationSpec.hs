@@ -26,6 +26,25 @@ inCtorBar =
       icBuild = \RNil -> Bar
     }
 
+data VEvent = Fooed | Bared
+  deriving stock (Eq, Show)
+
+wireFooed :: WireCtor VEvent ()
+wireFooed =
+  WireCtor
+    { wcName = "Fooed",
+      wcMatch = \case Fooed -> Just (); _ -> Nothing,
+      wcBuild = \() -> Fooed
+    }
+
+wireBared :: WireCtor VEvent ()
+wireBared =
+  WireCtor
+    { wcName = "Bared",
+      wcMatch = \case Bared -> Just (); _ -> Nothing,
+      wcBuild = \() -> Bared
+    }
+
 -- A three-state enum: Start (reachable), Mid (reachable), Orphan (unreachable).
 data V = Start | Mid | Orphan
   deriving stock (Eq, Ord, Show, Enum, Bounded)
@@ -73,13 +92,13 @@ botT =
 -- (d) a clean transducer: mutually exclusive guards, every vertex with edges
 -- is reachable, no overlapping/PBot guards. (Orphan has no outgoing edges, so
 -- although it is structurally unreachable it contributes no edge to flag.)
-cleanT :: SymTransducer (HsPred '[] Cmd) '[] V Cmd ()
+cleanT :: SymTransducer (HsPred '[] Cmd) '[] V Cmd VEvent
 cleanT =
   SymTransducer
     { edgesOut = \case
         Start ->
-          [ Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [], target = Mid},
-            Edge {guard = matchInCtor inCtorBar, update = UKeep, output = [], target = Mid}
+          [ Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [pack inCtorFoo wireFooed oNil], target = Mid},
+            Edge {guard = matchInCtor inCtorBar, update = UKeep, output = [pack inCtorBar wireBared oNil], target = Mid}
           ]
         _ -> [],
       initial = Start,
@@ -111,7 +130,7 @@ symOverlapT =
 -- no structural keiki node, so it is forced through TApp1.
 type ItemRegs = '[ '("items", [Int])]
 
-opaqueT :: SymTransducer (HsPred ItemRegs Cmd) ItemRegs V Cmd ()
+opaqueT :: SymTransducer (HsPred ItemRegs Cmd) ItemRegs V Cmd VEvent
 opaqueT =
   SymTransducer
     { edgesOut = \case
@@ -122,7 +141,7 @@ opaqueT =
                     (TApp1 (5 `elem`) (TReg (ZIdx :: Index ItemRegs [Int])))
                     (TLit True),
                 update = UKeep,
-                output = [],
+                output = [pack inCtorFoo wireFooed oNil],
                 target = Mid
               }
           ]
