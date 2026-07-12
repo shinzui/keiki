@@ -83,8 +83,9 @@ here, splitting partially-done items into "done" and "remaining" parts.
 - [x] Milestone 2: `test/Keiki/CoreHiddenInputsGSMSpec.hs` rewritten against the new
       semantics (the old union-passes-clean pin is deleted); red spec from Milestone 1
       goes green. (completed 2026-07-12 16:18 -0700)
-- [ ] Milestone 3: `InversionAmbiguity` check implemented
+- [x] Milestone 3: `InversionAmbiguity` check implemented
       (`inversionAmbiguityWarnings`), wired into `validateTransducer`, specs added.
+      (completed 2026-07-12 16:21 -0700)
 - [ ] Milestone 4: `UnguardedInputRead` check implemented
       (`guardImpliesInputReadWarnings`), wired into `validateTransducer`, specs added.
 - [ ] Milestone 5: `StateChangingEpsilon` warning and
@@ -147,6 +148,13 @@ implementation, with concise evidence.
   persisted canonical path without claiming the whole fixture is clean; Milestone 6
   will migrate the ε-edge and add the clean assertion.
 
+- **(implementation, 2026-07-12)** The pure `HsPred` `conj` method constructs
+  `PAnd` without simplifying it, while `isBot` recognizes only a top-level `PBot`.
+  Therefore applying `isBot` to a newly constructed guard conjunction cannot
+  implement the planned literal-bottom exemption. `inversionAmbiguityWarnings`
+  directly exempts a pair when either guard itself is literal `PBot`, which is the
+  intended sound case.
+
 
 ## Decision Log
 
@@ -175,8 +183,8 @@ implementation, with concise evidence.
   Date: 2026-07-12
 
 - Decision: the inversion-ambiguity check flags **every** pair of same-vertex edges
-  whose head OPacks name the same `WireCtor` (by `wcName`), exempting only pairs whose
-  guard conjunction is the literal `PBot` (via `isBot` on the pure carrier). No
+  whose head OPacks name the same `WireCtor` (by `wcName`), exempting only pairs where
+  either guard is the literal `PBot` (via `isBot` on each guard). No
   literal-field distinguishability is attempted: `TLit` carries no `Eq`/`Typeable`
   evidence, so literals of existential type cannot be compared (see Surprises). This
   is conservative in the correct direction — false positives surface as warnings the
@@ -589,9 +597,9 @@ For every vertex `s`, for every pair `(i, e1)`, `(j, e2)` with `i < j` of edges 
 `edgesOut t s` (mirror the pairing structure of `checkTransitionDeterminism`,
 `src/Keiki/Core.hs:1743-1761`): skip the pair unless both edges have non-empty
 `output`; take each edge's head OPack and compare `wcName` (`WireCtor`'s name field,
-`src/Keiki/Core.hs:463`); if equal and NOT `isBot (guard e1 `conj` guard e2)` (on the
-pure `HsPred` carrier `isBot` recognises only the literal `PBot` — the exemption is
-trivial but sound and free), emit a new warning:
+`src/Keiki/Core.hs:463`); if equal and neither guard is a literal `PBot` (test each
+with `isBot` directly, because `HsPred.conj` does not simplify `PAnd`), emit a new
+warning:
 
 ```haskell
   | -- | Two outgoing edges of one vertex whose FIRST emitted events use the

@@ -154,6 +154,7 @@ module Keiki.Core
     validateTransducer,
     hiddenInputWarnings,
     headRecoverabilityWarnings,
+    inversionAmbiguityWarnings,
     opaqueGuardWarnings,
     DeterminismWarning (..),
     checkTransitionDeterminism,
@@ -1591,6 +1592,16 @@ data TransducerValidationWarning s
         tvwTailOnlySlots :: [String],
         tvwDetail :: String
       }
+  | -- | Two outgoing edges use the same wire constructor for their first
+    --       event. Replay requires a unique inverting edge, so the observed
+    --       event may reconstruct commands for both edges and become ambiguous.
+    InversionAmbiguity
+      { tvwSource :: s,
+        tvwEdgeA :: Int,
+        tvwEdgeB :: Int,
+        tvwWireCtor :: String,
+        tvwDetail :: String
+      }
   | -- | Two outgoing edges of the same vertex whose guards can both hold
     --       for one command — a runtime nondeterminism / single-valuedness
     --       violation (its dynamic witness is EP-55's @AmbiguousEdges@).
@@ -1639,7 +1650,10 @@ data ValidationOptions = ValidationOptions
     warnOpaqueGuards :: Bool,
     -- | require the first emitted event to recover every command field used
     --     by replay
-    checkHeadRecoverability :: Bool
+    checkHeadRecoverability :: Bool,
+    -- | conservatively flag outgoing edge pairs with the same head wire
+    --     constructor
+    checkInversionAmbiguity :: Bool
   }
   deriving stock (Eq, Show)
 
@@ -1651,7 +1665,8 @@ defaultValidationOptions =
       checkDeterminism = True,
       checkReachability = True,
       warnOpaqueGuards = False,
-      checkHeadRecoverability = True
+      checkHeadRecoverability = True,
+      checkInversionAmbiguity = True
     }
 
 -- | The build-time validation umbrella. Runs the enabled checks over the
@@ -1676,6 +1691,7 @@ validateTransducer opts t =
   concat
     [ if failOnEpsilonReadsInput opts then hiddenInputWarnings t else [],
       if checkHeadRecoverability opts then headRecoverabilityWarnings t else [],
+      if checkInversionAmbiguity opts then inversionAmbiguityWarnings t else [],
       if checkDeterminism opts then determinismWarnings t else [],
       if checkReachability opts
         then
@@ -1785,6 +1801,60 @@ opaqueGuardWarnings t =
     (n, e) <- zip [(0 :: Int) ..] (edgesOut t s),
     predHasOpaqueTerm (guard e)
   ]
+
+-- ** Replay inversion diagnostics
+
+-- | Conservatively flag pairs of outgoing edges whose first emitted events
+-- use the same 'WireCtor' name. Replay selects an edge by inverting one observed
+-- head event, so both edges may reconstruct their own commands and satisfy their
+-- own guards even when forward command dispatch is deterministic.
+--
+-- This structural check intentionally over-approximates ambiguity. It cannot
+-- prove semantic guard disjointness over recovered values or registers; it
+-- cannot compare differing 'TLit' values because 'TLit' carries no 'Eq' or
+-- 'Typeable' evidence; and it does not predict derived-field verification in
+-- 'solveOutput'. It ignores tail events because replay equality-checks rather
+-- than inverts them. Different head constructor names are safe under the
+-- documented honesty law of 'wcMatch'. Literal-'PBot' guards are exempt because
+-- such an edge cannot participate in a successful inversion.
+inversionAmbiguityWarnings ::
+  forall rs s ci co.
+  (Bounded s, Enum s, Show s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  [TransducerValidationWarning s]
+inversionAmbiguityWarnings t =
+  [ InversionAmbiguity
+      { tvwSource = s,
+        tvwEdgeA = i,
+        tvwEdgeB = j,
+        tvwWireCtor = wireName,
+        tvwDetail =
+          "edges #"
+            <> show i
+            <> " and #"
+            <> show j
+            <> " out of "
+            <> show s
+            <> " both emit \""
+            <> wireName
+            <> "\" as their first event; replay may not be able to attribute an observed \""
+            <> wireName
+            <> "\" to a unique edge"
+      }
+  | s <- [minBound .. maxBound],
+    let indexedEdges = zip [(0 :: Int) ..] (edgesOut t s),
+    (i, e1) <- indexedEdges,
+    (j, e2) <- indexedEdges,
+    i < j,
+    not (isBot (guard e1) || isBot (guard e2)),
+    Just wireName <- [headWireName e1],
+    Just otherWireName <- [headWireName e2],
+    wireName == otherWireName
+  ]
+  where
+    headWireName :: Edge (HsPred rs ci) rs ci co s -> Maybe String
+    headWireName Edge {output = OPack _ wire _ : _} = Just (wcName wire)
+    headWireName _ = Nothing
 
 -- ** Determinism diagnostics
 
