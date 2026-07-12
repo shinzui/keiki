@@ -121,7 +121,7 @@ fire through).
 |---|-------|------|-----------|-----------|--------|
 | 69 | Replace the fabricated WeakenR and KnownSlotNames dictionary in Category composition with real induction witnesses | docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md | None | None | Complete |
 | 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | Complete |
-| 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | In Progress |
+| 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Complete |
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Not Started |
 | 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Not Started |
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Not Started |
@@ -250,7 +250,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-69: three-transducer stateful associativity test replaces the vacuous `id`-based one
 - [x] EP-70: `buildTransducer` validates eagerly; malformed edges fail at construction, matching the documented contract
 - [x] EP-70: `emit`'s `unsafeCoerce` eliminated; duplicate-`from` merge order fixed and documented
-- [ ] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
+- [x] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
 - [ ] EP-71: hidden-input check demands head-recoverability; the GHCi counterexample transducer is rejected
 - [ ] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
 - [ ] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
@@ -313,6 +313,11 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   duplicate-slot negative regression is compile-only; a non-deferred scratch compile
   verified the exact custom `TypeError`. Term-level deferred type errors remain
   executable and cover the mismatched-schema `emit` case.
+- EP-68 made `noEmit` load-bearing through EP-70's eager defect pass. The raw
+  silent-edge audit cannot be empty because the regression suite intentionally
+  contains two bare-`goto` and three double-`goto` bodies; the durable invariant is
+  zero unintended omissions, and every production, example, and positive-test edge
+  now declares output intent.
 
 
 ## Decision Log
@@ -430,6 +435,12 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 (To be filled during and after implementation.)
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-68. Required every builder edge to choose
+  `emit`/`emitWith` or `noEmit`, added eager located diagnostics and regressions,
+  migrated the two deliberate silent test edges, updated documentation and the
+  changelog, and recorded that the audit's five remaining hits are intentional
+  malformed-edge fixtures.
 
 - 2026-07-12: Completed EP-70. Added eager structured builder validation,
   declaration-ordered merging and stable indices, schema-pinned `emit`, guarded

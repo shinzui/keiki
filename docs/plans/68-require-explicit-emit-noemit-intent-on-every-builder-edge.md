@@ -92,9 +92,9 @@ This section must always reflect the actual current state of the work.
   - [x] Confirm existing double-goto and missing-goto tests still pass unchanged (goto-arity check precedes the output-intent check).
   - [x] `cabal test all` is green (all four suites: `keiki-test`, `jitsurei-test`, and both codec suites).
   - [x] Re-run the silent-edge audit; confirm zero unintended silent blocks remain across `src`, `test`, and `jitsurei` (the five reported blocks are deliberate negative tests).
-- [ ] **M3 — Documentation and changelog.**
-  - [ ] Update `docs/research/edge-builder-dsl-shape.md` (the `noEmit` paragraph + a design-decision note).
-  - [ ] Add a `### Changed` entry under `## [Unreleased]` in `CHANGELOG.md`.
+- [x] **M3 — Documentation and changelog.** (completed 2026-07-12 16:05 -0700)
+  - [x] Update `docs/research/edge-builder-dsl-shape.md` (the `noEmit` paragraph + a design-decision note).
+  - [x] Add a `### Changed` entry under `## [Unreleased]` in `CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
@@ -224,7 +224,25 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-68 is complete. Every builder edge now records an explicit output decision:
+`emit` and `emitWith` mark an emitting edge, while `noEmit` marks a deliberate
+ε-edge. A single-target edge that makes no decision returns the structured
+`DefectMissingOutputIntent`; `buildTransducer` renders the exact located error at
+weak-head-normal-form construction time. Missing- and multiple-`goto` diagnostics
+retain precedence.
+
+The two legitimate in-tree silent edges now call `noEmit`, and exact-message
+regressions cover omitted intent in both `onCmd` and `onEpsilon`. `cabal build all`
+passed after the library change. The fail-before `keiki-test` run produced the
+expected new diagnostic from both affected edges, and the final `cabal test all`
+run passed all four suites: 388 keiki examples, 96 jitsurei examples, 50 event-codec
+examples, and 7 codec-golden/property examples. Documentation and the changelog
+now describe the required declaration.
+
+The only plan correction was the raw silent-edge audit expectation. The required
+negative tests themselves contain bare `goto`, and EP-70 had added another
+double-`goto` aggregation fixture, so the meaningful invariant is zero unintended
+silent blocks. All five remaining audit hits are deliberate malformed-edge tests.
 
 
 ## Context and Orientation
@@ -723,6 +741,11 @@ Signatures and shapes that must exist at the end of each milestone (all in
 
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-68. Added eager structured missing-output-intent
+  validation, migrated deliberate ε-edges to `noEmit`, added exact-message
+  regressions, updated the research guide and changelog, and corrected the audit
+  acceptance to retain all five deliberate malformed-edge fixtures.
 
 - 2026-07-12: Adopted into MasterPlan 16
   (`docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`)

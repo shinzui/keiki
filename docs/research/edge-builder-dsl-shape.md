@@ -214,12 +214,11 @@ the surface is `noEmit`:
 
     noEmit :: EdgeBuilder rs ci co s_vert pin w w ()
 
-`noEmit` leaves the edge's `output` list empty. It is optional in the
-current EP-70 surface: a fresh edge also starts with an empty output
-list, so an edge with neither `emit` nor `noEmit` is an ε-edge. EP-68
-is the dependency-ready follow-up that makes this marker load-bearing
-and rejects silent output intent by omission through the eager defect
-pass described in Q6.
+`noEmit` leaves the edge's `output` list empty and explicitly declares
+that silence is intentional. Every edge body must call `emit` or
+`emitWith` to produce an event, or `noEmit` to declare an ε-edge. A body
+that reaches `goto` without making either choice is rejected by the
+eager structured defect pass described in Q6.
 
 
 ## Q4 — Vertex grouping (`from`)
@@ -396,6 +395,15 @@ Finally, `DistinctNames (Names rs)` makes duplicate register slot
 names a compile-time `TypeError`. The standard keiro authoring shape
 (`B.emit wireCtorX XTermFields {..}`) remains source-compatible.
 
+**Design update (2026-07-12, EP-68).** Output intent is now validated
+alongside target arity. `PartialEdge` records whether `emit`,
+`emitWith`, or `noEmit` was called; an exactly-one-`goto` edge whose
+output decision is still absent returns `DefectMissingOutputIntent`.
+Forgotten `emit` is a likely event-sourcing bug, because the resulting
+state change has no event to replay. Reusing EP-70's eager structured
+pass catches the omission when the transducer is constructed and gives
+`noEmit` a load-bearing purpose for deliberate ε-edges.
+
 
 ## Q7 — Module placement and naming
 
@@ -496,8 +504,8 @@ The visible differences:
   schema-pinned `InCtor` from its enclosing `onCmd`. `emitWith` is
   the explicit-constructor form for `onEpsilon`.
 - The list wrapper around the `OutTerm` is gone. Each `emit`
-  snoc-appends to `peOutput`; `noEmit` (or omission, until EP-68)
-  leaves that list empty.
+  snoc-appends to `peOutput`; `noEmit` explicitly leaves that list
+  empty, while omitting both choices is a builder defect.
 - Field names appear once each in the body of an edge, instead of
   twice (once on the LHS of `USet`, once via `IndexN "name"`).
 

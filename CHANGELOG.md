@@ -20,6 +20,11 @@ and this project adheres to the
 
 ### Changed
 
+- `Keiki.Builder` now requires every `onCmd`/`onEpsilon` edge body to
+  declare its output intent explicitly. A body that reaches `goto` without
+  calling `emit`/`emitWith` or `noEmit` is an eager construction error instead
+  of silently becoming an ε-edge; deliberately silent edges keep working by
+  calling `noEmit`.
 - `Keiki.Builder` now validates every declared edge when the returned transducer
   is evaluated to weak head normal form. Missing/multiple `goto` calls and
   mismatched explicit `emitWith` constructors no longer remain latent until an
