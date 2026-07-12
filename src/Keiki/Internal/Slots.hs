@@ -4,9 +4,11 @@
 -- on 'Keiki.Core.Update' (EP-18 of MasterPlan 6).
 --
 -- The keiki invariant is that slot names within a register file are
--- pairwise distinct. EP-18 promotes that invariant from a runtime
--- check (the old @combine@'s integer-position overlap test) to a
--- type-level constraint by:
+-- pairwise distinct. 'DistinctNames' enforces that invariant at builder
+-- entry points. Lower-level 'HasIndexN' resolution still selects the
+-- first matching occurrence, so callers that bypass those entry points
+-- also bypass the distinctness check. EP-18 separately promotes update
+-- target distinctness from a runtime check to a type-level constraint by:
 --
 --   * indexing 'Keiki.Core.Update' over @(w :: [Symbol])@, the set of
 --     slot names the update writes; and
@@ -23,6 +25,7 @@ module Keiki.Internal.Slots
     Concat,
     Member,
     Disjoint,
+    DistinctNames,
 
     -- * Slot-name projection
     Names,
@@ -79,6 +82,29 @@ type family NotMemberCmp (cmp :: Ordering) (x :: Symbol) (y :: Symbol) :: Constr
           ':$$: 'Text "Each register slot may be written at most once per edge update."
       )
 
+-- | Pairwise distinctness of one slot-name list. Reports the first
+-- duplicated name. Builder entry points apply this to 'Names' of the
+-- register schema; lower-level AST construction does not.
+type family DistinctNames (xs :: [Symbol]) :: Constraint where
+  DistinctNames '[] = ()
+  DistinctNames (x ': xs) = (NotElemSlot x xs, DistinctNames xs)
+
+type family NotElemSlot (x :: Symbol) (ys :: [Symbol]) :: Constraint where
+  NotElemSlot _ '[] = ()
+  NotElemSlot x (y ': ys) = (NotElemSlotCmp (CmpSymbol x y) x, NotElemSlot x ys)
+
+type family NotElemSlotCmp (cmp :: Ordering) (x :: Symbol) :: Constraint where
+  NotElemSlotCmp 'LT _ = ()
+  NotElemSlotCmp 'GT _ = ()
+  NotElemSlotCmp 'EQ x =
+    TypeError
+      ( 'Text "Keiki: register file declares slot \""
+          ':<>: 'Text x
+          ':<>: 'Text "\" more than once. "
+          ':$$: 'Text "Slot names in a register file must be pairwise distinct; "
+          ':$$: 'Text "a duplicated name silently shadows the later slot."
+      )
+
 -- | Project the slot-name list out of a slot list. The kind
 -- @[(Symbol, Type)]@ is keiki's @[Slot]@ at the kind level (a synonym
 -- defined in 'Keiki.Core'); written here in unfolded form to avoid a
@@ -96,8 +122,10 @@ data IndexN (s :: Symbol) (rs :: [(Symbol, Type)]) (r :: Type) where
   IS :: IndexN s rs r -> IndexN s ('(s', r') ': rs) r
 
 -- | Resolve a label @s@ against a slot list @rs@ to an 'IndexN' for
--- the value at that slot. The functional dependency @s rs -> r@
--- ensures that a label uniquely determines the slot's type.
+-- the value at that slot. Resolution selects the first matching slot.
+-- Builder-authored transducers enforce pairwise-distinct names with
+-- 'DistinctNames', but lower-level callers can still supply a duplicate
+-- schema and will observe this first-match behavior.
 class
   HasIndexN (s :: Symbol) (rs :: [(Symbol, Type)]) (r :: Type)
     | s rs -> r

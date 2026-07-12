@@ -6,9 +6,10 @@
 module Keiki.BuilderTypeErrorsSpec (spec) where
 
 import Control.Exception (TypeError, evaluate)
+import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
 import Keiki.Builder qualified as B
-import Keiki.Core (HsPred, OutFields (..), RegFile, SymTransducer)
+import Keiki.Core (HsPred, OutFields (..), RegFile (..), SymTransducer)
 import Keiki.Generics (emptyRegFile)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
 import Test.Hspec
@@ -47,7 +48,28 @@ mismatchedSchemaEmit =
 isTypeError :: TypeError -> Bool
 isTypeError _ = True
 
+type DupRegs = '[ '("dup", Int), '("dup", Bool)]
+
+dupRegs :: RegFile DupRegs
+dupRegs = RCons (Proxy @"dup") 0 (RCons (Proxy @"dup") False RNil)
+
+duplicateSlots :: SymTransducer (HsPred DupRegs ()) DupRegs Vertex () ()
+duplicateSlots =
+  B.buildTransducer Start dupRegs (const False) do
+    B.from Start (pure ())
+
+-- Removing -fdefer-type-errors makes 'duplicateSlots' fail compilation with:
+--
+-- Keiki: register file declares slot "dup" more than once.
+-- Slot names in a register file must be pairwise distinct;
+-- a duplicated name silently shadows the later slot.
+--
+-- GHC erases the unsatisfied type-family dictionary under deferred errors,
+-- so evaluating the binding cannot catch it as 'TypeError'. Keeping the
+-- binding here preserves a compile-only regression alongside the executable
+-- mismatched-schema test.
+
 spec :: Spec
-spec =
+spec = do
   it "rejects emit fields projected from a different command schema" $
     evaluate mismatchedSchemaEmit `shouldThrow` isTypeError

@@ -230,8 +230,10 @@ import Keiki.Core qualified as K
 import Keiki.Internal.Slots
   ( Concat,
     Disjoint,
+    DistinctNames,
     HasIndexN (..),
     IndexN (..),
+    Names,
   )
 import Prelude hiding (pure, return, (>>), (>>=))
 import Prelude qualified
@@ -805,7 +807,7 @@ from v eb = VertexBuilder $ \vs ->
 -- diagnostics instead of an exception.
 buildTransducer ::
   forall rs ci co v.
-  (Eq v, Show v) =>
+  (DistinctNames (Names rs), Eq v, Show v) =>
   v ->
   RegFile rs ->
   (v -> Bool) ->
@@ -821,7 +823,7 @@ buildTransducer initS initR isF vb =
 -- edge indices, and returns every structural defect found.
 buildTransducerEither ::
   forall rs ci co v.
-  (Eq v) =>
+  (DistinctNames (Names rs), Eq v) =>
   v ->
   RegFile rs ->
   (v -> Bool) ->

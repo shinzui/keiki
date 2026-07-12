@@ -66,6 +66,7 @@ module Keiki.Core
     IndexN (..),
     HasIndexN (..),
     Disjoint,
+    DistinctNames,
     Concat,
     Names,
 
@@ -180,6 +181,7 @@ import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Keiki.Internal.Slots
   ( Concat,
     Disjoint,
+    DistinctNames,
     HasIndexN (..),
     IndexN (..),
     Names,

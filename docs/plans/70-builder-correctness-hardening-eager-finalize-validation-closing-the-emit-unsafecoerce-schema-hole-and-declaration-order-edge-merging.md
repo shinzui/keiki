@@ -71,7 +71,7 @@ recompiles without a single call-site change.
       `slotNamesOf` exported from `Keiki.Core`; runtime spec for the mismatch.
 - [x] (2026-07-12T15:37:42-07:00) M3: `test/Keiki/BuilderTypeErrorsSpec.hs` (deferred-type-errors regression module)
       added and wired into `Spec.hs` + `keiki.cabal`.
-- [ ] M4: `DistinctNames` TypeError family in `src/Keiki/Internal/Slots.hs`; constraint
+- [x] (2026-07-12T15:45:30-07:00) M4: `DistinctNames` TypeError family in `src/Keiki/Internal/Slots.hs`; constraint
       on `buildTransducer`/`buildTransducerEither`; duplicate-slot spec; Slots haddock fixed.
 - [ ] M5: module haddocks corrected (finalize timing, merge order, emit, noEmit refs);
       `docs/research/edge-builder-dsl-shape.md` updated; CHANGELOG entries.
@@ -154,6 +154,19 @@ recompiles without a single call-site change.
   `emitWith` case remains green, and `nix develop -c cabal build all` plus `nix
   develop -c cabal test all` report 386 keiki examples, 96 jitsurei examples, 50
   codec examples, and 7 codec-toolkit examples with zero failures.
+- **M4 validation (2026-07-12): duplicate register-slot names now fail at the
+  builder boundary with the intended custom diagnostic.** A non-deferred scratch
+  module using `Regs '[ '("dup", Int), '("dup", Bool)]` failed at
+  `buildTransducer` with GHC-64725 and the message "Keiki: register file declares
+  slot \"dup\" more than once." The permanent compile-only binding in
+  `BuilderTypeErrorsSpec` preserves the repro. `nix develop -c cabal build all` and
+  `nix develop -c cabal test all` remained green: 386 keiki examples, 96 jitsurei
+  examples, 50 codec examples, and 7 codec-toolkit examples.
+- **M4 testing limitation (2026-07-12): deferred type-family constraint evidence is
+  erased when the constrained value is unused.** Unlike the term-level mismatch in
+  M3, evaluating the duplicate-slot repro under `-fdefer-type-errors` did not throw:
+  GHC eliminated the unused `DistinctNames` dictionary. The plan's documented
+  compile-only fallback is therefore used for this negative regression.
 
 (Add entries with evidence as implementation proceeds.)
 
@@ -239,8 +252,11 @@ recompiles without a single call-site change.
   type-level `DistinctNames (Names rs)` constraint (a `TypeError` family in
   `Keiki.Internal.Slots`), not a runtime check.
   Rationale: zero runtime cost, fires at the author's desk, and matches the existing
-  `Disjoint` machinery in the same module. Runtime testability is preserved via a
-  small `-fdefer-type-errors` spec module (M3/M4). The check guards the builder
+  `Disjoint` machinery in the same module. The negative regression is a compile-only
+  binding in the dedicated type-error spec module: under `-fdefer-type-errors`, GHC
+  erases an unused type-family constraint dictionary, so forcing the value does not
+  reliably throw. A non-deferred scratch compile captured the exact custom error.
+  The check guards the builder
   boundary only; hand-authored AST transducers bypass it — noted in the Slots haddock
   and left to the master plan as possible follow-up on `RegFile` construction.
   This family is the canonical duplicate-slot-name constraint for the repository;
@@ -1018,3 +1034,7 @@ were already erroring later.
   repository, added eager `emitWith` constructor/slot consistency, exported
   `slotNamesOf`, and installed runtime plus deferred-type-error regressions with a
   green whole-repository validation run.
+- 2026-07-12: Completed Milestone 4. Added the canonical `DistinctNames` type family,
+  enforced it on both builder entry points, documented `HasIndexN`'s first-match
+  behavior, retained the duplicate-slot negative case as a compile-only regression,
+  and recorded the successful whole-repository validation.
