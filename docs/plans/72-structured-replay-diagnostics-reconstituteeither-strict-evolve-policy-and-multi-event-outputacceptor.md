@@ -1,13 +1,13 @@
 ---
 id: 72
 slug: structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor
-title: "Structured replay diagnostics: reconstituteEither, strict evolve policy, and multi-event outputAcceptor"
+title: "Structured replay diagnostics, Decider removal, and multi-event outputAcceptor"
 kind: exec-plan
 created_at: 2026-07-12T04:16:45Z
 master_plan: "docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md"
 ---
 
-# Structured replay diagnostics: reconstituteEither, strict evolve policy, and multi-event outputAcceptor
+# Structured replay diagnostics, Decider removal, and multi-event outputAcceptor
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
@@ -17,9 +17,9 @@ This is Phase 2 of the master plan at
 (EP-72 in its registry) and is release-gating for keiki `0.1.0.0`. The master plan's
 Decision Log fixes the policy this plan implements, restated here so this document is
 self-contained: **replay-facing APIs default to strict, structured-failure semantics;
-`Decider.evolve`'s silent state-preserving fallback is REMOVED, not documented around;
-the `Either`-returning replay entry points become the primary documented surface, with
-the existing `Maybe` variants kept as thin wrappers over them.**
+the misleading `Keiki.Decider` facade is removed before `0.1.0.0`; the
+`Either`-returning replay entry points become the primary documented surface, with the
+existing Core `Maybe` variants kept as thin wrappers over them.**
 
 
 ## Purpose / Big Picture
@@ -47,18 +47,18 @@ the exact zero-based index of the offending event, the replay state at the momen
 failure, and a structured reason (no edge could have produced this event; more than one
 edge could have — an ambiguity; a mid-chain event arrived out of order; the log ended in
 the middle of a multi-event chain). A new seedable streaming replay fold gives runtime
-authors (concretely: keiro, keiki's only real consumer) a single library function that
-replaces the two near-identical hand-rolled hydration folds keiro maintains today.
-`Decider.evolve` becomes strict — an unreplayable event yields `Nothing`, never a
-silently unchanged state. The output acceptor becomes multi-event aware, making its
+authors (concretely: current keiro) a single library function that replaces the two
+near-identical hand-rolled hydration folds keiro maintains today. `Keiki.Decider` is
+removed from the exposed API, source, tests, and documentation instead of preserving
+its letter-only and silently lossy projection. The output acceptor becomes multi-event aware, making its
 documented equivalence with `reconstitute` actually true, proven by a test on a
 multi-event fixture. All existing `Maybe`-returning entry points keep their exact
 signatures and semantics (they are load-bearing for keiro) and are re-expressed as thin
 wrappers over the new `Either` surface.
 
 To see it working after implementation, from the repository root run
-`nix develop --command cabal test all` and observe the new `ReplayEitherSpec`,
-reworked `DeciderSpec`, and extended `AcceptorSpec` pass; the Validation and Acceptance
+`nix develop --command cabal test all` and observe the new `ReplayEitherSpec` and
+extended `AcceptorSpec` pass, with no remaining `Decider` module or spec; the Validation and Acceptance
 section below shows the exact structured failure values a corrupted and a truncated log
 must produce.
 
@@ -71,11 +71,11 @@ must produce.
 - [ ] M2: `replayEvents` seedable fold implemented with strict index accounting
 - [ ] M2: `applyEventsEither` and `reconstituteEither` implemented; `applyEvents` and `reconstitute` re-expressed as thin wrappers
 - [ ] M2: list-level specs: corrupted-log index/reason, truncated multi-event chain, mid-chain seed resume, fold returns final `InFlight` wrapper without failing
-- [ ] M3: `Decider.evolve` field changed to `s -> e -> Maybe s`; silent fallback removed; module haddock rewritten honestly (Chassaing correspondence is partial)
-- [ ] M3: `test/Keiki/DeciderSpec.hs` reworked: strict tail-drop assertion, `foldM` round now fails on multi-event output, canonical round-trip re-expressed via chunk replay
+- [ ] M3: `Keiki.Decider` removed from `keiki.cabal`, source, tests, exports, and documentation
+- [ ] M3: uniquely valuable replay assertions from `DeciderSpec` moved to Core replay specs before the obsolete spec is deleted
 - [ ] M4: `outputAcceptor` state carrier changed to `(InFlight s co, RegFile rs)`; equivalence haddock now true
 - [ ] M4: `test/Keiki/AcceptorSpec.hs`: multi-event acceptance spec (fails before the fix, passes after), truncation rejection, reconstitute-agreement spec updated
-- [ ] M5: `omega` and `Decider.decide` haddocks state the rejected/ε conflation loudly and point at `stepEither`
+- [ ] M5: `omega` haddock states the rejected/ε conflation loudly and points at `stepEither`
 - [ ] M5: haddocks on `reconstitute`/`applyEvents`/`applyEventStreaming` repointed so the `Either` variants are the primary documented surface
 - [ ] M5: `CHANGELOG.md` entry; full sweep `cabal build all`, `cabal test all`, `nix fmt -- --no-cache`; living sections updated
 
@@ -116,13 +116,13 @@ as they occur.
 ## Decision Log
 
 - Decision: implement the master plan's fixed policy — strict structured-failure
-  default; `Decider.evolve` fallback removed (not documented around); `Either` entry
-  points primary, `Maybe` variants thin wrappers.
-  Rationale: restated from the master plan's Decision Log (2026-07-12 entry): zero
-  consumers depend on the fallback (keiro survey); silent replay failure is the exact
-  failure class unacceptable for critical business apps; the first release is the only
-  cheap moment to set this default.
-  Date: 2026-07-11
+  default; remove `Keiki.Decider`; make `Either` entry points primary and keep Core
+  `Maybe` variants as thin wrappers.
+  Rationale: the user explicitly selected removal. Current keiro uses `Keiki.Core`
+  replay directly and does not import the facade. The facade cannot represent
+  multi-event `InFlight` replay honestly, and preserving it would maintain a second,
+  lossy abstraction before the first release.
+  Date: 2026-07-12 (supersedes the 2026-07-11 strict-`evolve` redesign)
 
 - Decision: the replay-failure vocabulary reuses the existing EP-56 step-diagnostic
   types — `EdgeRef`, `RejectedEdgeSummary`, `MatchedEdgeSummary`
@@ -166,27 +166,12 @@ as they occur.
   inherit that posture.
   Date: 2026-07-11
 
-- Decision: `Decider.evolve` becomes `s -> e -> Maybe s`, not
-  `s -> e -> Either (ReplayStepFailure …) s`.
-  Rationale: the `Decider` record's fields cannot mention the transducer's vertex type
-  (the record is parameterized over the *carrier* `s ~ (v, RegFile rs)`, not over `v`),
-  so an `Either` field would force a new failure type parameter onto the record for a
-  facade with zero consumers (keiro survey; master plan integration point 6 lists
-  `Decider` as free to change). The facade's job is shape correspondence and teaching;
-  structured diagnostics are Core's job (`applyEventStreamingEither`), and the record's
-  existing `evolveStreaming` field is already `Maybe`, so the record stays coherent.
-  `Maybe` fully satisfies the fixed policy: the silent fallback is removed and nothing
-  is absorbed. The alternative (parameterizing the record over a failure type) is
-  recorded as rejected, revisit only if a consumer materializes and asks.
-  Date: 2026-07-11
-
-- Decision: no `decideEither` field on the facade; the `omega` conflation (defect 5) is
-  fixed by loud documentation on `omega` and `Decider.decide` pointing at `stepEither`.
-  Rationale: same type-parameter problem as above (a `decideEither` returning
-  `StepFailure v` needs the vertex type in the record signature); `stepEither` already
-  answers "was this command rejected, ambiguous, or an accepted ε-edge?" precisely, and
-  the facade has zero consumers to serve. Considered per the master plan; rejected.
-  Date: 2026-07-11
+- Decision: do not replace `Keiki.Decider` with a deprecated shim or a redesigned
+  record in this initiative.
+  Rationale: the supported Core surface already provides `stepEither`,
+  `applyEventStreamingEither`, and the seedable structured fold. A shim would preserve
+  the mistaken idea that letter-only `evolve` is the aggregate replay primitive.
+  Date: 2026-07-12
 
 - Decision: no `applyEventEither` (letter-only `Either` variant). The single-event
   `Either` step is `applyEventStreamingEither` only.
@@ -202,10 +187,11 @@ as they occur.
   signatures and semantics; they are re-expressed internally as wrappers over the new
   `Either` primitives, and the unchanged existing test suites
   (`test/Keiki/CoreApplyEventsSpec.hs`, `test/Keiki/CoreInFlightSpec.hs`,
-  `test/Keiki/NoThunksSpec.hs`) are the regression evidence. `reconstitute`,
-  `stepEither`, `Decider`, and the acceptors have zero consumers and change freely.
-  Everything else in this plan is additive.
-  Date: 2026-07-11
+  `test/Keiki/NoThunksSpec.hs`) are the regression evidence. Current keiro imports
+  none of `reconstitute`, `stepEither`, `Keiki.Decider`, or the acceptors; the
+  facade's removal is coordinated as a pre-release API deletion. Everything else in
+  this plan is additive except the acceptor carrier correction.
+  Date: 2026-07-12
 
 
 ## Outcomes & Retrospective
@@ -262,8 +248,8 @@ direction deserves the same vocabulary; this plan adds it.
 
 ### Defect 2 — every runtime must hand-roll the same hydration fold
 
-keiro (the event-sourcing framework that is keiki's only real consumer; it lives in a
-sibling repository, surveyed at `/Users/shinzui/Keikaku/bokuno/keiro`) hand-rolls TWO
+Current keiro, the event-sourcing framework whose compatibility matters to this plan,
+hand-rolls TWO
 near-identical replay folds in `keiro/src/Keiro/Command.hs:201-378`: `hydrate` (seeds
 replay from a persisted snapshot, lines 221-306) and `hydrateFull` (seeds from the
 transducer's initial state, lines 308-378). Read them as prior art if the repository is
@@ -286,26 +272,19 @@ span two page-sized calls without error. Migrating keiro itself is out of scope 
 this plan (the master plan scopes keiro changes out); the deliverable here is a
 signature that makes that migration a deletion.
 
-### Defect 3 — `Decider.evolve` silently absorbs failures
+### Defect 3 — `Keiki.Decider` is a lossy duplicate replay abstraction
 
-`src/Keiki/Decider.hs` projects the transducer onto Jérémie Chassaing's published
-Decider record shape (`decide` / `evolve` / `initialState` / `isTerminal`). The
-`evolve` field (`src/Keiki/Decider.hs:113-115`) wraps the letter-only `applyEvent` and,
-to keep the classic total signature `s -> e -> s`, returns the *input state* when
-`applyEvent` returns `Nothing` (the "Defensive 'evolve'" haddock, lines 98-105). This
-silently absorbs corrupt and foreign events, and it also silently drops multi-event
-tails: folding `evolve` over `decide`'s own two-event output loses the tail event. The
-accident that hides this is documented in Surprises & Discoveries above:
-`test/Keiki/DeciderSpec.hs:64` passes only because the head event's update already
-wrote every register and moved the vertex. The keiro survey found ZERO consumers of the
-facade, so its shape changes freely. Per the fixed policy the fallback is removed;
-`evolve` becomes `Maybe`-returning (see Decision Log for why `Maybe` and not `Either`).
-The module haddock's Chassaing-correspondence discussion must also be made honest: the
-classic shape is total because in the naive model the author *writes* `evolve` as an
-ordinary fold function; in keiki `evolve` is *derived* by inverting the transducer's
-output map, so an event no edge could have emitted at the current state has no
-meaningful successor — totality there is a lie, and the correspondence is therefore
-partial on the `evolve` side.
+`src/Keiki/Decider.hs` projects the transducer onto a `decide` / `evolve` record. Its
+`evolve` field wraps the letter-only `applyEvent` and returns the input state when
+replay fails. This silently absorbs corrupt or foreign events and drops multi-event
+tails. The accidental passing test is documented in Surprises & Discoveries.
+
+Changing only the result to `Maybe` would remove the fallback but preserve the wrong
+replay unit: one event and a settled state, with no `InFlight` queue. Adding the vertex
+and failure parameters needed for honest structured replay would duplicate Core's
+actual API. The selected correction is therefore to remove the facade entirely.
+Current keiro uses `step`, `applyEventStreaming`, `applyEvents`, and `InFlight`
+directly and does not import `Keiki.Decider`.
 
 ### Defect 4 — `outputAcceptor` documents a false equivalence
 
@@ -317,18 +296,16 @@ is accepted by `reconstitute` and rejected by the acceptor. The fix: the accepto
 state carrier becomes the wrapper pair `(InFlight s co, RegFile rs)`, `aStep` becomes
 `applyEventStreaming`, and `aIsFinal` holds only for `Settled s` with `isFinal t s`
 (a mid-chain `InFlight` state is never final — which also makes the acceptor correctly
-reject truncated chains, matching `reconstitute`'s `Nothing`). `Acceptor`,
-`inputAcceptor`, `outputAcceptor` have zero consumers; the carrier type change is free.
+reject truncated chains, matching `reconstitute`'s `Nothing`). Current keiro does not
+use `Acceptor`, `inputAcceptor`, or `outputAcceptor`; the carrier correction does not
+require a keiro source migration.
 
 ### Defect 5 — `omega` conflates rejection with silence
 
 `omega` (`src/Keiki/Core.hs:889-902`) returns `[]` for three inequivalent situations:
 no edge matched (rejected command), multiple edges matched (ambiguity), and exactly one
-ε-edge matched (accepted command that emits nothing). Through `Decider.decide` a
-rejected command is therefore indistinguishable from an accepted no-event command. Per
-the Decision Log, this plan fixes the *documentation* loudly (on both `omega` and
-`decide`, pointing at `stepEither`, which distinguishes all three) and adds no
-`decideEither`.
+ε-edge matched (accepted command that emits nothing). This plan fixes the `omega`
+documentation loudly and points at `stepEither`, which distinguishes all three.
 
 ### Coordination with sibling plans
 
@@ -490,49 +467,25 @@ the head event from the initial seed returns `Right` with a final `InFlight` wra
 Acceptance: `cabal test all` green, including the untouched
 `test/Keiki/CoreApplyEventsSpec.hs` (wrapper re-expression changed nothing observable).
 
-### Milestone 3 — strict `Decider.evolve` and an honest module haddock
+### Milestone 3 — remove `Keiki.Decider`
 
-Scope: remove the silent fallback; make the facade's replay story truthful. At the end
-of M3, no `Decider` path can absorb an unreplayable event.
+Scope: delete the lossy duplicate abstraction while preserving any useful regression
+coverage in Core.
 
-In `src/Keiki/Decider.hs`: change the record field (line 72) to
-`evolve :: s -> e -> Maybe s`; change `toDecider`'s implementation (lines 113-115) to
-`evolve = \(s, regs) ev -> applyEvent t s regs ev`; delete the "Defensive 'evolve'"
-haddock section (lines 98-105) and replace it with a "Strict 'evolve'" section stating
-that `Nothing` means the event could not have been produced by any single edge from
-this state — including the tail of a multi-event chain, for which `evolveStreaming` or
-`Keiki.Core.applyEvents`/`applyEventsEither` are the correct verbs — and pointing at
-`Keiki.Core.applyEventStreamingEither` for structured reasons. Rewrite the module
-haddock's Chassaing-correspondence discussion honestly: the classic record's
-`evolve :: s -> e -> s` is total because the author writes it as a plain fold; keiki
-*derives* `evolve` by inverting the transducer's output map, so totality cannot be
-offered without inventing a successor state for impossible events — which is silent
-corruption, the failure class this library exists to prevent — and the correspondence
-is therefore exact for `decide`/`initialState`/`isTerminal` and deliberately partial
-(`Maybe`) for `evolve`. `evolveStreaming` keeps its existing `Maybe` signature
-untouched.
+First inventory `test/Keiki/DeciderSpec.hs`. Move its uniquely valuable multi-event
+tail-loss, epsilon-boundary, and canonical round-trip assertions into
+`ReplayEitherSpec`, `CoreApplyEventsSpec`, or the EP-73 round-trip harness. Do not move
+tests whose only purpose is the obsolete record projection.
 
-Rework `test/Keiki/DeciderSpec.hs`: (a) replace `runRound`'s
-`foldl (evolve d) acc (decide d cmd acc)` (line 64) with chunk replay —
-`case applyEvents userReg acc (decide d cmd acc) of Just acc' -> acc'; Nothing ->
-error "round failed"` — so the canonical round-trip to `(Deleted, expectedSnapshot)`
-still passes, now through the InFlight-aware path; (b) add the headline strictness
-spec: drive to the state after the head event (via `applyEventStreaming` on
-`RegistrationStarted`, or `applyEvents` on the head alone — note the mid-chain
-register file is available from `evolveStreaming`), then assert
-`evolve d (RequiresConfirmation, regsAfterChain) (ConfirmationEmailSent …) ===
-Nothing` — the event the old code silently dropped; (c) add a spec that
-`foldM (evolve d) (initialState d) (decide d startCmd (initialState d))` is `Nothing`
-(the exact old line-64 pattern now *fails* on a multi-event command instead of lying);
-(d) a letter-edge sanity spec: `evolve d (Confirmed, regs) (AccountDeleted …)` is
-`Just` with vertex `Deleted`; (e) update the ε-edge specs (lines 90-127): the
-`foldl (evolve d) preGdpr evs` at line 102 no longer typechecks — since `evs` is `[]`,
-use `foldM (evolve d) preGdpr evs` and assert it is `Just preGdpr'` with the vertex
-still `RequiresConfirmation` (the documented ε-limitation is unchanged by this plan).
+Then remove `Keiki.Decider` from `keiki.cabal`'s exposed modules, delete
+`src/Keiki/Decider.hs` and `test/Keiki/DeciderSpec.hs`, remove the test registration,
+and sweep `README.md`, `ROADMAP.md`, research notes, haddocks, and changelog references.
+Do not add a compatibility or deprecated shim.
 
-Acceptance: `cabal test all` green; specs (b) and (c) demonstrably fail against the
-old fallback (verify once by temporarily reverting the `evolve` body, expect two
-failures, restore).
+Acceptance: `rg -n "Keiki\\.Decider|toDecider|evolveStreaming" . --glob
+'!dist-newstyle/**' --glob '!docs/**'` returns no hits (plan history under `docs/`
+is exempt), current keiro has no source change, and the migrated Core regression
+assertions pass.
 
 ### Milestone 4 — InFlight-aware `outputAcceptor`
 
@@ -578,17 +531,14 @@ In `src/Keiki/Core.hs`, extend `omega`'s haddock (lines 883-895): it already men
 the caller cannot distinguish "no active edge" from "active ε-edge"; strengthen it to
 name all three conflated outcomes (rejected, ambiguous, accepted-ε), state plainly
 that `[] :: [co]` must never be interpreted as "command rejected", and point at
-`stepEither` as the verb that distinguishes them. Mirror the same warning on
-`Decider.decide`'s field haddock and the facade's "One semantic gap remains" section
-in `src/Keiki/Decider.hs` (the gap discussion at lines 39-46 already covers ε-edges;
-add the rejected-command conflation explicitly). Confirm `reconstitute`,
+`stepEither` as the verb that distinguishes them. Confirm `reconstitute`,
 `applyEvents`, and `applyEventStreaming` haddocks each open by naming their `Either`
 counterpart as the primary documented surface (done incrementally in M1/M2; verify).
 Add a `CHANGELOG.md` entry under the `0.1.0.0` heading covering: new
 `ReplayStepFailure`/`ReplayFailureReason`/`ReplayFailure` types;
 `applyEventStreamingEither`, `replayEvents`, `applyEventsEither`,
-`reconstituteEither`; BREAKING: `Decider.evolve` is now `Maybe`-returning (fallback
-removed); BREAKING: `outputAcceptor`'s state carrier is now
+`reconstituteEither`; BREAKING: `Keiki.Decider` has been removed; BREAKING:
+`outputAcceptor`'s state carrier is now
 `(InFlight s co, RegFile rs)`. Run the full sweep (Concrete Steps) and
 `nix fmt -- --no-cache`; update this plan's Progress, Surprises & Discoveries, and
 Outcomes & Retrospective.
@@ -627,9 +577,10 @@ N examples, 0 failures
 ```
 
 Files touched, for orientation: `src/Keiki/Core.hs` (types, four functions, three
-re-expressed wrappers, export list, haddocks), `src/Keiki/Decider.hs` (record field,
-`toDecider`, module haddock), `src/Keiki/Acceptor.hs` (`outputAcceptor`, haddocks),
-`test/Keiki/ReplayEitherSpec.hs` (new), `test/Keiki/DeciderSpec.hs`,
+re-expressed wrappers, export list, haddocks), `src/Keiki/Decider.hs` (removed),
+`src/Keiki/Acceptor.hs` (`outputAcceptor`, haddocks),
+`test/Keiki/ReplayEitherSpec.hs` (new), `test/Keiki/DeciderSpec.hs` (removed after
+useful assertions migrate),
 `test/Keiki/AcceptorSpec.hs`, `test/Spec.hs`, `keiki.cabal` (test `other-modules`),
 `CHANGELOG.md`, and this plan. Commit per milestone with conventional-commit messages,
 e.g.:
@@ -637,7 +588,7 @@ e.g.:
 ```text
 feat(core): structured replay failures and applyEventStreamingEither (EP-72 M1)
 feat(core): replayEvents fold, applyEventsEither, reconstituteEither (EP-72 M2)
-feat(decider)!: remove evolve's silent fallback; evolve returns Maybe (EP-72 M3)
+refactor(api)!: remove the lossy Decider facade (EP-72 M3)
 fix(acceptor)!: InFlight-aware outputAcceptor restores reconstitute equivalence (EP-72 M4)
 docs(core): omega conflation warnings; Either replay surface is primary (EP-72 M5)
 ```
@@ -713,13 +664,10 @@ reconstituteEither userReg (take 1 canonicalLog)
       }
 ```
 
-Third, the strict `evolve` drops nothing silently (`test/Keiki/DeciderSpec.hs`): with
-`d = toDecider userReg`, `foldM (evolve d) (initialState d) (decide d startCmd
-(initialState d))` is `Nothing` (the tail event of the two-event chain does not
-letter-replay — the pre-plan code returned a state here and lied), and the single
-tail-event assertion `evolve d (RequiresConfirmation, regsAfterChain)
-(ConfirmationEmailSent …) == Nothing` holds, while the canonical round-trip through
-chunk replay still lands on `(Deleted, expectedSnapshot)`.
+Third, the lossy facade is gone: `Keiki.Decider` is absent from cabal exposure,
+source, tests, and public documentation. The multi-event tail-loss example that
+motivated removal remains as a Core replay regression, and canonical chunk replay
+still lands on `(Deleted, expectedSnapshot)`.
 
 Fourth, the acceptor/reconstitute equivalence passes on a multi-event fixture
 (`test/Keiki/AcceptorSpec.hs`): `accepts (outputAcceptor userReg) canonicalLog ==
@@ -742,9 +690,9 @@ as thin wrappers. Final gate: from the repo root, `nix develop` then `cabal buil
 Every step is an ordinary source edit plus a test run; all are safe to repeat. The
 plan is additive-first: M1/M2 only add API (the `Maybe` wrappers are re-expressed but
 observationally identical, guarded by existing suites), so if anything goes wrong
-mid-milestone, `git checkout -- <file>` restores a green tree. The two breaking edits
-(M3's `evolve` field type, M4's `outputAcceptor` carrier) are confined to files with
-zero external consumers; if either milestone must be abandoned mid-way, reverting just
+mid-milestone, revert the incomplete source edit before continuing. The two breaking edits
+(M3's module removal, M4's `outputAcceptor` carrier) are isolated milestones; current
+keiro does not import either changed surface. If either milestone must be abandoned mid-way, reverting just
 that milestone's commit restores a releasable state because milestones are committed
 separately and each leaves the suite green. Re-running `cabal test all` and
 `nix fmt -- --no-cache` is always safe. No migrations, no persisted data, no
@@ -754,8 +702,9 @@ destructive operations are involved.
 ## Interfaces and Dependencies
 
 No new package dependencies; everything uses the existing `base`/Hspec toolchain. All
-additions live in `Keiki.Core` (module `src/Keiki/Core.hs`) except the facade and
-acceptor edits. At the end of the plan these signatures exist exactly as written:
+additions live in `Keiki.Core` (module `src/Keiki/Core.hs`) except the acceptor edit;
+`Keiki.Decider` no longer exists. At the end of the plan these signatures exist
+exactly as written:
 
 ```haskell
 -- src/Keiki/Core.hs — new vocabulary (all deriving stock (Eq, Show))
@@ -827,9 +776,7 @@ reconstituteEither ::
 
 The existing `applyEventStreaming`, `applyEvents`, and `reconstitute` keep their
 current signatures verbatim and are defined as `either (const Nothing) Just . <Either
-variant>`. The `Keiki.Decider.Decider` record keeps its four type parameters with
-`evolve :: s -> e -> Maybe s` (all other fields unchanged), and
-`Keiki.Acceptor.outputAcceptor` becomes
+variant>`. `Keiki.Decider` is removed, and `Keiki.Acceptor.outputAcceptor` becomes
 `SymTransducer phi rs s ci co -> Acceptor co (InFlight s co, RegFile rs)` (the
 `Acceptor` type itself is unchanged). Downstream coordination: plan 73 consumes
 `ReplayFailure`'s `Show` instance in counterexample rendering; plan 71 shares
@@ -837,6 +784,11 @@ variant>`. The `Keiki.Decider.Decider` record keeps its four type parameters wit
 `replayFailedIndex`-based version arithmetic (out of scope here, designed for above).
 
 ---
+
+Revision note (2026-07-12): surgically replaced the proposed `Maybe` redesign of
+`Decider.evolve` with removal of the entire `Keiki.Decider` interface. The Core replay
+and Acceptor work is otherwise unchanged. Compatibility was checked against current
+keiro, which uses Core replay directly.
 
 Revision note (2026-07-11): initial authoring — replaced the generated skeleton with
 the full plan. Sources: the master plan's Phase 2 scope and Decision Log (policy

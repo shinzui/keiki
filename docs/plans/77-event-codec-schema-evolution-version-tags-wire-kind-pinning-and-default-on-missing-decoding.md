@@ -45,10 +45,9 @@ checks following the package's existing convention.
 
 This is Phase 5 of the master plan
 `docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`
-and it gates the `0.1.0.0` Hackage release: the 2026-07 consumer survey found the
-event codec has **zero consumers today** (the keiro runtime rolls its own
-`Keiro.Codec`), so the wire format and the options API may break freely right now —
-and this is the last moment that is true. After external users persist events, every
+and it gates the `0.1.0.0` Hackage release. Current keiro uses its own
+`Keiro.Codec`, not this package. The keiki event-codec format is still pre-release,
+so the wire format and options API may be corrected now. After Hackage users persist events, every
 one of these fixes becomes a data migration.
 
 
@@ -102,8 +101,8 @@ Record every decision made while working on the plan.
 
 - Decision: The envelope's version field is emitted starting at version 1, and a
   missing version field on decode is treated as version 1. There is no "version 0".
-  Rationale: the codec has zero consumers, so there is no pre-existing keiki-written
-  data to be backward-compatible with; treating "absent" as 1 makes hand-written or
+  Rationale: this is a pre-release wire format and current keiro does not use it;
+  treating "absent" as 1 makes hand-written or
   pre-plan JSON (which has no version field) decode against a `currentVersion = 1`
   codec with no ceremony, and it matches keiro's convention
   (`extractSchemaVersion` in `/Users/shinzui/Keikaku/bokuno/keiro/keiro-core/src/Keiro/Codec.hs`
@@ -167,8 +166,8 @@ Record every decision made while working on the plan.
   positional construction like `FieldCodec 'enc 'dec`. A smart constructor
   `fieldCodec :: Name -> Name -> FieldCodec` (with `fcOnMissing = Nothing`) is added
   so migration of existing call sites is mechanical.
-  Rationale: the API may break freely (zero consumers, master plan 16 integration
-  point 6); an optional-default record field is the smallest surface that lets an
+  Rationale: the API is pre-release and is not used by current keiro; an
+  optional-default record field is the smallest surface that lets an
   override observe "key absent" without changing `fcDecode`'s shape for everyone.
   Date: 2026-07-11
 

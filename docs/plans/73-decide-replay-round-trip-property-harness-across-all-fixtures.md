@@ -62,10 +62,10 @@ here, even if it requires splitting a partially completed task into two ("done" 
 
 - [ ] Preflight: confirm EP-71 status in the master plan registry; enumerate the fixture modules it added under `test/Keiki/Fixtures/`
 - [ ] M1: add `QuickCheck ^>=2.15` to the `keiki-test` suite in `keiki.cabal`
-- [ ] M1: create `test/Keiki/RoundTrip.hs` (fixture bundle, forward driver with ε-truncation, whole-log property, chunked property, validation sanity check, counterexample rendering)
+- [ ] M1: create `test/Keiki/RoundTrip.hs` (fixture bundle, complete-run forward driver, whole-log property, chunked property, validation sanity check, counterexample rendering)
 - [ ] M1: add `Ord` to the vertex enums of the two existing fixtures if EP-71 has not already
 - [ ] M1: create `test/Keiki/RoundTripSpec.hs` with bundles (generator + observation) for `Keiki.Fixtures.EmailDelivery` and `Keiki.Fixtures.UserRegistration`; wire into `test/Spec.hs`
-- [ ] M1: deterministic companion spec documenting the ε-edge replay divergence on the GDPR edge
+- [ ] M1: deterministic invalid-fixture spec pairing `StateChangingEpsilon` with the replay divergence it prevents
 - [ ] M2: tamper-case vocabulary in `test/Keiki/RoundTrip.hs`; tamper cases for both existing fixtures (drop, swap, duplicate, mid-chain truncation, foreign splice)
 - [ ] M3: `test/Keiki/Fixtures/BrokenTailCoverage.hs` (deliberately head-unrecoverable); teeth spec via `expectFailure` paired with a validator-flags-it assertion
 - [ ] M4: bundles for every EP-71 fixture (stateful `TReg`-emitting and multi-event ones); harness green over all of `test/Keiki/Fixtures/`
@@ -86,8 +86,9 @@ observations about the code, not choices):
   (`test/Keiki/Fixtures/UserRegistration.hs`, lines 354-358) is a silent ε-edge
   (`B.noEmit`) that moves `RequiresConfirmation → Deleted` while emitting nothing.
   Forward execution ends at `Deleted`; the log records nothing; replay ends at
-  `RequiresConfirmation`. The property must be quantified over runs truncated at the
-  first accepted silent step (see Decision Log).
+  `RequiresConfirmation`. EP-71 now detects this shape by default. The fixture must
+  emit a domain event or move to the invalid teeth group; the green property is not
+  truncated to hide it.
 - `Keiki.Render.Inspector` (`src/Keiki/Render/Inspector.hs`) renders edge *structure*
   (guards, written-slot names via `writtenSlots`, output field terms), not the runtime
   *values* in a `RegFile`, so it cannot serve as the state-comparison vehicle.
@@ -134,16 +135,14 @@ Record every decision made while working on the plan.
   appears in no `UserView` constructor), so each bundle hand-writes its observation.
   Date: 2026-07-12
 
-- Decision: the round-trip property is quantified over the maximal ε-free prefix of
-  each run — the forward driver truncates the run immediately *before* the first
-  accepted command whose step emits zero events — and a deterministic companion spec
-  documents the ε divergence on the GDPR edge as expected behavior.
-  Rationale: silent transitions are invisible to replay by design (`applyEvent` skips
-  ε-edges; Core.hs:1018-1029 documents letter-only semantics), so once forward
-  execution takes an ε-edge, forward state and log-replay state diverge permanently
-  and no replay entry point can be expected to recover it. Truncation is the sound
-  scoping that keeps the property a theorem while still exercising everything before
-  the silent step; the companion spec makes the exclusion visible rather than silent.
+- Decision: the round-trip property runs every generated command to completion; it
+  never truncates before an accepted epsilon edge. Every green fixture must pass
+  `defaultValidationOptions`, including EP-71's `StateChangingEpsilon` check. A
+  deliberately invalid epsilon fixture pairs the warning with observed divergence.
+  Rationale: truncation would certify only a prefix while claiming every produced log
+  is replayable. State-preserving `UKeep` self-loops may remain in green fixtures
+  because they do not change the compared state; state-changing silent transitions
+  belong in the teeth group or must emit an event.
   Date: 2026-07-12
 
 - Decision: the harness lives in keiki's own test suite (`test/Keiki/RoundTrip.hs`);
@@ -316,10 +315,10 @@ generated command sequence `cs :: [ci]`:
 Define the *forward trace* by folding `step t` from `(initial t, initialRegs t)` over
 `cs`: a command for which `step` returns `Nothing` is **skipped** (state unchanged, no
 log contribution); a command for which `step` returns `Just (s', regs', es)` with
-`es` non-empty **advances** the state and appends `es` (in order) to the log; the run
-is **truncated** immediately before the first accepted command with `es = []` (an
-ε-step — that step is not applied and the remaining commands are discarded; see the
-Decision Log entry on ε truncation). Let `log` be the concatenation of all emitted
+`es` non-empty **advances** the state and appends `es` (in order) to the log; an
+accepted command with `es = []` also advances the forward state and the driver
+continues. Green fixtures may contain such a step only when default validation proves
+it state-preserving. Let `log` be the concatenation of all emitted
 chunks, `sF` the forward-final vertex, `regsF` the forward-final register file, and
 `obs = rtObserve` the fixture's observation function.
 
@@ -348,7 +347,7 @@ transducer that passes validation replays every log it produces".
 ### Milestone 1 — harness core over the two existing fixtures
 
 Scope: the reusable harness module, the QuickCheck dependency, bundles for
-`EmailDelivery` and `UserRegistration`, and the ε-divergence companion spec. At the end
+`EmailDelivery` and `UserRegistration`, and the invalid-epsilon teeth spec. At the end
 of M1, `cabal test keiki-test` runs P1/P2 (plus the validation example) green over both
 fixtures.
 
@@ -382,19 +381,19 @@ Notes for the implementer: the constraint set matches what the entry points need
 existential variables cannot be used as selectors — pattern-match the constructor.
 Inside the module implement:
 
-1. The forward driver exactly as specified above (skip on `Nothing`, truncate before
-   the first accepted ε-step), returning the per-step trace
+1. The forward driver exactly as specified above (skip on `Nothing`, process every
+   accepted step including zero-output steps), returning the per-step trace
    `[(events, vertex, observation)]` plus the final vertex and observation.
 2. The sequence generator: `sized`, capped at 15 commands, threading `(s, regs)`
    through `step` while generating so `rtGenCommand` always sees the state the
-   command will actually meet (for rejected or ε commands the generator keeps the
-   current state — the forward driver is the semantics of record). Shrinking via
+   command will actually meet (rejected commands keep state; accepted epsilon commands
+   use the returned state). Shrinking via
    `shrinkList (const [])` (element deletion only — deleting commands is always
    meaningful; mutating them is not), through `forAllShrinkShow` with a renderer that
    numbers the commands.
 3. P1 and P2 as `Property` values, every failure path wrapped in `counterexample`
    output listing: the command sequence (marking each command accepted `*`, rejected
-   `-`, or ε-truncated `~`), the emitted log, the forward final `vertex | observation`,
+   `-`, or accepted-with-zero-output `ε`), the emitted log, the forward final `vertex | observation`,
    and the replay outcome. For the replay outcome: if `Keiki.Core` exports
    `reconstituteEither`/`applyEventsEither` by the time you implement (EP-72), call
    the `Either` variants and `show` the structured failure reason; otherwise render
@@ -430,24 +429,22 @@ teeth-group`. The two M1 bundles:
   other constructors (rejected); at `RequiresConfirmation` a weighted mix of
   `ConfirmAccount` with the *correct* code (read `regs ! #confirmCode`),
   `ConfirmAccount` with a wrong pool code (rejected by `requireEq`),
-  `ResendConfirmation` with a new pool code, and rarely `FulfillGDPRRequest` (the
-  ε-edge; keep its weight low so runs are not usually cut short, but non-zero so
-  truncation is exercised); at `Confirmed` mostly `FulfillGDPRRequest` (emits
+  `ResendConfirmation` with a new pool code, and `FulfillGDPRRequest`; use the
+  post-EP-71 fixture in which every durable state-changing path emits an event; at
+  `Confirmed` mostly `FulfillGDPRRequest` (emits
   `AccountDeleted`); at `Deleted` anything (rejected). Observation by vertex, reading
   only provably-written slots: `PotentialCustomer → "(no slots)"`;
   `RequiresConfirmation → email, confirmCode, registeredAt`; `Confirmed →` those plus
-  `confirmedAt`; `Deleted →` all five (in replayable runs `Deleted` is reached only
-  via the event-emitting `Confirmed` edge, so `deletedAt` and `confirmedAt` are
-  written; the ε path into `Deleted` never appears in a truncated forward run).
+  `confirmedAt`; `Deleted →` every slot guaranteed by the event-emitting path that
+  reached it. Keep observations total across both deletion paths.
 
 Wire into `test/Spec.hs`: import `Keiki.RoundTripSpec qualified` and add
 `describe "Keiki.RoundTrip (EP-73)" Keiki.RoundTripSpec.spec`.
 
-Also in M1, add a deterministic hspec example (in `test/Keiki/RoundTripSpec.hs`)
-documenting the ε divergence: drive `userReg` forward through
-`StartRegistration` then `FulfillGDPRRequest`; assert forward lands on `Deleted`, the
-log contains only the two Start-chain events, and `reconstitute` of that log lands on
-`RequiresConfirmation` — with a comment naming this the reason for the truncation rule.
+Also in M1, add a deliberately invalid transducer with the old state-changing epsilon
+shape. Assert that EP-71 reports `StateChangingEpsilon`, forward execution changes its
+state without extending the log, and replay remains at the pre-transition state. Keep
+this fixture under `teethSpec`; the post-EP-71 `userReg` belongs in the green registry.
 
 Acceptance: from the repository root, `nix develop` then `cabal test keiki-test` —
 suite green; the run output shows the new `Keiki.RoundTrip (EP-73)` group with both
@@ -573,8 +570,10 @@ drift check. Create `jitsurei/test/Jitsurei/RoundTripSpec.hs` with bundles for
 `teethSpec` (deliberately head-unrecoverable — see Decision Log; verify against EP-71's
 outcome and record what you find). Read each aggregate before writing its generator;
 apply the same method as M1/M4 (state-aware weights, correct-vs-wrong guard values
-drawn from pools, observations over provably-written slots, ε-edges — jitsurei's
-UserRegistration has the same GDPR ε shape — handled by the driver's truncation).
+drawn from pools, observations over provably-written slots). Every green bundle must
+pass post-EP-71 default validation. Any remaining state-changing epsilon example is
+either migrated to an emitted event or placed in the invalid teeth group; the driver
+does not truncate around it.
 Update `jitsurei/jitsurei.cabal`'s test-suite: add `QuickCheck ^>=2.15` (plus `text`
 and `time` if not present) to `build-depends` and the two new modules to
 `other-modules`; wire the describe line into `jitsurei/test/Spec.hs`.
@@ -651,7 +650,9 @@ Keiki.RoundTrip (EP-73)
     passes validateTransducer with defaultValidationOptions [✔]
     P1: whole-log replay reproduces the forward state [✔]
     P2: chunked replay agrees at every command boundary [✔]
-    epsilon divergence is real: GDPR at RequiresConfirmation is invisible to replay [✔]
+  StateChangingEpsilon (teeth)
+    default validation rejects the silent state change [✔]
+    replay divergence is demonstrated intentionally [✔]
 ```
 
 After M5, the full matrix:
@@ -697,7 +698,7 @@ The plan is accepted when all of the following hold.
      test/Keiki/RoundTrip.hs:NN:
      1) Keiki.RoundTrip (EP-73), BrokenTailCoverage (teeth: deliberately head-unrecoverable), P1: whole-log replay reproduces the forward state
           Falsified (after 1 test and 2 shrinks):
-            commands (* accepted, - rejected, ~ epsilon-truncated):
+            commands (* accepted, - rejected, ε accepted-with-zero-output):
               1. * Provision (ProvisionData {owner = "a", quota = 0})
             event log:
               [OwnerRecorded (OwnerRecordedData {owner = "a"}),
@@ -719,8 +720,9 @@ The plan is accepted when all of the following hold.
    same shape.
 
 4. The negative layer is live: each fixture's tamper cases pass, their applicability
-   coverage labels show mutations actually firing, and the deterministic ε-divergence
-   example documents the GDPR silent-edge exclusion.
+   coverage labels show mutations actually firing, and the invalid epsilon fixture
+   pairs `StateChangingEpsilon` with the forward/replay divergence it prevents. No
+   green property run is truncated.
 
 5. `nix fmt -- --no-cache` produces no diff, and the master plan registry row for
    EP-73 reads Complete with its Progress item checked.
@@ -803,9 +805,14 @@ teeth group only. Test entry points touched: `test/Spec.hs` and
 
 ---
 
+Revision note (2026-07-12): removed epsilon truncation from the property domain.
+Green fixtures must pass EP-71's default-on `StateChangingEpsilon` check and generated
+runs execute completely; a deliberately invalid silent-transition fixture pairs the
+warning with its replay divergence.
+
 Revision note (2026-07-12): initial full authoring, replacing the scaffold generated
 by the master-plan decomposition. Design decisions (register-file comparison via
-per-fixture observations, ε-truncation of the property's domain, fixture-declared
+per-fixture observations, fixture-declared
 tamper cases, harness sharing with jitsurei by verbatim copy, teeth via
 `expectFailure` + validator pairing) are recorded with rationale in the Decision Log;
 authoring-time code findings that forced them are in Surprises & Discoveries.

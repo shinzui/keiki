@@ -32,6 +32,12 @@ simply have *forgotten* to emit. In an event-sourcing system, where the usual
 reason to take an edge is to record an event, a forgotten `emit` is a real and
 easy mistake, and nothing catches it.
 
+This plan has a hard dependency on EP-70. References below to a lazy finalize-time
+`error` describe the original design and are superseded by the 2026-07-12 Decision
+Log: the same intent flag and message are emitted as an eager structured
+`BuilderDefect` through `buildTransducerEither`, with `buildTransducer` forcing and
+rendering that result.
+
 After this change, **every edge body must state its output intent explicitly.**
 An edge that calls `B.goto` but neither `B.emit`/`B.emitWith` nor `B.noEmit`
 becomes a hard error at builder finalize time, with a message naming the source
@@ -52,8 +58,10 @@ the edge deliberately silent (ε-edge).
 ```
 
 This mirrors the existing "goto missing" and "goto called more than once"
-diagnostics: same mechanism (a runtime `error` raised when `buildTransducer`
-evaluates the builder), same shape of message, same finalize-time timing.
+diagnostics: the same message and precedence, now produced through EP-70's eager
+structured defect pass. `buildTransducerEither` returns the defect; the legacy
+`buildTransducer` wrapper renders and raises it when the returned transducer is forced
+to WHNF as specified by EP-70.
 
 
 ## Progress
@@ -69,7 +77,8 @@ This section must always reflect the actual current state of the work.
   - [ ] Set `peOutputDecided = True` in `emit` (the `Just` branch).
   - [ ] Set `peOutputDecided = True` in `emitWith`.
   - [ ] Change `noEmit` from a no-op to setting `peOutputDecided = True`.
-  - [ ] Add the "no emit or noEmit" guard + error to the `[t]` branch of `finalizeEdge`.
+  - [ ] Add `MissingOutputIntent` (final name follows EP-70 conventions) to the
+        structured defect produced from the `[t]` branch of `finalizeEdge`.
   - [ ] Update the module-header "Misuse diagnostics" haddock to list the new diagnostic.
   - [ ] Update the `noEmit` haddock (it is no longer a documentation no-op).
   - [ ] Update the `finalizeEdge` haddock to mention the output-intent requirement.
@@ -122,16 +131,13 @@ implementation. Provide concise evidence.
 
 Record every decision made while working on the plan.
 
-- Decision: Enforce output intent at **finalize time via a runtime `error`**, not
-  at the type level.
-  Rationale: The builder already enforces `goto`-exactly-once this way
-  (`finalizeEdge` in `src/Keiki/Builder.hs`). A type-level guarantee would require
-  threading another phantom index through the indexed `EdgeBuilder` monad and its
-  `QualifiedDo` `(>>=)`, a much larger change for a diagnostic that fires the
-  moment `buildTransducer` is evaluated (typically at module load in a test or
-  `main`). Matching the existing mechanism keeps the surface uniform and the
-  message style consistent.
-  Date: 2026-07-03
+- Decision: enforce output intent during EP-70's eager structured finalization, not at
+  the type level and not through a new lazy `error` thunk.
+  Rationale: a type-level guarantee would require another phantom index through the
+  builder monad; EP-70 already supplies `BuilderDefect`, `finalizeEdge :: ... ->
+  Either BuilderDefect Edge`, and `buildTransducerEither`. Reusing that path makes the
+  documented construction-time timing true and preserves uniform diagnostics.
+  Date: 2026-07-12 (supersedes the 2026-07-03 runtime-error decision)
 
 - Decision: Track intent with a single `Bool` field `peOutputDecided` on
   `PartialEdge`, set by `emit`, `emitWith`, and `noEmit`.
@@ -150,19 +156,17 @@ Record every decision made while working on the plan.
 
 - Decision: This plan is adopted into
   `docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`
-  (Phase 1) with a soft dependency on
+  (Phase 1) with a hard dependency on
   `docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md`.
-  The first Decision above ("finalize time via a runtime `error`") rests on an
-  assumption the 2026-07 architecture review disproved: `buildTransducer` does
+  The original 2026-07-03 decision (now superseded above) rested on an assumption the
+  architecture review disproved: `buildTransducer` does
   NOT evaluate the builder eagerly — `finalizeEdge`'s errors are lazy thunks
   forced only when `edgesOut` is first demanded for the affected vertex, so the
   diagnostic "fires the moment `buildTransducer` is evaluated" only after plan 70
-  makes finalization eager. Implementation guidance: if plan 70 has landed,
-  register the missing-intent diagnostic as a case of its eager validation pass
-  (its structured error path), keeping this plan's message text; if this plan is
-  implemented first, keep the `finalizeEdge` placement as written and note that
-  plan 70 will subsequently make the error eager — the `peOutputDecided`
-  tracking and message shape are unaffected either way.
+  makes finalization eager. EP-70 must land first; register the missing-intent
+  diagnostic as a `BuilderDefect` in its eager structured validation path, preserving
+  this plan's message text and goto-arity precedence. Do not add a temporary lazy
+  `error` path. The `peOutputDecided` tracking remains unchanged.
   Date: 2026-07-12
 
 - Decision: Migrate the two in-repo silent edges by adding `B.noEmit` (rather than
@@ -691,10 +695,11 @@ Signatures and shapes that must exist at the end of each milestone (all in
 
 - 2026-07-12: Adopted into MasterPlan 16
   (`docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`)
-  with a soft dependency on plan 70 (eager builder validation). Added a Decision
+  with a hard dependency on plan 70 (eager builder validation). Added a Decision
   Log entry correcting this plan's assumption that `buildTransducer` evaluates
   the builder eagerly — the 2026-07 architecture review showed `finalizeEdge`
-  errors are lazy thunks until plan 70 makes finalization eager — and stating
-  how to implement in either landing order. Frontmatter gained the
+  errors are lazy thunks until plan 70 makes finalization eager. The missing-intent
+  case must use EP-70's structured `BuilderDefect`; the lazy-first landing order is no
+  longer allowed. Frontmatter gained the
   `master_plan` field. No change to the diagnostic's design (`peOutputDecided`
   flag, message text, test list).

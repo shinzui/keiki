@@ -118,10 +118,10 @@ Record every decision made while working on the plan.
   Rationale: master plan integration point 4 says EP-71 defines the first
   `TReg`-in-`OutFields` fixtures and EP-74 reuses them, but
   `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`
-  is still an unfilled skeleton and EP-74 has no hard dependency on it. The fixtures
+  owns replay-specific fixtures and EP-74 has no hard dependency on it. The fixtures
   here are designed to be reusable (plain modules under `test/Keiki/Fixtures/`, no
   compose-specific coupling in the transducers themselves); if EP-71 lands first,
-  Milestone 1 reuses its counter-style fixture instead of duplicating it — check
+  Milestone 1 reuses a suitable fixture instead of duplicating it — check
   `test/Keiki/Fixtures/` before writing.
   Date: 2026-07-11
 
@@ -138,7 +138,7 @@ Record every decision made while working on the plan.
   `src/Keiki/Render/Mermaid.hs:919`); it makes the existing haddock's order-independence
   claim true instead of false; and the authoring-time consumer survey (see Context,
   "Blast radius of snapshot semantics") found no update right-hand side anywhere in
-  keiki's tests, `jitsurei/`, keiro, or keiro-runtime-jitsurei that reads a slot written
+  keiki's tests, `jitsurei/`, or current keiro that reads a slot written
   by a *sibling* combine half — the only register-reading right-hand sides are
   self-reads (counter increments), whose value is identical under both semantics.
   (a) changes `compose`'s result register-file type away from `Append rs1 rs2`,
@@ -368,11 +368,10 @@ combine half's right-hand side reads a slot another half writes. Surveyed on
 `test/Keiki/Render/PrettySpec.hs:128`, never evaluated); `jitsurei/src/` register-reading
 right-hand sides are all single-`USet` self-reads (`Jitsurei/OrderCart.hs:595,620`,
 `Jitsurei/LoanApplication.hs:749,769` — counter increments, identical under both
-semantics); keiro and keiro-runtime-jitsurei (at `/Users/shinzui/Keikaku/bokuno/keiro`
-and `/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei`; locate via
-`mori registry show keiro --full` if moved) author all register writes through the
-builder's `=:` with input-payload or literal right-hand sides. Re-run this survey in M2
-before promoting the prototype; the grep commands are in Concrete Steps.
+semantics). Re-check current keiro using the source path from
+`mori registry show shinzui/keiro --full` before promoting the prototype; do not use
+stale runtime repositories as compatibility evidence. The grep commands are in
+Concrete Steps.
 
 ### Why the fix directions are what they are
 
@@ -578,8 +577,7 @@ registration) asserting: for `UCombine (USet #x (lit 1)) (USet #y (proj #x))` fr
 increment `USet #n (proj #n .+ lit 1)` still increments.
 
 Then measure the blast radius: run the full keiki suite; build and test `jitsurei`
-(same repo); re-run the consumer survey greps from Concrete Steps against keiro and
-keiro-runtime-jitsurei and eyeball any new hits.
+(same repo); re-run the focused survey against current keiro and inspect every hit.
 
 Promote criteria: whole keiki suite green except the intentionally-pending M1 tests
 and any test that *asserted threading behavior* (fix such a test only if its assertion
@@ -822,11 +820,10 @@ M2: apply the `runUpdate` change, then run the suite and the consumer survey.
 
 ```bash
 cabal test all
-# survey: sibling-half register reads in all known consumers
+# survey: sibling-half register reads in keiki and current keiro
 grep -rn "USet.*proj\|USet.*TReg\|=:.*reg\|\.=.*reg @\|=:.*proj\|\.=.*proj" \
   --include='*.hs' src test jitsurei/src \
-  /Users/shinzui/Keikaku/bokuno/keiro \
-  /Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei 2>/dev/null \
+  /Users/shinzui/Keikaku/bokuno/keiro 2>/dev/null \
   | grep -v "Composition.hs"
 # every hit must be a self-read (increment) or a rendering-only fixture;
 # anything else blocks promotion — record it and follow the discard path.

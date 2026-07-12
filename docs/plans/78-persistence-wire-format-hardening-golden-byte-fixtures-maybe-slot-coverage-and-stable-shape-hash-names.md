@@ -65,7 +65,7 @@ once (Milestone 1) and says so loudly.
 - [ ] M4: sharpen the uninit-slot error message in `src/Keiki/Generics.hs`
 - [ ] M4: document the fully-initialized precondition on `RegFileToJSON` methods, module header, and `keiki-codec-json/README.md`
 - [ ] M4: pin the throwing behavior with a `shouldThrow` test
-- [ ] M5: duplicate-slot-name compile-time guard (`DistinctSlotNames`) on the `RegFileToJSON` instance, with documented manual negative test
+- [ ] M5: reuse EP-70's duplicate-slot-name guard (`DistinctNames (Names rs)`) on the `RegFileToJSON` instance, with documented manual negative test
 - [ ] M5: early record-payload validation on the TH command side (`src/Keiki/Generics/TH.hs`)
 - [ ] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants
 - [ ] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML
@@ -155,8 +155,9 @@ here as implementation proceeds.
   `regFileToJSONEither` remains possible later as a purely additive API.
   Date: 2026-07-11 (authoring).
 
-- Decision: Guard duplicate slot names at compile time with a `DistinctSlotNames`
-  constraint on the catch-all `RegFileToJSON` instance, plus Haddock documenting the
+- Decision: Guard duplicate slot names at compile time by reusing EP-70's canonical
+  `DistinctNames (Names rs)` constraint from `Keiki.Internal.Slots` on the catch-all
+  `RegFileToJSON` instance, plus Haddock documenting the
   runtime behavior for anyone on an older version.
   Rationale: duplicate names silently lose data on the Value encode path and can
   never round-trip (decode already fails), so no working program is rejected by the
@@ -189,7 +190,7 @@ here as implementation proceeds.
   and pin whatever envelope EP-77 ships; every other milestone here is independent
   of EP-77 and must not wait for it.
   Rationale: master plan integration point 5 (`docs/masterplans/16-...md`): EP-77 may
-  break the event format freely because it has zero consumers today; pinning the
+  correct its pre-release event format (which current keiro does not use); pinning the
   pre-EP-77 envelope would freeze bytes EP-77 is about to discard.
   Date: 2026-07-11 (authoring).
 
@@ -620,13 +621,13 @@ is separately committable.
 (`keiki-codec-json/src/Keiki/Codec/JSON.hs:98-100,138`) builds a KeyMap where a
 duplicated slot name keeps only one entry — silent data loss; on the Encoding path
 a duplicate key is emitted twice; on decode, the second same-named slot always
-fails with "missing slot" (line 114 deletes consumed keys). Add a type-level guard:
-in `Keiki.Codec.JSON`, define a type family `DistinctSlotNames (rs :: [Slot]) ::
-Constraint` that walks the list and, on finding a repeated `Symbol`, resolves to a
-`GHC.TypeLits.TypeError` naming the duplicated slot (message text along the lines
-of `RegFile slot list contains duplicate slot name "retryCount"; JSON encoding
-would silently drop one of the values`). Attach it to the catch-all instance:
-`instance (RegFileWalk rs, DistinctSlotNames rs) => RegFileToJSON rs` (line 169).
+fails with "missing slot" (line 114 deletes consumed keys). Import `Names` and
+EP-70's `DistinctNames` from the canonical slot-invariant module. Attach
+`DistinctNames (Names rs)` to the catch-all instance:
+`instance (RegFileWalk rs, DistinctNames (Names rs)) => RegFileToJSON rs` (line 169).
+Do not define a codec-local duplicate-name family. If EP-70's `TypeError` wording is
+builder-specific, generalize that canonical message once in `Keiki.Internal.Slots`
+so both Builder and JSON users receive an accurate slot-list diagnostic.
 Document the guard and the underlying behavior in the module Haddock. Compile-fail
 behavior cannot live in the hspec suite; follow the repo's existing precedent for
 manual negative tests (`keiki-codec-json/src/Keiki/Codec/JSON/Event.hs` documents a
@@ -690,8 +691,8 @@ If EP-77 has not shipped its versioned envelope, STOP: leave this milestone's bo
 unchecked, note the gate in this plan's Progress section, and treat the plan as
 releasable-except-M6. Do not pin the current pre-EP-77 envelope (the
 kind-discriminated object emitted by `deriveEventCodecSkeleton` in
-`keiki-codec-json/src/Keiki/Codec/JSON/Event.hs`) — EP-77 is free to break it
-because it has zero consumers, and goldens would freeze bytes about to be
+`keiki-codec-json/src/Keiki/Codec/JSON/Event.hs`) — EP-77 is free to correct it
+before release, and goldens would freeze bytes about to be
 discarded.
 
 Once EP-77 is in: reuse the event fixture sum type from
@@ -839,8 +840,8 @@ updates in M1 are plain string edits; if a pinned value is wrong the very next t
 run says so with the correct value in the failure output. Milestones land in order
 M1 → M2 → M3 → M4 → M5 (→ M6), but M4 and M5 touch disjoint files from M2/M3 and
 can be reordered or committed independently if needed; the only hard ordering is M1
-before any golden pinning (hash values) and EP-77 before M6 (envelope bytes). If M5's
-`DistinctSlotNames` guard causes unexpected downstream breakage, revert just that
+before any golden pinning (hash values), EP-70 before M5, and EP-77 before M6
+(envelope bytes). If M5's distinct-name guard causes unexpected downstream breakage, revert just that
 constraint (keep the documentation) and record the reversal in the Decision Log.
 
 
@@ -858,7 +859,7 @@ Surfaces that must exist, unchanged, at the end (keiro's load-bearing imports,
 
 ```haskell
 -- keiki-codec-json, Keiki.Codec.JSON
-class (RegFileWalk rs) => RegFileToJSON (rs :: [Slot])   -- instance context may gain DistinctSlotNames (M5)
+class (RegFileWalk rs) => RegFileToJSON (rs :: [Slot])   -- instance uses DistinctNames (Names rs) (M5)
 regFileToJSON     :: (RegFileToJSON rs) => RegFile rs -> Aeson.Value
 regFileToEncoding :: (RegFileToJSON rs) => RegFile rs -> Aeson.Encoding
 regFileFromJSON   :: (RegFileToJSON rs) => Aeson.Value -> Either String (RegFile rs)
@@ -883,11 +884,13 @@ regFileGoldenFileSpec ::
   forall rs. (RegFileToJSON rs, EqRegFile rs) =>
   String -> FilePath -> RegFile rs -> Spec
 
--- keiki-codec-json, Keiki.Codec.JSON (M5, compile-time only)
-type family DistinctSlotNames (rs :: [Slot]) :: Constraint
+-- keiki, Keiki.Internal.Slots (owned by EP-70; reused here)
+type family DistinctNames (names :: [Symbol]) :: Constraint
 ```
 
-Plan-level dependencies: EP-77
+Plan-level dependencies: EP-70
+(`docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md`)
+is a hard dependency for the canonical distinct-name constraint. EP-77
 (`docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md`)
 is a soft dependency gating Milestone 6 only. The master plan
 (`docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`)
@@ -903,3 +906,7 @@ inline), pre-computed the post-migration shape hashes, chose and logged decision
 for the nested-Maybe semantics, the uninit-encoding posture, the duplicate-name
 guard, and the EP-77 gating, and sequenced the hash-value migration ahead of all
 golden pinning so fixtures are written exactly once.
+
+Revision note (2026-07-12): removed the duplicate codec-local `DistinctSlotNames`
+design. EP-78 now hard-depends on EP-70 and reuses the canonical
+`DistinctNames (Names rs)` constraint from the slot-invariant module.

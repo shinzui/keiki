@@ -19,14 +19,17 @@ the two codec packages, and the test suite) surfaced roughly twenty-five finding
 ranging from genuine type-unsoundness (a fabricated typeclass dictionary that
 mis-indexes registers under nested `Category` composition) to API-design hazards (a
 build-time validator that blesses transducers unable to replay their own logs; replay
-entry points that collapse every failure into `Nothing`). A parallel survey of keiro —
-the event-sourcing framework that is keiki's only real consumer — established exactly
-which surfaces are load-bearing downstream and which can change freely.
+entry points that collapse every failure into `Nothing`). Validation against current
+keiro — the event-sourcing framework and workflow engine that mounts keiki
+transducers as durable aggregate and process-manager streams — established which
+surfaces are load-bearing at that integration boundary. Stale or unrelated consumers
+are not evidence for this initiative.
 
 When this initiative is complete: no `unsafeCoerce` in keiki rests on an invariant the
-types do not enforce; a transducer that passes `validateTransducer` can always replay
-every log it can produce, and that law is enforced by a property test over every
-fixture; replay failures carry a structured reason (which event, which vertex, why)
+types do not enforce; a transducer that passes default `validateTransducer` can replay
+every log it can produce, subject to the documented honesty laws of its opaque
+`InCtor`/`WireCtor` match/build functions, and that law is enforced by a property test
+over every fixture; replay failures carry a structured reason (which event, which vertex, why)
 instead of `Nothing`; the builder rejects malformed edges eagerly at `buildTransducer`
 time instead of via lazy `error` thunks; the symbolic determinism gate is conservative
 in the correct direction on solver `Unknown`; composition of stateful transducers
@@ -43,7 +46,8 @@ before the first release because every post-release signature or semantics chang
 a breaking change for persisted-data consumers. The ROADMAP's "only release mechanics
 remain" status is superseded: `0.1.0.0` ships when every phase here is complete.
 Replay safety (Phases 1–2) is the hard core of that gate; if schedule pressure forces
-a cut, Phase 3 (composition — zero consumers today) may instead ship explicitly
+a cut, Phase 3 (not called by current keiro runtime code, but documented as keiki's
+in-stream aggregate-composition surface) may instead ship explicitly
 marked experimental in the module haddocks, but Phases 1, 2, 4, and 5 admit no cut:
 they cover the soundness holes, the replay contract, the direction of the symbolic
 gate's conservatism, and the wire formats that become permanent the moment a consumer
@@ -85,9 +89,11 @@ that certifies both.
 
 Phase 3, composition semantics, fixes the places where a composed transducer evaluates
 differently from the composition of its parts (EP-74) and converts the remaining
-composition footguns into diagnostics or loud documentation (EP-75). The keiro survey
-found zero downstream use of composition, so these plans may change behavior freely;
-they are sequenced after Phase 2 because they are lower-consequence today.
+composition footguns into diagnostics or loud documentation (EP-75). Current keiro
+process managers coordinate separate durable streams and do not call the categorical
+wrapper APIs, while keiro's modeling guide intentionally directs same-stream pipelines
+to `compose` and `feedback1`. These APIs therefore need correctness work without being
+treated as disposable merely because current runtime call sites are absent.
 
 Phase 4, symbolic and validation posture, is one plan (EP-76): the `symIsBot` Unknown
 inversion, the encoding gaps (unbounded-Integer widening, UTCTime truncation), and the
@@ -114,15 +120,15 @@ fire through).
 |---|-------|------|-----------|-----------|--------|
 | 69 | Replace the fabricated WeakenR and KnownSlotNames dictionary in Category composition with real induction witnesses | docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md | None | None | Not Started |
 | 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | Not Started |
-| 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | None | EP-70 | Not Started |
+| 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Not Started |
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Not Started |
-| 72 | Structured replay diagnostics: reconstituteEither, strict evolve policy, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Not Started |
+| 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Not Started |
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Not Started |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Not Started |
-| 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-74 | EP-69 | Not Started |
+| 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Not Started |
 | 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Not Started |
 | 77 | Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding | docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md | None | None | Not Started |
-| 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | None | EP-77 | Not Started |
+| 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | EP-70 | EP-77 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-69).
@@ -144,19 +150,20 @@ red. EP-75 requires EP-74 because it documents and validates the composition sem
 EP-74 finalizes; writing law-level documentation against semantics about to change
 would be wasted work.
 
-The soft dependencies: plan 68 benefits from EP-70 because EP-70 replaces the lazy
-finalize-`error` mechanism with an eager validation pass at `buildTransducer`, and
-68's missing-intent diagnostic should be emitted by that eager pass rather than by a
-new lazy thunk (68 as written assumes the lazy mechanism, which the review showed
-never fires at build time). EP-73 benefits from EP-72 because the property harness
+Additional hard dependencies: plan 68 requires EP-70 because its missing-intent
+diagnostic must use EP-70's eager `BuilderDefect` mechanism rather than add another
+lazy finalize thunk. EP-75 requires EP-69's real wrapper witnesses before its stateful
+law tests and provenance changes. EP-78 requires EP-70's canonical
+`DistinctNames (Names rs)` constraint rather than defining a second duplicate-slot
+family.
+
+The soft dependencies: EP-73 benefits from EP-72 because the property harness
 reports failures through `reconstituteEither`'s structured reasons when available.
 EP-76 benefits from EP-71 because both extend the validation vocabulary and EP-71
 lands the coordinated keiro-breaking change first (see integration point 1). EP-78
 benefits from EP-77 because the event-envelope golden fixtures should pin the
 versioned wire format EP-77 introduces, not the pre-versioning one (the RegFile
-snapshot goldens in EP-78 are independent and can proceed anytime). EP-75 benefits
-from EP-69 because the alignment validator inspects wrapped composites and should be
-written against the real-witness representation EP-69 introduces.
+snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 
 ## Integration Points
@@ -167,7 +174,8 @@ written against the real-witness representation EP-69 introduces.
    consumer pattern-matches this type exhaustively in
    `keiro-core/src/Keiro/EventStream/Validate.hs:147-155`, so any constructor addition
    is a breaking change downstream: EP-71 owns deciding the final constructor set
-   (three new constructors, three new `ValidationOptions` flags defaulting on), bumps
+   (four new constructors and four new `ValidationOptions` flags defaulting on,
+   including state-changing epsilon detection), bumps
    the version note in the changelog, and records the keiro migration steps (exact
    new `renderWarning` arms) in its plan. As authored, EP-76 adds NO constructors and
    NO options field (its strengthened pure check reuses the existing
@@ -198,25 +206,41 @@ written against the real-witness representation EP-69 introduces.
    recorded decision: its shapes need compose-specific coupling, and it must not
    hard-block on EP-71 — it checks for reusable EP-71 fixtures first); EP-69 adds the
    composition-pipeline fixture `CounterPipeline`, deliberately orthogonal to EP-74's
-   snapshot findings. The real-world reference case is `MarkRedPatient` in
-   `keiro-runtime-jitsurei/services/incident-command/src/IncidentCommand/Triage/Transducer.hs:188-206`,
-   the only production multi-event edge.
+   snapshot findings. Compatibility and integration claims are checked against
+   keiki's in-tree fixtures and current keiro only.
 
 5. keiki-codec-json event wire format (EP-77 defines, EP-78 consumes). EP-77 decides
    the versioned envelope (version tag, pinned wire kinds, upcaster hook); EP-78's
-   event-envelope golden fixtures pin whatever EP-77 ships. The keiro survey found the
-   event codec has zero consumers today (keiro uses its own `Keiro.Codec` with
+   event-envelope golden fixtures pin whatever EP-77 ships. Current keiro does not use
+   the keiki event codec; it uses its own `Keiro.Codec` with
    metadata `schemaVersion` and an upcaster chain — study it as prior art:
-   `keiro-core/src/Keiro/Codec.hs`), so EP-77 may break the format freely; the point
+   `keiro-core/src/Keiro/Codec.hs` — so EP-77 may break the format freely; the point
    is to fix it before Hackage users adopt it.
 
-6. Consumer-breaking-change ledger. Per the keiro survey, the load-bearing surfaces
+6. Current-keiro breaking-change ledger. The load-bearing surfaces
    are `step`, `applyEventStreaming`, `applyEvents`, `InFlight`, `validateTransducer`
    and its warning type, `Keiki.Builder`, `Keiki.Generics.TH`, `regFileShapeHash`, and
    `RegFileToJSON`. Plans touching these (70, 71, 72, 76, 78) must state the keiro
-   impact in their Decision Logs. Surfaces with zero consumers — `reconstitute`,
-   `stepEither`, `Decider`, all composition operators, `SomeSymTransducer`, the event
-   codec — may change freely (69, 72's Decider policy, 74, 75, 77).
+   impact in their Decision Logs. Current keiro does not import `Keiki.Decider`,
+   `SomeSymTransducer`, or the categorical wrapper instances, and it uses its own event
+   codec. That absence supports the selected pre-release `Decider` removal but does not
+   by itself authorize redesign or removal of keiki's intended composition APIs.
+
+7. Follow-up coordination with current keiro MasterPlan 14
+   (`/Users/shinzui/Keikaku/bokuno/keiro/docs/masterplans/14-harden-the-keiro-command-coordination-and-snapshot-paths-surfaced-by-the-2026-07-keiki-path-review.md`).
+   That plan assumes this MasterPlan lands first. Its EP-95 consumes EP-71's final
+   warning vocabulary and EP-72's structured replay fold for both aggregate and
+   process-manager hydration. Agreed division: keiki EP-71 detects state-changing
+   epsilon structurally and enables the warning by default; keiro enforces it at the
+   `ValidatedEventStream` boundary for durable aggregates and process managers. Keiro
+   EP-99 must consume/pin the keiki check rather than duplicate the AST traversal.
+   Enforcement is non-negotiable at that boundary: keiro force-enables the
+   replay-contract checks (`checkStateChangingEpsilon`, `checkHeadRecoverability`)
+   before calling `validateTransducer`, caller-supplied options may only strengthen
+   validation, `StateChangingEpsilon` sits in the fail bucket for aggregates and
+   process managers alike, and any bypass is a separately named unchecked
+   constructor, never an options field. Keiro's runtime divergence witnesses (its
+   EP-99 M2) are retained as defense in depth behind the static checks.
 
 
 ## Progress
@@ -227,12 +251,12 @@ written against the real-witness representation EP-69 introduces.
 - [ ] EP-70: `emit`'s `unsafeCoerce` eliminated or its failure mode reduced to a diagnostic; duplicate-`from` merge order fixed and documented
 - [ ] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
 - [ ] EP-71: hidden-input check demands head-recoverability; the GHCi counterexample transducer is rejected
-- [ ] EP-71: cross-edge inversion-ambiguity and guard-implies-input-read checks land; keiro warning-type migration documented
+- [ ] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
 - [ ] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
-- [ ] EP-72: `Decider.evolve` silent fallback replaced or loudly opt-in; `outputAcceptor` is InFlight-aware
-- [ ] EP-73: round-trip property (fold `step`, replay the log, states agree — quantified over runs truncated before the first accepted ε-step) green over every fixture including multi-event and stateful ones, plus the jitsurei aggregates
+- [ ] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
+- [ ] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
 - [ ] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
-- [ ] EP-75: composition alignment validator; forward-fragment law documentation on all categorical instances
+- [ ] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
 - [ ] EP-76: solver `Unknown` treated as not-bot; encoding caveats documented; pure overlap check catches same-ctor `PAnd` pairs
 - [ ] EP-77: versioned event envelope with pinned wire kinds and default-on-missing decoding
 - [ ] EP-78: golden byte fixtures for both wire formats; `Maybe` slot coverage; shape hash stable across GHC majors
@@ -240,35 +264,31 @@ written against the real-witness representation EP-69 introduces.
 
 ## Surprises & Discoveries
 
-- The keiro survey (2026-07-12) found the runtime path funnels through exactly three
-  keiki functions (`step`, `applyEventStreaming`, `applyEvents`) plus
-  `validateTransducer` at the stream boundary; `Decider`, `reconstitute`,
-  `stepEither`, and all composition operators have zero consumers. This freed EP-72's
-  Decider policy and all of Phase 3 from compatibility constraints, and elevated the
-  head-recoverability fix (EP-71): the single production multi-event edge
-  (`MarkRedPatient`) is hydrated through exactly the code path the review proved can
-  fail.
+- Current keiro's command path uses `step`, `applyEventStreaming`, `applyEvents`,
+  `InFlight`, and `validateTransducer`; aggregate and process-manager state both pass
+  through `ValidatedEventStream` and the same hydration machinery. Current keiro does
+  not import `Keiki.Decider` or the categorical wrapper instances. Its process-manager
+  runtime coordinates separate streams, while its modeling guide reserves
+  `compose`/`feedback1` for one durable stream. This supports removing Decider but not
+  treating composition as an unwanted API.
 - keiro already built the things EP-72 adds (typed replay errors, a hydration fold)
   and EP-77 needs (an upcaster chain with construction-time validation) — both plans
   should treat keiro's implementations as prior art rather than designing in a vacuum.
 - Plan authoring (2026-07-12) surfaced discoveries that shaped the plans:
   - The naive decide/replay round-trip law is FALSE in the presence of ε-edges: the
     existing UserRegistration fixture's silent GDPR edge (`B.noEmit`) advances state
-    without emitting, so replay cannot reach post-ε states. EP-73 quantifies the law
-    over runs truncated before the first accepted ε-step and documents the divergence
-    with a deterministic companion spec. This is a real semantic boundary of
-    replay-by-inversion, not a test artifact — EP-72's documentation milestone and the
-    foundations docs should state it.
-  - keiro's only production multi-event edge (`MarkRedPatient`) already satisfies
-    head-recoverability, so EP-71's stricter validator breaks no real consumer
-    (verified during EP-71 authoring against the live GHCi reproduction).
+    without emitting, so replay cannot reach post-ε states. The selected correction is
+    not to truncate the property: EP-71 emits a default-on warning for state-changing
+    epsilon, EP-73 tests complete runs of validation-clean fixtures, and keiro rejects
+    the warning at its durable-stream boundary. A deliberately invalid fixture keeps
+    the divergence visible as teeth.
   - `TLit` carries no `Eq`/`Typeable` evidence, so EP-71's cross-edge
     inversion-ambiguity check cannot distinguish edges by differing literal fields —
     the criterion is constructor-name-based with documented blind spots.
   - The TH-generated `TermFields` records already carry the input-schema type
-    parameter, so EP-70 can eliminate `emit`'s `unsafeCoerce` with zero call-site or
-    TH changes (verified against keiro-runtime-jitsurei's production transducers,
-    which also use neither `emitWith` nor the builder carrier types).
+    parameter, so EP-70 can eliminate `emit`'s `unsafeCoerce` without changing the
+    generated field-schema representation. Current keiki and keiro call sites must be
+    rechecked during implementation; stale runtime examples are not evidence.
   - An authoring-time survey found zero update right-hand sides that read a
     sibling-half register, so EP-74's snapshot ("parallel assignment") semantics for
     `UCombine` is adoptable without breaking any existing aggregate — and it makes
@@ -311,10 +331,63 @@ written against the real-witness representation EP-69 introduces.
   standalone.
   Date: 2026-07-12
 
+- Decision: keiki detects state-changing epsilon edges with a default-on validation
+  warning; keiro enforces that warning at `ValidatedEventStream` for durable
+  aggregates and process managers.
+  Rationale: keiki can inspect the transducer once and preserve opt-out flexibility
+  for pure non-persisted uses. Keiro is where events become the sole durable state, so
+  its normal validated constructor must reject the shape. A state-preserving `UKeep`
+  self-loop remains legal. EP-73 tests complete runs rather than truncating its domain.
+  Date: 2026-07-12
+
+- Decision: keiro's durable-stream boundary treats the replay-contract checks as
+  non-disableable. Caller-supplied `ValidationOptions` may only strengthen validation
+  at `mkEventStream`: keiro force-enables `checkStateChangingEpsilon` and
+  `checkHeadRecoverability` before calling `validateTransducer`, for aggregates and
+  process managers alike, and its only bypass is a separately named unchecked
+  constructor (tests and forensics only), never an options field. keiki keeps the
+  `checkStateChangingEpsilon` opt-out for pure non-persisted transducers, with a
+  haddock stating it must never be disabled for persisted streams. Keiro's runtime
+  divergence witnesses remain in place as defense in depth.
+  Rationale: the overriding correctness principle is zero tolerance for silent state
+  divergence in event-sourced aggregates and process managers. A config knob that can
+  reach the durable boundary is itself a bug vector, and the static checks have
+  documented blind spots that the runtime witnesses cover. The non-contract checks
+  (`checkInversionAmbiguity`, `checkGuardImpliesInputRead`) stay caller-narrowable —
+  they have a documented legitimate-override story.
+  Date: 2026-07-12
+
+- Decision: preserve all categorical instances through EP-69/EP-75, but assess laws
+  under two named observations: forward execution and replay/inversion. A forward-only
+  result is a documented fragment, not an unqualified law claim.
+  Rationale: unsafe dictionary repair and algebraic lawfulness are separate concerns.
+  Replay is publicly observable and central to keiki, while current keiro does not use
+  the wrapper instances. Redesign or removal is deferred until the tests provide
+  concrete evidence.
+  Date: 2026-07-12
+
+- Decision: make checked concrete composition the primary durable-stream surface;
+  fix `alternative` with real `Either`-arm predicates; and gate `feedback1` on a
+  shared-state-versus-two-copy contract decision.
+  Rationale: name/arity drift must fail before a composite is mounted, synthetic
+  constructor arm tags are incompatible with the current symbolic name encoding, and
+  alignment validation alone cannot make two independent copies of an aggregate into
+  same-state feedback.
+  Date: 2026-07-12
+
+- Decision: plan 68 hard-depends on EP-70, and EP-78 reuses EP-70's canonical
+  `DistinctNames (Names rs)` constraint.
+  Rationale: missing emit intent must participate in the eager structured builder
+  defect pass, and duplicate type families for the same slot-name invariant would
+  drift.
+  Date: 2026-07-12
+
 - Decision: sequence composition fixes (Phase 3) after replay correctness (Phase 2)
   despite EP-74 containing high-severity findings.
-  Rationale: keiro survey shows zero composition consumers; Phase 2 defects sit on the
-  production hydration path of the only real consumer.
+  Rationale: Phase 2 defects sit directly on current keiro's aggregate and
+  process-manager hydration path. Composition remains an intended same-stream modeling
+  surface, but it is not called by current keiro runtime code, so replay correctness
+  still has the higher immediate operational priority.
   Date: 2026-07-12
 
 - Decision: this master plan gates the 0.1.0.0 Hackage release; the ROADMAP's
@@ -326,12 +399,12 @@ written against the real-witness representation EP-69 introduces.
   Date: 2026-07-12
 
 - Decision: replay-facing APIs default to strict, structured-failure semantics in
-  their release form: `Decider.evolve`'s silent state-preserving fallback is removed
-  (not merely documented), and the `Either`-returning replay entry points are the
-  primary documented surface with `Maybe` variants kept as thin wrappers.
-  Rationale: zero consumers depend on the fallback (keiro survey); silent replay
-  failure is the exact failure class the user flagged as unacceptable for critical
-  business apps; the first release is the only cheap moment to set this default.
+  their release form: `Keiki.Decider` is removed, and the `Either`-returning Core
+  replay entry points are the primary documented surface with existing Core `Maybe`
+  variants kept as thin wrappers.
+  Rationale: user directive 2026-07-12. The facade is letter-only and silently lossy,
+  while current keiro already uses the `InFlight`-aware Core surface directly. The
+  first release is the right point to remove the duplicate abstraction.
   Date: 2026-07-12
 
 
@@ -340,6 +413,30 @@ written against the real-witness representation EP-69 introduces.
 (To be filled during and after implementation.)
 
 ## Revision Notes
+
+- 2026-07-12: Recorded the enforcement posture for the keiki-detects/keiro-enforces
+  division (integration point 7 and the new Decision Log entry): replay-contract
+  checks are force-enabled and non-disableable at keiro's durable boundary, with a
+  named unchecked constructor as the only bypass and keiro's runtime divergence
+  witnesses retained as defense in depth. Keiro MP-14, EP-95, and EP-99 were revised
+  in the keiro repository to match (they previously recorded a keiro-side scan and a
+  three-constructor migration). Also repaired editing artifacts from the previous
+  revision (integration point 5's stray parenthesis; garbled sentences in plans 72
+  and 75) and stale milestone numbering in plan 71.
+
+- 2026-07-12: Validated the compatibility boundary against current keiro and its
+  follow-up MasterPlan 14. Removed stale consumer evidence and the inference that
+  absent runtime call sites make composition disposable. Selected removal of the
+  entire `Keiki.Decider` interface instead of changing `evolve`; EP-72 otherwise
+  retains its structured Core replay and Acceptor scope. State-changing epsilon and
+  categorical-law policy remain explicit design discussions rather than silently
+  chosen changes.
+
+- 2026-07-12: Recorded the agreed design decisions: default-on keiki detection and
+  keiro enforcement of state-changing epsilon; complete-run EP-73 properties;
+  checked composition plus real Either-arm predicates; a feedback state-sharing gate;
+  separate forward/replay law results with instances preserved; EP-68 hard dependency
+  on EP-70; and EP-78 reuse of EP-70's canonical distinct-name constraint.
 
 - 2026-07-12: Initial creation — decomposition into five themed phases with ten new
   child plans (69–78) plus adoption of the pre-existing plan 68. Added the

@@ -24,8 +24,8 @@ validator, `validateTransducer`, whose promise — relied on by the downstream k
 framework as a release gate for its event streams — is: **a transducer that validates
 clean can always replay every log it can produce.**
 
-The 2026-07 architecture review found three places where that promise is false today,
-and this plan closes all three. After this plan:
+The 2026-07 architecture review found four places where that promise is false today,
+and this plan closes all four. After this plan:
 
 1. A transducer whose multi-event edge spreads command information across several
    emitted events — so that the *first* event alone cannot reconstruct the command —
@@ -46,6 +46,12 @@ and this plan closes all three. After this plan:
    or output reads a field of that constructor, makes `step`/`decide` **crash** (via
    `error`) instead of rejecting when a different command arrives. A new structural
    check, `UnguardedInputRead`, flags such edges at build time.
+
+4. An empty-output edge that changes the vertex or can write registers is flagged as
+   `StateChangingEpsilon`. The transition may be meaningful in a pure transducer, but
+   an emitted event log cannot reconstruct it. The check is enabled by default;
+   non-persisted callers may opt out deliberately, while current keiro rejects it at
+   the `ValidatedEventStream` boundary for aggregates and process managers.
 
 The observable outcome: running `cabal test all` shows a new spec proving, for every
 shared fixture, "`validateTransducer` clean implies `reconstitute` of a step-produced
@@ -78,9 +84,12 @@ here, splitting partially-done items into "done" and "remaining" parts.
       (`inversionAmbiguityWarnings`), wired into `validateTransducer`, specs added.
 - [ ] Milestone 4: `UnguardedInputRead` check implemented
       (`guardImpliesInputReadWarnings`), wired into `validateTransducer`, specs added.
-- [ ] Milestone 5: full-suite audit — every pre-existing fixture/spec that now warns is
+- [ ] Milestone 5: `StateChangingEpsilon` warning and
+      `checkStateChangingEpsilon` option added; no-op `UKeep` self-loop remains clean;
+      state-changing cases and replay divergence tested.
+- [ ] Milestone 6: full-suite audit — every pre-existing fixture/spec that now warns is
       classified and fixed; `cabal test all` green; `nix fmt -- --no-cache` clean.
-- [ ] Milestone 6: haddocks updated (replay contract stated on `validateTransducer`,
+- [ ] Milestone 7: haddocks updated (replay contract stated on `validateTransducer`,
       `applyEventStreaming`, `solveOutput`); `CHANGELOG.md` entry written; keiro
       migration section below confirmed against keiro's actual source.
 - [ ] Master plan registry row for EP-71 flipped to Complete; Outcomes &
@@ -119,17 +128,10 @@ implementation, with concise evidence.
   existential types cannot be compared. The distinguishability criterion in Milestone 3
   is therefore deliberately minimal (see Decision Log).
 
-- **(from plan authoring, 2026-07-12)** The single production multi-event edge —
-  `MarkRedPatient` in
-  `/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei/services/incident-command/src/IncidentCommand/Triage/Transducer.hs`
-  lines 188–206 — was checked against the new head-recoverability rule and **passes**:
-  its head event `RedPatientMarked` carries all five command fields
-  (`triageRecordId`, `incidentId`, `commandId`, `redCount`, `transportPriority`), so
-  the head alone recovers the full `MarkRedPatientData`; the tail event
-  `TransferNeedEmitted` carries a strict subset. This is the worked example showing
-  the check's intent: had the author instead put `transportPriority` only on the
-  second event, the aggregate would have validated clean in keiro and silently failed
-  hydration in production — exactly the bug class this plan prevents.
+- **(scope correction, 2026-07-12)** Compatibility claims are based on keiki and
+  current keiro only. The previous production-edge claim came from an outdated
+  runtime example and has been removed. The in-tree SplitCoverage fixture is the
+  reproducible worked example for head recoverability.
 
 
 ## Decision Log
@@ -168,9 +170,10 @@ implementation, with concise evidence.
   failures. What the check cannot see is documented in Milestone 3.
   Date: 2026-07-12
 
-- Decision: all three new checks are ON in `defaultValidationOptions`
+- Decision: all four new checks are ON in `defaultValidationOptions`
   (`checkHeadRecoverability = True`, `checkInversionAmbiguity = True`,
-  `checkGuardImpliesInputRead = True`). Head-recoverability is the replay contract
+  `checkGuardImpliesInputRead = True`, `checkStateChangingEpsilon = True`).
+  Head-recoverability and absence of state-changing epsilon are the replay contract
   itself, so it cannot be off by default. The other two fire only on genuinely
   dangerous shapes: an `InversionAmbiguity` pair means some replayable log is
   ambiguous unless guards happen to disambiguate semantically (which the author can
@@ -178,6 +181,16 @@ implementation, with concise evidence.
   can call `error` on live input. This deliberately differs from the opt-in posture of
   `warnOpaqueGuards` (which is advisory about analysis blind spots, not about runtime
   failure).
+  Date: 2026-07-12
+
+- Decision: `StateChangingEpsilon` is a warning, not a hard Core or Builder
+  prohibition. It fires when `output == []` and either `target /= source` or the
+  update is structurally not `UKeep`.
+  Rationale: keiki can also model pure, non-persisted transducers, so an explicit
+  opt-out remains possible. The structural update test is conservative—a write may
+  happen to preserve a particular value—but durable event sourcing cannot prove that
+  from an absent event. Current keiro's normal `ValidatedEventStream` path rejects the
+  default-on warning for aggregate and process-manager streams.
   Date: 2026-07-12
 
 - Decision: the legacy string-based `checkHiddenInputs` reflects the new semantics too
@@ -190,9 +203,9 @@ implementation, with concise evidence.
   reintroduce the disagreement this plan exists to remove.
   Date: 2026-07-12
 
-- Decision: extending `ValidationOptions` with three new record fields is accepted as
-  a source-breaking change for anyone constructing the record literally. keiro (the
-  only real consumer) never constructs it literally — it passes
+- Decision: extending `ValidationOptions` with four new record fields is accepted as
+  a source-breaking change for anyone constructing the record literally. Current
+  keiro never constructs it literally — it passes
   `defaultValidationOptions` or a caller-supplied value
   (`keiro-core/src/Keiro/EventStream/Validate.hs`) — so downstream migration is limited
   to the `renderWarning` match arms documented below. The haddock on
@@ -325,8 +338,8 @@ rejecting it. Nothing flags this statically today.
 The new checks extend `TransducerValidationWarning` (`src/Keiki/Core.hs:1538-1580`,
 currently four constructors: `HiddenInput`, `NondeterministicPair`,
 `PossiblyDeadEdge`, `OpaqueGuard`) and `ValidationOptions`
-(`src/Keiki/Core.hs:1584-1607`, currently four flags). keiki's only real consumer,
-keiro, pattern-matches the warning type **exhaustively** in `renderWarning` at
+(`src/Keiki/Core.hs:1584-1607`, currently four flags). Current keiro pattern-matches
+the warning type **exhaustively** in `renderWarning` at
 `/Users/shinzui/Keikaku/bokuno/keiro/keiro-core/src/Keiro/EventStream/Validate.hs:147-155`.
 Adding constructors makes keiro fail to compile (it builds with
 `-Wincomplete-patterns` promoted appropriately) until the migration in the dedicated
@@ -348,9 +361,9 @@ environment is `nix develop` (GHC 9.12); formatting is fourmolu via
 ## Plan of Work
 
 
-The work is six milestones. Milestone 1 makes the defect fail a test (red);
-Milestones 2–4 add the three checks (each independently verifiable); Milestone 5
-audits the whole suite against the new, stricter validator; Milestone 6 is
+The work is seven milestones. Milestone 1 makes the defect fail a test (red);
+Milestones 2–5 add the four checks (each independently verifiable); Milestone 6
+audits the whole suite against the new, stricter validator; Milestone 7 is
 documentation, changelog, and downstream coordination. Work strictly in this order:
 the red test first is not ceremony — it is the proof that the fixture reproduces the
 production failure mode, and it becomes the permanent regression test.
@@ -699,16 +712,52 @@ validates clean, because `onCmd` conjoins `matchInCtor` — if one does not, tha
 genuine bug to record in Surprises & Discoveries.
 
 
-### Milestone 5: suite-wide audit under the stricter validator
+### Milestone 5: detect state-changing epsilon
+
+Add `StateChangingEpsilon` to `TransducerValidationWarning` with an `EdgeRef`, whether
+the target differs from the source, whether the update is structurally capable of a
+write, and actionable detail. Add `stateChangingEpsilonWarnings`, gated by
+`checkStateChangingEpsilon :: Bool`, default `True`.
+
+The structural rule is exact for control state and conservative for registers:
+
+- `output /= []` is outside this check;
+- `output == []`, `target == source`, and `update == UKeep` is clean;
+- a different target warns;
+- `USet` or any `UCombine` containing a write warns, even when a particular runtime
+  value could make the write observationally equal.
+
+Add a fixture with vertex-only, update-only, both-changing, and no-op self-loop cases.
+The first three warn. The no-op case stays clean. A deterministic companion test
+drives a state-changing case, replays its empty log, and demonstrates the divergence
+the warning prevents.
+
+The check is independent of `failOnEpsilonReadsInput`: an ε-edge that both reads
+input and changes state produces both warnings — add a fixture case proving neither
+masks the other. The `checkStateChangingEpsilon` haddock must state the durability
+contract in the master plan's terms: never disable this check for a transducer whose
+events are persisted; downstream frameworks must treat it as non-optional at their
+durable boundary (current keiro force-enables it at `ValidatedEventStream`).
+
+Do not migrate or forbid every in-tree epsilon edge in this milestone. Classify them
+in Milestone 6: durable aggregate examples should emit a domain event or explicitly
+document why they are non-persisted; state-preserving epsilon remains legal.
+
+Acceptance: default validation reports the exact warning for all unsafe fixture cases,
+the explicit option disables only this check, and the no-op self-loop remains clean.
+
+
+### Milestone 6: suite-wide audit under the stricter validator
 
 Scope: the new checks run by default, so every existing spec and fixture is now held
 to the replay contract. Run `cabal test all` and classify every new failure:
 
 - A spec that pinned the union semantics (only `test/Keiki/CoreHiddenInputsGSMSpec.hs`
   is known — already rewritten in Milestone 2).
-- A fixture that is genuinely head-unrecoverable, inversion-ambiguous, or
-  unguarded: restructure the fixture (move fields into the head event; rename a
-  colliding head wire constructor; add the missing `matchInCtor` conjunct) and note
+- A fixture that is genuinely head-unrecoverable, inversion-ambiguous,
+  unguarded, or contains state-changing epsilon: restructure the fixture (move fields
+  into the head event; rename a colliding head wire constructor; add the missing
+  `matchInCtor` conjunct; emit a domain event for durable state change) and note
   it in Surprises & Discoveries — each such fixture is a latent replay bug this plan
   just caught, which is evidence for the master plan.
 - A spec asserting `validateTransducer … == []` on a transducer that now (correctly)
@@ -725,24 +774,24 @@ Also confirm the two GHCi-facing examples the review used still behave: run the
 Surprises transcript's session and observe `checkHiddenInputs splitCoverageBad` now
 returns a warning whose text contains `head event does not recover`.
 
-Acceptance for Milestone 5: `cabal test all` fully green in `nix develop`;
+Acceptance for Milestone 6: `cabal test all` fully green in `nix develop`;
 `nix fmt -- --no-cache` produces no diff (run it before judging the tree clean —
 per project memory, a missing/ignored fourmolu run causes silent style drift).
 
 
-### Milestone 6: docs, changelog, and downstream coordination
+### Milestone 7: docs, changelog, and downstream coordination
 
 Scope: make the contract discoverable and the breaking change navigable.
 
 - Haddock on `validateTransducer`: state the alignment law positively — "a
   transducer for which this returns `[]` under `defaultValidationOptions` can replay
   every log it produces via `reconstitute`; the head-recoverability, inversion-
-  ambiguity, and unguarded-input-read checks exist to make that sentence true" — and
+  ambiguity, unguarded-input-read, and state-changing-epsilon checks exist to make that sentence true" — and
   cross-reference `applyEventStreaming`.
 - Haddock on `applyEventStreaming` and `solveOutput`: name the head-only inversion
   contract explicitly and point at `HeadUnrecoverable`.
-- `CHANGELOG.md`: under `0.1.0.0`, describe the three new checks, the two-to-three
-  new warning constructors, the three new `ValidationOptions` fields, and the
+- `CHANGELOG.md`: under `0.1.0.0`, describe the four new checks, the new warning
+  constructors, the four new `ValidationOptions` fields, and the
   behavioural change to `checkHiddenInputs` (union no longer sufficient), with a
   one-line migration pointer for exhaustive matchers.
 - Verify the keiro migration section below against keiro's current source (do not
@@ -751,7 +800,7 @@ Scope: make the contract discoverable and the breaking change navigable.
 - Update the master plan registry (`docs/masterplans/16-...md`): EP-71 status, and
   tick its two EP-71 progress boxes.
 
-Acceptance for Milestone 6: `cabal haddock keiki` builds without new warnings; the
+Acceptance for Milestone 7: `cabal haddock keiki` builds without new warnings; the
 changelog entry exists; this plan's keiro section matches keiro's real code
 (file/line re-checked).
 
@@ -762,10 +811,10 @@ changelog entry exists; this plan's keiro section matches keiro's real code
 keiro consumes the warning type exhaustively in exactly one place:
 `/Users/shinzui/Keikaku/bokuno/keiro/keiro-core/src/Keiro/EventStream/Validate.hs`,
 function `renderWarning` (lines 147–155 as of 2026-07-12). After this plan, that
-`case` has three missing arms. The migration is: add the following arms (matching the
+`case` has four missing arms. The migration is: add the following arms (matching the
 existing rendering style — a kebab-case tag, the source vertex, then `tvwDetail`),
 and update the function's haddock sentence "All four constructors carry @tvwDetail@"
-to "All seven constructors carry @tvwDetail@":
+to "All eight constructors carry @tvwDetail@":
 
 ```haskell
     HeadUnrecoverable{tvwEdge = e, tvwDetail = d} ->
@@ -774,20 +823,26 @@ to "All seven constructors carry @tvwDetail@":
         "inversion-ambiguity @" <> showT s <> ": " <> Text.pack d
     UnguardedInputRead{tvwEdge = e, tvwDetail = d} ->
         "unguarded-input-read @" <> showT (edgeSource e) <> ": " <> Text.pack d
+    StateChangingEpsilon{tvwEdge = e, tvwDetail = d} ->
+        "state-changing-epsilon @" <> showT (edgeSource e) <> ": " <> Text.pack d
 ```
 
 No other keiro change is required: keiro never constructs `ValidationOptions`
 literally (it imports `defaultValidationOptions` and threads caller-supplied values),
-so the three new record fields are source-compatible there; `mkEventStream` /
+so the four new record fields are source-compatible there; `mkEventStream` /
 `mkEventStreamOrThrow` automatically become stricter, which is the point. Operational
 impact to communicate to keiro: any keiro stream whose transducer trips a new check
 will now fail `mkEventStream` at startup instead of failing hydration in production.
-The only production multi-event edge, `MarkRedPatient` in
-`keiro-runtime-jitsurei/services/incident-command/src/IncidentCommand/Triage/Transducer.hs:188-206`,
-was audited while writing this plan and passes head-recoverability (see Surprises &
-Discoveries), and the triage vertex's three outgoing edges have distinct head wire
-constructors, so the known jitsurei services stay green; re-run their test suites
-after the bump regardless.
+Current keiro's aggregate and process-manager streams will receive these checks at
+their existing `ValidatedEventStream` boundary. Its follow-up MasterPlan 14 EP-95
+owns the exhaustive warning-renderer migration and runtime adoption after keiki
+MP-16 lands. Its EP-99 must consume and pin this default-on warning at the durable
+stream boundary rather than implement a second silent-edge AST traversal.
+Enforcement there is non-negotiable (master plan Decision Log, 2026-07-12): keiro
+force-enables `checkStateChangingEpsilon` and `checkHeadRecoverability` regardless
+of caller-supplied `ValidationOptions` — caller options may only strengthen
+validation at the durable boundary — and its only bypass is a separately named
+unchecked constructor, not an options field.
 
 
 ## Coordination with plan 76 (symbolic posture)
@@ -845,7 +900,7 @@ Keiki.ValidationReplayAlignmentSpec
    but got: []
 ```
 
-Expected at the end of Milestone 5:
+Expected at the end of Milestone 6:
 
 ```text
 All N examples passed.
@@ -897,7 +952,10 @@ with no knowledge beyond this document:
 4. The unguarded-read spec shows: `PTop`-guard-with-read edge is flagged
    `UnguardedInputRead` and demonstrably crashes `step` (caught `ErrorCall`), while
    the `matchInCtor`-conjoined repair is clean and rejects gracefully.
-5. `grep -n "HeadUnrecoverable\|InversionAmbiguity\|UnguardedInputRead"
+5. The epsilon spec shows vertex-changing and register-writing empty-output edges are
+   flagged `StateChangingEpsilon`, a no-op `UKeep` self-loop is clean, and replay of
+   the deliberately invalid run demonstrates the missing state change.
+6. `grep -n "HeadUnrecoverable\|InversionAmbiguity\|UnguardedInputRead\|StateChangingEpsilon"
    CHANGELOG.md` hits; the keiro migration section above names the real keiro
    file and lines; `nix fmt -- --no-cache` is a no-op.
 
@@ -946,6 +1004,10 @@ data TransducerValidationWarning s
                          tvwWireCtor :: String, tvwDetail :: String }
   | UnguardedInputRead { tvwEdge :: EdgeRef s, tvwInCtor :: Maybe String,  -- NEW
                          tvwDetail :: String }
+  | StateChangingEpsilon { tvwEdge :: EdgeRef s,                           -- NEW
+                           tvwChangesVertex :: Bool,
+                           tvwWritesRegisters :: Bool,
+                           tvwDetail :: String }
 
 data ValidationOptions = ValidationOptions
   { failOnEpsilonReadsInput :: Bool,
@@ -954,7 +1016,8 @@ data ValidationOptions = ValidationOptions
     warnOpaqueGuards :: Bool,
     checkHeadRecoverability :: Bool,      -- NEW, default True
     checkInversionAmbiguity :: Bool,      -- NEW, default True
-    checkGuardImpliesInputRead :: Bool    -- NEW, default True
+    checkGuardImpliesInputRead :: Bool,   -- NEW, default True
+    checkStateChangingEpsilon :: Bool     -- NEW, default True
   }
 
 -- new warning producers (same constraint shape as hiddenInputWarnings /
@@ -968,6 +1031,9 @@ inversionAmbiguityWarnings ::
 guardImpliesInputReadWarnings ::
   (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co -> [TransducerValidationWarning s]
+stateChangingEpsilonWarnings ::
+  (Bounded s, Enum s, Eq s, Show s) =>
+  SymTransducer phi rs s ci co -> [TransducerValidationWarning s]
 ```
 
 Test modules that must exist and be registered in `keiki.cabal`
@@ -977,17 +1043,22 @@ Test modules that must exist and be registered in `keiki.cabal`
 `Keiki.ValidationReplayAlignmentSpec`
 (`test/Keiki/ValidationReplayAlignmentSpec.hs`). The rewritten
 `test/Keiki/CoreHiddenInputsGSMSpec.hs` keeps its module name. Downstream (not
-edited here, verified against): keiro's
-`keiro-core/src/Keiro/EventStream/Validate.hs` `renderWarning`, and the jitsurei
-worked example
-`keiro-runtime-jitsurei/services/incident-command/src/IncidentCommand/Triage/Transducer.hs`.
+edited here, verified against): current keiro's
+`keiro-core/src/Keiro/EventStream/Validate.hs` `renderWarning` and follow-up
+MasterPlan 14 EP-95.
 
 ---
+
+Revision note (2026-07-12): added default-on `StateChangingEpsilon` detection while
+preserving explicit opt-out for pure non-persisted transducers. Current keiro enforces
+the warning for durable aggregate and process-manager streams through its follow-up
+MasterPlan 14; EP-73 now tests complete validation-clean runs instead of truncating at
+epsilon.
 
 Revision note (2026-07-12): replaced the skeleton with the full plan. Authored from a
 fresh read of `src/Keiki/Core.hs` (evaluators, replay, and validation sections),
 `src/Keiki/Symbolic.hs` (determinism checks), the GSM/InFlight/composition specs, the
-keiro `Validate.hs` consumer, and the jitsurei triage transducer; the
+current keiro `Validate.hs` integration, and in-tree fixtures; the
 head-recoverability defect was re-reproduced empirically in GHCi (transcript in
-Surprises & Discoveries) before the plan was written, and the `MarkRedPatient`
-production edge was audited against the new rule (it passes).
+Surprises & Discoveries) before the plan was written. Outdated external example
+claims were removed during validation on 2026-07-12.

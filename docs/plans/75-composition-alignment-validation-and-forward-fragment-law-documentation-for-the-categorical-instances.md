@@ -18,8 +18,9 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 keiki's composition surface (`src/Keiki/Composition.hs`: `compose`, `alternative`,
 `feedback1`; `src/Keiki/Profunctor.hs`: the `SomeSymTransducer` wrapper with its
 `Profunctor` / `Category` / `Strong` / `Choice` / `Arrow` instances) currently contains
-three silent-failure paths and one piece of false documentation, all surfaced by the
-2026-07 architecture review:
+silent-failure paths and law/contract questions, surfaced by the 2026-07
+architecture review, that must be resolved without silently removing the public
+instances:
 
 1. `alternative`'s haddock claims the two arms of an `Either`-input composite can never
    both fire on one input. That claim is false for edges whose guard has no structural
@@ -39,6 +40,9 @@ three silent-failure paths and one piece of false documentation, all surfaced by
    (`dimap id id` poisons round-trips; `arr f >>> arr g` is a dead composite), but this
    is documented only as scattered per-function caveats with no single statement of
    which laws hold at which observational level.
+5. `feedback1 t f = compose t (compose f t)` contains two independent copies of `t`.
+   The follow-up command does not update the same aggregate state that handled the
+   external command, despite current documentation presenting it as aggregate feedback.
 
 After this plan: `alternative` automatically arm-restricts guards so both-arms-fire is
 impossible; composing a mapped ("poisoned") transducer fails loudly with a structured
@@ -48,29 +52,32 @@ emitted-name / expected-name / field-arity mismatch before a composite is used; 
 prominent module-level haddock section in `src/Keiki/Profunctor.hs` states precisely
 which typeclass laws hold at the *forward* observational level (step semantics) versus
 the *inversion/replay* level, with `ROADMAP.md` kept consistent. Each behaviour change
-is demonstrated by a test that fails before the change and passes after.
+is demonstrated by a test that fails before the change and passes after. `feedback1`
+is not presented as aggregate-safe until its state-sharing contract is either fixed or
+renamed as a two-copy cascade.
 
-Consumer risk is zero: the keiro survey recorded in
-`docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`
-(Integration Point 6) found *no* downstream consumer of any composition operator or of
-`SomeSymTransducer`, so this plan may change behaviour and signatures freely. The same
+Current keiro runtime code does not import `SomeSymTransducer` or the categorical
+instances. Its modeling guide nevertheless directs same-stream pipelines to
+`compose` and currently presents `feedback1` as in-stream aggregate feedback, while
+its process managers coordinate separate durable streams without these instances.
+This plan must therefore make the concrete composition APIs safe for validated
+aggregates even though wrapper compatibility is not currently load-bearing. The
 master plan's release-gate decision permits Phase 3 (this plan and EP-74) to ship in
 `0.1.0.0` merely marked experimental in the module haddocks if schedule forces a cut —
 Milestone 4 adds that marking regardless, so the fallback costs nothing extra.
 
-Dependencies: this plan has a HARD dependency on
+Dependencies: this plan has HARD dependencies on
 `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`
-(EP-74) — it finalizes `compose`'s update-snapshot and multi-event chain semantics, and
-documenting or validating semantics that are about to change would be wasted work. Do
-not start Milestones 3–5 until EP-74 is Complete; Milestones 1 and 2 touch
-`alternative` and the wrapper only and may proceed in parallel with EP-74. There is a
-SOFT dependency on
+(EP-74) — it finalizes `compose`'s update-snapshot and multi-event chain semantics,
+and documenting or validating semantics that are about to change would be wasted
+work — and on
 `docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md`
-(EP-69), which replaces the wrapper's fabricated constraint dictionaries with real
-induction witnesses and therefore reshapes the `SomeSymTransducer` representation: the
-poison-provenance fields of Milestone 2 should be designed against the post-EP-69
-representation when it exists, and against the current constructor otherwise (the
-design below works for both).
+(EP-69), which must first replace the wrapper's fabricated constraint dictionaries
+with real induction witnesses and therefore reshapes the `SomeSymTransducer`
+representation: the poison-provenance fields and stateful law tests use the
+post-EP-69 representation. Do not start Milestones 3–5 until EP-74 is Complete, and
+do not start Milestone 2 until EP-69 is Complete; Milestone 1 touches `alternative`
+and `HsPred` only and may proceed in parallel with both.
 
 
 ## Progress
@@ -80,17 +87,18 @@ here, even if it requires splitting a partially completed task into two ("done" 
 "remaining"). This section must always reflect the actual current state of the work.
 
 - [ ] M1: failing test — `alternative` with a `PTop`-guarded (onEpsilon-style) t2 edge misfires on `Left` inputs
-- [ ] M1: `anyLeftCtor` / `anyRightCtor` arm-tag `InCtor`s and `guardIsArmRestricted` scan added to `src/Keiki/Composition.hs`
-- [ ] M1: `alternative` conjoins arm tags onto non-arm-restricted lifted guards; haddock's false mutual-exclusion claim rewritten
+- [ ] M1: real `Either`-arm predicate constructors added to `HsPred`, concrete evaluation, symbolic translation, validation walkers, and renderers
+- [ ] M1: `alternative` unconditionally conjoins the correct arm predicate onto every lifted guard; false mutual-exclusion claim rewritten
 - [ ] M1: M1 tests green (`cabal test all`), including symbolic single-valuedness on the fixed composite
 - [ ] M2: name stamping — `contraInCtor` / `contraMaybeInCtor` append `"#lmapped"`, `mapWireCtor` appends `"#rmapped"` in `src/Keiki/Profunctor.hs`
 - [ ] M2: poison provenance carried on `SomeSymTransducer`; set by `Profunctor` / `Strong` / `Arrow` instances
 - [ ] M2: `Cat..` raises `PoisonedCompositionError` when the boundary alphabet is poisoned; tests for both directions
 - [ ] M3: `ComposeAlignmentWarning` type + `checkComposeAlignment` in `src/Keiki/Composition.hs`
 - [ ] M3: `composeChecked` entry point; misaligned-names, arity-mismatch, and poisoned-name specs
+- [ ] M3: `feedback1` two-copy-state regression added; shared-state redesign versus explicit cascade rename decided before any `feedback1Checked` API is documented as safe
 - [ ] M4: module-level "Law status" haddock section in `src/Keiki/Profunctor.hs`; scattered caveats point at it
 - [ ] M4: `ROADMAP.md` composition bullets updated; experimental marking added to both modules
-- [ ] M5: forward-observational law tests (multi-step, stateful) added; full suite green; `nix fmt -- --no-cache` clean
+- [ ] M5: forward and replay/inversion law tests (multi-step, stateful) added; unresolved failures recorded as API-design decisions, not hidden by weaker equality
 
 
 ## Surprises & Discoveries
@@ -104,38 +112,16 @@ Log and in "Context and Orientation" below.)
 
 ## Decision Log
 
-- Decision: fix the `alternative` arm-exclusion hole by *automatically* conjoining a
-  structural arm-restriction predicate onto lifted guards that lack one, rather than
-  rejecting or merely warning at `alternative` call time.
-  Rationale: the module already learned this exact lesson for `identityTransducer`
-  (`src/Keiki/Profunctor.hs:294-306`, EP-29 M1): a `PTop` guard was replaced by
-  `PInCtor identityInCtor` precisely so `liftLPredAlt` / `liftRPredAlt` would make it
-  arm-discriminating. Auto-lifting generalizes that fix to every user transducer and
-  implements the author's evident intent (an `onEpsilon` edge means "fires on any input
-  *for this transducer*", which under `alternative` means "for this arm"). Rejection
-  would break every existing `onEpsilon` user of `alternative` with no migration
-  besides hand-writing the same conjunct. Investigation confirmed the machinery
-  permits a structural "input is `Left _`" guard without a payload match: `PInCtor`
-  only ever consults `icMatch` on the forward path (`src/Keiki/Core.hs:828-830`), and
-  guard-position `InCtor`s never reach `solveOutput` (which walks only the `OPack`'s
-  `InCtor`, `src/Keiki/Core.hs` `solveOutput`), so a payload-free tag `InCtor` with a
-  poisoned-but-unreachable `icBuild` is sound.
-  Date: 2026-07-11
-
-- Decision: conjoin the arm tag only when the lifted guard is not already
-  arm-restricted (per the recursive `guardIsArmRestricted` rule in Milestone 1), never
-  unconditionally.
-  Rationale: the symbolic translator encodes `PInCtor ic` as
-  `seInputCtor .== literal (icName ic)` over a *single* symbolic constructor tag
-  (`src/Keiki/Symbolic.hs:494-512`). Conjoining a tag named `"keiki#altLeft"` onto a
-  guard that already contains `PInCtor "SendEmail"` would make the edge symbolically
-  unsatisfiable (one tag cannot equal two literals), silently blinding the symbolic
-  single-valuedness and dead-edge gates. Conjoining only onto guards with no positive
-  structural constructor test avoids that; the residual caveat (the tag itself is a
-  non-partitioning constructor name, like `identityTransducer`'s `"Identity"`) is
-  documented in the haddock and falls under EP-76's symbolic-caveats scope
-  (`docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`).
-  Date: 2026-07-11
+- Decision: fix `alternative` with real `Either`-arm predicates in `HsPred`, not
+  synthetic guard-only `InCtor` names and not a best-effort guard-shape scan.
+  Rationale: `PInCtor` is symbolically encoded as equality against one constructor
+  name. Conjoining a synthetic `"keiki#altLeft"` name with a real constructor name
+  makes a satisfiable edge symbolically dead, while skipping the tag on complex guards
+  can leave the wrong-arm hole open. Dedicated `PLeftArm`/`PRightArm` constructors
+  evaluate the actual `Either` constructor and translate through an independent
+  symbolic arm variable, so every lifted edge can be gated unconditionally without
+  poisoning inversion or constructor-name reasoning.
+  Date: 2026-07-12
 
 - Decision: make wrapper poisoning visible with BOTH a name stamp (rename rewritten
   constructor names with `"#lmapped"` / `"#rmapped"` suffixes) AND wrapper-level
@@ -178,18 +164,44 @@ Log and in "Context and Orientation" below.)
   its call to make.
   Date: 2026-07-11
 
-- Decision: `compose` itself stays unchecked; the option-gated checked path is a new
-  `composeChecked` (returns `Either [ComposeAlignmentWarning s1 s2] (SymTransducer …)`),
-  and the wrapper's `Cat..` runs only the cheap poison-provenance check by default,
-  not the full alignment scan.
+- Decision: keep `compose` as the unchecked construction primitive, add
+  `composeChecked` returning
+  `Either [ComposeAlignmentWarning s1 s2] (SymTransducer …)`, and make the checked
+  function the documented entry point for validated aggregate streams. The wrapper's
+  `Cat..` runs only the cheap poison-provenance check by default, not the full scan.
   Rationale: `compose` is pure and total today; making it throw or changing its return
   type would ripple through `feedback1`, `Cat..`, and every render/spec call site for
   a check that is conservative (it can have false positives on exotic guard shapes).
   The full scan needs `Bounded`/`Enum` on both vertex types (to enumerate reachable
   pairs), which `compose` currently does not demand. An explicit `composeChecked` plus
   a callable `checkComposeAlignment` gives build-time callers (tests, CI gates) the
-  strong check without taxing or destabilizing the primitive.
+  strong check without destabilizing the primitive. Raw `compose` remains
+  experimental/internal-facing; current keiro guidance must point durable stream
+  authors to the checked boundary once available.
   Date: 2026-07-11
+
+- Decision: preserve every existing categorical instance in this plan and treat the
+  law audit as evidence for a later redesign/removal decision.
+  Rationale: EP-69 repairs the unsafe dictionary implementation. Whether the wrapper
+  should become forward-only, gain a separate replay-safe capability, or lose
+  instances is a public API decision that must follow explicit forward and replay law
+  results. It is not implied by the absence of current keiro runtime call sites.
+  Date: 2026-07-12
+
+- Decision: standard law claims are assessed against all public observations;
+  forward-only results are documented as a forward fragment, not as full lawfulness.
+  Rationale: replay and inversion are central, public keiki operations. A law that
+  fails under `solveOutput` or reconstitution cannot be called unqualifiedly lawful
+  merely because `step` traces agree.
+  Date: 2026-07-12
+
+- Decision: do not introduce `feedback1Checked` until the two-copy-state semantics of
+  `feedback1 t f = compose t (compose f t)` are resolved.
+  Rationale: an alignment check cannot make the operation feed a policy command into
+  the same aggregate state. The implementation must either become a shared-state
+  feedback construction or be renamed/documented as a two-copy cascade; current keiro
+  aggregate guidance must follow that choice.
+  Date: 2026-07-12
 
 - Decision: (placeholder — record every further decision made while implementing.)
   Rationale: …
@@ -374,46 +386,45 @@ edge. Before the fix this must fail: `delta` returns `Nothing` because both the 
 edge and the wrong-arm ε-edge match. Assert the *correct* behaviour (left arm
 advances, right sub-vertex unchanged) so the test is red now and green after.
 
-Then implement. Add to `src/Keiki/Composition.hs`, near the existing lifters:
+Then implement real arm structure. Extend the `HsPred` GADT in `src/Keiki/Core.hs`:
 
-- `anyLeftCtor :: InCtor (Either ci1 ci2) '[]` and
-  `anyRightCtor :: InCtor (Either ci1 ci2) '[]` — payload-free arm tags. `icName` is
-  `"keiki#altLeft"` / `"keiki#altRight"` (the `"#"` guarantees no collision with a
-  `Generic`-derived constructor name; the two names must differ from each other so the
-  structural determinism check, which compares `PInCtor` names at
-  `src/Keiki/Core.hs:1805`, does not conflate a left ε-edge with a right one).
-  `icMatch` inspects only the `Either` constructor (`Left _ -> Just RNil`,
-  `Right _ -> Nothing`, and symmetrically); `icBuild :: RegFile '[] -> Either ci1 ci2`
-  cannot produce a value and is poisoned with an `error` naming the tag and stating it
-  is guard-only — it is unreachable in practice because the tag never appears inside
-  an `OPack`, and `solveOutput` only invokes the `OPack`'s own `InCtor`.
-- `guardIsArmRestricted :: HsPred rs ci -> Bool` — the conservative structural scan:
-  `PInCtor _` is `True`; `PAnd p q` is `guardIsArmRestricted p || guardIsArmRestricted q`
-  (one restricting conjunct restricts the whole conjunction); `POr p q` is
-  `… p && … q` (a disjunction restricts only if every disjunct does); everything else
-  (`PTop`, `PBot`, `PEq`, `PCmp`, `PNot _`) is `False`. The direction of conservatism
-  matters and is asymmetric: wrongly answering `False` merely adds a redundant tag
-  conjunct (semantically a no-op — the guard already implied the arm — but it would
-  make the edge symbolically unsatisfiable, per the Decision Log's second entry), while
-  wrongly answering `True` leaves the arm hole open. The rule above never answers
-  `True` unless a positive `PInCtor` genuinely gates every path through the guard, and
-  never conjoins on a guard that already has one, so neither bad case occurs.
-- In `alternative`'s `liftEdgeL` (`src/Keiki/Composition.hs:1146-1171`): after
-  building the lifted guard, if `guardIsArmRestricted` on the *original* `guard e1` is
-  `False`, replace the lifted guard with
-  `PAnd liftedGuard (PInCtor anyLeftCtor)`. Symmetrically `liftEdgeR` conjoins
-  `PInCtor anyRightCtor`.
+```haskell
+PLeftArm :: HsPred rs (Either ci1 ci2)
+PRightArm :: HsPred rs (Either ci1 ci2)
+```
 
-Rewrite the haddock bullet at `src/Keiki/Composition.hs:1099-1106`: the
-mutual-exclusion property now HOLDS BY CONSTRUCTION — either the author's own
-`PInCtor` conjunct becomes arm-restricted through the lifters, or `alternative`
-conjoins the arm tag. Document the symbolic caveat: the tag names participate in the
-single-tag symbolic encoding of `PInCtor` (`src/Keiki/Symbolic.hs:494-512`), so, like
-`identityTransducer`'s `"Identity"`, they are non-partitioning constructor names; the
-composite's symbolic single-valuedness check treats a tagged ε-edge as disjoint from
-same-arm named edges, which is sound whenever each arm passed its own single-valuedness
-check standalone (cross-reference EP-76 for the symbolic caveat inventory). State this
-in the haddock in those words.
+`evalPred` inspects only the outer `Either` constructor. Extend every closed
+`HsPred` traversal: weakening, substitution, input-read analysis, determinism,
+pretty/inspector/mermaid rendering, and profunctor rewrites. The constructors carry no
+input fields and establish only the sum arm.
+
+One traversal cannot stay structural: `contraPred` / `contraMaybePred` in
+`src/Keiki/Profunctor.hs` (lines 868-893) contramap a predicate along
+`f :: ci' -> ci` by rewriting `InCtor` match functions — but `PLeftArm`'s type pins
+the input to `Either ci1 ci2`, so no `HsPred rs ci'` can structurally contain it
+after mapping. Lower the arm predicate at that point into a guard-only `PInCtor`
+whose `icMatch` is `\i -> case f i of Left _ -> Just RNil; _ -> Nothing`, with the
+name stamped per Milestone 2's poison provenance (e.g. `"keiki#leftArm#lmapped"`)
+and a poisoned `icBuild`. This confines the synthetic-name symbolic caveat to
+transducers that are already poisoned by mapping (which Milestone 2 makes
+non-composable), keeps forward semantics exact, and must be documented in the
+Milestone 4 law-status section with a cross-reference to EP-76's symbolic caveat
+inventory. Record the chosen shape in the Decision Log.
+
+Extend `SymEnv`/`translatePred` with an independent symbolic arm discriminator. It
+must not reuse `seInputCtor`: a left-arm edge may also require the concrete constructor
+`SendEmail`, and both facts must be satisfiable simultaneously. Assert symbolically
+that `PLeftArm .&& PRightArm` is bottom and that either arm conjoined with a normal
+same-arm `PInCtor` remains satisfiable when the underlying guard is satisfiable.
+
+In `alternative`'s `liftEdgeL`, set the guard to
+`PAnd PLeftArm liftedGuard`; in `liftEdgeR`, use
+`PAnd PRightArm liftedGuard`. Conjoin unconditionally. No guard-shape inference,
+synthetic constructor name, poisoned builder, or `unsafeCoerce` is permitted.
+
+Rewrite the haddock mutual-exclusion proof: every left edge contains `PLeftArm`, every
+right edge contains `PRightArm`, and the concrete and symbolic interpretations make
+those predicates disjoint by construction.
 
 Acceptance: the new spec is green; every pre-existing test in
 `test/Keiki/CompositionAlternativeSpec.hs`, `test/Keiki/ChoiceSpec.hs` (whose `left'` /
@@ -580,6 +591,30 @@ Acceptance: new spec green; `cabal test all` green; running `checkComposeAlignme
 every existing in-tree composed fixture pair returns `[]` (add that as one blanket
 assertion — it certifies the validator has no false positives on known-good inputs).
 
+### Milestone 3b — resolve `feedback1` before offering checked feedback
+
+Add a stateful regression that observes both copies created by
+`feedback1 t f = compose t (compose f t)`. Prove whether the policy-produced command
+updates the same state/register file used by the next external command. Against the
+current implementation the expected discovery is no: the two occurrences of `t`
+have distinct `rs1` segments and control vertices.
+
+Record and implement one of two release contracts:
+
+1. Preferred for the current name and keiro guidance: rebuild `feedback1` as a
+   shared-state operation in which the external edge, policy edge, and follow-up edge
+   form one atomic transition over one copy of the aggregate state/registers. Reuse
+   EP-74's snapshot/substitution semantics, add alignment diagnostics for both
+   boundaries, and then expose `feedback1Checked` as the primary API.
+2. If shared-state construction is not ready for `0.1.0.0`: rename or explicitly
+   document the existing function as a two-copy cascade, mark it experimental, and
+   remove aggregate-self-feedback claims from keiki and current keiro guidance. Do not
+   add a `feedback1Checked` name that implies aggregate safety.
+
+This milestone is a decision gate, not permission to silently choose whichever
+implementation is easiest. Update the Decision Log and the follow-up handoff to keiro
+MasterPlan 14 with the selected contract.
+
 ### Milestone 4 — the law-status section and ROADMAP consistency (fixes Defect 4)
 
 Scope: haddock in `src/Keiki/Profunctor.hs`, edits to `ROADMAP.md`. Purely
@@ -592,38 +627,35 @@ level`). Define the two observational levels in plain language: *forward* equiva
 (two transducers are equivalent when `delta`/`omega`/`step` agree on every command
 sequence — states compared up to the documented state-isomorphism, as
 `test/Keiki/CategorySpec.hs` already phrases it) and *inversion* equivalence (forward
-equivalence PLUS `solveOutput` round-trips agree). Then state, exhaustively:
+equivalence PLUS `solveOutput`/streaming replay/reconstitution agreement). Then report
+the tested result for every relevant law. The current expected findings, which tests
+must confirm rather than assume, are:
 
-- `Profunctor`: `dimap id id = id` and the composition law hold at the forward level
-  only; at the inversion level they fail because the rewrites poison `icBuild` /
-  `wcMatch` (`src/Keiki/Profunctor.hs:223-235`, `803-840`) — "the forward fragment of
-  the Profunctor laws", hence this plan's title.
-- `Functor`: same status as `rmap`.
-- `Category`: identity laws hold definitionally (sentinel short-circuit,
-  `src/Keiki/Profunctor.hs:434-441`); associativity holds at the forward level;
-  composition throws `CategoryOverlapError` on slot collision and (after Milestone 2)
-  `PoisonedCompositionError` on a poisoned boundary.
-- `Choice`: holds at BOTH levels — `left'`/`right'` are built on `alternative`, whose
-  arm lifters preserve round-trip; after Milestone 1 the arm exclusion is by
-  construction. This is the only instance with no inversion loss.
-- `Strong`: forward level only, standalone; `first' f >>> first' g` and any further
-  composition through a `"_first"`-renamed wire throws at the wrapper boundary
-  (Milestone 2) rather than composing.
-- `Arrow`: `arr` is a standalone adapter — forward level only, no inversion, and
-  `arr f >>> arr g ≠ arr (g . f)`: it throws after Milestone 2 (previously a silently
-  dead composite). The derived `***`/`&&&` therefore also throw. This is by design:
-  admitting arbitrary function application into the symbolic `Term` AST would make
-  guards untranslatable to SBV (see `Keiki.Symbolic.translateTermSym`), destroying the
-  build-time guarantees keiki exists for.
+- `Profunctor`/`Functor`: forward identity/composition may hold, while inversion fails
+  because rewrites poison `icBuild`/`wcMatch`.
+- `Category`: sentinel identity is definitional and stateful forward associativity is
+  expected after EP-69/EP-74, but non-identity composition remains partial while slot
+  overlap or poisoned boundaries throw. Record this as a failure of unqualified
+  `Category` lawfulness, not merely an operational caveat.
+- `Choice` and `Strong`: test both levels after the real arm-predicate fix; do not
+  predeclare replay lawfulness from constructor lifting alone.
+- `Arrow`: arbitrary `arr` is expected to be forward-only and not replay-invertible;
+  test fusion explicitly. If `arr f >>> arr g` throws or differs from
+  `arr (g . f)`, record the full law failure.
+
+Preserve all instances in this plan. Add a clearly dated deferred design section with
+the available follow-ups: a forward-only wrapper, a separate replay-safe/invertible
+capability with isomorphism mapping, a total internal category representation, or
+selective instance removal. No option is selected without a separate API decision.
 
 Shrink each per-function caveat (`lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi`,
 `firstSym`, `arrTransducer`, the instance haddocks) to one line pointing at the
 section; keep the mechanism notes (what exactly is poisoned) with the mechanisms. Add
 the experimental marking to the module headers of BOTH `src/Keiki/Profunctor.hs` and
 `src/Keiki/Composition.hs` — a short "Stability: experimental" note stating the
-composition surface may change without a major-version bump until it has real
-consumers — which is also masterplan 16's sanctioned fallback if this plan cannot fully
-land before `0.1.0.0`.
+categorical representation may change before its law contract is resolved. Concrete
+checked composition used for validated aggregate streams must not be described as
+optional merely because the wrapper instances are experimental.
 
 Update `ROADMAP.md`: the `Category`/`Choice`/`Strong`/`Arrow` bullets (lines 76-95)
 must state the forward-fragment framing and the new loud-failure behaviour (overlap
@@ -637,11 +669,11 @@ Acceptance: `cabal haddock keiki` (inside `nix develop`) builds without new warn
 a reviewer can answer "does law X hold?" from exactly one place; `grep -n "first'"
 ROADMAP.md` shows the updated framing.
 
-### Milestone 5 — forward-observational law tests, multi-step and stateful (Defect 5)
+### Milestone 5 — forward and replay-observational law tests, multi-step and stateful
 
 Scope: test-only. The existing wrapper specs are routing-only (verified above); this
-milestone adds law tests that drive *state evolution*, so regressions in guard/update
-rewriting — the parts a single-command test cannot see — get caught.
+milestone adds law tests that drive *state evolution* and replay the resulting logs,
+so regressions in guard/update rewriting and descriptor inversion get caught.
 
 Add a shared helper (in a small `test/Keiki/LawHelpers.hs` or at the top of the
 touched specs — prefer the shared module if used from more than one spec): `runScript
@@ -651,6 +683,11 @@ events after each command (a rejected command records the unchanged vertex and `
 Forward equivalence of two transducers over a script means their `runScript` traces
 agree pointwise on outputs and on vertex traces up to the fixture's known isomorphism
 (where vertex types differ, compare outputs and `isFinal` flags instead).
+
+Add a replay observation helper that takes each emitted log through
+`reconstituteEither` (EP-72) or the equivalent structured fold and compares the final
+fixture observation plus failure shape. Do not erase failures with `Maybe` or compare
+only forward traces for a law being reported as replay-safe.
 
 Then the law tests, each over a script of at least four commands against a stateful
 fixture (EP-74's stateful composition fixtures under `test/Keiki/Fixtures/`, falling
@@ -667,8 +704,10 @@ through `left'`-then-`right'` composites asserting the two sub-states evolve
 independently (this doubles as the multi-step regression test for Milestone 1); in
 `test/Keiki/StrongSpec.hs`, `first' t` over a multi-step script asserting the threaded
 `c` value is returned untouched at every step while `t`'s registers evolve. Also add
-the diagnostic specs any earlier milestone deferred, so the plan's five deliverables
-each have a named failing-before/passing-after test.
+replay/inversion counterparts for `Choice`, `Strong`, and `Arrow`, and explicit
+counterexamples for every expected failure recorded in Milestone 4. Add the diagnostic
+specs any earlier milestone deferred, so every deliverable has a named
+failing-before/passing-after test.
 
 Acceptance: `cabal test all` green; deliberately re-introducing any one defect (e.g.
 reverting Milestone 1's conjunction locally) makes at least one new test fail —
@@ -723,7 +762,7 @@ git add -A && git commit
 Use conventional-commit messages, one commit per milestone at minimum, e.g.:
 
 ```text
-fix(composition): arm-restrict alternative guards lacking a PInCtor conjunct
+fix(composition): arm-restrict alternative with real Either predicates
 feat(profunctor): stamp poisoned ctor names and fail Cat. composition loudly
 feat(composition): ComposeAlignmentWarning, checkComposeAlignment, composeChecked
 docs(profunctor): single law-status section; ROADMAP forward-fragment framing
@@ -750,13 +789,17 @@ checkout, inside `nix develop`, with `cabal test all` green:
    fixture pair, and returns the exact expected warnings (asserted by `EdgeRef` and
    name) on the misnamed, arity-mismatched, and stamped-name specs; `composeChecked`
    returns `Left` precisely when the scan warns.
-4. Law documentation. `src/Keiki/Profunctor.hs` has one module-level law-status
+4. Feedback contract. The current two-copy behavior is demonstrated; either
+   `feedback1` is rebuilt over shared aggregate state with a checked entry point, or it
+   is explicitly renamed/documented as a cascade and removed from aggregate guidance.
+5. Law documentation. `src/Keiki/Profunctor.hs` has one module-level law-status
    section; each instance/combinator caveat refers to it; both composition modules are
    marked experimental; `ROADMAP.md`'s composition bullets agree with the section
    (including the new throw behaviour) and the roadmap's last-updated line is current.
-5. Multi-step laws. The Milestone 5 specs drive scripts of ≥4 commands through mapped
-   and composed transducers with evolving registers, and each of the five defect areas
-   has at least one test that fails when its fix is reverted.
+6. Multi-step laws. The Milestone 5 specs drive scripts of ≥4 commands through mapped
+   and composed transducers with evolving registers, compare forward and replay
+   observations separately, and preserve all instances while recording unresolved law
+   failures as deferred API decisions.
 
 Beyond compilation, the demonstrable user-visible win: a developer who composes two
 transducers whose event names drift apart (a rename on one side) now gets a
@@ -770,8 +813,9 @@ Every step is additive or a pure text edit in a git worktree; re-running builds,
 and the formatter is always safe. If a milestone lands partially, the tree still
 compiles at each described boundary (each milestone compiles standalone; within a
 milestone, commit only at green). To back out a milestone, `git revert` its commit(s) —
-no generated artifacts, migrations, or persisted formats are involved (composition has
-zero downstream consumers and nothing here touches wire formats). If Milestone 2's name
+no generated artifacts, migrations, or persisted formats are involved. Current keiro
+runtime code does not call the wrapper instances, but its same-stream modeling guidance
+depends on the concrete composition contract. If Milestone 2's name
 stamping unexpectedly breaks a render/golden expectation, fix the expectation, not the
 stamp — the stamp is the safety property. If EP-74 turns out to still be in flight when
 Milestone 3 starts, stop and wait: the validator's reachable-pair walk must mirror
@@ -786,18 +830,17 @@ in `src/Keiki/Profunctor.hs`), `nothunks`, `hspec` for tests. No new dependencie
 
 Modules and the surface at end state:
 
-- `src/Keiki/Composition.hs` exports, in addition to today's list: `anyLeftCtor`,
-  `anyRightCtor` (arm-tag `InCtor`s, guard-only), `guardIsArmRestricted`,
-  `ComposeAlignmentWarning (..)`, `checkComposeAlignment`, `composeChecked` — with the
-  signatures given in Milestone 3. `compose`, `alternative`, `feedback1` keep their
-  types; `alternative`'s behaviour changes as specified (arm tags), `compose`'s does
-  not change in this plan (EP-74 owns its semantics).
+- `src/Keiki/Composition.hs` exports `ComposeAlignmentWarning (..)`,
+  `checkComposeAlignment`, and `composeChecked` in addition to today's list.
+  `alternative` unconditionally adds real arm predicates. `feedback1`'s final name,
+  type, and checked surface follow the explicit Milestone 3b decision gate.
 - `src/Keiki/Profunctor.hs`: `SomeSymTransducer` gains poison-provenance fields (exact
   shape decided at implementation time against the post-EP-69 representation; record
   the choice in the Decision Log); new export `PoisonedCompositionError (..)`;
   `contraInCtor`/`contraMaybeInCtor`/`mapWireCtor` stamp names as specified; all
   instance types unchanged.
-- `src/Keiki/Core.hs`: unchanged. The validator *reuses* `EdgeRef`
+- `src/Keiki/Core.hs`: `HsPred` gains `PLeftArm` and `PRightArm`, with corresponding
+  concrete/symbolic/walker support. The composition validator reuses `EdgeRef`
   (`src/Keiki/Core.hs:923-927`) and deliberately does NOT extend
   `TransducerValidationWarning` (EP-71 owns that constructor set; see the Decision
   Log). If EP-71 later wants a unified umbrella, `ComposeAlignmentWarning` is `Eq`/
@@ -812,11 +855,12 @@ Modules and the surface at end state:
   `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`
   (hard dependency — final `compose` semantics),
   `docs/plans/69-replace-the-fabricated-weakenr-and-knownslotnames-dictionary-in-category-composition-with-real-induction-witnesses.md`
-  (soft — wrapper representation),
+  (hard dependency — safe wrapper representation and stateful law tests),
   `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`
   (coordination — warning-type ownership),
   `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`
-  (cross-reference — symbolic caveat for arm tags), all under
+  (cross-reference — symbolic translation must remain conservative after adding arm
+  predicates), all under
   `docs/masterplans/16-harden-keiki-correctness-and-api-surfaces-surfaced-by-the-2026-07-architecture-review.md`.
 
 ---
@@ -826,3 +870,15 @@ the full plan. All defect claims were re-verified against the working tree at
 authoring time (file:line citations throughout refer to that state); the four
 sibling plans referenced above were skeletons at authoring time, so their scope is
 restated here from masterplan 16 rather than incorporated by reference.
+
+Revision note (2026-07-12): replaced synthetic constructor-name arm tags with real
+`Either`-arm predicates; made EP-69 a hard dependency; added a checked-composition
+primary path and a `feedback1` state-sharing decision gate; preserved every
+categorical instance while requiring separate forward and replay law results. Current
+keiro aggregate/process-manager architecture is the integration basis.
+
+Revision note (2026-07-12, validation pass): specified how arm predicates survive
+`contraPred`/`contraMaybePred` (lowering to a provenance-stamped guard-only `PInCtor`
+under profunctor contramap — the one traversal that cannot stay structural), repaired
+the garbled dependency sentence (M2 is gated on EP-69; M1 may run in parallel with
+both hard dependencies), and repaired the truncated Purpose intro.

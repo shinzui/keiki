@@ -97,14 +97,11 @@ recompiles without a single call-site change.
   slot resolution: the OVERLAPPING/OVERLAPPABLE `HasIndexN` pair at
   `src/Keiki/Internal/Slots.hs:107-120` against the module's pairwise-distinct
   invariant stated at `src/Keiki/Internal/Slots.hs:6-7`.
-- **Research (2026-07-12): the external consumer's authoring surface is narrow.** A
-  grep over keiro-runtime-jitsurei's production aggregates
-  (`/Users/shinzui/Keikaku/bokuno/keiro-runtime-jitsurei/services/*/src/**/Transducer.hs`)
-  shows they use only `buildTransducer`, `from`, `onCmd`, `slot`/`.=`, `requireGuard`
-  and friends, `goto`, and the standard `B.emit wireCtorX XTermFields{..}` pattern.
-  **No** production use of `emitWith`, `onEpsilon`, or the builder carrier types
-  (`EdgeBuilder`/`EdgeListBuilder`/`VertexBuilder`) in type signatures. This makes the
-  `pin` phantom (M2/M3) and the `emitWith` tightening (M3) safe downstream.
+- **Compatibility scope (revised 2026-07-12):** stale runtime examples are not
+  evidence for this plan. Re-check the builder surface against keiki's in-tree
+  aggregates and current keiro source during implementation. The `pin` phantom and
+  `emitWith` tightening are justified by their type-level correctness, not by an
+  assumed absence of consumers.
 - **Research (2026-07-12): the TH-generated fields record already carries the schema
   parameter we need.** `genTermFieldsRecord` in `src/Keiki/Generics/TH.hs:845-911`
   emits `data <Short>TermFields rs ci ifs` whose every field is
@@ -201,6 +198,10 @@ recompiles without a single call-site change.
   small `-fdefer-type-errors` spec module (M3/M4). The check guards the builder
   boundary only; hand-authored AST transducers bypass it — noted in the Slots haddock
   and left to the master plan as possible follow-up on `RegFile` construction.
+  This family is the canonical duplicate-slot-name constraint for the repository;
+  EP-78 reuses `DistinctNames (Names rs)` on `RegFileToJSON` rather than defining a
+  codec-local family. Keep its module/export and `TypeError` wording suitable for both
+  Builder and codec callers.
   Date: 2026-07-12
 
 - Decision: fix duplicate-`from` merge order by reversing the raw vertex list once in
@@ -259,10 +260,10 @@ consumers, all look like the EmailDelivery aggregate
 `test/Keiki/Fixtures/EmailDelivery.hs`): `B.from V do B.onCmd inCtorX $ \d -> B.do
 { B.slot @"s" .= d.field; B.emit wireY YTermFields{…}; B.goto V' }`.
 
-**Consumers.** In-repo: the `jitsurei` example package (`jitsurei/src/Jitsurei/*.hs`)
+**Compatibility scope.** In-repo: the `jitsurei` example package (`jitsurei/src/Jitsurei/*.hs`)
 and the test suite (`test/Keiki/BuilderSpec.hs`, `test/Keiki/BuilderSpike.hs`,
-`test/Keiki/Fixtures/*.hs`). External: keiro-runtime-jitsurei (surveyed 2026-07;
-see Surprises & Discoveries). The authoring surface must remain source-compatible:
+`test/Keiki/Fixtures/*.hs`). External compatibility is current keiro only. The
+authoring surface must remain source-compatible where correctness permits:
 `buildTransducer`, `from`, `onCmd`, `onEpsilon`, `requireGuard`/`requireEq`/
 `requireGt` (and the other `requireCmp` wrappers), `slot`/`(.=)`/`(=:)`, `reg`,
 `emit`/`emitWith`/`noEmit`, `goto`, `toOutFields`, `oNil`. New eager errors on

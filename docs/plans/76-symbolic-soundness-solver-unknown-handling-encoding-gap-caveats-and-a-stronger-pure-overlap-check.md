@@ -36,8 +36,7 @@ step function faces an ambiguous choice, which surfaces downstream as an
 nondeterministically handled) in production.
 
 keiki decides single-valuedness at build time in two ways, and both feed
-`validateTransducer` (in `src/Keiki/Core.hs`), which keiki's only real consumer —
-the keiro event-sourcing runtime — runs at its stream boundary
+`validateTransducer` (in `src/Keiki/Core.hs`), which current keiro runs at its stream boundary
 (`keiro-core/src/Keiro/EventStream/Validate.hs` in the keiro repository):
 
 1. A **pure structural pass** (`checkTransitionDeterminismPure` /
@@ -252,13 +251,11 @@ implementation proceeds.
   `isSingleValuedSym`, `withSymPred`, `checkTransitionDeterminismSym`, and
   `checkDeadEdgesSym` exactly as they are; new exports are additive only
   (`satResultIsProvablyUnsat`).
-  Rationale: keiro-runtime-jitsurei's optional `SymbolicSpec` test suite calls all
-  of these by name (master plan 16, integration point 6, requires stating keiro
-  impact). Behavior *does* change: after the Unknown fix and the strengthened pure
-  check, downstream suites may see new warnings that are true positives the old
-  code missed. That is an expected, desirable migration — the downstream fix is to
-  repair the flagged transducer (or acknowledge the warning), not to pin the old
-  keiki. Record this in the changelog entry.
+  Rationale: these are published keiki APIs and in-tree symbolic specs call them by
+  name. Behavior *does* change: after the Unknown fix and the strengthened pure
+  check, current keiro may see new validation warnings that are true positives the
+  old code missed. The downstream fix is to repair or explicitly acknowledge the
+  flagged transducer, not to pin the old keiki. Record this in the changelog entry.
   Date: 2026-07-11.
 - Decision: The strengthened `provablyOverlap` returns `True` only when a
   satisfying assignment for *both* guards provably exists, using two proof
@@ -357,15 +354,12 @@ witness from the model. An `SBV.SatResult` wraps an `SMTResult` with constructor
 `/Users/shinzui/Keikaku/hub/haskell/sbv-project/sbv/`). `SBV.modelExists` is
 `True` only for `Satisfiable` (SBV source `Data/SBV/SMT/SMT.hs:483-485`).
 
-**The consumer.** The keiro runtime (separate repository,
+**The current integration boundary.** The keiro runtime (separate repository,
 `/Users/shinzui/Keikaku/bokuno/keiro`) calls `validateTransducer` at its stream
 boundary and renders every warning constructor exhaustively at
 `keiro-core/src/Keiro/EventStream/Validate.hs:147-155` — which is why this plan
-adds no constructors. keiro-runtime-jitsurei (another consumer) has an optional
-symbolic test suite calling `checkTransitionDeterminismSym`, `checkDeadEdgesSym`,
-`isSingleValuedSym`, `symIsBot`, and `withSymPred` — which is why those names and
-signatures must not change. In this repository, the callers of the symbolic API
-are `test/Keiki/SymbolicSpec.hs`, `test/Keiki/ValidationSpec.hs`, and
+adds no constructors. In this repository, the callers of the symbolic API are
+`test/Keiki/SymbolicSpec.hs`, `test/Keiki/ValidationSpec.hs`, and
 `jitsurei/test/Jitsurei/OrderCartSymbolicSpec.hs`.
 
 **Why the runtime consequence matters.** A guard overlap the gates miss is not a
@@ -729,8 +723,8 @@ previously-missed wraparound/sub-second overlaps are now found); the strengthene
 pure overlap check (behavioral: `validateTransducer` may newly report
 `NondeterministicPair` on Builder-authored edges — true positives); the additive
 `satResultIsProvablyUnsat` export. State the consumer guidance explicitly: no
-names or signatures changed; downstream suites (keiro, keiro-runtime-jitsurei)
-that newly fail are surfacing real defects the old gates missed, and the fix is in
+names or signatures changed; current keiro validation that newly fails is surfacing
+real defects the old gates missed, and the fix is in
 the flagged transducer, not in pinning keiki.
 
 Finish with `nix fmt -- --no-cache`, a final `cabal build all && cabal test all`,
@@ -823,9 +817,8 @@ repository, via `cabal test all` inside `nix develop`:
    fixtures exercise the changed encodings) passes, and `cabal haddock keiki`
    builds cleanly.
 
-Downstream (not run here, but part of acceptance reasoning): keiro and
-keiro-runtime-jitsurei compile against the new keiki unchanged (no
-names/signatures changed, no warning constructors added). If their suites report
+Downstream coordination: current keiro compiles against the new keiki without
+symbolic API name/signature changes or warning-constructor additions. If its suite reports
 new warnings, each is a true positive by construction of the checks above — the
 expected, desirable migration recorded in the changelog.
 
@@ -863,8 +856,7 @@ At the end of the plan the following hold, with full module paths:
   verdict now routed through `satResultIsProvablyUnsat`.
 - `Keiki.Symbolic.symSatExt`, `Keiki.Symbolic.isSingleValuedSym`,
   `Keiki.Symbolic.withSymPred`, `Keiki.Symbolic.checkTransitionDeterminismSym`,
-  `Keiki.Symbolic.checkDeadEdgesSym` — names and signatures unchanged (pinned by
-  keiro-runtime-jitsurei's suite); behavior of the determinism/dead-edge checks
+  `Keiki.Symbolic.checkDeadEdgesSym` — names and signatures unchanged; behavior of the determinism/dead-edge checks
   changes only via `symIsBot` and the encodings.
 - `Keiki.Symbolic.Sym` instances: `SymRep Word8 = Word8` (and likewise
   `Word16/32/64`, `Int32/64`); `SymRep UTCTime = Integer` at picosecond
