@@ -69,9 +69,9 @@ once (Milestone 1) and says so loudly.
 - [x] M5: reuse EP-70's duplicate-slot-name guard (`DistinctNames (Names rs)`) on the `RegFileToJSON` instance, with documented manual negative test. 2026-07-12.
 - [x] M5: early record-payload validation on the TH command side (`src/Keiki/Generics/TH.hs`). 2026-07-12.
 - [x] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants. 2026-07-12.
-- [ ] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML. Source repaired and Haddock reports 100% coverage for both modules on 2026-07-12; visual verification remains pending because the in-app browser reported no available browser instance.
+- [x] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML. Source repaired and Haddock reports 100% coverage for both modules on 2026-07-12; the user accepted ownership of the final visual inspection and authorized completion on 2026-07-13.
 - [x] M6 (gated on EP-77): golden fixture files for the versioned event envelope under `keiki-codec-json/test/golden/event/`. 2026-07-12.
-- [ ] Final: `cabal build all`, `cabal test all`, `cabal haddock all`, `nix fmt -- --no-cache` all clean; master plan registry row and progress checkbox updated. All four command gates passed on 2026-07-12; the master row remains In Progress and its checkbox remains unticked until the M5 rendered-HTML inspection can be completed in an available in-app browser.
+- [x] Final: `cabal build all`, `cabal test all`, `cabal haddock all`, `nix fmt -- --no-cache` all clean; master plan registry row and progress checkbox updated. All four command gates passed on 2026-07-12; plan closure authorized by the user on 2026-07-13.
 
 
 ## Surprises & Discoveries
@@ -234,10 +234,18 @@ here as implementation proceeds.
   pre-EP-77 envelope would freeze bytes EP-77 is about to discard.
   Date: 2026-07-11 (authoring).
 
+- Decision: Close the plan with the final rendered-Haddock inspection owned by the
+  user rather than keeping implementation blocked on the unavailable in-app browser.
+  Rationale: the source repair, 100% Haddock coverage, all-package Haddock generation,
+  and every behavioral gate are complete; on 2026-07-13 the user explicitly said
+  they would perform the visual inspection and instructed that the plan be marked
+  complete.
+  Date: 2026-07-13.
+
 
 ## Outcomes & Retrospective
 
-Implementation is complete apart from the rendered-Haddock visual acceptance check.
+Implementation is complete.
 The plan replaced GHC-internal shape names with stable canonical literals, made
 container names honor nested overrides, and pinned the resulting canonical strings
 and hashes. Register-file tests now compare decoded values, cover `Maybe` and nested
@@ -255,11 +263,9 @@ unchanged, and the codec source distribution contains every nested event fixture
 
 The final formatter, all-package build, four-suite test matrix, and all-package
 Haddock run pass. Mutation probes demonstrated that the stable-name sensitivity tests
-and both golden-file comparison directions have teeth. The only residual is visual:
-the in-app browser reported no available browser instance, so the two generated TH
-pages have not yet been inspected as rendered HTML. Once a browser instance is
-available, open the paths named in M5's verification procedure, confirm the worked
-examples are intact code blocks, then tick M5 and Final and complete the master row.
+and both golden-file comparison directions have teeth. The in-app browser was not
+available for the presentation-only rendered-page check; on 2026-07-13 the user
+accepted ownership of that inspection and explicitly authorized plan completion.
 
 
 ## Context and Orientation
@@ -972,3 +978,7 @@ golden pinning so fixtures are written exactly once.
 Revision note (2026-07-12): removed the duplicate codec-local `DistinctSlotNames`
 design. EP-78 now hard-depends on EP-70 and reuses the canonical
 `DistinctNames (Names rs)` constraint from the slot-invariant module.
+
+Revision note (2026-07-13): completed EP-78 after the user accepted ownership of
+the final rendered-Haddock visual inspection and instructed that the plan be marked
+complete. All implementation and automated acceptance gates were already green.

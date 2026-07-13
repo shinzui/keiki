@@ -129,7 +129,7 @@ fire through).
 | 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Complete |
 | 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Complete |
 | 77 | Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding | docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md | None | None | Complete |
-| 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | EP-70 | EP-77 | In Progress |
+| 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | EP-70 | EP-77 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-69).
@@ -260,7 +260,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
 - [x] EP-76: solver `Unknown` treated as not-bot; exact sized-integer and picosecond encodings landed; pure overlap check catches supported same-ctor `PAnd` pairs
 - [x] EP-77: versioned event envelope with pinned wire kinds and default-on-missing decoding
-- [ ] EP-78: golden byte fixtures for both wire formats; `Maybe` slot coverage; shape hash stable across GHC majors
+- [x] EP-78: golden byte fixtures for both wire formats; `Maybe` slot coverage; shape hash stable across GHC majors
 
 
 ## Surprises & Discoveries
@@ -365,8 +365,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   work. Thirteen checked-in fixtures now pin snapshots, shapes, and versioned event
   envelopes; shape names are independent of GHC-internal module moves; and the
   persistence TH surface fails or warns early on ambiguous input. Both repaired TH
-  modules have 100% Haddock coverage, but the required rendered-page inspection is
-  still pending because the in-app browser reported no available browser instance.
+  modules have 100% Haddock coverage. The user accepted ownership of the final
+  rendered-page inspection and authorized completion on 2026-07-13.
 
 
 ## Decision Log
@@ -478,11 +478,20 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   first release is the right point to remove the duplicate abstraction.
   Date: 2026-07-12
 
+- Decision: Close EP-78 and this MasterPlan with the final rendered-Haddock visual
+  inspection owned by the user.
+  Rationale: every implementation, mutation, packaging, downstream-compatibility,
+  formatting, build, test, and Haddock-generation gate is complete. The in-app
+  browser was unavailable, and on 2026-07-13 the user explicitly said they would
+  perform the presentation-only inspection and instructed that the plan be marked
+  complete.
+  Date: 2026-07-13
+
 
 ## Outcomes & Retrospective
 
-Ten child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, EP-73,
-EP-74, EP-75, EP-76, and EP-77. The core
+All eleven child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72,
+EP-73, EP-74, EP-75, EP-76, EP-77, and EP-78. The core
 memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
 validator and structured-runtime halves. EP-71 aligned default validation with replay through four default-on
 checks, migrated the durable User Registration epsilon path, left an explicit
@@ -511,11 +520,16 @@ splits and outer-envelope version ownership. The full formatter, all-package bui
 four-suite test matrix, and relevant Haddocks are green. EP-78 is the final eligible
 plan. Its implementation now pins finalized snapshot, shape, and event formats,
 hardens duplicate/ambiguous persistence declarations, passes all workspace command
-gates, packages every fixture, and builds current keiro unchanged. EP-78 and this
-MasterPlan remain In Progress solely because the required visual inspection of the
-two rendered TH Haddock pages could not run without an available in-app browser.
+gates, packages every fixture, and builds current keiro unchanged. The user accepted
+ownership of the remaining presentation-only rendered-Haddock inspection and
+authorized closure on 2026-07-13, completing Phase 5 and this MasterPlan.
 
 ## Revision Notes
+
+- 2026-07-13: Completed EP-78 and MasterPlan 16. The user accepted ownership of the
+  final rendered-Haddock visual inspection and explicitly authorized closure; all
+  implementation, automated acceptance, mutation, packaging, and downstream gates
+  were already complete and green.
 
 - 2026-07-12: Completed EP-78's implementation and command gates. Stabilized shape
   names, added value-level `Maybe` coverage and 13 guarded golden fixtures, clarified
