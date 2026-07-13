@@ -2,6 +2,7 @@
 -- sees it as unused (the body is @UCombine@) and would otherwise warn.
 -- Same reasoning for any future helpers that re-export the constraint
 -- as a typed witness.
+{-# LANGUAGE TypeAbstractions #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | The pure core of keiki: the symbolic-register transducer.
@@ -184,11 +185,13 @@ module Keiki.Core
   )
 where
 
+import Data.Int (Int32, Int64)
 import Data.Kind (Type)
-import Data.List (nub, (\\))
+import Data.List (nub, partition, (\\))
 import Data.Proxy (Proxy (..))
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
+import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Keiki.Internal.Slots
@@ -199,6 +202,7 @@ import Keiki.Internal.Slots
     IndexN (..),
     Names,
   )
+import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 -- | A register slot is a label paired with the type of its value.
 type Slot = (Symbol, Type)
@@ -1872,9 +1876,14 @@ defaultValidationOptions =
 --
 -- The default path is deliberately specialised to the 'HsPred' carrier and is
 -- /cheap and pure/: the determinism component flags only structurally-provable
--- overlaps (never a false positive, but it can miss overlaps it cannot prove
--- syntactically), and the dead-edge component is structural reachability plus a
--- literal-'PBot' check. For the exact, solver-backed answers use
+-- overlaps in conjunction spines containing constructor tests and
+-- variable-versus-literal comparisons. It uses exact interval reasoning for
+-- integral variables and concrete literal witnesses for other types. Disjunction,
+-- negation, arithmetic, opaque terms, variable-versus-variable comparisons, and
+-- non-integral strict-bound density remain unknown and produce no pure warning.
+-- The pass therefore has no false positives but can miss overlaps outside that
+-- fragment. The dead-edge component is structural reachability plus a literal-
+-- 'PBot' check. For the exact, solver-backed answers use
 -- 'Keiki.Symbolic.checkTransitionDeterminismSym' and
 -- 'Keiki.Symbolic.checkDeadEdgesSym' directly.
 validateTransducer ::
@@ -2261,12 +2270,17 @@ checkTransitionDeterminism t =
     not (isBot (guard e1 `conj` guard e2))
   ]
 
--- | Over-approximation-free determinism check for the pure 'HsPred' carrier:
--- emits a warning only when overlap is structurally provable (both guards are
--- 'PTop', or both name the same input constructor). Used by 'validateTransducer'
--- so the pure path yields no false positives. Every warning it emits is a true
--- positive; the absence of a warning does NOT prove determinism — run
--- 'Keiki.Symbolic.checkTransitionDeterminismSym' for the exact answer.
+-- | Over-approximation-free determinism check for the pure 'HsPred' carrier.
+-- It proves overlap through conjunction spines containing 'PTop', compatible
+-- 'PInCtor' atoms, and variable-versus-literal equality or ordering atoms.
+-- Integral variables ('Int', 'Integer', fixed-width words and signed integers)
+-- use exact interval intersection; other types require one of the mentioned
+-- literals to be a concrete witness. Disjunction, negation, structural
+-- arithmetic, opaque terms, variable-versus-variable comparisons, and strict
+-- non-integral bounds are outside the fragment and produce no warning. Used by
+-- 'validateTransducer' so every warning is a true positive. Absence does not
+-- prove determinism; run 'Keiki.Symbolic.checkTransitionDeterminismSym' for the
+-- exact solver-backed answer.
 checkTransitionDeterminismPure ::
   forall rs s ci co.
   (Bounded s, Enum s, Show s) =>
@@ -2297,21 +2311,352 @@ overlapDetail i j s =
     <> show s
     <> " have overlapping guards"
 
--- | Structurally-provable guard overlap for the pure 'HsPred' carrier: 'True'
--- only when overlap is certain (both 'PTop', or the same input constructor).
--- Conservative — never a false positive; misses overlaps it cannot prove
--- syntactically (those are left to the symbolic variant).
+-- | A named variable in the pure overlap fragment. Register and input-field
+-- namespaces are distinct. Input fields retain their constructor name so a
+-- witness is accepted only when a matching 'PInCtor' atom is present.
+data PureVariable = PureVariable
+  { pureVariableName :: String,
+    pureVariableInputCtor :: Maybe String
+  }
+  deriving stock (Eq, Show)
+
+data PureRelation = PureEq | PureLt | PureLe | PureGt | PureGe
+  deriving stock (Eq, Show)
+
+-- | One normalized @variable relation literal@ atom. The predicate closure
+-- captures the source constructor's real 'Eq' or 'Ord' dictionary for concrete
+-- literal-witness probing.
+data PureComparison where
+  PureComparison ::
+    (Typeable r) =>
+    PureVariable ->
+    PureRelation ->
+    r ->
+    (r -> Bool) ->
+    PureComparison
+
+data PureGuard = PureGuard
+  { pureGuardConstructors :: [String],
+    pureGuardComparisons :: [PureComparison]
+  }
+
+data PureFragment
+  = PureUnknown
+  | PureUnsatisfiable
+  | PureKnown PureGuard
+
+emptyPureGuard :: PureGuard
+emptyPureGuard = PureGuard [] []
+
+-- | Parse the exact, deliberately small fragment accepted by
+-- 'provablyOverlap'.
+pureFragment :: HsPred rs ci -> PureFragment
+pureFragment PTop = PureKnown emptyPureGuard
+pureFragment PBot = PureUnsatisfiable
+pureFragment (PAnd a b) = mergePureFragments (pureFragment a) (pureFragment b)
+pureFragment (PInCtor ic) =
+  PureKnown emptyPureGuard {pureGuardConstructors = [icName ic]}
+pureFragment (PEq a b) = pureEquality a b
+pureFragment (PCmp relation a b) = pureOrdering relation a b
+pureFragment PLeftArm = PureUnknown
+pureFragment PRightArm = PureUnknown
+pureFragment (POr _ _) = PureUnknown
+pureFragment (PNot _) = PureUnknown
+
+mergePureFragments :: PureFragment -> PureFragment -> PureFragment
+mergePureFragments PureUnsatisfiable _ = PureUnsatisfiable
+mergePureFragments _ PureUnsatisfiable = PureUnsatisfiable
+mergePureFragments PureUnknown _ = PureUnknown
+mergePureFragments _ PureUnknown = PureUnknown
+mergePureFragments (PureKnown a) (PureKnown b) =
+  PureKnown
+    PureGuard
+      { pureGuardConstructors =
+          pureGuardConstructors a <> pureGuardConstructors b,
+        pureGuardComparisons =
+          pureGuardComparisons a <> pureGuardComparisons b
+      }
+
+pureEquality ::
+  forall rs ci ifs1 ifs2 r.
+  (Eq r, Typeable r) =>
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  PureFragment
+pureEquality (TLit a) (TLit b)
+  | a == b = PureKnown emptyPureGuard
+  | otherwise = PureUnsatisfiable
+pureEquality variable (TLit literalValue)
+  | Just name <- pureVariable variable =
+      knownComparison name PureEq literalValue (== literalValue)
+pureEquality (TLit literalValue) variable
+  | Just name <- pureVariable variable =
+      knownComparison name PureEq literalValue (== literalValue)
+pureEquality _ _ = PureUnknown
+
+pureOrdering ::
+  forall rs ci ifs1 ifs2 r.
+  (Ord r, Typeable r) =>
+  Cmp ->
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  PureFragment
+pureOrdering relation (TLit a) (TLit b)
+  | applyPureCmp relation a b = PureKnown emptyPureGuard
+  | otherwise = PureUnsatisfiable
+pureOrdering relation variable (TLit literalValue)
+  | Just name <- pureVariable variable =
+      let normalized = pureRelation relation
+       in knownComparison
+            name
+            normalized
+            literalValue
+            (\value -> applyPureRelation normalized value literalValue)
+pureOrdering relation (TLit literalValue) variable
+  | Just name <- pureVariable variable =
+      let normalized = flipPureRelation (pureRelation relation)
+       in knownComparison
+            name
+            normalized
+            literalValue
+            (\value -> applyPureRelation normalized value literalValue)
+pureOrdering _ _ _ = PureUnknown
+
+knownComparison ::
+  (Typeable r) =>
+  PureVariable ->
+  PureRelation ->
+  r ->
+  (r -> Bool) ->
+  PureFragment
+knownComparison variable relation literalValue accepts =
+  PureKnown
+    emptyPureGuard
+      { pureGuardComparisons =
+          [PureComparison variable relation literalValue accepts]
+      }
+
+pureVariable :: Term rs ci ifs r -> Maybe PureVariable
+pureVariable (TReg index) =
+  Just (PureVariable ("reg/" <> pureIndexName index) Nothing)
+pureVariable (TInpCtorField ic index) =
+  Just
+    ( PureVariable
+        ("inp/" <> icName ic <> "/" <> pureIndexName index)
+        (Just (icName ic))
+    )
+pureVariable _ = Nothing
+
+pureIndexName :: forall rs r. Index rs r -> String
+pureIndexName (ZIdx @name) = symbolVal (Proxy @name)
+pureIndexName (SIdx index) = pureIndexName index
+
+pureRelation :: Cmp -> PureRelation
+pureRelation CmpLt = PureLt
+pureRelation CmpLe = PureLe
+pureRelation CmpGt = PureGt
+pureRelation CmpGe = PureGe
+
+flipPureRelation :: PureRelation -> PureRelation
+flipPureRelation PureEq = PureEq
+flipPureRelation PureLt = PureGt
+flipPureRelation PureLe = PureGe
+flipPureRelation PureGt = PureLt
+flipPureRelation PureGe = PureLe
+
+applyPureCmp :: (Ord r) => Cmp -> r -> r -> Bool
+applyPureCmp CmpLt = (<)
+applyPureCmp CmpLe = (<=)
+applyPureCmp CmpGt = (>)
+applyPureCmp CmpGe = (>=)
+
+applyPureRelation :: (Ord r) => PureRelation -> r -> r -> Bool
+applyPureRelation PureEq = (==)
+applyPureRelation PureLt = (<)
+applyPureRelation PureLe = (<=)
+applyPureRelation PureGt = (>)
+applyPureRelation PureGe = (>=)
+
+-- | Structurally prove that a concrete witness exists for both guards. The
+-- accepted fragment is described on 'checkTransitionDeterminismPure'. Returning
+-- 'False' means either disjoint or unknown. Like the historical @PTop@ and
+-- @PInCtor@ cases, this proof assumes the register and command schemas are
+-- inhabited.
 provablyOverlap :: HsPred rs ci -> HsPred rs ci -> Bool
-provablyOverlap PTop PTop = True
-provablyOverlap (PInCtor a) (PInCtor b) = icName a == icName b
 provablyOverlap PLeftArm PLeftArm = True
 provablyOverlap PRightArm PRightArm = True
-provablyOverlap _ _ = False
+provablyOverlap a b = case (pureFragment a, pureFragment b) of
+  (PureKnown leftGuard, PureKnown rightGuard) ->
+    pureGuardsOverlap leftGuard rightGuard
+  _ -> False
+
+pureGuardsOverlap :: PureGuard -> PureGuard -> Bool
+pureGuardsOverlap leftGuard rightGuard = case commonPureConstructor of
+  Nothing -> False
+  Just constructorName ->
+    all (comparisonMatchesConstructor constructorName) comparisons
+      && all pureComparisonGroupSatisfiable (groupPureComparisons comparisons)
+  where
+    comparisons =
+      pureGuardComparisons leftGuard <> pureGuardComparisons rightGuard
+    commonPureConstructor = do
+      leftConstructor <- singlePureConstructor (pureGuardConstructors leftGuard)
+      rightConstructor <- singlePureConstructor (pureGuardConstructors rightGuard)
+      compatiblePureConstructors leftConstructor rightConstructor
+
+singlePureConstructor :: [String] -> Maybe (Maybe String)
+singlePureConstructor names = case nub names of
+  [] -> Just Nothing
+  [name] -> Just (Just name)
+  _ -> Nothing
+
+compatiblePureConstructors ::
+  Maybe String -> Maybe String -> Maybe (Maybe String)
+compatiblePureConstructors Nothing Nothing = Just Nothing
+compatiblePureConstructors (Just name) Nothing = Just (Just name)
+compatiblePureConstructors Nothing (Just name) = Just (Just name)
+compatiblePureConstructors (Just leftName) (Just rightName)
+  | leftName == rightName = Just (Just leftName)
+  | otherwise = Nothing
+
+comparisonMatchesConstructor :: Maybe String -> PureComparison -> Bool
+comparisonMatchesConstructor constructorName (PureComparison variable _ _ _) =
+  case pureVariableInputCtor variable of
+    Nothing -> True
+    Just inputConstructor -> constructorName == Just inputConstructor
+
+groupPureComparisons :: [PureComparison] -> [[PureComparison]]
+groupPureComparisons [] = []
+groupPureComparisons (comparison : rest) =
+  (comparison : sameVariable) : groupPureComparisons otherVariables
+  where
+    variable = pureComparisonVariable comparison
+    (sameVariable, otherVariables) =
+      partition ((== variable) . pureComparisonVariable) rest
+
+pureComparisonVariable :: PureComparison -> PureVariable
+pureComparisonVariable (PureComparison variable _ _ _) = variable
+
+data TypedPureComparison r = TypedPureComparison
+  { typedPureRelation :: PureRelation,
+    typedPureLiteral :: r,
+    typedPureAccepts :: r -> Bool
+  }
+
+alignPureComparison ::
+  forall r. (Typeable r) => PureComparison -> Maybe (TypedPureComparison r)
+alignPureComparison (PureComparison @other _ relation literalValue accepts) =
+  case eqTypeRep (typeRep @r) (typeRep @other) of
+    Just HRefl -> Just (TypedPureComparison relation literalValue accepts)
+    Nothing -> Nothing
+
+pureComparisonGroupSatisfiable :: [PureComparison] -> Bool
+pureComparisonGroupSatisfiable [] = True
+pureComparisonGroupSatisfiable
+  (PureComparison @r _ relation literalValue accepts : rest) =
+    case traverse (alignPureComparison @r) rest of
+      Nothing -> False
+      Just alignedRest ->
+        let comparisons =
+              TypedPureComparison relation literalValue accepts : alignedRest
+         in case discoverIntegralDomain @r of
+              Just domain -> integralComparisonsSatisfiable domain comparisons
+              Nothing -> literalWitnessSatisfies comparisons
+
+data IntegralDomain r = IntegralDomain
+  { integralValue :: r -> Integer,
+    integralMinimum :: Maybe Integer,
+    integralMaximum :: Maybe Integer
+  }
+
+discoverIntegralDomain :: forall r. (Typeable r) => Maybe (IntegralDomain r)
+discoverIntegralDomain
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) =
+      Just (IntegralDomain id Nothing Nothing)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int) =
+      Just (boundedIntegralDomain @Int)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8) =
+      Just (boundedIntegralDomain @Word8)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16) =
+      Just (boundedIntegralDomain @Word16)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32) =
+      Just (boundedIntegralDomain @Word32)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64) =
+      Just (boundedIntegralDomain @Word64)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32) =
+      Just (boundedIntegralDomain @Int32)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64) =
+      Just (boundedIntegralDomain @Int64)
+  | otherwise = Nothing
+
+boundedIntegralDomain ::
+  forall r. (Integral r, Bounded r) => IntegralDomain r
+boundedIntegralDomain =
+  IntegralDomain
+    { integralValue = toInteger,
+      integralMinimum = Just (toInteger (minBound @r)),
+      integralMaximum = Just (toInteger (maxBound @r))
+    }
+
+integralComparisonsSatisfiable ::
+  IntegralDomain r -> [TypedPureComparison r] -> Bool
+integralComparisonsSatisfiable domain comparisons =
+  intervalIsNonempty finalMinimum finalMaximum
+  where
+    (finalMinimum, finalMaximum) =
+      foldl' refine (integralMinimum domain, integralMaximum domain) comparisons
+
+    refine (minimumValue, maximumValue) comparison =
+      let literalValue = integralValue domain (typedPureLiteral comparison)
+       in case typedPureRelation comparison of
+            PureEq ->
+              ( maximumMaybe minimumValue (Just literalValue),
+                minimumMaybe maximumValue (Just literalValue)
+              )
+            PureLt ->
+              (minimumValue, minimumMaybe maximumValue (Just (literalValue - 1)))
+            PureLe ->
+              (minimumValue, minimumMaybe maximumValue (Just literalValue))
+            PureGt ->
+              (maximumMaybe minimumValue (Just (literalValue + 1)), maximumValue)
+            PureGe ->
+              (maximumMaybe minimumValue (Just literalValue), maximumValue)
+
+maximumMaybe :: Maybe Integer -> Maybe Integer -> Maybe Integer
+maximumMaybe Nothing b = b
+maximumMaybe a Nothing = a
+maximumMaybe (Just a) (Just b) = Just (max a b)
+
+minimumMaybe :: Maybe Integer -> Maybe Integer -> Maybe Integer
+minimumMaybe Nothing b = b
+minimumMaybe a Nothing = a
+minimumMaybe (Just a) (Just b) = Just (min a b)
+
+intervalIsNonempty :: Maybe Integer -> Maybe Integer -> Bool
+intervalIsNonempty (Just minimumValue) (Just maximumValue) =
+  minimumValue <= maximumValue
+intervalIsNonempty _ _ = True
+
+literalWitnessSatisfies :: [TypedPureComparison r] -> Bool
+literalWitnessSatisfies comparisons =
+  any satisfiesEveryComparison (map typedPureLiteral comparisons)
+  where
+    satisfiesEveryComparison candidate =
+      all (\comparison -> typedPureAccepts comparison candidate) comparisons
+
+overlapConstructor :: HsPred rs ci -> HsPred rs ci -> Maybe String
+overlapConstructor leftGuard rightGuard = do
+  PureKnown left <- Just (pureFragment leftGuard)
+  PureKnown right <- Just (pureFragment rightGuard)
+  leftConstructor <- singlePureConstructor (pureGuardConstructors left)
+  rightConstructor <- singlePureConstructor (pureGuardConstructors right)
+  compatible <- compatiblePureConstructors leftConstructor rightConstructor
+  compatible
 
 -- | Internal: the determinism component of 'validateTransducer'. Like
 -- 'checkTransitionDeterminismPure' but emits the richer 'NondeterministicPair'
--- directly, populating 'tvwInCtor' with the overlapping command constructor when
--- both guards name the same one (and 'Nothing' for the 'PTop' case).
+-- directly, populating 'tvwInCtor' with the common command constructor found
+-- anywhere in either conjunction spine (and 'Nothing' when neither names one).
 determinismWarnings ::
   (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
@@ -2321,7 +2666,7 @@ determinismWarnings t =
       { tvwSource = s,
         tvwEdgeA = i,
         tvwEdgeB = j,
-        tvwInCtor = overlapCtor (guard e1) (guard e2),
+        tvwInCtor = overlapConstructor (guard e1) (guard e2),
         tvwDetail = overlapDetail i j s
       }
   | s <- [minBound .. maxBound],
@@ -2331,10 +2676,6 @@ determinismWarnings t =
     i < j,
     provablyOverlap (guard e1) (guard e2)
   ]
-  where
-    overlapCtor (PInCtor a) (PInCtor b)
-      | icName a == icName b = Just (icName a)
-    overlapCtor _ _ = Nothing
 
 -- ** Dead-edge diagnostics
 

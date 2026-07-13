@@ -2,6 +2,7 @@ module Keiki.ValidationSpec (spec) where
 
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy (..))
+import Data.Word (Word8)
 import Keiki.Core
 import Keiki.Symbolic (checkDeadEdgesSym, checkTransitionDeterminismSym)
 import Test.Hspec
@@ -209,6 +210,141 @@ hiddenT =
       isFinal = id
     }
 
+-- Pure-overlap fixtures (EP-76). Every edge is a state-preserving self-loop so
+-- the default validation result isolates determinism from epsilon-state-change
+-- diagnostics.
+type OverlapRegs = '[ '("x", Int)]
+
+xIdx :: Index OverlapRegs Int
+xIdx = ZIdx
+
+overlapFixture ::
+  HsPred OverlapRegs Cmd ->
+  HsPred OverlapRegs Cmd ->
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+overlapFixture leftGuard rightGuard =
+  SymTransducer
+    { edgesOut = \case
+        Start ->
+          [ Edge leftGuard UKeep [] Start,
+            Edge rightGuard UKeep [] Start
+          ]
+        _ -> [],
+      initial = Start,
+      initialRegs = RCons (Proxy @"x") 0 RNil,
+      isFinal = const False
+    }
+
+fooWith :: HsPred OverlapRegs Cmd -> HsPred OverlapRegs Cmd
+fooWith = PAnd (PInCtor inCtorFoo)
+
+barWith :: HsPred OverlapRegs Cmd -> HsPred OverlapRegs Cmd
+barWith = PAnd (PInCtor inCtorBar)
+
+motivatingOverlapT ::
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+motivatingOverlapT =
+  overlapFixture
+    (fooWith (PCmp CmpGt (proj xIdx) (TLit 0)))
+    (fooWith (PCmp CmpGt (proj xIdx) (TLit 5)))
+
+disjointOverlapT ::
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+disjointOverlapT =
+  overlapFixture
+    (fooWith (PCmp CmpGt (proj xIdx) (TLit 5)))
+    (fooWith (PCmp CmpLt (proj xIdx) (TLit 3)))
+
+unknownOrT ::
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+unknownOrT =
+  overlapFixture
+    ( fooWith
+        ( POr
+            (PCmp CmpGt (proj xIdx) (TLit 0))
+            (PCmp CmpLt (proj xIdx) (TLit 0))
+        )
+    )
+    (fooWith (PCmp CmpGt (proj xIdx) (TLit 5)))
+
+unknownOpaqueT ::
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+unknownOpaqueT =
+  overlapFixture
+    ( fooWith
+        (PCmp CmpGt (TApp1 id (proj xIdx)) (TLit 0))
+    )
+    (fooWith (PCmp CmpGt (proj xIdx) (TLit 5)))
+
+differentCtorT ::
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+differentCtorT =
+  overlapFixture
+    (fooWith (PCmp CmpGt (proj xIdx) (TLit 0)))
+    (barWith (PCmp CmpGt (proj xIdx) (TLit 5)))
+
+type ByteOverlapRegs = '[ '("x", Word8)]
+
+byteOverlapIdx :: Index ByteOverlapRegs Word8
+byteOverlapIdx = ZIdx
+
+disjointWord8T ::
+  SymTransducer (HsPred ByteOverlapRegs Cmd) ByteOverlapRegs V Cmd ()
+disjointWord8T =
+  SymTransducer
+    { edgesOut = \case
+        Start ->
+          [ Edge
+              ( PAnd
+                  (PInCtor inCtorFoo)
+                  (PCmp CmpGe (proj byteOverlapIdx) (TLit 200))
+              )
+              UKeep
+              []
+              Start,
+            Edge
+              ( PAnd
+                  (PInCtor inCtorFoo)
+                  (PCmp CmpLe (proj byteOverlapIdx) (TLit 100))
+              )
+              UKeep
+              []
+              Start
+          ]
+        _ -> [],
+      initial = Start,
+      initialRegs = RCons (Proxy @"x") 0 RNil,
+      isFinal = const False
+    }
+
+type BoolOverlapRegs = '[ '("x", Bool)]
+
+boolOverlapIdx :: Index BoolOverlapRegs Bool
+boolOverlapIdx = ZIdx
+
+boolLiteralWitnessT ::
+  SymTransducer (HsPred BoolOverlapRegs Cmd) BoolOverlapRegs V Cmd ()
+boolLiteralWitnessT =
+  SymTransducer
+    { edgesOut = \case
+        Start ->
+          [ Edge
+              (PAnd (PInCtor inCtorFoo) (PEq (proj boolOverlapIdx) (TLit True)))
+              UKeep
+              []
+              Start,
+            Edge
+              (PAnd (PInCtor inCtorFoo) (PEq (TLit True) (proj boolOverlapIdx)))
+              UKeep
+              []
+              Start
+          ]
+        _ -> [],
+      initial = Start,
+      initialRegs = RCons (Proxy @"x") False RNil,
+      isFinal = const False
+    }
+
 spec :: Spec
 spec = do
   describe "validateTransducer (pure, no solver)" $ do
@@ -269,9 +405,57 @@ spec = do
     it "mutually-exclusive PInCtor guards yield no determinism warning" $
       checkTransitionDeterminismSym cleanT `shouldBe` []
 
-    it "catches a PTop-vs-PInCtor overlap the pure path cannot prove" $ do
-      checkTransitionDeterminismPure symOverlapT `shouldBe` []
+    it "agrees with the pure path on a PTop-vs-PInCtor overlap" $ do
+      checkTransitionDeterminismPure symOverlapT `shouldSatisfy` (not . null)
       checkTransitionDeterminismSym symOverlapT `shouldSatisfy` (not . null)
+
+  describe "provable overlap through PAnd spines" $ do
+    let determinismWarningsOnly = filter isDeterminismWarning
+        isDeterminismWarning (NondeterministicPair {}) = True
+        isDeterminismWarning _ = False
+        warningPair warning = (dwSource warning, dwEdgeA warning, dwEdgeB warning)
+        pureIsSubsetOfSymbolic fixture = do
+          let purePairs = map warningPair (checkTransitionDeterminismPure fixture)
+              symbolicPairs = map warningPair (checkTransitionDeterminismSym fixture)
+          purePairs `shouldSatisfy` all (`elem` symbolicPairs)
+
+    it "finds the motivating same-constructor integral overlap" $ do
+      determinismWarningsOnly
+        (validateTransducer defaultValidationOptions motivatingOverlapT)
+        `shouldBe` [ NondeterministicPair
+                       { tvwSource = Start,
+                         tvwEdgeA = 0,
+                         tvwEdgeB = 1,
+                         tvwInCtor = Just "Foo",
+                         tvwDetail =
+                           "edges #0 and #1 out of Start have overlapping guards"
+                       }
+                   ]
+
+    it "does not warn for disjoint integral intervals" $ do
+      checkTransitionDeterminismPure disjointOverlapT `shouldBe` []
+      checkTransitionDeterminismPure disjointWord8T `shouldBe` []
+
+    it "uses a mentioned non-integral literal as a concrete witness" $
+      checkTransitionDeterminismPure boolLiteralWitnessT
+        `shouldSatisfy` (not . null)
+
+    it "does not guess through POr or an opaque TApp term" $ do
+      checkTransitionDeterminismPure unknownOrT `shouldBe` []
+      checkTransitionDeterminismPure unknownOpaqueT `shouldBe` []
+
+    it "does not warn across different input constructors" $
+      checkTransitionDeterminismPure differentCtorT `shouldBe` []
+
+    it "keeps every pure warning inside the symbolic result" $ do
+      mapM_
+        pureIsSubsetOfSymbolic
+        [ motivatingOverlapT,
+          disjointOverlapT,
+          unknownOrT,
+          unknownOpaqueT,
+          differentCtorT
+        ]
 
   describe "checkDeadEdgesSym (z3-backed)" $ do
     it "flags a literal-PBot guard as unsatisfiable in isolation" $ do

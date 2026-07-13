@@ -129,17 +129,19 @@ this.
       money type is `Word64` — its fixtures exercise the changed instances).
       The complete core and jitsurei suites passed: 490 and 122 examples.
       2026-07-12.
-- [ ] Milestone 3: implement the spine-walking `provablyOverlap` in
+- [x] Milestone 3: implement the spine-walking `provablyOverlap` in
       `src/Keiki/Core.hs` (atom collection, constructor-consistency, integral
-      interval reasoning, literal-witness probing).
-- [ ] Milestone 3: make `determinismWarnings`'s `overlapCtor` spine-aware so
-      `tvwInCtor` is populated for `PAnd` guards.
-- [ ] Milestone 3: tests in `test/Keiki/ValidationSpec.hs` — true positive on the
+      interval reasoning, literal-witness probing). 2026-07-12.
+- [x] Milestone 3: make `determinismWarnings`'s `overlapCtor` spine-aware so
+      `tvwInCtor` is populated for `PAnd` guards. 2026-07-12.
+- [x] Milestone 3: tests in `test/Keiki/ValidationSpec.hs` — true positive on the
       motivating pair, no warning on provably-disjoint and on unknown-fragment
       pairs, `tvwInCtor` population, and the pure-implies-symbolic agreement check.
-- [ ] Milestone 3: haddock rewrite for `provablyOverlap`,
+      2026-07-12.
+- [x] Milestone 3: haddock rewrite for `provablyOverlap`,
       `checkTransitionDeterminismPure`, and `validateTransducer` documenting the
       exact decidable fragment and pushing the z3 pass as the exact gate.
+      2026-07-12.
 - [ ] Milestone 4: document the `unsafePerformIO` / missing-z3 failure mode on the
       `BoolAlg (SymPred rs ci)` instance; add remaining caveats to
       `validateTransducer`'s haddock; changelog entry; format with
@@ -212,6 +214,19 @@ implementation proceeds.
   0.9 seconds as satisfiable. The complete core suite passed 490 examples and the
   jitsurei suite passed 122, including OrderCart's `Word64` money witnesses; the
   picosecond fallback was not needed.
+- **The stronger pure fragment surfaced no hidden overlap in existing fixtures.**
+  The focused proof suite passed six examples and the complete core suite passed
+  496. The motivating `PAnd (PInCtor Foo) (x > 0)` versus
+  `PAnd (PInCtor Foo) (x > 5)` pair now yields exactly one
+  `NondeterministicPair` with `tvwInCtor = Just "Foo"`; disjoint integral,
+  `POr`, opaque `TApp`, and different-constructor controls remain silent. The
+  executable subset check confirms every pure warning in the fixture matrix is
+  also a z3 warning.
+- **`PTop` versus `PInCtor Foo` is inside the strengthened proof fragment.**
+  Dropping `PTop` leaves one compatible constructor atom, which is an explicit
+  witness to overlap under the same inhabited-schema assumption as the historical
+  bare-guard cases. The pre-existing symbolic-only fixture was corrected to assert
+  that both pure and solver-backed passes report this true positive.
 
 
 ## Decision Log
@@ -292,6 +307,14 @@ implementation proceeds.
   Rationale: sub-second round-trip and overlap regressions pass, as do all 490 core
   and 122 jitsurei examples. No existing consumer depended on truncation, while the
   exact encoding closes the concrete-versus-symbolic gap directly.
+  Date: 2026-07-12.
+- Decision: Treat a `PTop` guard paired with a compatible `PInCtor` guard as a
+  pure, structurally provable overlap.
+  Rationale: the constructor value itself witnesses both guards, so keeping this
+  pair outside the fragment would make the spine walker inconsistent with its
+  `PTop`-dropping rule. The pure-implies-symbolic regression confirms the warning
+  direction, and no warning constructors or validation options changed; current
+  keiro's impact remains behavioral only (a newly reported pair is a real defect).
   Date: 2026-07-12.
 
 
