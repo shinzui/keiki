@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.2.0.0] — 2026-07-13
+
 ### Added
 
 - `Keiki.Symbolic.satResultIsProvablyUnsat` exposes the conservative solver
@@ -56,6 +59,8 @@ and this project adheres to the
   non-definitive solver results now fail conservatively instead of blessing a
   guard pair as disjoint or an edge as dead. These pure-looking APIs still run
   z3 through `unsafePerformIO` and throw if the solver is unavailable.
+- `checkDeadEdgesSym` no longer carries a redundant `Show s` constraint. Relaxing
+  a constraint is source-compatible, so existing call sites need no change.
 - Symbolic encodings for `Word8`, `Word16`, `Word32`, `Word64`, `Int32`, and
   `Int64` now use exact fixed-width SBV values, preserving modular wraparound.
   `UTCTime` now round-trips at its native picosecond resolution instead of

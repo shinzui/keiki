@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.2.0.0] — 2026-07-13
+
 ### Added
 
 - `EqRegFile` and `regFileCodecPropsEq` provide value-level heterogeneous
