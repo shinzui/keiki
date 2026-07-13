@@ -111,11 +111,13 @@ test-suite keiki-test
     Keiki.CompositionMultiEventSpec
     Keiki.CompositionNarySpec
     Keiki.CompositionSpec
+    Keiki.CompositionStatefulSpec
     Keiki.CoreApplyEventsSpec
     Keiki.CoreHiddenInputsGSMSpec
     Keiki.CoreInFlightSpec
     Keiki.CoreSpec
     Keiki.Fixtures.BrokenTailCoverage
+    Keiki.Fixtures.ComposeStateful
     Keiki.Fixtures.CounterPipeline
     Keiki.Fixtures.EmailDelivery
     Keiki.Fixtures.RegisterEmission

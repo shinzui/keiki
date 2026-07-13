@@ -13,6 +13,7 @@ import Keiki.CompositionFeedback1Spec qualified
 import Keiki.CompositionMultiEventSpec qualified
 import Keiki.CompositionNarySpec qualified
 import Keiki.CompositionSpec qualified
+import Keiki.CompositionStatefulSpec qualified
 import Keiki.CoreApplyEventsSpec qualified
 import Keiki.CoreHiddenInputsGSMSpec qualified
 import Keiki.CoreInFlightSpec qualified
@@ -51,6 +52,7 @@ main = hspec $ do
   describe "Keiki.Composition (feedback1, EP-26)" Keiki.CompositionFeedback1Spec.spec
   describe "Keiki.Composition (multi-event, EP-19 M6)" Keiki.CompositionMultiEventSpec.spec
   describe "Keiki.Composition (N-ary codec, EP-48)" Keiki.CompositionNarySpec.spec
+  describe "Keiki.Composition (stateful, EP-74)" Keiki.CompositionStatefulSpec.spec
   describe "Keiki.Core" Keiki.CoreSpec.spec
   describe "Keiki.Core.stepEither (EP-55)" Keiki.StepEitherSpec.spec
   describe "Keiki.Core.applyEvents (EP-20 M2)" Keiki.CoreApplyEventsSpec.spec

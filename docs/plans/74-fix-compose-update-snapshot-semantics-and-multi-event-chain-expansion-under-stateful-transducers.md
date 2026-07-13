@@ -61,8 +61,8 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 here, even if it requires splitting a partially completed task into two ("done" vs.
 "remaining"). This section must always reflect the actual current state of the work.
 
-- [ ] M1: fixture module `test/Keiki/Fixtures/ComposeStateful.hs` written (counter source, last-value sink, two-phase chain sink, wrong-order-guard sink) and registered in `keiki.cabal`
-- [ ] M1: red tests in `test/Keiki/CompositionStatefulSpec.hs` pinning defect 1 (post-update substitution), defect 2 (stale chain registers / wrong path selection), defect 3 (guard-order crash) — each failing against current `master` with the divergence the Context section predicts
+- [x] (2026-07-13 03:33Z) M1: fixture module `test/Keiki/Fixtures/ComposeStateful.hs` written (counter source, last-value sink, two-phase chain sink, wrong-order-guard sink) and registered in `keiki.cabal`
+- [x] (2026-07-13 03:33Z) M1: red tests in `test/Keiki/CompositionStatefulSpec.hs` pinning defect 1 (post-update substitution), defect 2 (stale chain registers / wrong path selection), defect 3 (guard-order crash) — each fails against current `master` with the divergence the Context section predicts and remains committed behind its milestone `pendingWith`
 - [ ] M2 (prototyping): snapshot-semantics prototype for `runUpdate` in `src/Keiki/Core.hs`; full suite run; consumer blast-radius survey re-verified; promote/discard decision recorded in the Decision Log
 - [ ] M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics
 - [ ] M4: defect 2 fixed — chain expansion threads symbolic composed terms (or the honest restriction is implemented and documented); two-phase chain test green
@@ -108,6 +108,12 @@ implementation. Provide concise evidence.
   (`src/Keiki/Symbolic.hs:439-440`), as do the pretty/mermaid renderers — can crash on
   composite edges that runtime evaluation would never crash on. The fix therefore aims
   for walker-inert totality, not just runtime order.
+- (Implementation M1, 2026-07-12) Activating all three stateful regressions against
+  the pre-fix tree reproduced the review exactly: the counter sink stored `1` instead
+  of `0`, the two-phase chain ended at phase `1` instead of `2`, and the wrong-order
+  guard raised the `TInpCtorField over M2B but ... produced M2A` substitution error.
+  Restoring the three `pendingWith` guards left the focused suite at nine examples,
+  zero failures, and three pending tests.
 
 
 ## Decision Log
