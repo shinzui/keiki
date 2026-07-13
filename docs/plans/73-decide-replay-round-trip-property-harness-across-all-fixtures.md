@@ -61,15 +61,15 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 here, even if it requires splitting a partially completed task into two ("done" vs.
 "remaining"). This section must always reflect the actual current state of the work.
 
-- [ ] Preflight: confirm EP-71 status in the master plan registry; enumerate the fixture modules it added under `test/Keiki/Fixtures/`
-- [ ] M1: add `QuickCheck ^>=2.15` to the `keiki-test` suite in `keiki.cabal`
-- [ ] M1: create `test/Keiki/RoundTrip.hs` (fixture bundle, complete-run forward driver, whole-log property, chunked property, validation sanity check, counterexample rendering)
-- [ ] M1: add `Ord` to the vertex enums of the two existing fixtures if EP-71 has not already
-- [ ] M1: create `test/Keiki/RoundTripSpec.hs` with bundles (generator + observation) for `Keiki.Fixtures.EmailDelivery` and `Keiki.Fixtures.UserRegistration`; wire into `test/Spec.hs`
-- [ ] M1: deterministic invalid-fixture spec pairing `StateChangingEpsilon` with the replay divergence it prevents
-- [ ] M2: tamper-case vocabulary in `test/Keiki/RoundTrip.hs`; tamper cases for both existing fixtures (drop, swap, duplicate, mid-chain truncation, foreign splice)
-- [ ] M3: `test/Keiki/Fixtures/BrokenTailCoverage.hs` (deliberately head-unrecoverable); teeth spec via `expectFailure` paired with a validator-flags-it assertion
-- [ ] M4: bundles for every EP-71 fixture (stateful `TReg`-emitting and multi-event ones); harness green over all of `test/Keiki/Fixtures/`
+- [x] Preflight: confirm EP-71 status in the master plan registry; enumerate the fixture modules it added under `test/Keiki/Fixtures/`
+- [x] M1: add `QuickCheck ^>=2.15` to the `keiki-test` suite in `keiki.cabal`
+- [x] M1: create `test/Keiki/RoundTrip.hs` (fixture bundle, complete-run forward driver, whole-log property, chunked property, validation sanity check, counterexample rendering)
+- [x] M1: add `Ord` to the vertex enums of the two existing fixtures if EP-71 has not already
+- [x] M1: create `test/Keiki/RoundTripSpec.hs` with bundles (generator + observation) for `Keiki.Fixtures.EmailDelivery` and `Keiki.Fixtures.UserRegistration`; wire into `test/Spec.hs`
+- [x] M1: deterministic invalid-fixture spec pairing `StateChangingEpsilon` with the replay divergence it prevents
+- [x] M2: tamper-case vocabulary in `test/Keiki/RoundTrip.hs`; tamper cases for both existing fixtures (drop, swap, duplicate, mid-chain truncation, foreign splice)
+- [x] M3: `test/Keiki/Fixtures/BrokenTailCoverage.hs` (deliberately head-unrecoverable); teeth spec via `expectFailure` paired with a validator-flags-it assertion
+- [x] M4: bundles for every EP-71 fixture (stateful `TReg`-emitting and multi-event ones); harness green over all of `test/Keiki/Fixtures/`
 - [ ] M5: verbatim harness copy at `jitsurei/test/Jitsurei/RoundTrip.hs`; bundles for the 8 jitsurei aggregates (`UserRegistrationV0` under the teeth group); drift-check documented
 - [ ] M6: measure suite wall-clock, pin property counts, document the deep-run command; run `nix fmt -- --no-cache`; update master plan registry row 73 and its Progress checklist
 
@@ -106,7 +106,13 @@ observations about the code, not choices):
   `confirmCode` field for the hidden-input demonstration — so it belongs in the teeth
   group (expected failure), not the green group.
 
-(No implementation-time entries yet.)
+- The preflight found five pre-existing fixture modules. `RegisterEmission` is the
+  stateful `TReg`-emitting replay fixture and `SplitCoverage.fixed` is the
+  head-recoverable multi-event fixture added by EP-71; both pass the green harness.
+  `CounterPipeline` predates EP-71 and its output carries the command only inside a
+  derived arithmetic term, which `solveOutput` deliberately cannot invert. The
+  validator reports it and the harness falsifies it, so `stageA` is represented in
+  the teeth group instead of making a false green claim.
 
 
 ## Decision Log

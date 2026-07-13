@@ -38,7 +38,7 @@ newtype MsgC = MsgC Int deriving stock (Eq, Show)
 newtype MsgD = MsgD Int deriving stock (Eq, Show)
 
 -- | Every stage is a one-vertex machine that loops on itself.
-data StageVertex = StageVertex deriving stock (Eq, Show, Bounded, Enum)
+data StageVertex = StageVertex deriving stock (Eq, Ord, Show, Bounded, Enum)
 
 type ARegs = '[ '("regA", Int)]
 
