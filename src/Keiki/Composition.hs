@@ -92,6 +92,7 @@ module Keiki.Composition
   )
 where
 
+import Data.Type.Equality ((:~:) (Refl))
 import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
@@ -891,6 +892,98 @@ outTerm3At3 = liftROutAlt . liftROutAlt
 
 -- * Multi-event composition (EP-19 M6) -----------------------------------
 
+-- | A symbolic write performed by an earlier t2 step in a multi-event
+-- composition path. The value term has already been substituted into the
+-- composite register/input domain. Its input-field schema is existential
+-- because updates never expose that schema.
+data PendingWrite rs ci where
+  PendingWrite ::
+    (KnownSymbol s) =>
+    IndexN s rs r ->
+    Term rs ci ifs r ->
+    PendingWrite rs ci
+
+-- | Compare a slot-name-tagged update index with a positional register
+-- index. Equal positions refine the stored value types to equality.
+matchIndex :: IndexN s rs a -> Index rs b -> Maybe (a :~: b)
+matchIndex IZ ZIdx = Just Refl
+matchIndex (IS i) (SIdx j) = matchIndex i j
+matchIndex _ _ = Nothing
+
+-- | Look up the most recent symbolic write to a register. The environment
+-- is newest-first; 'unsafeCoerceTerm' only realigns the existential input
+-- field schema, under the same justification used by 'substTerm'.
+lookupPending ::
+  Index rs r ->
+  [PendingWrite rs ci] ->
+  Maybe (Term rs ci ifs r)
+lookupPending _ [] = Nothing
+lookupPending ix (PendingWrite pendingIx pendingTerm : rest) =
+  case matchIndex pendingIx ix of
+    Just Refl -> Just (unsafeCoerceTerm pendingTerm)
+    Nothing -> lookupPending ix rest
+
+-- | Inline earlier t2 writes so a later chain step observes the symbolic
+-- register state that sequential execution would have produced.
+applyEnvTerm ::
+  [PendingWrite rs ci] ->
+  Term rs ci ifs r ->
+  Term rs ci ifs r
+applyEnvTerm _ (TLit r) = TLit r
+applyEnvTerm env (TReg ix) = maybe (TReg ix) id (lookupPending ix env)
+applyEnvTerm _ (TInpCtorField ic ix) = TInpCtorField ic ix
+applyEnvTerm env (TApp1 f term) = TApp1 f (applyEnvTerm env term)
+applyEnvTerm env (TArith op a b) =
+  TArith op (applyEnvTerm env a) (applyEnvTerm env b)
+applyEnvTerm env (TApp2 f a b) =
+  TApp2 f (applyEnvTerm env a) (applyEnvTerm env b)
+
+applyEnvPred ::
+  [PendingWrite rs ci] ->
+  HsPred rs ci ->
+  HsPred rs ci
+applyEnvPred _ PTop = PTop
+applyEnvPred _ PBot = PBot
+applyEnvPred env (PAnd a b) = PAnd (applyEnvPred env a) (applyEnvPred env b)
+applyEnvPred env (POr a b) = POr (applyEnvPred env a) (applyEnvPred env b)
+applyEnvPred env (PNot pred') = PNot (applyEnvPred env pred')
+applyEnvPred env (PEq a b) = PEq (applyEnvTerm env a) (applyEnvTerm env b)
+applyEnvPred env (PCmp op a b) =
+  PCmp op (applyEnvTerm env a) (applyEnvTerm env b)
+applyEnvPred _ (PInCtor ic) = PInCtor ic
+
+applyEnvUpdate ::
+  [PendingWrite rs ci] ->
+  Update rs w ci ->
+  Update rs w ci
+applyEnvUpdate _ UKeep = UKeep
+applyEnvUpdate env (USet ix term) = USet ix (applyEnvTerm env term)
+applyEnvUpdate env (UCombine a b) =
+  UCombine (applyEnvUpdate env a) (applyEnvUpdate env b)
+
+applyEnvOutFields ::
+  [PendingWrite rs ci] ->
+  OutFields rs ci ifs fs ->
+  OutFields rs ci ifs fs
+applyEnvOutFields _ OFNil = OFNil
+applyEnvOutFields env (OFCons term rest) =
+  OFCons (applyEnvTerm env term) (applyEnvOutFields env rest)
+
+applyEnvOut ::
+  [PendingWrite rs ci] ->
+  OutTerm rs ci co ->
+  OutTerm rs ci co
+applyEnvOut env (OPack ic wc fields) =
+  OPack ic wc (applyEnvOutFields env fields)
+
+-- | Collect one t2 step's writes newest-first. The right half is collected
+-- before the left so an internal raw 'UCombine' that repeats a slot matches
+-- 'runUpdate''s rightmost-write-wins application order.
+pendingWrites :: Update rs w ci -> [PendingWrite rs ci]
+pendingWrites UKeep = []
+pendingWrites (USet ix term) = [PendingWrite ix term]
+pendingWrites (UCombine a b) = pendingWrites b ++ pendingWrites a
+
 -- | An in-progress t2-edge path through a multi-event 'compose'
 -- expansion. Carries the accumulated guard (the lifted @e1@-guard
 -- conjoined with each consumed t2-edge's substituted guard), the
@@ -907,6 +1000,7 @@ data PartialPath rs1 rs2 ci1 co s2
       !(HsPred (Append rs1 rs2) ci1) -- accumulated guard
       !(Update (Append rs1 rs2) w ci1) -- chained update (existential w)
       ![OutTerm (Append rs1 rs2) ci1 co] -- accumulated outputs in order
+      ![PendingWrite (Append rs1 rs2) ci1] -- earlier t2 writes, newest first
       !s2 -- t2-state after consuming so far
 
 -- * compose ----------------------------------------------------------------
@@ -1063,6 +1157,7 @@ compose t1 t2 =
           (weakenLPred @rs1 @rs2 (guard e1))
           (weakenLUpdate @rs1 @rs2 u1)
           []
+          []
           s2
 
     -- \| Enumerate all t2-edge paths that consume the supplied
@@ -1081,9 +1176,9 @@ compose t1 t2 =
     expandPaths [] path = [path]
     expandPaths (o : rest) path =
       case path of
-        PartialPath g u outs s2 ->
+        PartialPath g u outs env s2 ->
           concatMap
-            (\e2 -> expandPaths rest (stepPath g u outs o s2 e2))
+            (\e2 -> expandPaths rest (stepPath g u outs env o s2 e2))
             (edgesOut t2 s2)
 
     -- \| Extend a path by one t2-edge consuming one mid-symbol.
@@ -1095,17 +1190,28 @@ compose t1 t2 =
       HsPred (Append rs1 rs2) ci1 ->
       Update (Append rs1 rs2) w ci1 ->
       [OutTerm (Append rs1 rs2) ci1 co] ->
+      [PendingWrite (Append rs1 rs2) ci1] ->
       OutTerm rs1 ci1 mid ->
       s2 ->
       Edge (HsPred rs2 mid) rs2 mid co s2 ->
       PartialPath rs1 rs2 ci1 co s2
-    stepPath g u outs o _s2 e2 = case e2 of
+    stepPath g u outs env o _s2 e2 = case e2 of
       Edge {update = u2} ->
-        PartialPath
-          (PAnd g (substPred @rs1 @rs2 (guard e2) o))
-          (UCombine u (substUpdate @rs1 @rs2 u2 o))
-          (outs ++ map (\o2 -> substOut @rs1 @rs2 o2 o) (output e2))
-          (target e2)
+        let stepGuard =
+              applyEnvPred env (substPred @rs1 @rs2 (guard e2) o)
+            stepUpdate =
+              applyEnvUpdate env (substUpdate @rs1 @rs2 u2 o)
+            stepOutputs =
+              map
+                (applyEnvOut env . (\o2 -> substOut @rs1 @rs2 o2 o))
+                (output e2)
+            nextEnv = pendingWrites stepUpdate ++ env
+         in PartialPath
+              (PAnd g stepGuard)
+              (UCombine u stepUpdate)
+              (outs ++ stepOutputs)
+              nextEnv
+              (target e2)
 
     -- \| Convert a fully-expanded path to a composite edge by
     -- borrowing t1's @target@ for the composite's target.
@@ -1118,7 +1224,7 @@ compose t1 t2 =
         ci1
         co
         (Composite s1 s2)
-    finalizePath e1 (PartialPath g u outs s2End) =
+    finalizePath e1 (PartialPath g u outs _env s2End) =
       Edge
         { guard = g,
           update = u,

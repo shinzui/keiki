@@ -20,7 +20,6 @@ spec = do
 
   describe "compose pairSource twoPhaseSink" $
     it "fires phase 1 then phase 2 and ends at phase 2" $ do
-      pendingWith "EP-74 M4"
       let pipeline = compose pairSource twoPhaseSink
       case step pipeline (initial pipeline, initialRegs pipeline) Go of
         Just (_, regs, outputs) -> do

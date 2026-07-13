@@ -63,9 +63,9 @@ here, even if it requires splitting a partially completed task into two ("done" 
 
 - [x] (2026-07-13 03:33Z) M1: fixture module `test/Keiki/Fixtures/ComposeStateful.hs` written (counter source, last-value sink, two-phase chain sink, wrong-order-guard sink) and registered in `keiki.cabal`
 - [x] (2026-07-13 03:33Z) M1: red tests in `test/Keiki/CompositionStatefulSpec.hs` pinning defect 1 (post-update substitution), defect 2 (stale chain registers / wrong path selection), defect 3 (guard-order crash) — each fails against current `master` with the divergence the Context section predicts and remains committed behind its milestone `pendingWith`
-- [x] (2026-07-13 03:40Z) M2 (prototyping): snapshot-semantics prototype for `runUpdate` in `src/Keiki/Core.hs`; full suite green; current-keiro and in-repo consumer blast-radius survey re-verified; promote decision recorded in the Decision Log
-- [x] (2026-07-13 03:40Z) M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics; `alternative` and `feedback1` audit complete
-- [ ] M4: defect 2 fixed — chain expansion threads symbolic composed terms (or the honest restriction is implemented and documented); two-phase chain test green
+- [x] (2026-07-13 03:37Z) M2 (prototyping): snapshot-semantics prototype for `runUpdate` in `src/Keiki/Core.hs`; full suite green; current-keiro and in-repo consumer blast-radius survey re-verified; promote decision recorded in the Decision Log
+- [x] (2026-07-13 03:37Z) M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics; `alternative` and `feedback1` audit complete
+- [x] (2026-07-13 03:39Z) M4: defect 2 fixed — chain expansion threads symbolic composed terms through a newest-first pending-write environment; two-phase chain and pre-existing stateless multi-event tests green
 - [ ] M5: defect 3 fixed — `substTerm` total via inert poison, guard leaves with mismatched input reads substitute to `PBot`; wrong-order-guard test green; structural walkers (symbolic check, pretty printer, replay) verified crash-free on cross-constructor composites
 - [ ] M6: `test/Keiki/CompositionHomomorphismSpec.hs` — bounded-exhaustive semantic-homomorphism suite green (single-mid, multi-event, reject-agreement)
 - [ ] M7: documentation — `feedback1` haddock nesting constraint (defect 4), `compose` haddock, `docs/research/composition-combinators-design.md`, `docs/research/gsm-widening-design.md` §5, `CHANGELOG.md`; master plan registry row and progress box updated
@@ -121,6 +121,12 @@ implementation. Provide concise evidence.
   in keiki/jitsurei is either a same-slot increment or a rendering-only fixture.
   Activating the counter composition regression now leaves `srcCount = 1`, stores
   `sinkLast = 0`, and emits `OutVal 0` as sequential execution does.
+- (Implementation M4, 2026-07-13) The planned typed environment was tractable without
+  broadening the unsafe boundary: simultaneous induction over `IndexN` and `Index`
+  produces an `(:~:)` witness for equal slots, and the existing documented
+  `unsafeCoerceTerm` is needed only to hide the pending term's existential input-field
+  schema. The active two-phase regression now emits `[Stage1 10, Stage2 20]` and ends
+  at phase `2`; the twelve focused multi-event/replay/rendering examples remain green.
 
 
 ## Decision Log
@@ -209,6 +215,16 @@ Record every decision made while working on the plan.
   audit also found `alternative` only weakens/lifts each arm's own update, while
   `feedback1` is defined entirely as two `compose` calls, so neither needs a separate
   update-boundary repair.
+  Date: 2026-07-13
+
+- Decision: ship symbolic pending-write threading for multi-event chain expansion;
+  do not take the static-restriction fallback, and retain duplicate composite writes.
+  Rationale: `PendingWrite` plus the type-safe `matchIndex` witness lets each later t2
+  guard, update, and output inline the newest prior t2 write before the composite AST
+  is finalized. The only coercion is the same input-field-schema realignment already
+  documented for substitution. Retaining the raw duplicate writes preserves the
+  chain's visible structure, while snapshot `runUpdate` applies them left-to-right so
+  the later step wins exactly as sequential execution does.
   Date: 2026-07-13
 
 
