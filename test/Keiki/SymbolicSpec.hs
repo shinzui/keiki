@@ -207,6 +207,25 @@ proveP p = do
 
 spec :: Spec
 spec = do
+  describe "Either-arm predicates" $ do
+    let leftTinyFoo :: InCtor (Either TinyCmd Bool) '[]
+        leftTinyFoo =
+          InCtor
+            { icName = "TinyFoo",
+              icMatch = \case Left (TinyFoo _) -> Just RNil; _ -> Nothing,
+              icBuild = \RNil -> Left (TinyFoo 0)
+            }
+
+    it "proves Left and Right arms mutually exclusive" $
+      symIsBot
+        (PAnd PLeftArm PRightArm :: HsPred '[] (Either TinyCmd Bool))
+        `shouldBe` True
+
+    it "keeps an arm test satisfiable alongside a constructor test" $
+      symIsBot
+        (PAnd PLeftArm (PInCtor leftTinyFoo) :: HsPred '[] (Either TinyCmd Bool))
+        `shouldBe` False
+
   describe "discoverSym (curated registry)" $ do
     it "discovers Sym Bool" $ symKnown (Proxy @Bool) `shouldBe` True
     it "discovers Sym Int" $ symKnown (Proxy @Int) `shouldBe` True

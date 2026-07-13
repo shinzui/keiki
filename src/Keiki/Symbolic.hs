@@ -337,11 +337,14 @@ symFree = SBV.free
 -- be true, and two reads of the same register (or input field) share
 -- one solver variable.
 --
--- Two pieces of state are shared:
+-- Three pieces of state are shared:
 --
 --   * 'seInputCtor' — the symbolic input-constructor tag, so 'PInCtor'
 --     atoms over distinct constructors are recognized as mutually
 --     unsatisfiable.
+--   * 'seInputArm' — an independent discriminator for 'PLeftArm' and
+--     'PRightArm'. It is separate from constructor names so both facts can
+--     be asserted by the same guard.
 --   * 'seVarCache' — a per-translation memo cache (EP-42) keyed by the
 --     deterministic variable name ('TReg' allocates @"reg/\<slot\>"@,
 --     'TInpCtorField' allocates @"inp/\<ctor\>/\<field\>"@). The first
@@ -359,6 +362,8 @@ data SymEnv = SymEnv
     --     recognizes that two such constraints with distinct names are
     --     mutually unsatisfiable.
     seInputCtor :: SBV.SBV String,
+    -- | @True@ denotes the outer 'Left' arm; @False@ denotes 'Right'.
+    seInputArm :: SBV.SBool,
     -- | Memo cache: maps a deterministic variable name ("reg/\<slot\>"
     --     or "inp/\<ctor\>/\<field\>") to the single SBV variable allocated
     --     for it during this predicate translation. Lazily populated on
@@ -385,8 +390,9 @@ data SomeSBV where
 mkSymEnv :: SBV.Symbolic SymEnv
 mkSymEnv = do
   ctor <- SBV.free "inputCtor"
+  arm <- SBV.free "inputArm"
   cache <- liftIO (newIORef Map.empty)
-  pure (SymEnv ctor cache)
+  pure (SymEnv ctor arm cache)
 
 -- * Translation -------------------------------------------------------------
 
@@ -494,6 +500,8 @@ indexName (SIdx i) = indexName i
 --   * 'PInCtor' emits @seInputCtor .== literal (icName ic)@; the
 --     shared 'seInputCtor' makes constructor-mutual-exclusion
 --     decidable.
+--   * 'PLeftArm' / 'PRightArm' assert the independent 'seInputArm'
+--     discriminator.
 --   * 'PCmp' tries 'discoverSymOrd' on its operand type; on a hit it
 --     emits the matching SBV comparison ('SBV..<' \/ '.<=' \/ '.>' \/
 --     '.>=') between the two translated terms; on a miss it emits a
@@ -510,6 +518,8 @@ translatePred env = go
     go (PNot p) = SBV.sNot <$> go p
     go (PEq a b) = goEq a b
     go (PInCtor ic) = pure (seInputCtor env SBV..== SBV.literal (icName ic))
+    go PLeftArm = pure (seInputArm env)
+    go PRightArm = pure (SBV.sNot (seInputArm env))
     go (PCmp op a b) = goCmp op a b
 
     goEq ::

@@ -4,11 +4,15 @@
 -- slot-name domains; the body uses raw 'UCombine' (decision logged
 -- in EP-18) so GHC sees the constraint as unused. Same reasoning as
 -- "Keiki.Core"'s 'combine'.
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-partial-fields -Wno-redundant-constraints #-}
 
 -- | Sequential composition of two 'SymTransducer's.
 --
--- The single user-facing value is 'compose'. Given a transducer @t1@
+-- Stability: experimental. The categorical representation may change before
+-- its full law contract is resolved. For validated aggregate pipelines prefer
+-- 'composeChecked'; 'compose' remains the unchecked construction primitive.
+--
+-- Given a transducer @t1@
 -- whose output alphabet is @mid@ and a transducer @t2@ whose input
 -- alphabet is also @mid@, @compose t1 t2@ is the composite transducer
 -- whose input is t1's input, whose output is t2's output, whose
@@ -37,6 +41,9 @@ module Keiki.Composition
 
     -- * Sequential composition
     compose,
+    ComposeAlignmentWarning (..),
+    checkComposeAlignment,
+    composeChecked,
 
     -- * Disjoint-input dispatch
     alternative,
@@ -99,6 +106,8 @@ module Keiki.Composition
   )
 where
 
+import Data.List (isInfixOf, isSuffixOf, nub)
+import Data.Set qualified as Set
 import Data.Type.Equality ((:~:) (Refl))
 import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
@@ -274,6 +283,8 @@ weakenLPred (PEq a b) =
     (weakenLTerm @rs1 @rs2 a)
     (weakenLTerm @rs1 @rs2 b)
 weakenLPred (PInCtor ic) = PInCtor ic
+weakenLPred PLeftArm = PLeftArm
+weakenLPred PRightArm = PRightArm
 weakenLPred (PCmp op a b) =
   PCmp
     op
@@ -347,6 +358,8 @@ weakenRPred (PEq a b) =
     (weakenRTerm @rs1 @rs2 a)
     (weakenRTerm @rs1 @rs2 b)
 weakenRPred (PInCtor ic) = PInCtor ic
+weakenRPred PLeftArm = PLeftArm
+weakenRPred PRightArm = PRightArm
 weakenRPred (PCmp op a b) =
   PCmp
     op
@@ -573,6 +586,42 @@ substPred (PInCtor ic2) o1 =
     OPack _ wc1 _
       | icName ic2 == wcName wc1 -> PTop
       | otherwise -> PBot
+substPred PLeftArm o1 = substLeftArmPred @rs1 @rs2 o1
+substPred PRightArm o1 = substRightArmPred @rs1 @rs2 o1
+
+-- | Preserve concrete arm tests when a sum-valued intermediate is
+-- substituted away. The wire builder reconstructs the intermediate value
+-- from a structural term for its fields; the resulting opaque term is exact
+-- for forward evaluation (and conservatively opaque to the solver).
+substLeftArmPred ::
+  forall rs1 rs2 ci1 mid1 mid2.
+  (WeakenR rs1) =>
+  OutTerm rs1 ci1 (Either mid1 mid2) ->
+  HsPred (Append rs1 rs2) ci1
+substLeftArmPred (OPack _ wc fields) =
+  PEq
+    ( TApp1
+        (\fs -> case wcBuild wc fs of Left _ -> True; Right _ -> False)
+        (weakenLTerm @rs1 @rs2 (outFieldsAsTerm fields))
+    )
+    (TLit True)
+
+substRightArmPred ::
+  forall rs1 rs2 ci1 mid1 mid2.
+  (WeakenR rs1) =>
+  OutTerm rs1 ci1 (Either mid1 mid2) ->
+  HsPred (Append rs1 rs2) ci1
+substRightArmPred (OPack _ wc fields) =
+  PEq
+    ( TApp1
+        (\fs -> case wcBuild wc fs of Left _ -> False; Right _ -> True)
+        (weakenLTerm @rs1 @rs2 (outFieldsAsTerm fields))
+    )
+    (TLit True)
+
+outFieldsAsTerm :: OutFields rs ci ifs fs -> Term rs ci ifs fs
+outFieldsAsTerm OFNil = TLit ()
+outFieldsAsTerm (OFCons term rest) = TApp2 (,) term (outFieldsAsTerm rest)
 
 -- | Substitute a t2-side 'Update' against t1's edge output. The
 -- slot-name index @w@ is preserved by substitution — substituting
@@ -742,6 +791,8 @@ liftLPredAlt (PEq a b) =
     (liftLTermAlt @rs @ci1 @ci2 a)
     (liftLTermAlt @rs @ci1 @ci2 b)
 liftLPredAlt (PInCtor ic) = PInCtor (leftInCtor ic)
+liftLPredAlt PLeftArm = PInCtor (liftedArmInCtor "left" (\case Left value -> Just value; Right _ -> Nothing) True)
+liftLPredAlt PRightArm = PInCtor (liftedArmInCtor "left" (\case Left value -> Just value; Right _ -> Nothing) False)
 liftLPredAlt (PCmp op a b) =
   PCmp
     op
@@ -769,11 +820,28 @@ liftRPredAlt (PEq a b) =
     (liftRTermAlt @rs @ci1 @ci2 a)
     (liftRTermAlt @rs @ci1 @ci2 b)
 liftRPredAlt (PInCtor ic) = PInCtor (rightInCtor ic)
+liftRPredAlt PLeftArm = PInCtor (liftedArmInCtor "right" (\case Left _ -> Nothing; Right value -> Just value) True)
+liftRPredAlt PRightArm = PInCtor (liftedArmInCtor "right" (\case Left _ -> Nothing; Right value -> Just value) False)
 liftRPredAlt (PCmp op a b) =
   PCmp
     op
     (liftRTermAlt @rs @ci1 @ci2 a)
     (liftRTermAlt @rs @ci1 @ci2 b)
+
+liftedArmInCtor ::
+  String ->
+  (outer -> Maybe (Either inner1 inner2)) ->
+  Bool ->
+  InCtor outer '[]
+liftedArmInCtor outerName project wantLeft =
+  InCtor
+    { icName = "keiki#" <> outerName <> "#" <> (if wantLeft then "leftArm#lmapped" else "rightArm#lmapped"),
+      icMatch = \outer -> case project outer of
+        Just (Left _) | wantLeft -> Just RNil
+        Just (Right _) | not wantLeft -> Just RNil
+        _ -> Nothing,
+      icBuild = \_ -> error "Keiki.Composition: nested lifted arm predicates cannot rebuild inputs"
+    }
 
 -- | Lift an 'Update' from the left side's input alphabet to
 -- @Either ci1 ci2@. The slot-name index @w@ is preserved; only the
@@ -985,6 +1053,8 @@ applyEnvPred env (PEq a b) = PEq (applyEnvTerm env a) (applyEnvTerm env b)
 applyEnvPred env (PCmp op a b) =
   PCmp op (applyEnvTerm env a) (applyEnvTerm env b)
 applyEnvPred _ (PInCtor ic) = PInCtor ic
+applyEnvPred _ PLeftArm = PLeftArm
+applyEnvPred _ PRightArm = PRightArm
 
 applyEnvUpdate ::
   [PendingWrite rs ci] ->
@@ -1038,6 +1108,238 @@ data PartialPath rs1 rs2 ci1 co s2
       !s2 -- t2-state after consuming so far
 
 -- * compose ----------------------------------------------------------------
+
+-- | A conservative structural fact discovered at a composition boundary.
+-- The checker reports concrete name/position mismatches. Its reachability scan
+-- is conservative, so exotic Boolean guards can produce warnings on a
+-- semantically unreachable path or hide an expectation the structural walker
+-- cannot expose. Every warning is a reviewable structural fact, but an empty
+-- result is not a proof about arbitrary opaque guard logic.
+data ComposeAlignmentWarning s1 s2
+  = UnconsumedWireOutput
+      { cawT1Edge :: EdgeRef s1,
+        cawWireName :: String,
+        cawT2Vertex :: s2
+      }
+  | UnmatchedInCtorExpectation
+      { cawT2Edge :: EdgeRef s2,
+        cawInCtorName :: String,
+        cawT1Vertex :: s1
+      }
+  | FieldArityMismatch
+      { cawT1EdgeA :: EdgeRef s1,
+        cawT2EdgeA :: EdgeRef s2,
+        cawSharedName :: String,
+        cawReadPosition :: Int,
+        cawAvailableFields :: Int
+      }
+  | PoisonedNameInComposition
+      { cawName :: String,
+        cawSide :: String
+      }
+  deriving stock (Eq, Show)
+
+data EmittedName s = EmittedName
+  { emittedEdge :: EdgeRef s,
+    emittedName :: String,
+    emittedArity :: Int
+  }
+
+data ExpectedName s = ExpectedName
+  { expectedEdge :: EdgeRef s,
+    expectedName :: String,
+    expectedPosition :: Maybe Int
+  }
+
+outFieldsLength :: OutFields rs ci ifs fs -> Int
+outFieldsLength OFNil = 0
+outFieldsLength (OFCons _ rest) = 1 + outFieldsLength rest
+
+edgeEmittedNames :: s -> Int -> Edge p rs ci co s -> [EmittedName s]
+edgeEmittedNames source edgeIx edge =
+  [ EmittedName
+      { emittedEdge = EdgeRef source edgeIx,
+        emittedName = wcName wc,
+        emittedArity = outFieldsLength fields
+      }
+  | OPack _ wc fields <- output edge
+  ]
+
+termExpectedReads :: Term rs ci ifs r -> [(String, Int)]
+termExpectedReads (TLit _) = []
+termExpectedReads (TReg _) = []
+termExpectedReads (TInpCtorField ic ix) = [(icName ic, indexInt ix)]
+termExpectedReads (TApp1 _ term) = termExpectedReads term
+termExpectedReads (TApp2 _ a b) = termExpectedReads a ++ termExpectedReads b
+termExpectedReads (TArith _ a b) = termExpectedReads a ++ termExpectedReads b
+
+predCtorAtoms :: HsPred rs ci -> [String]
+predCtorAtoms PTop = []
+predCtorAtoms PBot = []
+predCtorAtoms (PAnd a b) = predCtorAtoms a ++ predCtorAtoms b
+predCtorAtoms (POr a b) = predCtorAtoms a ++ predCtorAtoms b
+predCtorAtoms (PNot pred') = predCtorAtoms pred'
+predCtorAtoms (PEq _ _) = []
+predCtorAtoms (PInCtor ic) = [icName ic]
+predCtorAtoms PLeftArm = []
+predCtorAtoms PRightArm = []
+predCtorAtoms (PCmp _ _ _) = []
+
+predExpectedReads :: HsPred rs ci -> [(String, Int)]
+predExpectedReads PTop = []
+predExpectedReads PBot = []
+predExpectedReads (PAnd a b) = predExpectedReads a ++ predExpectedReads b
+predExpectedReads (POr a b) = predExpectedReads a ++ predExpectedReads b
+predExpectedReads (PNot pred') = predExpectedReads pred'
+predExpectedReads (PEq a b) = termExpectedReads a ++ termExpectedReads b
+predExpectedReads (PInCtor _) = []
+predExpectedReads PLeftArm = []
+predExpectedReads PRightArm = []
+predExpectedReads (PCmp _ a b) = termExpectedReads a ++ termExpectedReads b
+
+updateExpectedReads :: Update rs w ci -> [(String, Int)]
+updateExpectedReads UKeep = []
+updateExpectedReads (USet _ term) = termExpectedReads term
+updateExpectedReads (UCombine a b) = updateExpectedReads a ++ updateExpectedReads b
+
+outFieldsExpectedReads :: OutFields rs ci ifs fs -> [(String, Int)]
+outFieldsExpectedReads OFNil = []
+outFieldsExpectedReads (OFCons term rest) =
+  termExpectedReads term ++ outFieldsExpectedReads rest
+
+edgeExpectedNames :: s -> Int -> Edge (HsPred rs ci) rs ci co s -> [ExpectedName s]
+edgeExpectedNames source edgeIx Edge {guard = edgeGuard, update = edgeUpdate, output = edgeOutput} =
+  [ ExpectedName (EdgeRef source edgeIx) name Nothing
+  | name <- predCtorAtoms edgeGuard
+  ]
+    ++ [ ExpectedName (EdgeRef source edgeIx) name (Just position)
+       | (name, position) <-
+           predExpectedReads edgeGuard
+             ++ updateExpectedReads edgeUpdate
+             ++ concatMap (\(OPack _ _ fields) -> outFieldsExpectedReads fields) edgeOutput
+       ]
+
+edgeConsumesName :: String -> Edge (HsPred rs ci) rs ci co s -> Bool
+edgeConsumesName name edge =
+  null atoms || name `elem` atoms
+  where
+    atoms = predCtorAtoms (guard edge)
+
+isPoisonedBoundaryName :: String -> Bool
+isPoisonedBoundaryName name =
+  "#lmapped" `isInfixOf` name
+    || "#rmapped" `isInfixOf` name
+    || "_first" `isSuffixOf` name
+
+-- | Check constructor-name and field-position alignment before building a
+-- composite. Reachable vertex pairs are expanded from the two initial
+-- vertices; multi-event outputs advance the downstream machine one symbol
+-- at a time, matching 'compose''s path expansion conservatively.
+checkComposeAlignment ::
+  forall rs1 rs2 s1 s2 ci1 mid co.
+  (Bounded s1, Enum s1, Ord s1, Bounded s2, Enum s2, Ord s2) =>
+  SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 mid ->
+  SymTransducer (HsPred rs2 mid) rs2 s2 mid co ->
+  [ComposeAlignmentWarning s1 s2]
+checkComposeAlignment t1 t2 = nub (concatMap warningsAt reachablePairs)
+  where
+    reachablePairs = Set.toList (walk Set.empty [(initial t1, initial t2)])
+
+    walk seen [] = seen
+    walk seen (pair : rest)
+      | pair `Set.member` seen = walk seen rest
+      | otherwise =
+          walk (Set.insert pair seen) (successors pair ++ rest)
+
+    successors (v1, v2) =
+      [ (target edge1, v2')
+      | edge1 <- edgesOut t1 v1,
+        v2' <- case output edge1 of
+          [] -> [v2]
+          mids -> advance v2 mids
+      ]
+
+    advance vertex [] = [vertex]
+    advance vertex (OPack _ wc _ : rest) =
+      [ end
+      | edge2 <- edgesOut t2 vertex,
+        edgeConsumesName (wcName wc) edge2,
+        end <- advance (target edge2) rest
+      ]
+
+    warningsAt (v1, v2) =
+      unconsumed ++ unmatched ++ arity ++ poison
+      where
+        t1Edges = zip [0 ..] (edgesOut t1 v1)
+        t2Edges = zip [0 ..] (edgesOut t2 v2)
+        emissions = concatMap (uncurry (edgeEmittedNames v1)) t1Edges
+        expectations = concatMap (uncurry (edgeExpectedNames v2)) t2Edges
+        emittedNames = map emittedName emissions
+        expectedNames = map expectedName expectations
+
+        unconsumed =
+          [ UnconsumedWireOutput (emittedEdge emission) (emittedName emission) v2
+          | emission <- emissions,
+            not (any (edgeConsumesName (emittedName emission) . snd) t2Edges)
+          ]
+
+        unmatched =
+          [ UnmatchedInCtorExpectation (expectedEdge expectation) name v1
+          | expectation <- expectations,
+            let name = expectedName expectation,
+            name `notElem` emittedNames
+          ]
+
+        arity =
+          [ FieldArityMismatch
+              (emittedEdge emission)
+              (expectedEdge expectation)
+              name
+              position
+              (emittedArity emission)
+          | emission <- emissions,
+            expectation <- expectations,
+            let name = expectedName expectation,
+            emittedName emission == name,
+            Just position <- [expectedPosition expectation],
+            position >= emittedArity emission
+          ]
+
+        poison =
+          [ PoisonedNameInComposition name side
+          | (name, side) <-
+              [(name, "upstream output") | name <- emittedNames]
+                ++ [(name, "downstream input") | name <- expectedNames],
+            isPoisonedBoundaryName name
+          ]
+
+-- | Checked entry point for validated aggregate pipelines. The unchecked
+-- 'compose' primitive remains available for internal/experimental use.
+composeChecked ::
+  forall rs1 rs2 s1 s2 ci1 mid co.
+  ( WeakenR rs1,
+    Disjoint (Names rs1) (Names rs2),
+    Bounded s1,
+    Enum s1,
+    Ord s1,
+    Bounded s2,
+    Enum s2,
+    Ord s2
+  ) =>
+  SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 mid ->
+  SymTransducer (HsPred rs2 mid) rs2 s2 mid co ->
+  Either
+    [ComposeAlignmentWarning s1 s2]
+    ( SymTransducer
+        (HsPred (Append rs1 rs2) ci1)
+        (Append rs1 rs2)
+        (Composite s1 s2)
+        ci1
+        co
+    )
+composeChecked t1 t2 = case checkComposeAlignment t1 t2 of
+  [] -> Right (compose t1 t2)
+  warnings -> Left warnings
 
 -- | Sequential composition of two 'SymTransducer's. The composite
 -- consumes t1's input alphabet and produces t2's output alphabet,
@@ -1308,14 +1610,12 @@ compose t1 t2 =
 --     wrapping; symmetric for @Right@.
 --   * Hidden-input check: each side's per-edge check inherits via
 --     the lifters (which preserve 'TInpCtorField' slot reads).
---   * Symbolic single-valuedness: at any @Composite s1 s2@, the t1
---     edges' guards (which require @Left _@ via 'leftInCtor') and
---     t2 edges' guards (which require @Right _@ via 'rightInCtor')
---     are pairwise mutually exclusive. Within each arm,
+--   * Symbolic single-valuedness: every lifted t1 guard is conjoined
+--     with 'PLeftArm' and every lifted t2 guard with 'PRightArm'. The
+--     concrete and symbolic interpretations make these independent arm
+--     predicates disjoint even when the original guard was 'PTop'. Within each arm,
 --     single-valuedness reduces to the underlying sub-aggregate's
---     check at the relevant sub-vertex. **No cross-transducer
---     mutual-exclusion check is needed** — the @Either@ arms make
---     it vacuous.
+--     check at the relevant sub-vertex.
 --
 -- See 'docs/research/composition-combinators-design.md' under
 -- "Combinators beyond `compose`" → "`alternative` — admitted" for
@@ -1368,8 +1668,11 @@ alternative t1 t2 =
       Edge {update = u1} ->
         Edge
           { guard =
-              liftLPredAlt @(Append rs1 rs2) @ci1 @ci2
-                (weakenLPred @rs1 @rs2 (guard e1)),
+              PAnd
+                PLeftArm
+                ( liftLPredAlt @(Append rs1 rs2) @ci1 @ci2
+                    (weakenLPred @rs1 @rs2 (guard e1))
+                ),
             update =
               liftLUpdateAlt @(Append rs1 rs2) @_ @ci1 @ci2
                 (weakenLUpdate @rs1 @rs2 u1),
@@ -1395,8 +1698,11 @@ alternative t1 t2 =
       Edge {update = u2} ->
         Edge
           { guard =
-              liftRPredAlt @(Append rs1 rs2) @ci1 @ci2
-                (weakenRPred @rs1 @rs2 (guard e2)),
+              PAnd
+                PRightArm
+                ( liftRPredAlt @(Append rs1 rs2) @ci1 @ci2
+                    (weakenRPred @rs1 @rs2 (guard e2))
+                ),
             update =
               liftRUpdateAlt @(Append rs1 rs2) @_ @ci1 @ci2
                 (weakenRUpdate @rs1 @rs2 u2),
@@ -1411,8 +1717,8 @@ alternative t1 t2 =
 
 -- * feedback1 ------------------------------------------------------------
 
--- | Single-step feedback combinator. Models one round of an
--- aggregate ↔ stateless-policy reaction: the aggregate consumes an
+-- | Single-step two-copy cascade. It runs one round of an
+-- aggregate-shaped transducer ↔ policy reaction: the first copy consumes an
 -- external command, the policy observes the aggregate's emitted
 -- event and emits a follow-up command, and the aggregate consumes
 -- that follow-up. The composite emits the aggregate's *second*
@@ -1425,10 +1731,18 @@ alternative t1 t2 =
 --   * The outer @compose t _@ feeds t's first event into that
 --     inner pipeline.
 --
--- The composite vertex is @Composite s1 (Composite s2 s1)@ —
+-- This is /not shared-state aggregate feedback/. The composite vertex is
+-- @Composite s1 (Composite s2 s1)@ —
 -- "outer t state, then (policy state, inner t state)". Even though
 -- the inner @s1@ is the same Haskell type as the outer, it occupies
--- a distinct dimension of the composite vertex tuple, so
+-- a distinct state dimension and (when admitted by the constraints) a
+-- distinct register segment. The policy-produced command therefore updates
+-- the inner copy, not the aggregate state that handled the external command.
+-- The regression in @Keiki.CompositionFeedback1Spec@ distinguishes this from
+-- shared feedback with a toggle. Consequently there is deliberately no
+-- @feedback1Checked@: alignment cannot make two copies share state.
+--
+-- 'Keiki.Symbolic.isSingleValuedSym''s per-vertex enumeration walks
 -- 'Keiki.Symbolic.isSingleValuedSym''s per-vertex enumeration walks
 -- all @|s1| * |s2| * |s1|@ combinations independently.
 --

@@ -552,6 +552,12 @@ data HsPred (rs :: [Slot]) (ci :: Type) where
   --     symbolically through this constructor. See
   --     @docs/research/sbv-boolalg-design.md@.
   PInCtor :: InCtor ci ifs -> HsPred rs ci
+  -- | Structural guard for the outer @Left@ arm of an 'Either' input.
+  --     This discriminator is independent of 'PInCtor', so a guard can
+  --     constrain both the sum arm and the constructor inside that arm.
+  PLeftArm :: HsPred rs (Either ci1 ci2)
+  -- | Structural guard for the outer @Right@ arm of an 'Either' input.
+  PRightArm :: HsPred rs (Either ci1 ci2)
   -- | Ordering guard: compares two 'Term's of the same orderable type
   --     with the relation named by 'Cmp'. @PCmp CmpGe a b@ means @a >= b@,
   --     and so on. Unlike a threshold written through 'TApp1'\/'TApp2'
@@ -844,6 +850,12 @@ evalPred (PEq a b) r c = evalTerm a r c == evalTerm b r c
 evalPred (PInCtor ic) _ c = case icMatch ic c of
   Just _ -> True
   Nothing -> False
+evalPred PLeftArm _ input = case input of
+  Left _ -> True
+  Right _ -> False
+evalPred PRightArm _ input = case input of
+  Left _ -> False
+  Right _ -> True
 evalPred (PCmp op a b) r c = applyCmp op (evalTerm a r c) (evalTerm b r c)
   where
     applyCmp :: (Ord x) => Cmp -> x -> x -> Bool
@@ -1964,6 +1976,8 @@ predHasOpaqueTerm (POr p q) = predHasOpaqueTerm p || predHasOpaqueTerm q
 predHasOpaqueTerm (PNot p) = predHasOpaqueTerm p
 predHasOpaqueTerm (PEq a b) = termHasOpaqueApp a || termHasOpaqueApp b
 predHasOpaqueTerm (PInCtor _) = False
+predHasOpaqueTerm PLeftArm = False
+predHasOpaqueTerm PRightArm = False
 predHasOpaqueTerm (PCmp _ a b) = termHasOpaqueApp a || termHasOpaqueApp b
 
 -- | The opt-in opaque-guard audit (run by 'validateTransducer' only when
@@ -2005,6 +2019,8 @@ predInCtorReadNames (POr p q) = predInCtorReadNames p ++ predInCtorReadNames q
 predInCtorReadNames (PNot p) = predInCtorReadNames p
 predInCtorReadNames (PEq a b) = termInCtorNames a ++ termInCtorNames b
 predInCtorReadNames (PInCtor _) = []
+predInCtorReadNames PLeftArm = []
+predInCtorReadNames PRightArm = []
 predInCtorReadNames (PCmp _ a b) = termInCtorNames a ++ termInCtorNames b
 
 updateInCtorNames :: Update rs w ci -> [String]
@@ -2288,6 +2304,8 @@ overlapDetail i j s =
 provablyOverlap :: HsPred rs ci -> HsPred rs ci -> Bool
 provablyOverlap PTop PTop = True
 provablyOverlap (PInCtor a) (PInCtor b) = icName a == icName b
+provablyOverlap PLeftArm PLeftArm = True
+provablyOverlap PRightArm PRightArm = True
 provablyOverlap _ _ = False
 
 -- | Internal: the determinism component of 'validateTransducer'. Like

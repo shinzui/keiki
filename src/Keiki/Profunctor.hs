@@ -3,6 +3,7 @@
 -- @Disjoint '[] '[]@ witness. GHC sees the @forall xs ys.@ as
 -- ambiguous because neither @xs@ nor @ys@ appear in the result; that
 -- is intentional — call sites pin them via 'TypeApplications'.
+{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | Existential wrapper for 'SymTransducer' enabling participation in
@@ -14,6 +15,48 @@
 -- @ci@ and the output alphabet @co@. This is the form ecosystem
 -- typeclasses ('Profunctor', 'Category', 'Strong', 'Choice', 'Arrow')
 -- expect.
+--
+-- Stability: experimental. The wrapper and its categorical instances may
+-- change before the law contract is resolved. Concrete checked composition
+-- through 'Keiki.Composition.composeChecked' is the supported validation
+-- boundary for aggregate pipelines.
+--
+-- == Law status: forward fragment versus inversion/replay
+--
+-- /Forward equivalence/ means that 'Keiki.Core.delta', 'Keiki.Core.omega',
+-- and 'Keiki.Core.step' agree for every command sequence, comparing control
+-- states up to the documented state isomorphism. /Inversion equivalence/ adds
+-- agreement of 'Keiki.Core.solveOutput', streaming replay, and
+-- reconstitution. Because replay is public and central to keiki, a law that
+-- holds only forward is called a /forward fragment/, not an unqualified law.
+--
+-- * 'Profunctor'/'Functor': identity and composition hold on tested multi-step
+--   forward traces. They fail inversion equivalence because input maps poison
+--   @icBuild@ and output maps poison @wcMatch@. Mapped names are stamped with
+--   @#lmapped@/@#rmapped@; arm predicates lowered by contramap use the same
+--   marker and are symbolically conservative.
+-- * 'Category': the identity sentinel is definitional, and stateful forward
+--   associativity is tested after the real witness and snapshot fixes.
+--   Non-identity composition is partial: slot overlap raises
+--   'CategoryOverlapError', and a mapped boundary raises
+--   'PoisonedCompositionError'. It is therefore not an unqualified lawful
+--   'Category' over all public values.
+-- * 'Choice': 'left''/'right'' preserve forward routing and replay for a
+--   replayable stateful transducer on tested multi-step traces; they do not
+--   repair an underlying transducer's inversion defect. Real
+--   'PLeftArm'/'PRightArm' guards make the arms disjoint even for
+--   epsilon/register-only underlying guards.
+-- * 'Strong': 'first''/'second'' preserve the threaded value and forward
+--   state evolution, but fail inversion equivalence because their paired
+--   descriptors are not invertible. A Strong-produced boundary is poisoned.
+-- * 'Arrow': standalone 'Arr.arr' has forward function behavior but is not
+--   replay-invertible. Fusion fails: @arr f >>> arr g@ raises
+--   'PoisonedCompositionError' rather than equalling @arr (g . f)@.
+--
+-- Deferred API choices (recorded 2026-07-12) are a forward-only wrapper, a
+-- separate replay-safe/isomorphism capability, a total internal category, or
+-- selective instance removal. This module selects none of them; all existing
+-- instances remain available while the experimental contract is evaluated.
 --
 -- See @docs/plans/27-existential-wrapper-for-symtransducer-plus-profunctor-instance-and-variance-combinators.md@
 -- for the design rationale and the documented variance caveat:
@@ -36,8 +79,10 @@
 -- cannot be discharged by GHC at the wrapper boundary.
 module Keiki.Profunctor
   ( -- * Existential wrapper
-    SomeSymTransducer (..),
+    SomeSymTransducer (SomeSymIdentity),
+    pattern SomeSymTransducer,
     someSymTransducer,
+    PoisonProvenance (..),
 
     -- * Standalone variance combinators on the concrete 'SymTransducer'
     lmapCi,
@@ -54,6 +99,7 @@ module Keiki.Profunctor
 
     -- * Category-instance overlap exception
     CategoryOverlapError (..),
+    PoisonedCompositionError (..),
   )
 where
 
@@ -110,20 +156,51 @@ import Unsafe.Coerce (unsafeCoerce)
 -- 'compose'. See 'identityTransducer' for the concrete-identity
 -- transducer that some non-Category code paths still want.
 --
--- Pattern-match on the constructor to recover the underlying
+-- Pattern-match on the compatibility pattern to recover the underlying
 -- 'SymTransducer' (the @rs@ and @s@ variables come into scope as
 -- skolem types — they may not escape the pattern match). Handle
 -- 'SomeSymIdentity' explicitly when traversing arbitrary
 -- 'SomeSymTransducer' values.
+--
+-- | Tracks whether an existential wrapper's input or output descriptor has
+-- been rewritten in a way that is unsafe to cross at a composition boundary.
+data PoisonProvenance = PoisonProvenance
+  { poisonedInput :: !Bool,
+    poisonedOutput :: !Bool
+  }
+  deriving stock (Eq, Show)
+
+cleanProvenance :: PoisonProvenance
+cleanProvenance = PoisonProvenance False False
+
+-- | A concrete symbolic transducer with its register and vertex types hidden,
+-- or the definitional identity sentinel used by the 'Cat.Category' instance.
 data SomeSymTransducer ci co where
-  SomeSymTransducer ::
+  SomeSymTransducerWith ::
     ( KnownSlots rs,
       Bounded s,
       Enum s
     ) =>
+    PoisonProvenance ->
     SymTransducer (HsPred rs ci) rs s ci co ->
     SomeSymTransducer ci co
   SomeSymIdentity :: SomeSymTransducer a a
+
+-- | Compatibility construction and match pattern for a concrete wrapper.
+-- Direct construction starts with honest input/output alphabets; internal
+-- instance operations retain provenance through @SomeSymTransducerWith@.
+pattern SomeSymTransducer ::
+  forall ci co.
+  () =>
+  forall rs s.
+  (KnownSlots rs, Bounded s, Enum s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  SomeSymTransducer ci co
+pattern SomeSymTransducer t <- SomeSymTransducerWith _ t
+  where
+    SomeSymTransducer t = SomeSymTransducerWith cleanProvenance t
+
+{-# COMPLETE SomeSymTransducer, SomeSymIdentity #-}
 
 -- | Smart constructor: lift a concrete 'SymTransducer' into the
 -- wrapper. Equivalent to applying the data constructor; provided for
@@ -136,7 +213,7 @@ someSymTransducer ::
   ) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   SomeSymTransducer ci co
-someSymTransducer = SomeSymTransducer
+someSymTransducer = SomeSymTransducerWith cleanProvenance
 
 -- * Standalone variance combinators ---------------------------------------
 
@@ -144,7 +221,7 @@ someSymTransducer = SomeSymTransducer
 -- 'InCtor' inside the transducer's guards / updates / outputs and
 -- replaces each with one whose 'icMatch' is precomposed with @f@.
 --
--- /Variance caveat:/ the rewritten 'InCtor's 'icBuild' is poisoned
+-- /Variance caveat (see "Law status" above):/ the rewritten 'InCtor's 'icBuild' is poisoned
 -- (raises a runtime error if invoked) — callers must not invoke
 -- 'Keiki.Core.solveOutput' on edges produced by this combinator. The
 -- forward evaluation path ('Keiki.Core.evalPred',
@@ -169,7 +246,7 @@ lmapCi f t =
 -- structural 'PInCtor' check, effectively filtering them out of the
 -- transducer's command stream.
 --
--- /Variance caveat:/ same as 'lmapCi' — 'Keiki.Core.solveOutput' is
+-- /Variance caveat (see "Law status" above):/ same as 'lmapCi' — 'Keiki.Core.solveOutput' is
 -- not preserved.
 lmapMaybeCi ::
   forall ci ci' rs s co.
@@ -188,7 +265,7 @@ lmapMaybeCi f t =
 -- every 'WireCtor' inside the transducer's outputs and replaces each
 -- with one whose 'wcBuild' is post-composed with @g@.
 --
--- /Variance caveat:/ the rewritten 'WireCtor's 'wcMatch' is set to
+-- /Variance caveat (see "Law status" above):/ the rewritten 'WireCtor's 'wcMatch' is set to
 -- @const Nothing@ — 'Keiki.Core.solveOutput' on rewritten edges
 -- returns 'Nothing'. The forward output construction (which only
 -- uses 'wcBuild') is unaffected.
@@ -206,7 +283,7 @@ rmapCo g t =
     }
 
 -- | Bidirectional map on input and output alphabets. Equivalent to
--- @'rmapCo' g . 'lmapCi' f@. /Variance caveat/ as both 'lmapCi' and
+-- @'rmapCo' g . 'lmapCi' f@. /Variance caveat (see "Law status" above)/ as both 'lmapCi' and
 -- 'rmapCo': 'Keiki.Core.solveOutput' is not preserved on the result.
 dimapTransducer ::
   (ci' -> ci) ->
@@ -227,18 +304,30 @@ dimapTransducer f g = rmapCo g . lmapCi f
 -- 'identityTransducer' wrap before the variance combinators run, so
 -- the @ci@/@co@ rewrites apply uniformly.
 instance Profunctor SomeSymTransducer where
-  dimap f g (SomeSymTransducer t) =
-    SomeSymTransducer (dimapTransducer f g t)
+  dimap f g (SomeSymTransducerWith provenance t) =
+    SomeSymTransducerWith
+      provenance {poisonedInput = True, poisonedOutput = True}
+      (dimapTransducer f g t)
   dimap f g SomeSymIdentity =
-    SomeSymTransducer (dimapTransducer f g identityTransducer)
-  lmap f (SomeSymTransducer t) =
-    SomeSymTransducer (lmapCi f t)
+    SomeSymTransducerWith
+      (PoisonProvenance True True)
+      (dimapTransducer f g identityTransducer)
+  lmap f (SomeSymTransducerWith provenance t) =
+    SomeSymTransducerWith
+      provenance {poisonedInput = True}
+      (lmapCi f t)
   lmap f SomeSymIdentity =
-    SomeSymTransducer (lmapCi f identityTransducer)
-  rmap g (SomeSymTransducer t) =
-    SomeSymTransducer (rmapCo g t)
+    SomeSymTransducerWith
+      (PoisonProvenance True False)
+      (lmapCi f identityTransducer)
+  rmap g (SomeSymTransducerWith provenance t) =
+    SomeSymTransducerWith
+      provenance {poisonedOutput = True}
+      (rmapCo g t)
   rmap g SomeSymIdentity =
-    SomeSymTransducer (rmapCo g identityTransducer)
+    SomeSymTransducerWith
+      (PoisonProvenance False True)
+      (rmapCo g identityTransducer)
 
 -- | 'Functor' on the output alphabet. @'fmap' = 'rmap'@.
 instance Functor (SomeSymTransducer ci) where
@@ -351,6 +440,17 @@ data CategoryOverlapError = CategoryOverlapError
 
 instance Exception CategoryOverlapError
 
+-- | Exception raised when categorical composition would cross a boundary
+-- rewritten by a non-invertible input/output map. The boundary is rejected
+-- before name substitution can silently bypass the map.
+data PoisonedCompositionError = PoisonedCompositionError
+  { pceSide :: String,
+    pceDetail :: String
+  }
+  deriving stock (Eq, Show)
+
+instance Exception PoisonedCompositionError
+
 -- | A constraint dictionary for @'Disjoint' xs ys@. Used together
 -- with 'unsafeCoerceDisjointness' to smuggle the constraint into
 -- scope after a value-level overlap check.
@@ -416,8 +516,8 @@ instance Cat.Category SomeSymTransducer where
 
   SomeSymIdentity . t = t
   t . SomeSymIdentity = t
-  SomeSymTransducer t2 . SomeSymTransducer t1 =
-    composeWrappers t1 t2
+  SomeSymTransducerWith provenance2 t2 . SomeSymTransducerWith provenance1 t1 =
+    composeWrappers provenance1 t1 provenance2 t2
 
 -- | Compose two existentially-packed transducers, performing the
 -- runtime overlap check that 'Cat..' delegates to. Factored out so
@@ -433,20 +533,44 @@ composeWrappers ::
     Bounded s2,
     Enum s2
   ) =>
+  PoisonProvenance ->
   SymTransducer (HsPred rs1 ci) rs1 s1 ci mid ->
+  PoisonProvenance ->
   SymTransducer (HsPred rs2 mid) rs2 s2 mid co ->
   SomeSymTransducer ci co
-composeWrappers t1 t2 =
+composeWrappers provenance1 t1 provenance2 t2 =
   let names1 = slotNames @rs1
       names2 = slotNames @rs2
       overlap = filter (`elem` names2) names1
-   in if not (null overlap)
-        then throw (CategoryOverlapError overlap)
-        else case unsafeCoerceDisjointness @(Names rs1) @(Names rs2) of
+      boundaryPoison
+        | poisonedOutput provenance1 =
+            Just
+              ( PoisonedCompositionError
+                  "upstream output"
+                  "the upstream wrapper was produced by rmap/dimap/first/arr; move the output map outside the composition (see Law status)"
+              )
+        | poisonedInput provenance2 =
+            Just
+              ( PoisonedCompositionError
+                  "downstream input"
+                  "the downstream wrapper was produced by lmap/dimap/first; move the input map outside the composition (see Law status)"
+              )
+        | otherwise = Nothing
+   in case boundaryPoison of
+        Just err -> throw err
+        Nothing | not (null overlap) -> throw (CategoryOverlapError overlap)
+        Nothing -> case unsafeCoerceDisjointness @(Names rs1) @(Names rs2) of
           DictDisjoint ->
             withKnownSlots
               (appendWitness (slotWitness @rs1) (slotWitness @rs2))
-              (SomeSymTransducer (compose t1 t2))
+              ( SomeSymTransducerWith
+                  ( PoisonProvenance
+                      { poisonedInput = poisonedInput provenance1,
+                        poisonedOutput = poisonedOutput provenance2
+                      }
+                  )
+                  (compose t1 t2)
+              )
 
 -- * Choice instance ----------------------------------------------------
 
@@ -474,7 +598,7 @@ composeWrappers t1 t2 =
 -- of identity. The Choice law @left' Cat.id = Cat.id@ holds *by
 -- construction* on the wrapper.
 --
--- /Variance caveat:/ inherits 'Keiki.Composition.alternative''s
+-- /Variance caveat (see "Law status" above):/ inherits 'Keiki.Composition.alternative''s
 -- mechanical-inversion preservation: @solveOutput@ on edges produced
 -- by @left'@ / @right'@ runs the underlying alternative's
 -- @leftInCtor@ / @rightInCtor@ wrappers, which preserve round-trip
@@ -487,14 +611,14 @@ instance Choice SomeSymTransducer where
     SomeSymTransducer a b ->
     SomeSymTransducer (Either a c) (Either b c)
   left' SomeSymIdentity = SomeSymIdentity
-  left' (SomeSymTransducer t) = leftWrap t
+  left' (SomeSymTransducerWith provenance t) = leftWrap provenance t
 
   right' ::
     forall a b c.
     SomeSymTransducer a b ->
     SomeSymTransducer (Either c a) (Either c b)
   right' SomeSymIdentity = SomeSymIdentity
-  right' (SomeSymTransducer t) = rightWrap t
+  right' (SomeSymTransducerWith provenance t) = rightWrap provenance t
 
 -- | Helper for 'left'' on a wrapped concrete transducer. Factored out
 -- to bind the existentially-packed @rs@ and @s@ to named type
@@ -505,14 +629,15 @@ leftWrap ::
     Bounded s,
     Enum s
   ) =>
+  PoisonProvenance ->
   SymTransducer (HsPred rs ci) rs s ci co ->
   SomeSymTransducer (Either ci c) (Either co c)
-leftWrap t =
+leftWrap provenance t =
   let w = slotWitness @rs
    in withDisjointNil w $
         withKnownSlots
           (appendWitness w WNil)
-          (SomeSymTransducer (alternative t (identityTransducer @c)))
+          (SomeSymTransducerWith provenance (alternative t (identityTransducer @c)))
 
 -- | Helper for 'right'' on a wrapped concrete transducer. Symmetric
 -- to 'leftWrap'.
@@ -522,9 +647,11 @@ rightWrap ::
     Bounded s,
     Enum s
   ) =>
+  PoisonProvenance ->
   SymTransducer (HsPred rs ci) rs s ci co ->
   SomeSymTransducer (Either c ci) (Either c co)
-rightWrap t = SomeSymTransducer (alternative (identityTransducer @c) t)
+rightWrap provenance t =
+  SomeSymTransducerWith provenance (alternative (identityTransducer @c) t)
 
 -- * Strong instance ----------------------------------------------------
 
@@ -545,7 +672,7 @@ rightWrap t = SomeSymTransducer (alternative (identityTransducer @c) t)
 --     'WireCtor' with one that consumes @(c, fs)@ and produces
 --     @(co, c)@ — @\\(c, fs) -> (wcBuild wc fs, c)@.
 --
--- /Variance caveat:/ same lossy-@solveOutput@ contract as 'lmapCi' /
+-- /Variance caveat (see "Law status" above):/ same lossy-@solveOutput@ contract as 'lmapCi' /
 -- 'rmapCo'. The contramapped 'InCtor's 'icBuild' is poisoned, the
 -- new 'WireCtor's 'wcMatch' is @const Nothing@, and 'pairSndInCtor''s
 -- 'icBuild' is poisoned. Forward processing
@@ -652,7 +779,7 @@ firstSym t =
 -- rewrites for ~10% better build cost, but the current shape keeps
 -- the symmetry obvious and the implementation small.
 --
--- /Variance caveat:/ inherits 'firstSym''s lossy-@solveOutput@
+-- /Variance caveat (see "Law status" above):/ inherits 'firstSym''s lossy-@solveOutput@
 -- contract.
 instance Strong SomeSymTransducer where
   first' ::
@@ -660,15 +787,19 @@ instance Strong SomeSymTransducer where
     SomeSymTransducer a b ->
     SomeSymTransducer (a, c) (b, c)
   first' SomeSymIdentity = SomeSymIdentity
-  first' (SomeSymTransducer t) = SomeSymTransducer (firstSym t)
+  first' (SomeSymTransducerWith provenance t) =
+    SomeSymTransducerWith
+      provenance {poisonedInput = True, poisonedOutput = True}
+      (firstSym t)
 
   second' ::
     forall a b c.
     SomeSymTransducer a b ->
     SomeSymTransducer (c, a) (c, b)
   second' SomeSymIdentity = SomeSymIdentity
-  second' (SomeSymTransducer t) =
-    SomeSymTransducer
+  second' (SomeSymTransducerWith provenance t) =
+    SomeSymTransducerWith
+      provenance {poisonedInput = True, poisonedOutput = True}
       (lmapCi swap (rmapCo swap (firstSym t)))
     where
       swap :: forall x y. (x, y) -> (y, x)
@@ -685,13 +816,13 @@ instance Strong SomeSymTransducer where
 -- — see 'identityTransducer' for the same lesson); the edge's
 -- 'WireCtor's 'wcBuild' applies @f@ to the read input.
 --
--- /Variance caveat:/ same lossy-@solveOutput@ contract as
+-- /Variance caveat (see "Law status" above):/ same lossy-@solveOutput@ contract as
 -- 'lmapCi' / 'rmapCo' / 'firstSym'. The 'WireCtor's 'wcMatch' is
 -- @const Nothing@ — there is no inverse function in general.
 -- Forward processing ('Keiki.Core.delta', 'Keiki.Core.omega') is
 -- unaffected.
 --
--- /Composition limitation:/ 'Keiki.Composition.compose' substitutes
+-- /Composition limitation (see "Law status" above):/ 'Keiki.Composition.compose' substitutes
 -- t2's 'TInpCtorField' against t1's 'WireCtor'-emitted output and
 -- demands 'icName ic2 == wcName wc1'. An 'arrTransducer'-produced
 -- transducer's 'WireCtor' is named @"arr"@ but the next stage's
@@ -755,7 +886,10 @@ arrTransducer f =
 -- 'arr f >>> arr g' applies — see 'arrTransducer' for the full
 -- caveat.
 instance Arr.Arrow SomeSymTransducer where
-  arr f = SomeSymTransducer (arrTransducer f)
+  arr f =
+    SomeSymTransducerWith
+      (PoisonProvenance False True)
+      (arrTransducer f)
   first = first'
   second = second'
 
@@ -772,7 +906,7 @@ instance Arr.Arrow SomeSymTransducer where
 contraInCtor :: (ci' -> ci) -> InCtor ci ifs -> InCtor ci' ifs
 contraInCtor f InCtor {icName = n, icMatch = m} =
   InCtor
-    { icName = n,
+    { icName = n <> "#lmapped",
       icMatch = m . f,
       icBuild = poisonedIcBuild n
     }
@@ -783,7 +917,7 @@ contraInCtor f InCtor {icName = n, icMatch = m} =
 contraMaybeInCtor :: (ci' -> Maybe ci) -> InCtor ci ifs -> InCtor ci' ifs
 contraMaybeInCtor f InCtor {icName = n, icMatch = m} =
   InCtor
-    { icName = n,
+    { icName = n <> "#lmapped",
       icMatch = \ci' -> f ci' >>= m,
       icBuild = poisonedIcBuild n
     }
@@ -803,7 +937,7 @@ poisonedIcBuild icN = \_ ->
 mapWireCtor :: (co -> co') -> WireCtor co fs -> WireCtor co' fs
 mapWireCtor g WireCtor {wcName = n, wcBuild = b} =
   WireCtor
-    { wcName = n,
+    { wcName = n <> "#rmapped",
       wcMatch = \_co' -> Nothing,
       wcBuild = g . b
     }
@@ -845,6 +979,8 @@ contraPred f = go
     go (PNot p) = PNot (go p)
     go (PEq a b) = PEq (contraTerm f a) (contraTerm f b)
     go (PInCtor ic) = PInCtor (contraInCtor f ic)
+    go PLeftArm = PInCtor (mappedArmInCtor (Just . f) True)
+    go PRightArm = PInCtor (mappedArmInCtor (Just . f) False)
     go (PCmp op a b) = PCmp op (contraTerm f a) (contraTerm f b)
 
 contraMaybePred :: forall ci ci' rs. (ci' -> Maybe ci) -> HsPred rs ci -> HsPred rs ci'
@@ -858,7 +994,23 @@ contraMaybePred f = go
     go (PNot p) = PNot (go p)
     go (PEq a b) = PEq (contraMaybeTerm f a) (contraMaybeTerm f b)
     go (PInCtor ic) = PInCtor (contraMaybeInCtor f ic)
+    go PLeftArm = PInCtor (mappedArmInCtor f True)
+    go PRightArm = PInCtor (mappedArmInCtor f False)
     go (PCmp op a b) = PCmp op (contraMaybeTerm f a) (contraMaybeTerm f b)
+
+mappedArmInCtor ::
+  (ci' -> Maybe (Either ci1 ci2)) ->
+  Bool ->
+  InCtor ci' '[]
+mappedArmInCtor f wantLeft =
+  InCtor
+    { icName = if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped",
+      icMatch = \ci' -> case f ci' of
+        Just (Left _) | wantLeft -> Just RNil
+        Just (Right _) | not wantLeft -> Just RNil
+        _ -> Nothing,
+      icBuild = poisonedIcBuild (if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped")
+    }
 
 -- ** Update -------------------------------------------------------------
 

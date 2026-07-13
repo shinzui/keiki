@@ -114,6 +114,8 @@ showGuard (POr a b) = "POr (" <> showGuard a <> ") (" <> showGuard b <> ")"
 showGuard (PNot p) = "PNot (" <> showGuard p <> ")"
 showGuard (PEq _ _) = "PEq <term> <term>"
 showGuard (PInCtor _) = "PInCtor <ic>"
+showGuard PLeftArm = "PLeftArm"
+showGuard PRightArm = "PRightArm"
 
 -- * Spec -------------------------------------------------------------------
 

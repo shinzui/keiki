@@ -212,6 +212,8 @@ guardSummary = T.intercalate (T.pack " ") . go
     go (PNot p) = T.pack "PNot" : go p
     go (PEq _ _) = [T.pack "PEq"]
     go (PInCtor _) = [T.pack "PInCtor"]
+    go PLeftArm = [T.pack "PLeftArm"]
+    go PRightArm = [T.pack "PRightArm"]
     go (PCmp c _ _) = [T.pack "PCmp " <> T.pack (show c)]
 
 -- | Recover the names of the slots an edge's 'Update' writes.

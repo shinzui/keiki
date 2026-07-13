@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | Acceptance tests for 'Keiki.Composition.alternative' under EP-25
@@ -33,6 +35,7 @@ import Data.Time (UTCTime)
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import GHC.Generics (Generic)
+import Keiki.Builder qualified as B
 import Keiki.Composition (Composite (..), alternative)
 import Keiki.Core
 import Keiki.Fixtures.EmailDelivery
@@ -149,6 +152,23 @@ siblings ::
     (Either EmailEvent PingEvent)
 siblings = alternative emailDelivery pinger
 
+epsilonRight :: SymTransducer (HsPred '[] PingCmd) '[] Bool PingCmd PingEvent
+epsilonRight =
+  B.buildTransducer False RNil id do
+    B.from False do
+      B.onEpsilon B.do
+        B.noEmit
+        B.goto True
+
+epsilonSiblings ::
+  SymTransducer
+    (HsPred EmailRegs (Either EmailCmd PingCmd))
+    EmailRegs
+    (Composite EmailVertex Bool)
+    (Either EmailCmd PingCmd)
+    (Either EmailEvent PingEvent)
+epsilonSiblings = alternative emailDelivery epsilonRight
+
 -- * Test fixtures --------------------------------------------------------
 
 sampleAt :: UTCTime
@@ -186,6 +206,19 @@ spec :: Spec
 spec = do
   describe "alternative emailDelivery pinger" $ do
     describe "step routing" $ do
+      it "arm-restricts an onEpsilon-authored right edge on Left input" $
+        case step
+          epsilonSiblings
+          (initial epsilonSiblings, initialRegs epsilonSiblings)
+          (Left sampleSendEmail) of
+          Just (Composite ev rightVertex, _, [Left co]) -> do
+            ev `shouldBe` EmailSentVertex
+            rightVertex `shouldBe` False
+            co `shouldBe` sampleEmailEvent
+          other ->
+            expectationFailure
+              ("expected only the Left edge to fire, got " <> showStep other)
+
       it "Left input advances the EmailDelivery arm and emits Left output" $
         case step
           siblings
@@ -242,6 +275,9 @@ spec = do
       it "the alternative composite is single-valued" $
         isSingleValuedSym (withSymPred siblings) `shouldBe` True
 
+      it "keeps an alternative with a PTop right edge single-valued" $
+        isSingleValuedSym (withSymPred epsilonSiblings) `shouldBe` True
+
     describe "reconstitute (mixed-arm event log replay)" $ do
       it "lands at Composite EmailSentVertex PingDone on a Left+Right log" $
         case reconstitute siblings [Left sampleEmailEvent, Right samplePingEvent] of
@@ -279,8 +315,9 @@ spec = do
           `shouldBe` [(Right samplePingEvent)]
   where
     showStep ::
+      (Show pv) =>
       Maybe
-        ( Composite EmailVertex PingVertex,
+        ( Composite EmailVertex pv,
           x,
           [Either EmailEvent PingEvent]
         ) ->

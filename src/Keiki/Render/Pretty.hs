@@ -81,6 +81,8 @@ prettyPred (POr a b) =
 prettyPred (PNot p) = T.pack "!(" <> prettyPred p <> T.pack ")"
 prettyPred (PEq l r) = prettyTerm l <> T.pack " == " <> prettyTerm r
 prettyPred (PInCtor ic) = T.pack (icName ic)
+prettyPred PLeftArm = T.pack "Left"
+prettyPred PRightArm = T.pack "Right"
 prettyPred (PCmp c l r) =
   prettyTerm l <> T.pack " " <> cmpSym c <> T.pack " " <> prettyTerm r
   where
