@@ -14,6 +14,13 @@
 -- whose input is t1's input, whose output is t2's output, whose
 -- vertex is the pair (wrapped in 'Composite' so 'Bounded'/'Enum'
 -- derive cleanly), and whose register file is @'Append' rs1 rs2@.
+-- Update right-hand sides use the entry register snapshot. For a
+-- multi-event t1 edge, path expansion symbolically threads each t2 write
+-- into later t2 guards, updates, and outputs before collapsing the path.
+-- A comparison leaf that reads a different mid constructor becomes
+-- 'PBot'; mismatched reads in other positions become opaque poison terms
+-- that structural validation and rendering can inspect safely and whose
+-- values raise only if an unsatisfiable edge nevertheless demands them.
 --
 -- See @docs/research/composition-combinators-design.md@ for the
 -- formal semantics, the substitution algorithm, the proof sketch
@@ -1044,6 +1051,16 @@ data PartialPath rs1 rs2 ci1 co s2
 --     t2 from @s2@: one composite edge whose guard / update /
 --     output are t2's structurally substituted against t1's edge
 --     output, conjoined with t1's lifted guard / update.
+--   * For a multi-event t1 edge, every t2 path is expanded in event
+--     order. Earlier t2 writes are substituted into later guards,
+--     updates, and outputs, so the collapsed edge observes the same
+--     register snapshots as sequential t2 stepping.
+--   * All writes in the final edge evaluate their right-hand sides
+--     against the edge-entry snapshot; internal repeated writes are
+--     applied left-to-right, making the last chain step win.
+--   * A constructor-mismatched comparison leaf is unsatisfiable
+--     regardless of Boolean operand order. Other mismatched term
+--     positions remain structurally inert and fail only if evaluated.
 --
 -- The composite preserves the keiki guarantees:
 --   * Mechanical inversion: 'solveOutput' on the composite
@@ -1419,6 +1436,12 @@ alternative t1 t2 =
 --
 --     twoRounds = feedback1 (feedback1 t f) f
 --
+-- This nested form requires both @rs1 ~ '[]@ and @rs2 ~ '[]@: the
+-- outer call's slot-disjointness check ranges over the first result's
+-- @Append rs1 (Append rs2 rs1)@ register file, so the policy must be
+-- stateless as well as the aggregate. A single unnested call only forces
+-- @rs1 ~ '[]@.
+--
 -- The pure-core boundary holds because there is no loop — the
 -- cascade runs exactly once per external command.
 --
@@ -1437,10 +1460,10 @@ alternative t1 t2 =
 -- A "shared-state" variant — where the second t reads/writes the
 -- first t's registers via a custom edge construction — is
 -- documented as a future extension and is not in scope for MP-8.
--- The "stateless policy" recommendation (single vertex, empty
--- @rs2@) is convention rather than enforced; if violated, the
--- composite still typechecks but the single-step semantics may
--- not be preserved.
+-- For one call, the "stateless policy" recommendation (single vertex,
+-- empty @rs2@) is convention rather than enforced. Nesting the result in
+-- another 'feedback1' does enforce empty @rs2@ through the next call's
+-- 'Disjoint' constraint, as described above.
 --
 -- == Future extensions
 --

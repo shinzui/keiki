@@ -240,10 +240,13 @@ The composite's edges from `(s1, s2)`:
          }
 
    The guard fires when both t1's and t2's guards are satisfied
-   *with `mid` substituted out*. The composite's update applies
-   t1's first, then t2's (with `mid` substituted). The composite's
-   output is t2's output if any (with `mid` substituted). The
-   target moves both sub-machines.
+   *with `mid` substituted out*. The composite update contains both
+   machines' writes, but every right-hand side reads the register file
+   as it stood when the whole edge began; writes are applied
+   left-to-right. This snapshot rule matches the ordinary `step`
+   semantics, where t1's emitted `mid` is evaluated before t1's update.
+   The composite's output is t2's output if any (with `mid`
+   substituted). The target moves both sub-machines.
 
    Substitution functions `substPred`, `substUpdate`, `substOut`
    take a t2-side artefact and t1's edge output `o1`, producing a
@@ -319,15 +322,11 @@ to be `OPack ic1 wc1 of1` for the structural case):
         in weakenLTerm @rs2 (unsafeCoerceTerm tm)
       | OPack _ wc1 _ <- o1
       = -- t2 reads a different ctor than t1 produces — dead branch.
-        -- The composite guard's PInCtor substitution carries this
-        -- as PBot; a TInpCtorField in this position never evaluates
-        -- because the guard is unsatisfiable. We emit a structural
-        -- placeholder (a TLit of an unobservable value would crash
-        -- 'evalTerm' if reached; instead the placeholder is built
-        -- so checkHiddenInputs flags the edge if it survives).
-        error ("compose: TInpCtorField over " <> icName ic2
-                 <> " but t1 emits " <> wcName wc1
-                 <> " — caller should ensure structural alignment")
+        -- Return an opaque TApp1 poison over TLit (). Structural
+        -- walkers can inspect it without forcing the function; its
+        -- value raises only if an unsatisfiable edge demands it.
+        poisonTerm ("compose: t2 reads " <> icName ic2
+                    <> " while t1 emits " <> wcName wc1)
       -- Post-MP-6 every OutTerm is OPack; the OFn fallback was
       -- retired by EP-16. There is no other 'OutTerm' shape to handle.
     substTerm (TApp1 f t)              o1  = TApp1 f (substTerm t o1)
@@ -355,7 +354,11 @@ walks an `OutFields rs ci fs` chain and returns the `n`-th term
     substPred (PAnd p q)     o1 = PAnd (substPred p o1) (substPred q o1)
     substPred (POr p q)      o1 = POr  (substPred p o1) (substPred q o1)
     substPred (PNot p)       o1 = PNot (substPred p o1)
-    substPred (PEq a b)      o1 = PEq  (substTerm a o1) (substTerm b o1)
+    substPred (PEq a b)      o1
+      | either operand contains a TInpCtorField for a constructor
+        other than o1's wire constructor = PBot
+      | otherwise = PEq (substTerm a o1) (substTerm b o1)
+    -- PCmp follows the same leaf-level mismatch rule.
     substPred (PInCtor ic2)  o1
       | OPack _ wc1 _ <- o1, icName ic2 == wcName wc1 = PTop
       | OPack _ _   _ <- o1                            = PBot
@@ -425,6 +428,24 @@ The composite's `of_composite` reads ci1's fields (because every
 ic1 ix1` from t1's `of1`). So `gatherInpEntries`'s walk sees
 `TInpCtorField ic1 ix1` reads, matching `ic1.icName`, and
 correctly populates the `ifs1`-shaped register file.
+
+### Snapshot updates and multi-event state threading
+
+`runUpdate` evaluates every `USet` right-hand side against the register
+file at edge entry, then applies the writes left-to-right. This is
+parallel-assignment semantics for normal copyless updates and makes an
+internal repeated write resolve to the rightmost value. Consequently a
+t1 edge that emits a register and then updates it still passes the
+pre-update value into t2, exactly as two separate `step` calls do.
+
+A multi-event t1 edge requires one additional rewrite because sequential
+t2 steps genuinely observe earlier t2 writes. Each chain-expansion path
+carries a newest-first typed environment of prior t2 writes. Before the
+next t2 edge is accumulated, register reads in its substituted guard,
+update, and outputs are replaced with the environment terms. Only t2
+writes enter this environment; t1 outputs all read the original t1
+snapshot. The final single composite edge therefore has the same path,
+outputs, and final registers as stepping t2 once per mid event.
 
 
 ## How the composite preserves the three guarantees

@@ -238,36 +238,45 @@ step on `o2` from `s2'` — not from `s2`. T2's state changes
 between mid-symbols.
 
 EP-19 resolves this with **library-side chain expansion**.
-`composeEdge` internally expands a length-N first-edge into N
-letter edges threaded through synthetic *composite-state*
-intermediates `(s1, s2) → (s1, s2') → ... → (target e1, s2_final)`,
-then re-collapses the resulting chain into one length-N composite
-edge with `output = [substOut o1, ..., substOut oN]` (each `oi`
-substituted against the appropriate composite-state intermediate's
-T2-edge bindings).
+`composeEdge` enumerates every length-N path through T2, threading
+the T2 vertex from one consumed mid event to the next, then collapses
+each complete path into one composite edge. The composite vertex type
+is unchanged and no synthetic vertices leak.
 
-The composite's `Vertex` type is unchanged — no synthetic
-vertices leak. The state-refinement is internal to the
-recursion. This preserves the GSM property end-to-end at the
-composite level.
+The collapsed edge must also preserve T2's register snapshots. Each
+partial path therefore carries a typed, newest-first environment of
+T2 writes accumulated by earlier mid events. Before adding the next
+T2 edge, composition rewrites every register read in its substituted
+guard, update, and outputs through that environment. The environment
+contains no T1 writes: every T1 mid output is evaluated from T1's
+pre-update snapshot. At final evaluation, `runUpdate` evaluates all
+right-hand sides from the composite edge's entry snapshot and applies
+writes left-to-right, so the environment inlining recreates the
+sequential per-event snapshots and the last repeated T2 write wins.
 
 Implementation sketch (in `Keiki.Composition.composeEdge`):
 
-```
-composeEdge e1 t2 (s1, s2) =
-  let chain = expandChain e1 t2 s2   -- returns [(o_i_substituted, s2_i)]
-      (terms, s2_final) = unzipChain chain
-  in Edge { guard  = guard e1
-          , update = update e1                      -- T1's update only
-          , output = terms                          -- length = length (output e1)
-          , target = (target e1, s2_final) }
+```haskell
+stepPath path mid e2 =
+  let guard'  = applyEnvPred path.env (substPred (guard e2) mid)
+      update' = applyEnvUpdate path.env (substUpdate (update e2) mid)
+      output' = map (applyEnvOut path.env . (`substOut` mid)) (output e2)
+      env'    = pendingWrites update' ++ path.env
+  in path
+       { guard = PAnd path.guard guard'
+       , update = UCombine path.update update'
+       , output = path.output ++ output'
+       , env = env'
+       , end = target e2
+       }
 ```
 
 The `expandChain` recursion threads T2's state through each
 mid-symbol. Length-0 (`output e1 == []`) returns `([], s2)` —
 T2 does not step. Length-1 returns `([substOut o1 (...)], s2')`
 where `s2'` is T2's target after stepping on `o1`. Length-N
-recursively expands.
+recursively expands both the vertex path and symbolic write
+environment.
 
 This strategy keeps `compose` total: no composition fails because
 of multi-event-edge shape. The library absorbs the cost of

@@ -68,8 +68,8 @@ here, even if it requires splitting a partially completed task into two ("done" 
 - [x] (2026-07-13 03:39Z) M4: defect 2 fixed — chain expansion threads symbolic composed terms through a newest-first pending-write environment; two-phase chain and pre-existing stateless multi-event tests green
 - [x] (2026-07-13 03:42Z) M5: defect 3 fixed — `substTerm` total via inert poison, guard leaves with mismatched input reads substitute to `PBot`; wrong-order-guard test green; structural walkers (symbolic check, pretty printer, replay) verified crash-free on cross-constructor composites
 - [x] (2026-07-13 03:46Z) M6: `test/Keiki/CompositionHomomorphismSpec.hs` — bounded-exhaustive semantic-homomorphism suite green (single-mid, multi-event, reject-agreement), with the documented wrong-order sequential bottom represented as an explicit refinement case
-- [ ] M7: documentation — `feedback1` haddock nesting constraint (defect 4), `compose` haddock, `docs/research/composition-combinators-design.md`, `docs/research/gsm-widening-design.md` §5, `CHANGELOG.md`; master plan registry row and progress box updated
-- [ ] `nix fmt -- --no-cache` clean; `cabal build all` and `cabal test all` green under GHC 9.12
+- [x] (2026-07-13 03:53Z) M7: documentation — `feedback1` haddock nesting constraint (defect 4), `compose` haddock, `docs/research/composition-combinators-design.md`, `docs/research/gsm-widening-design.md` §5, `CHANGELOG.md`; master plan registry row and progress box updated
+- [x] (2026-07-13 03:53Z) `nix fmt -- --no-cache` clean; `cabal build all`, `cabal test all`, and `cabal haddock keiki` green under GHC 9.12
 
 
 ## Surprises & Discoveries
@@ -255,7 +255,22 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Completed 2026-07-13. `compose` now agrees with explicit sequential stepping on every
+defined fixture path covered by the bounded-exhaustive suite. Snapshot `runUpdate`
+semantics fixes emit-then-increment without changing any surveyed real consumer;
+typed pending-write substitution makes a collapsed multi-event edge observe the same
+t2 states as separate steps; and mismatched constructor reads no longer crash AST
+walkers. The one intentional non-homomorphic corner is now explicit: composition
+refines a hand-written wrong-order guard's sequential bottom to an unsatisfiable leaf
+and a defined matching edge.
+
+The permanent evidence is `test/Keiki/CompositionStatefulSpec.hs` plus
+`test/Keiki/CompositionHomomorphismSpec.hs`. Replacing the snapshot read with the old
+threaded accumulator makes the latter fail at the exact sink slot. Final validation
+passed `nix fmt -- --no-cache`, `cabal build all`, all four `cabal test all` suites
+(including 459 keiki examples and 122 jitsurei examples), and `cabal haddock keiki`.
+Existing compiler/Haddock warnings remain unrelated and no release-schedule
+experimental fallback was taken.
 
 
 ## Context and Orientation
@@ -1020,3 +1035,9 @@ for multi-event), designed the stateful fixtures and the bounded-exhaustive
 semantic-homomorphism suite, and recorded the master plan's experimental-marking
 release fallback. Reason: this is the initial authoring pass for Phase 3 of master
 plan 16.
+
+Revision note (2026-07-13): implemented all seven milestones. Promoted snapshot update
+semantics after the full consumer survey, added typed symbolic write threading and
+walker-safe substitution, activated all three regressions, added the bounded-exhaustive
+homomorphism and mutation evidence, corrected public/research documentation, and
+recorded the wrong-order sequential-bottom refinement discovered while executing M6.

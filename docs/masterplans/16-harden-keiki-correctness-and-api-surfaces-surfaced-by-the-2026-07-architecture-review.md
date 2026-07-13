@@ -125,7 +125,7 @@ fire through).
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Complete |
 | 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Complete |
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Complete |
-| 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | In Progress |
+| 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Complete |
 | 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Not Started |
 | 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Not Started |
 | 77 | Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding | docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md | None | None | Not Started |
@@ -256,7 +256,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
 - [x] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
 - [x] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
-- [ ] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
+- [x] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
 - [ ] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
 - [ ] EP-76: solver `Unknown` treated as not-bot; encoding caveats documented; pure overlap check catches same-ctor `PAnd` pairs
 - [ ] EP-77: versioned event envelope with pinned wire kinds and default-on-missing decoding
@@ -333,6 +333,14 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   `step`. The exact output-acceptor fail-before witness returned `False` for the
   canonical multi-event User Registration log and passes with the new `InFlight`
   carrier.
+- EP-74 promoted snapshot semantics for `runUpdate` after the complete workspace suite
+  and a `mori`-located current-keiro survey found no consumer depending on intra-edge
+  write threading. Multi-event composition now carries a typed symbolic environment
+  of prior t2 writes, and cross-constructor substitution is walker-safe. The
+  homomorphism suite also made one boundary explicit for EP-75: a hand-written
+  wrong-order input-field guard is bottom under plain sequential stepping, while
+  `compose` deliberately refines that error path to an unsatisfiable leaf so other
+  matching edges remain defined.
 
 
 ## Decision Log
@@ -447,7 +455,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Outcomes & Retrospective
 
-Six child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, and EP-73. The core
+Seven child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, EP-73, and EP-74. The core
 memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
 validator and structured-runtime halves. EP-71 aligned default validation with replay through four default-on
 checks, migrated the durable User Registration epsilon path, left an explicit
@@ -459,9 +467,20 @@ pass. EP-73 added the permanent decide/replay property harness across every core
 fixture module and all eight jitsurei aggregates, with validation-aligned teeth for
 invalid examples and structured counterexamples for replay divergence. The harness
 also found and fixed LoanApplication's direct-withdraw uninitialized-register read.
-Phase 2 is now closed; EP-74 is the next dependency-ready plan.
+Phase 2 is closed, and EP-74 closes the stateful execution half of Phase 3: composed
+single-event and multi-event updates now match sequential snapshots, substitution is
+safe for structural walkers, and a mutation-tested homomorphism suite pins the result.
+EP-75 is now dependency-ready and owns checked composition, categorical law
+classification, `alternative`, and `feedback1` contract follow-through.
 
 ## Revision Notes
+
+- 2026-07-13: Completed EP-74. Promoted snapshot update semantics after a green
+  workspace suite and current-keiro survey, threaded typed symbolic writes through
+  multi-event composition, made cross-constructor substitution walker-safe, added
+  active stateful regressions plus a mutation-tested homomorphism suite, corrected
+  composition/feedback documentation, and passed formatting, all builds, all four
+  test suites, and Haddocks.
 
 - 2026-07-12: Completed EP-73. Added state-aware whole-log and chunked replay
   properties, tamper coverage, explicit broken-shape teeth, all core and jitsurei

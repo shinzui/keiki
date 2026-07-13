@@ -27,6 +27,15 @@ and this project adheres to the
 
 ### Changed
 
+- `runUpdate` now gives `UCombine` snapshot (parallel-assignment)
+  semantics: every right-hand side reads the edge-entry register file and
+  writes apply left-to-right. Sequential `compose` now symbolically threads
+  t2 register writes across multi-event chains, so stateful composition
+  agrees with stepping t1 and then t2 event-by-event. Constructor-mismatched
+  comparison leaves become `PBot`, while mismatches in other positions use
+  walker-safe opaque poison terms. This is a pre-release behavior change;
+  the surveyed current keiro consumer has no update depending on the former
+  threaded-within-one-edge behavior and does not call composition operators.
 - `validateTransducer defaultValidationOptions` now enforces four additional
   replay-safety checks: head-event recoverability, cross-edge inversion
   ambiguity, constructor guards before input-field reads, and state-changing
