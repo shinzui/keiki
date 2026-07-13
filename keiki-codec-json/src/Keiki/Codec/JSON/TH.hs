@@ -1,35 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
 
--- \$('deriveRegFileCodec' \'\'MySnapshot)
--- @
---
--- to emit three top-level functions
---
--- @
--- mySnapshotToJSON     :: MySnapshot -> Aeson.Value
--- mySnapshotToEncoding :: MySnapshot -> Aeson.Encoding
--- mySnapshotFromJSON   :: Aeson.Value -> Either String MySnapshot
--- @
---
--- Each function routes through the existing
--- 'Keiki.Codec.JSON.RegFileToJSON' class against the slot list
--- @'Keiki.Generics.RegFieldsOf' MySnapshot@. The record's field names
--- become the JSON object's keys; the record's field types must each
--- carry 'Aeson.ToJSON' and 'Aeson.FromJSON' or compilation fails with a
--- precise per-field error.
---
--- This splice lives in @keiki-codec-json@ (not in @keiki@'s
--- @Keiki.Generics.TH@). The class @RegFileToJSON@ is defined here, and
--- moving the splice to @keiki@ would force an @aeson@ dependency on
--- @keiki@ core — violating the load-bearing
--- /keiki MUST NOT gain @aeson@/ requirement (EP-36 §3 R8; MP-11
--- Decision Log 2026-05-10). The splice does reuse the structural
--- machinery in @keiki@'s @Keiki.Generics@ ('Keiki.Generics.RegFieldsOf',
--- 'Keiki.Generics.gToRegFile', 'Keiki.Generics.gFromRegFile') so the
--- composition with the existing 'Keiki.Generics.TH' ergonomics
--- (@mkInCtorVia@, @mkWireCtorVia@, @deriveAggregateCtors@, etc.) is
--- preserved.
-
 -- |
 -- Module      : Keiki.Codec.JSON.TH
 -- Description : Template Haskell helpers that emit @RegFile@-routed JSON
@@ -43,12 +13,34 @@
 --   , correlationId :: Text
 --   , dispatchedAt  :: UTCTime
 --   }
---   deriving stock ('Eq', 'Show', GHC.Generics.'GHC.Generics.Generic')
+--   deriving stock (Eq, Show, Generic)
 -- @
 --
 -- invokes
 --
 -- @
+-- \$('deriveRegFileCodec' \'\'MySnapshot)
+--
+-- mySnapshotToJSON     :: MySnapshot -> Aeson.Value
+-- mySnapshotToEncoding :: MySnapshot -> Aeson.Encoding
+-- mySnapshotFromJSON   :: Aeson.Value -> Either String MySnapshot
+-- @
+--
+-- to emit those three top-level functions. Each function routes through the
+-- existing 'Keiki.Codec.JSON.RegFileToJSON' class against the slot list
+-- @'Keiki.Generics.RegFieldsOf' MySnapshot@. The record's field names become
+-- the JSON object's keys; the record's field types must each carry
+-- 'Aeson.ToJSON' and 'Aeson.FromJSON' or compilation fails with a precise
+-- per-field error.
+--
+-- This splice lives in @keiki-codec-json@ (not in @keiki@'s
+-- @Keiki.Generics.TH@). The class @RegFileToJSON@ is defined here, and moving
+-- the splice to @keiki@ would force an @aeson@ dependency on @keiki@ core —
+-- violating the load-bearing /keiki MUST NOT gain @aeson@/ requirement (EP-36
+-- §3 R8; MP-11 Decision Log 2026-05-10). The splice does reuse the structural
+-- machinery in @keiki@'s @Keiki.Generics@ ('Keiki.Generics.RegFieldsOf',
+-- 'Keiki.Generics.gToRegFile', 'Keiki.Generics.gFromRegFile') so composition
+-- with the existing 'Keiki.Generics.TH' ergonomics is preserved.
 module Keiki.Codec.JSON.TH
   ( deriveRegFileCodec,
     deriveRegFileCodecAs,

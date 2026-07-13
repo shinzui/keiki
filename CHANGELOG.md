@@ -36,6 +36,9 @@ and this project adheres to the
 
 ### Changed
 
+- Aggregate-constructor TH now rejects positional payload types immediately with
+  a record-syntax diagnostic. The `*All` and `*With` enumeration splices warn
+  when they skip unsupported GADT or explicitly quantified constructors.
 - **Breaking:** built-in `CanonicalTypeName` instances now use pinned,
   module-independent names such as `Int`, `Text`, and `Maybe(Int)`. Every
   non-empty register-file shape hash therefore changes once in this release.

@@ -18,6 +18,9 @@ and this project adheres to the
 
 ### Changed
 
+- **Breaking for invalid schemas:** `RegFileToJSON` now rejects duplicate slot
+  names at compile time through keiki's canonical `DistinctNames` invariant,
+  preventing Value-path data loss and duplicate streaming keys.
 - Encoding now documents and pins the existing fully-initialized-register
   precondition. Unwritten `emptyRegFile` slots throw a slot-named `ErrorCall`;
   keiro already snapshots only fully populated register files, so it needs no

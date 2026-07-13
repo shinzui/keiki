@@ -66,10 +66,10 @@ once (Milestone 1) and says so loudly.
 - [x] M4: sharpen the uninit-slot error message in `src/Keiki/Generics.hs`. 2026-07-12.
 - [x] M4: document the fully-initialized precondition on `RegFileToJSON` methods, module header, and `keiki-codec-json/README.md`. 2026-07-12.
 - [x] M4: pin the throwing behavior with a `shouldThrow` test. 2026-07-12.
-- [ ] M5: reuse EP-70's duplicate-slot-name guard (`DistinctNames (Names rs)`) on the `RegFileToJSON` instance, with documented manual negative test
-- [ ] M5: early record-payload validation on the TH command side (`src/Keiki/Generics/TH.hs`)
-- [ ] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants
-- [ ] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML
+- [x] M5: reuse EP-70's duplicate-slot-name guard (`DistinctNames (Names rs)`) on the `RegFileToJSON` instance, with documented manual negative test. 2026-07-12.
+- [x] M5: early record-payload validation on the TH command side (`src/Keiki/Generics/TH.hs`). 2026-07-12.
+- [x] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants. 2026-07-12.
+- [ ] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML. Source repaired and Haddock reports 100% coverage for both modules on 2026-07-12; visual verification remains pending because the in-app browser reported no available browser instance.
 - [ ] M6 (gated on EP-77): golden fixture files for the versioned event envelope under `keiki-codec-json/test/golden/event/`
 - [ ] Final: `cabal build all`, `cabal test all`, `cabal haddock all`, `nix fmt -- --no-cache` all clean; master plan registry row and progress checkbox updated
 
@@ -129,6 +129,15 @@ here as implementation proceeds.
   expanded `uninit: retryCount (slot read before first write; ...)` `ErrorCall`,
   while the public documentation makes the streaming path's possible partial
   emission explicit. The codec suite now passes 90 examples.
+- The M5 compile-time probes exercised all three new failure/reporting paths.
+  A duplicate @x@ slot failed at `regFileToJSON` with the canonical
+  `DistinctNames` error; `data BadCmd = Placed Int` failed at the splice with
+  `deriveAggregateCtors: requires a single record-syntax constructor on payload
+  GHC.Types.Int`; and GADT-only command/event sums compiled while emitting one
+  named warning from each `*All` splice. Keiro then built unchanged against the
+  local `keiki` and `keiki-codec-json` packages. The repaired TH modules both
+  reached 100% Haddock coverage, but the in-app browser had no available instance
+  for the required visual inspection.
 
 
 ## Decision Log

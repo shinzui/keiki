@@ -1,18 +1,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 
--- \$('deriveAggregateCtors' \'\'UserCmd \'\'UserRegRegs
---     [ ("StartRegistration",  "Start")
---     , ("ConfirmAccount",     "Confirm")
---     , ("ResendConfirmation", "Resend")
---     , ("FulfillGDPRRequest", "Gdpr")
---     , ("Continue",           "Continue")
---     ])
--- @
+-- |
+-- Module      : Keiki.Generics.TH
+-- Description : Template Haskell splices for aggregate constructor plumbing.
 --
--- expands to the same 14 declarations a hand-written module ships
--- (4 record ctors × 3 decls + 1 singleton × 2 decls).
-
--- | Template Haskell splices that retire the per-constructor authoring
+-- These splices retire the per-constructor authoring
 -- boilerplate at the example layer.
 --
 -- 'deriveAggregateCtors' emits, for each entry in its spec list, the
@@ -53,7 +45,39 @@
 --   | ResendConfirmation ResendConfirmationData
 --   | FulfillGDPRRequest FulfillGDPRRequestData
 --   | Continue
---   deriving ('Eq', 'Show', 'GHC.Generics.Generic')
+--   deriving (Eq, Show, Generic)
+--
+-- \$('deriveAggregateCtors' \'\'UserCmd \'\'UserRegRegs
+--     [ ("StartRegistration",  "Start")
+--     , ("ConfirmAccount",     "Confirm")
+--     , ("ResendConfirmation", "Resend")
+--     , ("FulfillGDPRRequest", "Gdpr")
+--     , ("Continue",           "Continue")
+--     ])
+-- @
+--
+-- This expands to the same 14 declarations a hand-written module ships
+-- (4 record constructors × 3 declarations + 1 singleton × 2 declarations).
+--
+-- The @*All@ and @*With@ enumeration variants skip unsupported GADT and
+-- explicitly quantified constructors, emitting a compile-time warning that
+-- names both the skipped constructor and the splice. Explicit spec-list
+-- variants fail when asked to generate helpers for an unsupported shape.
+--
+-- == Negative-test procedure (manual)
+--
+-- A positional payload is classified as the command constructor's payload,
+-- then rejected immediately because it is not a single record-syntax type:
+--
+-- @
+-- data BadCmd = Placed Int
+-- type BadRegs = '[]
+-- \$(deriveAggregateCtors \'\'BadCmd \'\'BadRegs [("Placed", "Placed")])
+-- @
+--
+-- Compiling that splice must fail with
+-- @deriveAggregateCtors: requires a single record-syntax constructor on
+-- payload GHC.Types.Int@.
 module Keiki.Generics.TH
   ( deriveAggregateCtors,
     deriveAggregateCtorsAll,
@@ -134,6 +158,7 @@ deriveAggregateCtorsAll ::
   Q [Dec]
 deriveAggregateCtorsAll cmdName regsName = do
   ctors <- reifyCtors cmdName "deriveAggregateCtorsAll"
+  warnSkippedConstructors "deriveAggregateCtorsAll" ctors
   let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
       specs = [(nameBase n, nameBase n) | c <- ctors, n <- conNames c]
   genAggregateCtors cmdName regsName ctorMap specs
@@ -185,6 +210,7 @@ deriveAggregateCtorsWith ::
   Q [Dec]
 deriveAggregateCtorsWith cmdName regsName opts = do
   ctors <- reifyCtors cmdName "deriveAggregateCtorsWith"
+  warnSkippedConstructors "deriveAggregateCtorsWith" ctors
   let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
       allCtors = map fst ctorMap
   specs <-
@@ -224,6 +250,7 @@ deriveWireCtorsAll ::
   Q [Dec]
 deriveWireCtorsAll evtName = do
   ctors <- reifyCtors evtName "deriveWireCtorsAll"
+  warnSkippedConstructors "deriveWireCtorsAll" ctors
   let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
       specs = [(nameBase n, nameBase n) | c <- ctors, n <- conNames c]
   genWireCtors evtName ctorMap specs
@@ -267,6 +294,7 @@ deriveWireCtorsWith ::
   Q [Dec]
 deriveWireCtorsWith evtName opts = do
   ctors <- reifyCtors evtName "deriveWireCtorsWith"
+  warnSkippedConstructors "deriveWireCtorsWith" ctors
   let ctorMap = [(nameBase n, c) | c <- ctors, n <- conNames c]
       allCtors = map fst ctorMap
   specs <-
@@ -284,10 +312,8 @@ deriveWireCtorsWith evtName opts = do
 -- each constructor's own name as its short-name suffix.
 --
 -- @
-
--- $('deriveAggregate' \'\'OrderCmd \'\'OrderCartRegs \'\'OrderEvent)
+-- \$('deriveAggregate' \'\'OrderCmd \'\'OrderCartRegs \'\'OrderEvent)
 -- @
-
 deriveAggregate ::
   -- | command sum type, e.g. @\'\'OrderCmd@
   Name ->
@@ -314,8 +340,7 @@ deriveAggregate cmdName regsName evtName = do
 -- == Worked invocation
 --
 -- @
-
--- $('deriveView' \'\'Vertex \'\'UserRegRegs
+-- \$('deriveView' \'\'Vertex \'\'UserRegRegs
 --     "SUserVertex" "UserView" "userView"
 --     [ ("PotentialCustomer",    [])
 --     , ("Registering",          [])
@@ -324,7 +349,6 @@ deriveAggregate cmdName regsName evtName = do
 --     , ("Deleted",              ["email", "deletedAt"])
 --     ])
 -- @
-
 deriveView ::
   -- | vertex enum, e.g. @\'\'Vertex@
   Name ->
@@ -537,6 +561,36 @@ conNames (RecC n _) = [n]
 conNames (InfixC _ n _) = [n]
 conNames _ = []
 
+-- | Extract names from every Template Haskell constructor shape, including
+-- shapes that keiki deliberately does not generate helpers for.
+allConNames :: Con -> [Name]
+allConNames (NormalC n _) = [n]
+allConNames (RecC n _) = [n]
+allConNames (InfixC _ n _) = [n]
+allConNames (ForallC _ _ con) = allConNames con
+allConNames (GadtC names _ _) = names
+allConNames (RecGadtC names _ _) = names
+
+-- | Enumeration splices skip unsupported GADT or explicitly quantified
+-- constructors, but never silently. Explicit spec-list splices retain their
+-- existing fail-fast behavior when a requested constructor is unsupported.
+warnSkippedConstructors :: String -> [Con] -> Q ()
+warnSkippedConstructors caller ctors =
+  mapM_ warn skipped
+  where
+    skipped =
+      [ name
+      | con <- ctors,
+        null (conNames con),
+        name <- allConNames con
+      ]
+    warn name =
+      reportWarning
+        ( caller
+            <> ": skipped unsupported GADT or explicitly quantified constructor "
+            <> nameBase name
+        )
+
 -- | Three-state classification of a constructor's payload.
 --
 --   * @Just Nothing@  — singleton (zero-arg 'NormalC').
@@ -682,6 +736,7 @@ singletonDecls cmdName regsName ctorStr shortStr ctorN = do
 recordDecls ::
   Name -> Name -> String -> String -> Type -> Q [Dec]
 recordDecls cmdName regsName ctorStr shortStr payTy = do
+  _ <- requireSingleRecordCtor "deriveAggregateCtors" payTy
   let inCtorN = mkName ("inCtor" <> shortStr)
       inpN = mkName ("inp" <> shortStr)
       isN = mkName ("is" <> shortStr)
@@ -844,18 +899,7 @@ genWire evtName ctorMap (ctorStr, shortStr) =
 -- unambiguous.
 genTermFieldsRecord :: String -> Type -> Q [Dec]
 genTermFieldsRecord shortStr payTy = do
-  payName <- typeConstructorName payTy
-  payInfo <- reify payName
-  fields <- case payInfo of
-    TyConI (DataD _ _ _ _ [RecC _ fs] _) -> pure fs
-    TyConI (NewtypeD _ _ _ _ (RecC _ fs) _) -> pure fs
-    _ ->
-      fail $
-        "deriveWireCtors: TermFields generation requires "
-          <> "a single record-syntax constructor on payload "
-          <> show payName
-          <> ", got "
-          <> show payInfo
+  fields <- requireSingleRecordCtor "deriveWireCtors" payTy
   let recName = mkName (shortStr <> "TermFields")
   rsN <- newName "rs"
   ciN <- newName "ci"
@@ -910,15 +954,35 @@ genTermFieldsRecord shortStr payTy = do
       instDec = InstanceD Nothing [] instHead [methodDef]
   pure [recDataDec, instDec]
 
+-- | Require a payload type to name a data or newtype with exactly one
+-- record-syntax constructor. Shared by command projections and event
+-- @TermFields@ generation so both sides reject invalid payloads at the splice
+-- boundary with the same diagnostic shape.
+requireSingleRecordCtor :: String -> Type -> Q [VarBangType]
+requireSingleRecordCtor caller payTy = do
+  payName <- typeConstructorName caller payTy
+  payInfo <- reify payName
+  case payInfo of
+    TyConI (DataD _ _ _ _ [RecC _ fields] _) -> pure fields
+    TyConI (NewtypeD _ _ _ _ (RecC _ fields) _) -> pure fields
+    _ ->
+      fail $
+        caller
+          <> ": requires a single record-syntax constructor on payload "
+          <> show payName
+          <> ", got "
+          <> show payInfo
+
 -- | Extract a type's head constructor name. Accepts @ConT@ and the
 -- common forms it might wear after kind-elaboration; rejects
 -- function/forall/promoted shapes.
-typeConstructorName :: Type -> Q Name
-typeConstructorName (ConT n) = pure n
-typeConstructorName (SigT t _) = typeConstructorName t
-typeConstructorName other =
+typeConstructorName :: String -> Type -> Q Name
+typeConstructorName _ (ConT n) = pure n
+typeConstructorName caller (SigT t _) = typeConstructorName caller t
+typeConstructorName caller other =
   fail $
-    "deriveWireCtors: payload type must be a type constructor, "
+    caller
+      <> ": payload type must be a type constructor, "
       <> "got "
       <> show other
 

@@ -28,6 +28,12 @@
 -- streaming path the exception can surface after an earlier part of the object
 -- has already been emitted, so snapshot only fully hydrated aggregates.
 --
+-- Slot names must also be pairwise distinct. 'RegFileToJSON' applies the
+-- canonical @Keiki.Internal.Slots.DistinctNames (Keiki.Internal.Slots.Names
+-- rs)@ invariant at compile time. Without it, the Value path would silently
+-- retain only one duplicate key, the streaming path would emit the key twice,
+-- and decoding could never populate the second slot.
+--
 -- A @Nothing@ slot is present as explicit JSON @null@. Omitting the key is
 -- not equivalent: 'regFileFromJSON' rejects every absent slot. A nested
 -- @Maybe@ is not faithfully representable by aeson's standard instances:
@@ -76,6 +82,7 @@ import Data.Aeson.Types qualified as Aeson (Pair)
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Keiki.Core (RegFile (..), Slot)
+import Keiki.Internal.Slots (DistinctNames, Names)
 
 -- * Internal walker -----------------------------------------------------------
 
@@ -193,5 +200,17 @@ class (RegFileWalk rs) => RegFileToJSON (rs :: [Slot]) where
 -- coverage is a 'RegFileToJSON'. Users do not write instances of this
 -- class themselves; the inductive 'RegFileWalk' instances (one for
 -- @'[]@, one for @\'(s, t) \': rs@) cover every slot list whose
--- component types carry 'Aeson.ToJSON' and 'Aeson.FromJSON'.
-instance (RegFileWalk rs) => RegFileToJSON rs
+-- component types carry 'Aeson.ToJSON' and 'Aeson.FromJSON'. The
+-- 'DistinctNames' constraint rejects duplicate slot symbols before either
+-- encoder can lose data or emit ambiguous JSON.
+--
+-- == Negative-test procedure (manual)
+--
+-- With @DataKinds@ and @TypeApplications@ enabled, this definition must fail
+-- to compile with @register file declares slot "x" more than once@:
+--
+-- @
+-- duplicateCodec :: RegFile '[ '("x", Int), '("x", Bool)] -> Aeson.Value
+-- duplicateCodec = regFileToJSON
+-- @
+instance (RegFileWalk rs, DistinctNames (Names rs)) => RegFileToJSON rs
