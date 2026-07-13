@@ -10,7 +10,6 @@ spec :: Spec
 spec = do
   describe "compose counterSource lastValueSink" $
     it "stores the pre-increment count in the sink" $ do
-      pendingWith "EP-74 M3"
       let pipeline = compose counterSource lastValueSink
       case step pipeline (initial pipeline, initialRegs pipeline) Tick of
         Just (_, regs, outputs) -> do

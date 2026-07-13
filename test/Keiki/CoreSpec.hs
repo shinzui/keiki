@@ -8,6 +8,11 @@ import Test.Hspec
 -- | A two-constructor input symbol used by the 'TInpCtorField' tests.
 data TinyCmd = TinyFoo Int Int | TinyBar Int deriving (Eq, Show)
 
+type SnapshotRegs =
+  '[ '("x", Int),
+     '("y", Int)
+   ]
+
 inCtorTinyFoo ::
   InCtor
     TinyCmd
@@ -131,6 +136,32 @@ spec = do
       evalPred (PBot :: HsPred '[] ()) RNil () `shouldBe` False
     it "PEq compares equal terms" $
       evalPred (TLit (1 :: Int) .== TLit 1 :: HsPred '[] ()) RNil () `shouldBe` True
+
+  describe "runUpdate snapshot semantics" $ do
+    let regs = RCons (Proxy @"x") 0 (RCons (Proxy @"y") 99 RNil)
+
+    it "evaluates sibling right-hand sides against the entry snapshot" $ do
+      let update :: Update SnapshotRegs '["x", "y"] ()
+          update =
+            UCombine
+              (USet (#x :: IndexN "x" SnapshotRegs Int) (lit 1))
+              ( USet
+                  (#y :: IndexN "y" SnapshotRegs Int)
+                  (proj (#x :: Index SnapshotRegs Int))
+              )
+          result = runUpdate update regs ()
+      result ! (#x :: Index SnapshotRegs Int) `shouldBe` 1
+      result ! (#y :: Index SnapshotRegs Int) `shouldBe` 0
+
+    it "preserves self-read increments" $ do
+      let update :: Update SnapshotRegs '["x"] ()
+          update =
+            USet
+              (#x :: IndexN "x" SnapshotRegs Int)
+              (proj (#x :: Index SnapshotRegs Int) .+ lit 1)
+          result = runUpdate update regs ()
+      result ! (#x :: Index SnapshotRegs Int) `shouldBe` 1
+      result ! (#y :: Index SnapshotRegs Int) `shouldBe` 99
 
   describe "synthetic 2-vertex transducer" $ do
     it "delta moves False -> True on input True (state)" $

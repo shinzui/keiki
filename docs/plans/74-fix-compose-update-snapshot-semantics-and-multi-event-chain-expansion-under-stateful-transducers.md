@@ -63,8 +63,8 @@ here, even if it requires splitting a partially completed task into two ("done" 
 
 - [x] (2026-07-13 03:33Z) M1: fixture module `test/Keiki/Fixtures/ComposeStateful.hs` written (counter source, last-value sink, two-phase chain sink, wrong-order-guard sink) and registered in `keiki.cabal`
 - [x] (2026-07-13 03:33Z) M1: red tests in `test/Keiki/CompositionStatefulSpec.hs` pinning defect 1 (post-update substitution), defect 2 (stale chain registers / wrong path selection), defect 3 (guard-order crash) — each fails against current `master` with the divergence the Context section predicts and remains committed behind its milestone `pendingWith`
-- [ ] M2 (prototyping): snapshot-semantics prototype for `runUpdate` in `src/Keiki/Core.hs`; full suite run; consumer blast-radius survey re-verified; promote/discard decision recorded in the Decision Log
-- [ ] M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics
+- [x] (2026-07-13 03:40Z) M2 (prototyping): snapshot-semantics prototype for `runUpdate` in `src/Keiki/Core.hs`; full suite green; current-keiro and in-repo consumer blast-radius survey re-verified; promote decision recorded in the Decision Log
+- [x] (2026-07-13 03:40Z) M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics; `alternative` and `feedback1` audit complete
 - [ ] M4: defect 2 fixed — chain expansion threads symbolic composed terms (or the honest restriction is implemented and documented); two-phase chain test green
 - [ ] M5: defect 3 fixed — `substTerm` total via inert poison, guard leaves with mismatched input reads substitute to `PBot`; wrong-order-guard test green; structural walkers (symbolic check, pretty printer, replay) verified crash-free on cross-constructor composites
 - [ ] M6: `test/Keiki/CompositionHomomorphismSpec.hs` — bounded-exhaustive semantic-homomorphism suite green (single-mid, multi-event, reject-agreement)
@@ -108,12 +108,19 @@ implementation. Provide concise evidence.
   (`src/Keiki/Symbolic.hs:439-440`), as do the pretty/mermaid renderers — can crash on
   composite edges that runtime evaluation would never crash on. The fix therefore aims
   for walker-inert totality, not just runtime order.
-- (Implementation M1, 2026-07-12) Activating all three stateful regressions against
+- (Implementation M1, 2026-07-13) Activating all three stateful regressions against
   the pre-fix tree reproduced the review exactly: the counter sink stored `1` instead
   of `0`, the two-phase chain ended at phase `1` instead of `2`, and the wrong-order
   guard raised the `TInpCtorField over M2B but ... produced M2A` substitution error.
   Restoring the three `pendingWith` guards left the focused suite at nine examples,
   zero failures, and three pending tests.
+- (Implementation M2/M3, 2026-07-13) Snapshot evaluation was observation-equivalent
+  across the existing workspace: `cabal test all` passed all four suites, including
+  245 keiki examples, 122 jitsurei examples, and both codec suites. The `mori`-located
+  current keiro tree contains no raw `UCombine`; every register-reading update found
+  in keiki/jitsurei is either a same-slot increment or a rendering-only fixture.
+  Activating the counter composition regression now leaves `srcCount = 1`, stores
+  `sinkLast = 0`, and emits `OutVal 0` as sequential execution does.
 
 
 ## Decision Log
@@ -191,6 +198,18 @@ Record every decision made while working on the plan.
   decision flips to a new `UPar` constructor (leaving `UCombine` untouched) and this
   entry must be superseded.
   Date: 2026-07-11
+
+- Decision: promote the M2 snapshot-semantics prototype as the shipped `runUpdate`
+  behavior and use it as M3's single-mid composition fix.
+  Rationale: the focused Core regression and the complete workspace suite are green;
+  `mori registry show shinzui/keiro --full` located the current consumer at
+  `/Users/shinzui/Keikaku/bokuno/keiro`, whose source and tests contain no raw
+  `UCombine`; all in-repo register-reading updates are self-reads, apart from the new
+  explicit snapshot regression and a non-evaluated pretty-printer fixture. The M3
+  audit also found `alternative` only weakens/lifts each arm's own update, while
+  `feedback1` is defined entirely as two `compose` calls, so neither needs a separate
+  update-boundary repair.
+  Date: 2026-07-13
 
 
 ## Outcomes & Retrospective

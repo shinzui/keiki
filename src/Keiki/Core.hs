@@ -852,14 +852,18 @@ evalPred (PCmp op a b) r c = applyCmp op (evalTerm a r c) (evalTerm b r c)
     applyCmp CmpGt x y = x > y
     applyCmp CmpGe x y = x >= y
 
--- | Apply an 'Update' to the register file. 'UCombine' applies left
--- then right; the smart 'combine''s 'Disjoint' constraint guarantees
--- the two halves write to disjoint slots, so the application order
--- does not affect the result.
-runUpdate :: Update rs w ci -> RegFile rs -> ci -> RegFile rs
-runUpdate UKeep regs _ = regs
-runUpdate (USet ix t) regs ci = setSlotN ix (evalTerm t regs ci) regs
-runUpdate (UCombine a b) regs ci = runUpdate b (runUpdate a regs ci) ci
+-- | Apply an 'Update' to the register file. Every right-hand-side term
+-- reads the register snapshot from before the whole update began. Writes
+-- are then applied left-to-right; the public 'combine' constructor requires
+-- disjoint slots, while internal raw 'UCombine' values that repeat a slot
+-- therefore keep the rightmost write.
+runUpdate :: forall rs w ci. Update rs w ci -> RegFile rs -> ci -> RegFile rs
+runUpdate update regs ci = go update regs
+  where
+    go :: Update rs w' ci -> RegFile rs -> RegFile rs
+    go UKeep acc = acc
+    go (USet ix t) acc = setSlotN ix (evalTerm t regs ci) acc
+    go (UCombine a b) acc = go b (go a acc)
 
 -- | Pure register-file slot update at a slot-name-tagged 'IndexN'.
 --
