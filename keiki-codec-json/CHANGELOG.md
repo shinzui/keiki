@@ -18,6 +18,14 @@ and this project adheres to the
 
 ### Changed
 
+- **Breaking:** snapshot shape hashes now use keiki's pinned built-in type names.
+  Every non-empty shape hash changes once; stores keyed by an old hash ignore that
+  snapshot and replay from the event log. Keiro already treats this mismatch as a
+  benign cache miss.
+- Container slot types now require their arguments to have
+  `CanonicalTypeName`, not merely `Typeable`, so user-defined types may need to
+  derive or define that class. This makes application overrides propagate through
+  `Maybe`, lists, `Either`, and tuples.
 - **Breaking:** `EventCodecOptions` now also carries `kindOverrides`,
   `versionFieldName`, `currentVersion`, and `upcasters`.
 - **Breaking:** `FieldCodec` gains the `fcOnMissing` field. Positional

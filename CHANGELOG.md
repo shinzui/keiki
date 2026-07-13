@@ -36,6 +36,16 @@ and this project adheres to the
 
 ### Changed
 
+- **Breaking:** built-in `CanonicalTypeName` instances now use pinned,
+  module-independent names such as `Int`, `Text`, and `Maybe(Int)`. Every
+  non-empty register-file shape hash therefore changes once in this release.
+  Snapshot stores keyed by the old hash treat existing snapshots as cache misses
+  and replay the event log in full; keiro follows this benign fallback path.
+- `Maybe`, list, `Either`, and tuple canonical-name instances now recurse through
+  `CanonicalTypeName` instead of `Typeable`, so application overrides compose
+  inside containers. A custom type used there may need
+  `deriving anyclass (CanonicalTypeName)`; missing evidence is a compile-time
+  migration rather than silent hash drift.
 - Symbolic emptiness checks no longer mistake solver uncertainty for proof of
   unsatisfiability. `symIsBot`, `symSatExt`, `isSingleValuedSym`,
   `withSymPred`, `checkTransitionDeterminismSym`, and `checkDeadEdgesSym` keep

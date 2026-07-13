@@ -1,26 +1,60 @@
 -- | EP-36 M1: golden-value tests for 'Keiki.Shape'.
 --
--- The expected strings are pinned for GHC 9.12.* (the current sole entry
--- in @tested-with@). If a future GHC moves @Int@ out of @GHC.Types@ or
--- renames @GHC.Internal.Maybe@, these tests catch the drift; EP-36 §8
--- documents the procedure (audit, mitigate via 'CanonicalTypeName'
--- overrides, decide whether to ship a migration). See EP-36 §3 R4 (cross-
--- version stability) and §5 P5 (the hash uses only stable accessors).
+-- The raw 'renderStableTypeRep' expectations remain pinned for GHC 9.12.*.
+-- Shape canonicalization uses explicit built-in names instead, so GHC-internal
+-- module moves no longer change snapshot hashes.
 module Keiki.ShapeSpec (spec) where
 
+import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
+import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Time.Calendar (Day)
 import Data.Time.Clock (UTCTime)
+import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.TypeLits (Symbol)
 import Keiki.Shape
-  ( regFileShapeCanonical,
+  ( CanonicalTypeName (..),
+    regFileShapeCanonical,
     regFileShapeHash,
     renderStableTypeRep,
     sha256Hex,
   )
-import Test.Hspec (Spec, describe, it, shouldBe)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Type.Reflection (someTypeRep)
+
+data ApplicationType
+
+instance CanonicalTypeName ApplicationType where
+  canonicalTypeName _ = T.pack "ApplicationType-v1"
+
+type BuiltInSlots =
+  '[ '("unit", ()),
+     '("bool", Bool),
+     '("char", Char),
+     '("int", Int),
+     '("int8", Int8),
+     '("int16", Int16),
+     '("int32", Int32),
+     '("int64", Int64),
+     '("integer", Integer),
+     '("word", Word),
+     '("word8", Word8),
+     '("word16", Word16),
+     '("word32", Word32),
+     '("word64", Word64),
+     '("double", Double),
+     '("float", Float),
+     '("text", Text),
+     '("utcTime", UTCTime),
+     '("day", Day),
+     '("maybe", Maybe Int),
+     '("list", [Text]),
+     '("either", Either Int Text),
+     '("pair", (Int, Text)),
+     '("triple", (Int, Text, Bool))
+   ]
 
 spec :: Spec
 spec = do
@@ -44,7 +78,17 @@ spec = do
 
     it "concatenates one slot in the documented R3 form" $
       regFileShapeCanonical (Proxy @('[ '("retryCount", Int)] :: [(Symbol, Type)]))
-        `shouldBe` T.pack "retryCount:GHC.Types.Int;regfile:0"
+        `shouldBe` T.pack "retryCount:Int;regfile:0"
+
+    it "keeps GHC-internal module paths out of every built-in name" $ do
+      let canonical = regFileShapeCanonical (Proxy @BuiltInSlots)
+      canonical `shouldSatisfy` (not . T.isInfixOf (T.pack "GHC.Internal"))
+      canonical `shouldSatisfy` (not . T.isInfixOf (T.pack "GHC.Types"))
+
+    it "propagates an application override through containers" $
+      regFileShapeCanonical
+        (Proxy @('[ '("application", Maybe ApplicationType)] :: [(Symbol, Type)]))
+        `shouldBe` T.pack "application:Maybe(ApplicationType-v1);regfile:0"
 
   describe "regFileShapeHash" $ do
     it "produces the pinned SHA-256 of \"regfile:0\" for the empty list" $
@@ -53,12 +97,12 @@ spec = do
 
     it "produces the pinned hash for a one-slot list (retryCount :: Int)" $
       regFileShapeHash (Proxy @('[ '("retryCount", Int)] :: [(Symbol, Type)]))
-        `shouldBe` T.pack "e2c8839d9ae8e89baebbc1adf6dfd5a35608712d9bf994c7cef4ea774e739700"
+        `shouldBe` T.pack "de03289268ae222f84d8a1b9af8f4f78bc9d23a747c97c12f4974e2504485978"
 
     it "differs when slot order is reversed (P10: slot order is identity)" $
       regFileShapeHash
         (Proxy @('[ '("retryCount", Int), '("cooldownUntil", UTCTime)] :: [(Symbol, Type)]))
-        `shouldBe` T.pack "944d775449408b12b78b2a41770af207bae37d0a833c046310eb6ff3902ea44f"
+        `shouldBe` T.pack "22a08cf2b847545bf0ce24f505de379ee49c2edb8c2236b6f6bcfadba984b1ea"
 
     it "matches its sha256Hex-of-canonical definition" $ do
       let p = Proxy @('[ '("retryCount", Int), '("cooldownUntil", UTCTime)] :: [(Symbol, Type)])

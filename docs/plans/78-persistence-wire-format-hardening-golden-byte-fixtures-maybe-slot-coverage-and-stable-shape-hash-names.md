@@ -49,11 +49,11 @@ once (Milestone 1) and says so loudly.
 
 ## Progress
 
-- [ ] M1: pin stable literal names in every built-in `CanonicalTypeName` instance in `src/Keiki/Shape.hs`
-- [ ] M1: make container instances (`Maybe`, `[]`, `Either`, tuples) recurse through `canonicalTypeName` so user overrides compose
-- [ ] M1: update pinned values in `test/Keiki/ShapeSpec.hs` and `keiki-codec-json/test/Keiki/Codec/JSON/GoldenSpec.hs`
-- [ ] M1: add the no-`GHC.Internal` sensitivity test and full pinned canonical string for `ExemplarSlots`
-- [ ] M1: document the one-time hash migration (Haddock + both CHANGELOGs, keiro impact statement)
+- [x] M1: pin stable literal names in every built-in `CanonicalTypeName` instance in `src/Keiki/Shape.hs`. 2026-07-12.
+- [x] M1: make container instances (`Maybe`, `[]`, `Either`, tuples) recurse through `canonicalTypeName` so user overrides compose. 2026-07-12.
+- [x] M1: update pinned values in `test/Keiki/ShapeSpec.hs` and `keiki-codec-json/test/Keiki/Codec/JSON/GoldenSpec.hs`. 2026-07-12.
+- [x] M1: add the no-`GHC.Internal` sensitivity test and full pinned canonical string for `ExemplarSlots`. 2026-07-12.
+- [x] M1: document the one-time hash migration (Haddock + both CHANGELOGs, keiro impact statement). 2026-07-12.
 - [ ] M2: create `keiki-codec-json/test/golden/` fixture files (exemplar Value path, exemplar Encoding path, shape canonical+hash)
 - [ ] M2: new spec `keiki-codec-json/test/Keiki/Codec/JSON/GoldenFileSpec.hs` with both test directions and `KEIKI_UPDATE_GOLDENS` regeneration mode
 - [ ] M2: wire GoldenFileSpec into `keiki-codec-json/test/Spec.hs` and the cabal file (`other-modules`, `extra-source-files`)
@@ -106,6 +106,12 @@ here as implementation proceeds.
   never omits keys), and the strict decoder rejects an *absent* key with "missing
   slot" (`keiki-codec-json/src/Keiki/Codec/JSON.hs:109-110`). This is a real wire
   rule that nothing currently documents or pins.
+- The M1 hash migration matched every precomputed value exactly: the exemplar now
+  canonicalizes as `retryCount:Int;cooldownUntil:UTCTime;correlationId:Text;regfile:0`
+  and hashes to `d920c366...`. Temporarily restoring only `Int` to its Typeable
+  default produced four targeted failures, including the all-built-ins
+  `GHC.Types` sensitivity check, proving the guardrail is live; restoring the
+  explicit body returned both affected suites to green (498 core, 67 codec).
 
 
 ## Decision Log
