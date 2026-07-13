@@ -25,7 +25,10 @@ module Keiki.CompositionSpec
     -- @docs/plans/31-mermaid-rendering-for-composite-symtransducers.md@
     -- for why we re-export rather than duplicate the fixture.
     alertSource,
+    AlertCmd (..),
+    AlertRegs,
     AlertVertex (..),
+    sampleTrigger,
   )
 where
 

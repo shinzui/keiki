@@ -10,6 +10,7 @@ import Keiki.ChoiceSpec qualified
 import Keiki.CollectionSpike qualified
 import Keiki.CompositionAlternativeSpec qualified
 import Keiki.CompositionFeedback1Spec qualified
+import Keiki.CompositionHomomorphismSpec qualified
 import Keiki.CompositionMultiEventSpec qualified
 import Keiki.CompositionNarySpec qualified
 import Keiki.CompositionSpec qualified
@@ -50,6 +51,7 @@ main = hspec $ do
   describe "Keiki.Composition" Keiki.CompositionSpec.spec
   describe "Keiki.Composition (alternative, EP-25)" Keiki.CompositionAlternativeSpec.spec
   describe "Keiki.Composition (feedback1, EP-26)" Keiki.CompositionFeedback1Spec.spec
+  describe "Keiki.Composition (homomorphism, EP-74)" Keiki.CompositionHomomorphismSpec.spec
   describe "Keiki.Composition (multi-event, EP-19 M6)" Keiki.CompositionMultiEventSpec.spec
   describe "Keiki.Composition (N-ary codec, EP-48)" Keiki.CompositionNarySpec.spec
   describe "Keiki.Composition (stateful, EP-74)" Keiki.CompositionStatefulSpec.spec

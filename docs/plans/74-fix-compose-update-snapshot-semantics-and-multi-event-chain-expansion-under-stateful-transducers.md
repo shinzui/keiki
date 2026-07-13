@@ -67,7 +67,7 @@ here, even if it requires splitting a partially completed task into two ("done" 
 - [x] (2026-07-13 03:37Z) M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics; `alternative` and `feedback1` audit complete
 - [x] (2026-07-13 03:39Z) M4: defect 2 fixed — chain expansion threads symbolic composed terms through a newest-first pending-write environment; two-phase chain and pre-existing stateless multi-event tests green
 - [x] (2026-07-13 03:42Z) M5: defect 3 fixed — `substTerm` total via inert poison, guard leaves with mismatched input reads substitute to `PBot`; wrong-order-guard test green; structural walkers (symbolic check, pretty printer, replay) verified crash-free on cross-constructor composites
-- [ ] M6: `test/Keiki/CompositionHomomorphismSpec.hs` — bounded-exhaustive semantic-homomorphism suite green (single-mid, multi-event, reject-agreement)
+- [x] (2026-07-13 03:46Z) M6: `test/Keiki/CompositionHomomorphismSpec.hs` — bounded-exhaustive semantic-homomorphism suite green (single-mid, multi-event, reject-agreement), with the documented wrong-order sequential bottom represented as an explicit refinement case
 - [ ] M7: documentation — `feedback1` haddock nesting constraint (defect 4), `compose` haddock, `docs/research/composition-combinators-design.md`, `docs/research/gsm-widening-design.md` §5, `CHANGELOG.md`; master plan registry row and progress box updated
 - [ ] `nix fmt -- --no-cache` clean; `cabal build all` and `cabal test all` green under GHC 9.12
 
@@ -134,6 +134,10 @@ implementation. Provide concise evidence.
   wrong-order M2B equality `PBot` before term substitution. The active forward step,
   SBV single-valuedness check, pretty-printer traversal, and replay of `[SawA 5]` all
   complete successfully in the focused four-example suite.
+- (Implementation M6, 2026-07-13) The homomorphism suite's mutation check has teeth:
+  changing `runUpdate`'s `USet` evaluator from the entry `regs` back to the threaded
+  `acc` makes the counter comparison fail at `sinkLast`, reporting expected `0` but
+  got `1`. Restoring snapshot evaluation returns all four suite cases to green.
 
 
 ## Decision Log
@@ -232,6 +236,17 @@ Record every decision made while working on the plan.
   documented for substitution. Retaining the raw duplicate writes preserves the
   chain's visible structure, while snapshot `runUpdate` applies them left-to-right so
   the later step wins exactly as sequential execution does.
+  Date: 2026-07-13
+
+- Decision: treat the wrong-order guard fixture as an explicit refinement case in the
+  M6 suite, not as a homomorphism equality case.
+  Rationale: the plan already records that plain sequential execution is bottom for
+  this hand-written guard (`evalTerm: TInpCtorField guard violation: M2B`) while the
+  composite deliberately refines the error to a defined M2A step. The first M6 run
+  confirmed that comparing those results crashes the reference before an equality can
+  exist. The suite now asserts both sides of that documented exception directly and
+  reserves exact state/output/reject comparisons for the three defined sequential
+  pipelines.
   Date: 2026-07-13
 
 
@@ -766,10 +781,13 @@ fixture pairing (e.g. for `counterSource ⨾ lastValueSink`: pools of `Tick`; fo
 payload-carrying variant, payloads from `[-2, 0, 1, 7]`), for these pairings:
 `counterSource ⨾ lastValueSink` (defect 1 regression, now with multi-step folds so the
 counter actually advances), `pairSource ⨾ twoPhaseSink` (multi-event, stateful t2),
-`m2aSource ⨾ wrongOrderSink` (shield), and the pre-existing register-free pipeline from
-`test/Keiki/CompositionSpec.hs` (`alertSource ⨾ emailDelivery`, both exported; this
+and the pre-existing register-free pipeline from `test/Keiki/CompositionSpec.hs`
+(`alertSource ⨾ emailDelivery`, both exported; this
 generalizes that spec's fixed-input equivalence tests to swept inputs — leave the old
-spec in place). At each step of each sequence assert: `step (compose t1 t2)` is
+spec in place). The `m2aSource ⨾ wrongOrderSink` fixture is an explicit exception:
+assert that plain t2 stepping raises its documented field-guard error and that the
+composite refines it to the defined `[SawA 5]` step. For each defined sequential
+pairing, at every step assert: `step (compose t1 t2)` is
 `Just` exactly when `sequentialStep` is (reject-agreement); on `Just`, the composite
 vertex equals `Composite s1' s2'`, the outputs list is equal, and every register slot
 of the composite file equals the corresponding slot of

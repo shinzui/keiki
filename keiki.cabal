@@ -108,6 +108,7 @@ test-suite keiki-test
     Keiki.CollectionSpike
     Keiki.CompositionAlternativeSpec
     Keiki.CompositionFeedback1Spec
+    Keiki.CompositionHomomorphismSpec
     Keiki.CompositionMultiEventSpec
     Keiki.CompositionNarySpec
     Keiki.CompositionSpec
