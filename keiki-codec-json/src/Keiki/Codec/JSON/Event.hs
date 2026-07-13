@@ -29,8 +29,8 @@
 -- Each constructor encodes to a JSON object carrying a @"kind"@
 -- discriminator (the pinned wire kind, or the constructor name by default)
 -- and an in-band @"v"@ schema version, plus one entry per payload field.
--- The decoder reads @"kind"@, branches, and reassembles the payload field
--- by field.
+-- The decoder validates the stored version, runs every required whole-object
+-- upcaster, then reads @"kind"@ and reassembles the payload field by field.
 --
 -- == No silent generic fallback (the anti-drift property)
 --
@@ -83,6 +83,7 @@ module Keiki.Codec.JSON.Event
     lookupFieldMaybe,
     lookupText,
     lookupVersion,
+    migrateEnvelope,
     aesonResultToEither,
   )
 where
@@ -91,7 +92,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Char (toLower)
-import Data.List (intercalate)
+import Data.List (group, intercalate, sort, sortOn, (\\))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Scientific qualified as Scientific
@@ -153,13 +154,18 @@ data EventCodecOptions = EventCodecOptions
     versionFieldName :: String,
     -- | current schema version stamped by the encoder; must be at least @1@
     currentVersion :: Int,
+    -- | one whole-envelope migration per historical from-version. A version
+    --     @n@ function upgrades to version @n + 1@; the splice requires exact
+    --     coverage of @[1 .. currentVersion - 1]@.
+    upcasters :: [(Int, Name)],
     -- | behaviour for unhandled fields; default 'FailAtCompileTime'
     onMissingCodec :: OnMissingCodec
   }
 
 -- | Empty field and kind overrides, empty passthrough,
 -- @kindFieldName = "kind"@, @versionFieldName = "v"@,
--- @currentVersion = 1@, and @onMissingCodec = 'FailAtCompileTime'@.
+-- @currentVersion = 1@, no upcasters, and
+-- @onMissingCodec = 'FailAtCompileTime'@.
 defaultEventCodecOptions :: EventCodecOptions
 defaultEventCodecOptions =
   EventCodecOptions
@@ -169,6 +175,7 @@ defaultEventCodecOptions =
       kindOverrides = Map.empty,
       versionFieldName = "v",
       currentVersion = 1,
+      upcasters = [],
       onMissingCodec = FailAtCompileTime
     }
 
@@ -207,6 +214,32 @@ lookupVersion k o = case KeyMap.lookup k o of
     expectedInteger =
       "field " <> Key.toString k <> ": expected an integer schema version"
 
+-- | Replay a compile-time-complete chain from the stored version to the
+-- current version. Rungs run in ascending source-version order; the only
+-- expected runtime failure is a rung rejecting its input.
+migrateEnvelope ::
+  Int ->
+  [(Int, Aeson.Value -> Either String Aeson.Value)] ->
+  Int ->
+  Aeson.Value ->
+  Either String Aeson.Value
+migrateEnvelope targetVersion chain storedVersion =
+  go applicableRungs
+  where
+    applicableRungs =
+      [ rung
+      | rung@(fromVersion, _) <- sortOn fst chain,
+        fromVersion >= storedVersion,
+        fromVersion < targetVersion
+      ]
+
+    go [] value = Right value
+    go ((fromVersion, upcast) : rest) value =
+      case upcast value of
+        Left message ->
+          Left ("upcaster from version " <> show fromVersion <> ": " <> message)
+        Right nextValue -> go rest nextValue
+
 -- | Adapt aeson's 'Aeson.Result' to @Either String@.
 aesonResultToEither :: Aeson.Result a -> Either String a
 aesonResultToEither (Aeson.Success a) = Right a
@@ -235,6 +268,7 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
 
   validateWireKinds opts tyName ctors
   validateVersionEnvelope opts ctors
+  validateUpcasters opts
 
   -- No-silent-fallback safety net: classify each payload field; an
   -- unhandled field is one in neither overrides nor passthrough.
@@ -415,12 +449,55 @@ decoderBody opts prefix vVar oVar kVar versionVar ctors =
     ]
   where
     currentVersionE = litE (IntegerL (fromIntegral (currentVersion opts)))
-    dispatchCurrent =
+    dispatchMigrated migratedObjectVar =
       infixE
-        (Just [|lookupText $(keyE (kindFieldName opts)) $(varE oVar)|])
+        ( Just
+            [|
+              lookupText
+                $(keyE (kindFieldName opts))
+                $(varE migratedObjectVar)
+              |]
+        )
         (varE '(>>=))
-        (Just (lamE [varP kVar] (dispatch opts oVar kVar ctors)))
-    versionGuard =
+        ( Just
+            ( lamE
+                [varP kVar]
+                (dispatch opts migratedObjectVar kVar ctors)
+            )
+        )
+    migratedObjectCase migratedValueVar migratedObjectVar =
+      caseE
+        (varE migratedValueVar)
+        [ match
+            (conP 'Aeson.Object [varP migratedObjectVar])
+            (normalB (dispatchMigrated migratedObjectVar))
+            [],
+          match
+            wildP
+            (normalB [|Left $(stringE (prefix <> ": expected a JSON object"))|])
+            []
+        ]
+    migrateCurrent migratedValueVar migratedObjectVar =
+      infixE
+        ( Just
+            [|
+              migrateEnvelope
+                ($currentVersionE :: Int)
+                $(upcasterChainE opts)
+                $(varE versionVar)
+                (Aeson.Object $(varE oVar))
+              |]
+        )
+        (varE '(>>=))
+        ( Just
+            ( lamE
+                [varP migratedValueVar]
+                (migratedObjectCase migratedValueVar migratedObjectVar)
+            )
+        )
+    versionGuard = do
+      migratedValueVar <- newName "migratedValue"
+      migratedObjectVar <- newName "migratedObject"
       [|
         if $(varE versionVar) < 1
           then Left ("invalid event schema version: " <> show $(varE versionVar))
@@ -433,8 +510,15 @@ decoderBody opts prefix vVar oVar kVar versionVar ctors =
                       <> " is ahead of codec version "
                       <> show ($currentVersionE :: Int)
                   )
-              else $dispatchCurrent
+              else $(migrateCurrent migratedValueVar migratedObjectVar)
         |]
+
+upcasterChainE :: EventCodecOptions -> Q Exp
+upcasterChainE opts =
+  listE
+    [ [|($(litE (IntegerL (fromIntegral fromVersion))) :: Int, $(varE upcastName))|]
+    | (fromVersion, upcastName) <- sortOn fst (upcasters opts)
+    ]
 
 -- | Nested @if kind == "C" then <build C> else ...@ ending in an
 -- unknown-kind 'Left'.
@@ -661,6 +745,46 @@ validateVersionEnvelope opts ctors = do
         (fieldName, _, _) <- fields,
         fieldName == versionFieldName opts
       ]
+
+validateUpcasters :: EventCodecOptions -> Q ()
+validateUpcasters opts = do
+  case duplicateSources of
+    [] -> pure ()
+    duplicates ->
+      fail $
+        "deriveEventCodecSkeleton: duplicate upcaster from-versions: "
+          <> show duplicates
+
+  case outOfRangeSources of
+    [] -> pure ()
+    invalidSources ->
+      fail $
+        "deriveEventCodecSkeleton: upcaster from-versions must be >= 1 and < currentVersion "
+          <> show (currentVersion opts)
+          <> "; out of range: "
+          <> show invalidSources
+
+  case missingSources of
+    [] -> pure ()
+    missing ->
+      fail $
+        "deriveEventCodecSkeleton: upcasters must cover from-versions [1.."
+          <> show (currentVersion opts - 1)
+          <> "] exactly; missing: "
+          <> show missing
+  where
+    sources = map fst (upcasters opts)
+    expectedSources = [1 .. currentVersion opts - 1]
+    duplicateSources =
+      [ source
+      | source : _ : _ <- group (sort sources)
+      ]
+    outOfRangeSources =
+      [ source
+      | source <- sort sources,
+        source < 1 || source >= currentVersion opts
+      ]
+    missingSources = expectedSources \\ sources
 
 -- * Reflection ---------------------------------------------------------------
 

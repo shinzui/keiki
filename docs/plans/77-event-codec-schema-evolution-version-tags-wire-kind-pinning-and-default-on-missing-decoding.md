@@ -81,11 +81,13 @@ here, even if it requires splitting a partially completed task into two ("done" 
       property round-trips including `Maybe` fields green. The new evolution module
       also pins present-null behavior and required-field strictness; the targeted
       suite passed 61 examples. 2026-07-12.
-- [ ] Milestone 4: upcaster chain — `upcasters :: [(Int, Name)]` option, splice-time
+- [x] Milestone 4: upcaster chain — `upcasters :: [(Int, Name)]` option, splice-time
       completeness validation, migration applied before constructor dispatch,
-      `migrateEnvelope` runtime helper.
-- [ ] Milestone 4: v1-bytes-through-upcaster fixture, upcaster-error surface test,
-      and manual compile-fail check for a chain gap.
+      `migrateEnvelope` runtime helper. 2026-07-12.
+- [x] Milestone 4: v1-bytes-through-upcaster fixture, upcaster-error surface test,
+      and manual compile-fail check for a chain gap. The targeted suite passed 66
+      examples; temporary builds also pinned duplicate and out-of-range source
+      diagnostics. 2026-07-12.
 - [ ] Milestone 5: documentation — `Event.hs` module haddock, `keiki-codec-json/README.md`,
       `docs/research/schema-evolution.md` finalized-contract section, `ROADMAP.md`
       sharpened-contract bullet, `keiki-codec-json/CHANGELOG.md`, asymmetric-strictness
@@ -118,6 +120,13 @@ implementation. Provide concise evidence.
   round-trip. Because classification still requires every field to be listed as an
   override or passthrough, the new read compatibility does not reintroduce a generic
   fallback.
+- **The migration counter stays outside the mutable envelope.** The decoder reads
+  the stored version once, applies the sorted compile-time-complete chain, and then
+  dispatches on the migrated object without re-reading `v`. Version-1 and unstamped
+  literal bytes both survive a `qty`-to-`quantity` rename, current v2 bytes bypass
+  the old rung, and a rejected rung reports `upcaster from version 1: missing qty`.
+  Temporary builds reproduced missing, duplicate, and out-of-range chain failures;
+  the restored codec suite passed 66 examples.
 
 
 ## Decision Log

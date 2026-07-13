@@ -68,9 +68,20 @@
 --
 --    Revert the field and passthrough entry.
 --
+-- 5. Incomplete upcaster chain. In @THEventEvolutionSpec@, set the
+--    @StructuralEvent@ codec's @currentVersion = 3@ while retaining only
+--    @upcasters = [(1, 'upcastQuantityV1)]@. Build the test target and expect:
+--
+--    @
+--    deriveEventCodecSkeleton: upcasters must cover from-versions [1..2]
+--    exactly; missing: [2]
+--    @
+--
+--    Restore @currentVersion = 2@.
+--
 -- Checks (1) and (2) were verified by hand on 2026-06-06; the observed
--- compile-fail text matched (1) verbatim. Checks (3) and (4) were verified
--- by hand on 2026-07-12 with the messages above.
+-- compile-fail text matched (1) verbatim. Checks (3), (4), and (5) were
+-- verified by hand on 2026-07-12 with the messages above.
 module Keiki.Codec.JSON.THEventSpec (spec) where
 
 import Data.Aeson qualified as Aeson
