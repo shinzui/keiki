@@ -106,6 +106,7 @@ test-suite keiki-test
     Keiki.CategorySpec
     Keiki.ChoiceSpec
     Keiki.CollectionSpike
+    Keiki.CompositionAlignmentSpec
     Keiki.CompositionAlternativeSpec
     Keiki.CompositionFeedback1Spec
     Keiki.CompositionHomomorphismSpec
@@ -125,6 +126,7 @@ test-suite keiki-test
     Keiki.Fixtures.SplitCoverage
     Keiki.Fixtures.UserRegistration
     Keiki.Generics.THSpec
+    Keiki.LawHelpers
     Keiki.NoThunksSpec
     Keiki.OperatorsQualifiedSpec
     Keiki.OperatorsSpec

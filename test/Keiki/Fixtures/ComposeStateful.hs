@@ -66,22 +66,22 @@ type SinkRegs = '[ '("sinkLast", Int)]
 type PhaseRegs = '[ '("phase", Int)]
 
 data CounterVertex = CounterVertex
-  deriving stock (Eq, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 data SinkVertex = SinkVertex
-  deriving stock (Eq, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 data PairVertex = PairVertex
-  deriving stock (Eq, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 data PhaseVertex = PhaseVertex
-  deriving stock (Eq, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 data M2SourceVertex = M2SourceVertex
-  deriving stock (Eq, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 data WrongVertex = WrongVertex
-  deriving stock (Eq, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 inCtorTick :: InCtor SourceCmd '[]
 inCtorTick =

@@ -8,6 +8,7 @@ import Keiki.BuilderTypeErrorsSpec qualified
 import Keiki.CategorySpec qualified
 import Keiki.ChoiceSpec qualified
 import Keiki.CollectionSpike qualified
+import Keiki.CompositionAlignmentSpec qualified
 import Keiki.CompositionAlternativeSpec qualified
 import Keiki.CompositionFeedback1Spec qualified
 import Keiki.CompositionHomomorphismSpec qualified
@@ -49,6 +50,7 @@ main = hspec $ do
   describe "Keiki.Profunctor (Category, EP-28)" Keiki.CategorySpec.spec
   describe "Keiki.Profunctor (Choice, EP-29 M1)" Keiki.ChoiceSpec.spec
   describe "Keiki.Composition" Keiki.CompositionSpec.spec
+  describe "Keiki.Composition alignment (EP-75)" Keiki.CompositionAlignmentSpec.spec
   describe "Keiki.Composition (alternative, EP-25)" Keiki.CompositionAlternativeSpec.spec
   describe "Keiki.Composition (feedback1, EP-26)" Keiki.CompositionFeedback1Spec.spec
   describe "Keiki.Composition (homomorphism, EP-74)" Keiki.CompositionHomomorphismSpec.spec
