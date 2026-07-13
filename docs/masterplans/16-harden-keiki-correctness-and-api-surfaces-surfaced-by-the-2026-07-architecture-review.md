@@ -124,7 +124,7 @@ fire through).
 | 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Complete |
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Complete |
 | 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Complete |
-| 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | In Progress |
+| 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Complete |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Not Started |
 | 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Not Started |
 | 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Not Started |
@@ -255,7 +255,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
 - [x] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
 - [x] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
-- [ ] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
+- [x] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
 - [ ] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
 - [ ] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
 - [ ] EP-76: solver `Unknown` treated as not-bot; encoding caveats documented; pure overlap check catches same-ctor `PAnd` pairs
@@ -447,7 +447,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Outcomes & Retrospective
 
-Five child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, and EP-72. The core
+Six child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, and EP-73. The core
 memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
 validator and structured-runtime halves. EP-71 aligned default validation with replay through four default-on
 checks, migrated the durable User Registration epsilon path, left an explicit
@@ -455,9 +455,19 @@ non-durable classification on the Loan tutorial's process-control edge, and prod
 the shared fixtures EP-73 will consume. EP-72 added exact replay failures and a
 seedable fold, removed the lossy Decider facade, and made the output acceptor agree
 with multi-event replay. The full workspace test suite, formatter, build, and Haddocks
-pass. EP-73 is now fully unblocked and is the next Phase 2 plan.
+pass. EP-73 added the permanent decide/replay property harness across every core
+fixture module and all eight jitsurei aggregates, with validation-aligned teeth for
+invalid examples and structured counterexamples for replay divergence. The harness
+also found and fixed LoanApplication's direct-withdraw uninitialized-register read.
+Phase 2 is now closed; EP-74 is the next dependency-ready plan.
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-73. Added state-aware whole-log and chunked replay
+  properties, tamper coverage, explicit broken-shape teeth, all core and jitsurei
+  registrations, 2,000-case deep-run verification, and a direct-withdraw fixture fix.
+  Recorded the invalid CoreBankingSync/LoanApplication examples and the LoanWorkflow
+  validation crash for the composition follow-ups rather than weakening the law.
 
 - 2026-07-13: Completed EP-72. Added structured single-event and list-level replay
   failures, an arbitrary-seed fold, strict `Either` facades with compatible `Maybe`

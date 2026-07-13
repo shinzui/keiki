@@ -2,7 +2,7 @@
 {-# LANGUAGE GADTs #-}
 
 -- | Reusable decide/replay round-trip properties for keiki test fixtures.
-module Keiki.RoundTrip
+module Jitsurei.RoundTrip
   ( RoundTripFixture (..),
     TamperExpectation (..),
     TamperCase (..),

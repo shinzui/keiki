@@ -70,8 +70,8 @@ here, even if it requires splitting a partially completed task into two ("done" 
 - [x] M2: tamper-case vocabulary in `test/Keiki/RoundTrip.hs`; tamper cases for both existing fixtures (drop, swap, duplicate, mid-chain truncation, foreign splice)
 - [x] M3: `test/Keiki/Fixtures/BrokenTailCoverage.hs` (deliberately head-unrecoverable); teeth spec via `expectFailure` paired with a validator-flags-it assertion
 - [x] M4: bundles for every EP-71 fixture (stateful `TReg`-emitting and multi-event ones); harness green over all of `test/Keiki/Fixtures/`
-- [ ] M5: verbatim harness copy at `jitsurei/test/Jitsurei/RoundTrip.hs`; bundles for the 8 jitsurei aggregates (`UserRegistrationV0` under the teeth group); drift-check documented
-- [ ] M6: measure suite wall-clock, pin property counts, document the deep-run command; run `nix fmt -- --no-cache`; update master plan registry row 73 and its Progress checklist
+- [x] M5: verbatim harness copy at `jitsurei/test/Jitsurei/RoundTrip.hs`; bundles for the 8 jitsurei aggregates (invalid aggregates under the teeth group); drift-check documented
+- [x] M6: measure suite wall-clock, pin property counts, document the deep-run command; run `nix fmt -- --no-cache`; update master plan registry row 73 and its Progress checklist
 
 
 ## Surprises & Discoveries
@@ -113,6 +113,26 @@ observations about the code, not choices):
   derived arithmetic term, which `solveOutput` deliberately cannot invert. The
   validator reports it and the harness falsifies it, so `stageA` is represented in
   the teeth group instead of making a false green claim.
+- The jitsurei audit found three pre-existing non-green surfaces. `CoreBankingSync`'s
+  callback command is present only inside a derived `TApp2` output field, so replay
+  cannot reconstruct the callback. `LoanApplication` intentionally changes control
+  state on a silent `Continue` edge. Both validation and the harness reject both
+  shapes, so they join `UserRegistrationV0` in the teeth group. Attempting to emit
+  the reserved `ReadyForReview` event exposed the later composition defect: the
+  lockstep `LoanWorkflow` incorrectly routed that unrelated event into downstream
+  transitions, so the schema migration was reverted and left for the composition
+  plans.
+- Driving `WithdrawApplication` directly at `LoanApplication.Intake` forced the
+  pre-update, uninitialized `appApplicantId` register while evaluating the event.
+  Both builder and AST forms now emit the same literal empty applicant id they write,
+  making the existing direct-withdraw path total.
+- `validateTransducer defaultValidationOptions loanWorkflow` forces a structurally
+  misaligned composed term and throws the composition alignment error. Its P1/P2 laws
+  are registered through the explicitly named unchecked harness entry point; the
+  validation gate remains deferred to EP-74/EP-75 rather than caught or hidden here.
+- A warm `cabal test all` completed in 5.23 seconds with all four suites green. The
+  default 100-case count therefore remains. Deep runs passed at 2,000 cases per
+  property: keiki RoundTrip in 0.23 seconds and jitsurei RoundTrip in 8.05 seconds.
 
 
 ## Decision Log
@@ -226,13 +246,36 @@ Record every decision made while working on the plan.
   test.
   Date: 2026-07-12
 
+- Decision: jitsurei fixtures are classified by the validator and observed law, not
+  by the authoring-time expectation that seven would be green. `CoreBankingSync`,
+  `LoanApplication`, and `UserRegistrationV0` are teeth; the validation-crashing
+  `LoanWorkflow` runs P1/P2 through `roundTripSpecUnchecked` with a visible deferral.
+  Rationale: making an invalid fixture green by truncating commands, disabling a
+  default validation check, or swallowing the composition exception would defeat the
+  certifying purpose of this plan. The discovered defects are now executable inputs
+  to EP-74/EP-75 and a future example-schema correction.
+  Date: 2026-07-12
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-73 delivered a reusable, state-aware QuickCheck harness for whole-log and
+command-boundary replay, structured counterexamples, fixture-declared tamper cases
+with enforced applicability coverage, and permanent negative fixtures. Every core
+fixture module and all eight jitsurei aggregate modules are represented. Every
+default-validation-clean aggregate passes both replay laws; invalid examples run as
+checked teeth, and the one composition whose validator itself throws is named and
+deferred rather than silently omitted.
+
+The harness found and fixed one forward-execution bottom in LoanApplication's direct
+withdrawal path. More importantly, it converted three previously narrative caveats
+(derived-only callback output, a state-changing epsilon, and the V0 hidden input) into
+executable counterexamples. The complete workspace gate and both 2,000-case deep runs
+pass. Remaining composition alignment and example-schema repairs are intentionally
+owned by the subsequent composition plans.
 
 
 ## Context and Orientation

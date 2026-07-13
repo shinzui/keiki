@@ -102,7 +102,7 @@ type EmailRegs =
    ]
 
 data EmailVertex = EmailPending | EmailSentVertex
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Eq, Ord, Show, Enum, Bounded)
 
 -- | Initial register file. Each slot is pre-bound to a deferred
 -- @"uninit: <slot>"@ error by 'Keiki.Generics.emptyRegFile'.

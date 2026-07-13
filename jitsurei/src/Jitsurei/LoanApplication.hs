@@ -312,7 +312,7 @@ data LoanAppVertex
   | Approved
   | Declined
   | Withdrawn
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Eq, Ord, Show, Enum, Bounded)
 
 -- | Initial register file. Every slot is pre-bound to a deferred
 -- @"uninit: <slot>"@ error by 'Keiki.Generics.emptyRegFile'. The
@@ -516,7 +516,7 @@ loanApplication = B.buildTransducer
         B.emit
           wireApplicationWithdrawn
           ApplicationWithdrawnTermFields
-            { applicantId = #appApplicantId,
+            { applicantId = lit "",
               reason = d.reason,
               at = d.at
             }
@@ -726,7 +726,7 @@ loanApplicationASTEdges = \case
                 inCtorWithdraw
                 wireApplicationWithdrawn
                 ( OFCons
-                    (proj (#appApplicantId :: Index LoanAppRegs Text))
+                    (lit "")
                     ( OFCons
                         (inpWithdraw #reason)
                         (OFCons (inpWithdraw #at) OFNil)

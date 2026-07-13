@@ -13,6 +13,7 @@ import Jitsurei.OrderCartBuilderSpec qualified
 import Jitsurei.OrderCartSpec qualified
 import Jitsurei.OrderCartSymbolicSpec qualified
 import Jitsurei.Render.MermaidLoanSpec qualified
+import Jitsurei.RoundTripSpec qualified
 import Jitsurei.UserRegistrationBuilderSpec qualified
 import Jitsurei.UserRegistrationGSMSpec qualified
 import Jitsurei.UserRegistrationSpec qualified
@@ -36,6 +37,7 @@ main = hspec $ do
   describe "Jitsurei.OrderCart" Jitsurei.OrderCartSpec.spec
   describe "Jitsurei.OrderCart (builder)" Jitsurei.OrderCartBuilderSpec.spec
   describe "Jitsurei.OrderCart (symbolic)" Jitsurei.OrderCartSymbolicSpec.spec
+  describe "Jitsurei.RoundTrip (EP-73)" Jitsurei.RoundTripSpec.spec
   describe "Jitsurei.UserRegistration" Jitsurei.UserRegistrationSpec.spec
   describe "Jitsurei.UserRegistration (builder)" Jitsurei.UserRegistrationBuilderSpec.spec
   describe "Jitsurei.UserRegistration (GSM EP-19 M7)" Jitsurei.UserRegistrationGSMSpec.spec

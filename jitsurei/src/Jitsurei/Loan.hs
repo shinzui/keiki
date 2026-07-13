@@ -130,7 +130,7 @@ data LoanVertex
   = LoanInitial
   | LoanAwaiting
   | LoanLinked
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Eq, Ord, Show, Enum, Bounded)
 
 emptyLoanRegs :: RegFile LoanRegs
 emptyLoanRegs = emptyRegFile

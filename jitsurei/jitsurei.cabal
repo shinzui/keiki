@@ -65,6 +65,8 @@ test-suite jitsurei-test
     Jitsurei.OrderCartSpec
     Jitsurei.OrderCartSymbolicSpec
     Jitsurei.Render.MermaidLoanSpec
+    Jitsurei.RoundTrip
+    Jitsurei.RoundTripSpec
     Jitsurei.UserRegistrationBuilderSpec
     Jitsurei.UserRegistrationGSMSpec
     Jitsurei.UserRegistrationSpec
@@ -73,13 +75,14 @@ test-suite jitsurei-test
     Jitsurei.UserRegistrationViewSpec
 
   build-depends:
-    , base      ^>=4.21
-    , hspec     ^>=2.11
+    , base        ^>=4.21
+    , hspec       ^>=2.11
     , jitsurei
     , keiki
-    , sbv       >=11.7  && <15
-    , text      ^>=2.1
-    , time      ^>=1.14
+    , QuickCheck  ^>=2.15
+    , sbv         >=11.7  && <15
+    , text        ^>=2.1
+    , time        ^>=1.14
 
 benchmark keiki-bench
   import:         warnings, shared-extensions

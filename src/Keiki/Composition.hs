@@ -105,7 +105,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- instances on @(s1, s2)@ — those would conflict with downstream
 -- code.
 data Composite s1 s2 = Composite !s1 !s2
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance (Bounded s1, Bounded s2) => Bounded (Composite s1 s2) where
   minBound = Composite minBound minBound

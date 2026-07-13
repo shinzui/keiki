@@ -150,7 +150,7 @@ data SyncVertex
   = SyncIdle
   | SyncRequested
   | SyncSettled
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Eq, Ord, Show, Enum, Bounded)
 
 emptySyncRegs :: RegFile SyncRegs
 emptySyncRegs = emptyRegFile
