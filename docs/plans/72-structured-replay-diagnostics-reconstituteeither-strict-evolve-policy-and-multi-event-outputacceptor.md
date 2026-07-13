@@ -74,8 +74,8 @@ must produce.
 - [x] (2026-07-12 23:58Z) M2: list-level specs: corrupted-log index/reason, truncated multi-event chain, mid-chain seed resume, fold returns final `InFlight` wrapper without failing
 - [x] (2026-07-13 00:01Z) M3: `Keiki.Decider` removed from `keiki.cabal`, source, tests, exports, and documentation
 - [x] (2026-07-13 00:01Z) M3: uniquely valuable replay assertions from `DeciderSpec` moved to Core replay specs before the obsolete spec is deleted
-- [ ] M4: `outputAcceptor` state carrier changed to `(InFlight s co, RegFile rs)`; equivalence haddock now true
-- [ ] M4: `test/Keiki/AcceptorSpec.hs`: multi-event acceptance spec (fails before the fix, passes after), truncation rejection, reconstitute-agreement spec updated
+- [x] (2026-07-13 00:04Z) M4: `outputAcceptor` state carrier changed to `(InFlight s co, RegFile rs)`; equivalence haddock now true
+- [x] (2026-07-13 00:04Z) M4: `test/Keiki/AcceptorSpec.hs`: multi-event acceptance spec (fails before the fix, passes after), truncation rejection, reconstitute-agreement spec updated
 - [ ] M5: `omega` haddock states the rejected/ε conflation loudly and points at `stepEither`
 - [ ] M5: haddocks on `reconstitute`/`applyEvents`/`applyEventStreaming` repointed so the `Either` variants are the primary documented surface
 - [ ] M5: `CHANGELOG.md` entry; full sweep `cabal build all`, `cabal test all`, `nix fmt -- --no-cache`; living sections updated
@@ -116,6 +116,11 @@ as they occur.
   the in-workspace `jitsurei` GSM regression still used `toDecider` solely to assert
   the forward two-event output. Migrating it to `step` preserved the behavior and
   allowed `cabal test all` to verify all four suites after module removal.
+- Verified (2026-07-13, M4 fail-before): the exact new assertion
+  `accepts (outputAcceptor userReg) canonicalUserLog == True` failed with actual
+  `False` under the old letter-only carrier. After switching to `InFlight`, the same
+  assertion and the complete/truncated/foreign replay-equivalence matrix pass among
+  417 core examples.
 
 
 ## Decision Log

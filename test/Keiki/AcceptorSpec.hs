@@ -2,7 +2,7 @@ module Keiki.AcceptorSpec (spec) where
 
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Keiki.Acceptor
-import Keiki.Core (initialRegs, isFinal, reconstitute)
+import Keiki.Core (InFlight (..), initialRegs, isFinal, reconstitute)
 import Keiki.Fixtures.EmailDelivery
   ( EmailEvent (..),
     EmailSentData (..),
@@ -10,8 +10,12 @@ import Keiki.Fixtures.EmailDelivery
   )
 import Keiki.Fixtures.UserRegistration
   ( AccountConfirmedData (..),
+    AccountDeletedData (..),
     ConfirmAccountData (..),
+    ConfirmationEmailSentData (..),
+    ConfirmationResentData (..),
     FulfillGDPRRequestData (..),
+    RegistrationStartedData (..),
     StartRegistrationData (..),
     UserCmd (..),
     UserEvent (..),
@@ -52,6 +56,15 @@ canonicalEmailLog :: [EmailEvent]
 canonicalEmailLog =
   [EmailSent (EmailSentData "alice@x" "Welcome" (t 0))]
 
+canonicalUserLog :: [UserEvent]
+canonicalUserLog =
+  [ RegistrationStarted (RegistrationStartedData "alice@x" "Z9F4" (t 0)),
+    ConfirmationEmailSent (ConfirmationEmailSentData "alice@x"),
+    ConfirmationResent (ConfirmationResentData "alice@x" "K2P7" (t 100)),
+    AccountConfirmed (AccountConfirmedData "alice@x" "K2P7" (t 200)),
+    AccountDeleted (AccountDeletedData "alice@x" (t 300))
+  ]
+
 spec :: Spec
 spec = do
   describe "inputAcceptor userReg" $ do
@@ -81,8 +94,45 @@ spec = do
       accepts (outputAcceptor userReg) badLog `shouldBe` False
 
     it "agrees with reconstitute on the canonical log" $
-      fmap fst (runAcceptor (outputAcceptor emailDelivery) canonicalEmailLog)
-        `shouldBe` fmap fst (reconstitute emailDelivery canonicalEmailLog)
+      accepts (outputAcceptor emailDelivery) canonicalEmailLog
+        `shouldBe` maybe
+          False
+          (isFinal emailDelivery . fst)
+          (reconstitute emailDelivery canonicalEmailLog)
+
+  describe "outputAcceptor userReg multi-event replay" $
+    do
+      it "accepts the canonical multi-event log" $
+        accepts (outputAcceptor userReg) canonicalUserLog `shouldBe` True
+
+      it "rejects a truncated chain while preserving its InFlight carrier" $ do
+        accepts (outputAcceptor userReg) (take 1 canonicalUserLog)
+          `shouldBe` False
+        fmap fst (runAcceptor (outputAcceptor userReg) (take 1 canonicalUserLog))
+          `shouldBe` Just
+            ( InFlight
+                RequiresConfirmation
+                [ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")]
+            )
+
+      it "agrees with reconstitute for complete, truncated, and foreign logs" $ do
+        let foreignLog =
+              [AccountConfirmed (AccountConfirmedData "alice@x" "Z9F4" (t 0))]
+        accepts (outputAcceptor userReg) canonicalUserLog
+          `shouldBe` maybe
+            False
+            (isFinal userReg . fst)
+            (reconstitute userReg canonicalUserLog)
+        accepts (outputAcceptor userReg) (take 1 canonicalUserLog)
+          `shouldBe` maybe
+            False
+            (isFinal userReg . fst)
+            (reconstitute userReg (take 1 canonicalUserLog))
+        accepts (outputAcceptor userReg) foreignLog
+          `shouldBe` maybe
+            False
+            (isFinal userReg . fst)
+            (reconstitute userReg foreignLog)
 
   describe "aIsFinal" $ do
     it "matches isFinal on userReg under fst" $ do

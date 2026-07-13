@@ -16,7 +16,7 @@
 --   replayable logs.
 --
 -- In 'Keiki.Core' these projections are /implicit/: π₁ is
--- 'Keiki.Core.delta'; π₂ is 'Keiki.Core.applyEvent'. This module
+-- 'Keiki.Core.delta'; π₂ is 'Keiki.Core.applyEventStreaming'. This module
 -- /names/ them as a first-class data type so downstream code (UI,
 -- validation, generated documentation) can pattern-match on a known
 -- shape instead of plumbing the step functions by hand.
@@ -29,8 +29,7 @@
 -- @
 --
 -- See @docs/research/acceptor-projections-design.md@ for the design
--- record (deferred scope, why the state carrier is
--- @(s, 'Keiki.Core.RegFile' rs)@, and relationship to Core replay).
+-- record and relationship to Core replay.
 module Keiki.Acceptor
   ( -- * The acceptor projection
     Acceptor (..),
@@ -47,9 +46,10 @@ where
 
 import Keiki.Core
   ( BoolAlg,
+    InFlight (..),
     RegFile,
     SymTransducer (..),
-    applyEvent,
+    applyEventStreaming,
     delta,
   )
 
@@ -65,7 +65,7 @@ import Keiki.Core
 --   terminates in a state for which this predicate holds.
 --
 -- The richer return type of 'Keiki.Core.delta' /
--- 'Keiki.Core.applyEvent' (which thread an updated 'RegFile') is
+-- 'Keiki.Core.applyEventStreaming' (which thread an updated 'RegFile') is
 -- preserved by the projections in this module by hiding the register
 -- file inside @s@; see 'inputAcceptor' / 'outputAcceptor'.
 --
@@ -107,29 +107,39 @@ inputAcceptor t =
 
 -- | Project a 'SymTransducer' to its /output/ acceptor (π₂): the
 -- acceptor over the event alphabet whose step is
--- 'Keiki.Core.applyEvent'.
+-- 'Keiki.Core.applyEventStreaming'.
 --
--- The state carrier is @(s, 'RegFile' rs)@ because 'applyEvent'
--- itself threads the register file through replay.
+-- The state carrier is @('Keiki.Core.InFlight' s co, 'RegFile' rs)@
+-- because streaming replay must remember the expected tail of a
+-- multi-event output chain as well as the register file.
 --
 -- @
 -- accepts (outputAcceptor t) events  ==  True
 -- @
 --
--- iff successively applying 'Keiki.Core.applyEvent' to each event
--- reaches a final control vertex — equivalently, iff
--- @'Keiki.Core.reconstitute' t events@ returns 'Just' a final
--- @(s, regs)@. The output acceptor /is/ the @evolve@ acceptor the
--- foundations chapter derives.
+-- is equivalent to:
+--
+-- @
+-- case 'Keiki.Core.reconstitute' t events of
+--   Just (s, _) -> 'isFinal' t s
+--   Nothing     -> False
+-- @
+--
+-- A log rejects when an event cannot replay or when the log ends in
+-- the middle of a multi-event chain, leaving a non-final 'InFlight'
+-- carrier.
 outputAcceptor ::
   (BoolAlg phi (RegFile rs, ci), Eq co) =>
   SymTransducer phi rs s ci co ->
-  Acceptor co (s, RegFile rs)
+  Acceptor co (InFlight s co, RegFile rs)
 outputAcceptor t =
   Acceptor
-    { aStep = \(s, regs) co -> applyEvent t s regs co,
-      aInitial = (initial t, initialRegs t),
-      aIsFinal = \(s, _regs) -> isFinal t s
+    { aStep = \(wrapper, regs) co ->
+        applyEventStreaming t wrapper regs co,
+      aInitial = (Settled (initial t), initialRegs t),
+      aIsFinal = \(wrapper, _regs) -> case wrapper of
+        Settled s -> isFinal t s
+        InFlight {} -> False
     }
 
 -- | Run an 'Acceptor' over a sequence. Returns 'Just' the terminal
