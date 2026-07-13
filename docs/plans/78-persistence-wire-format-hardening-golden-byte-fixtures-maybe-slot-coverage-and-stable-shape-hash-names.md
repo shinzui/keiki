@@ -70,7 +70,7 @@ once (Milestone 1) and says so loudly.
 - [x] M5: early record-payload validation on the TH command side (`src/Keiki/Generics/TH.hs`). 2026-07-12.
 - [x] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants. 2026-07-12.
 - [ ] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML. Source repaired and Haddock reports 100% coverage for both modules on 2026-07-12; visual verification remains pending because the in-app browser reported no available browser instance.
-- [ ] M6 (gated on EP-77): golden fixture files for the versioned event envelope under `keiki-codec-json/test/golden/event/`
+- [x] M6 (gated on EP-77): golden fixture files for the versioned event envelope under `keiki-codec-json/test/golden/event/`. 2026-07-12.
 - [ ] Final: `cabal build all`, `cabal test all`, `cabal haddock all`, `nix fmt -- --no-cache` all clean; master plan registry row and progress checkbox updated
 
 
@@ -138,6 +138,13 @@ here as implementation proceeds.
   local `keiki` and `keiki-codec-json` packages. The repaired TH modules both
   reached 100% Haddock coverage, but the in-app browser had no available instance
   for the required visual inspection.
+- EP-77 was complete before M6 began, so six event fixtures now pin the record and
+  singleton constructor shapes, pinned wire kind, v1/v2 stamps, absent-version
+  default-on-missing document, and v1 quantity upcaster. Guarded regeneration
+  failed deliberately for all 13 persistence fixtures, the clean codec suite
+  passed 102 examples, and changing the checked-in `order.placed` quantity from 3
+  to 4 produced both decoded-event and current-byte failures. The codec source
+  distribution includes all six nested event fixtures.
 
 
 ## Decision Log

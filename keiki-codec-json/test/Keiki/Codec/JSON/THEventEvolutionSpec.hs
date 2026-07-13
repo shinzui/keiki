@@ -1,7 +1,19 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | EP-77 evolution regressions for additive event fields.
-module Keiki.Codec.JSON.THEventEvolutionSpec (spec) where
+module Keiki.Codec.JSON.THEventEvolutionSpec
+  ( spec,
+    Discount (..),
+    ItemAddedData (..),
+    AdditiveEvent (..),
+    additiveEventToJSON,
+    additiveEventFromJSON,
+    QuantityRecordedData (..),
+    StructuralEvent (..),
+    structuralEventToJSON,
+    structuralEventFromJSON,
+  )
+where
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key

@@ -28,6 +28,8 @@ import Keiki.Codec.JSON.Fixtures
     ExemplarSlots,
     MaybeSlots,
   )
+import Keiki.Codec.JSON.THEventEvolutionSpec qualified as Evolution
+import Keiki.Codec.JSON.THEventSpec qualified as Event
 import Keiki.Core (RegFile (..))
 import Keiki.Shape (regFileShapeCanonical, regFileShapeHash)
 import System.Environment (lookupEnv)
@@ -70,6 +72,7 @@ spec = do
       maybeNothingRegFile
 
   shapeGoldenSpec
+  eventGoldenSpecs
 
 regFileGoldenSpec ::
   forall rs.
@@ -124,6 +127,95 @@ shapeGoldenSpec = describe "checked-in ExemplarSlots shape" $ do
         ]
     currentBytes = Aeson.encode currentValue
 
+eventGoldenSpecs :: Spec
+eventGoldenSpecs = describe "checked-in versioned event envelopes" $ do
+  eventGoldenSpec
+    "record payload with pinned kind and version"
+    "test/golden/event/order-placed.v1.json"
+    placedEvent
+    Event.orderEventToJSON
+    Event.orderEventFromJSON
+  eventGoldenSpec
+    "no-payload singleton with version"
+    "test/golden/event/order-cancelled.v1.json"
+    Event.Cancelled
+    Event.orderEventToJSON
+    Event.orderEventFromJSON
+  eventGoldenSpec
+    "current additive payload with explicit defaults"
+    "test/golden/event/item-added.v1.json"
+    additiveEvent
+    Evolution.additiveEventToJSON
+    Evolution.additiveEventFromJSON
+  historicalEventGoldenSpec
+    "pre-addition payload fills missing fields and absent version"
+    "test/golden/event/item-added.pre-defaults.json"
+    additiveEvent
+    historicalAdditiveBytes
+    Evolution.additiveEventFromJSON
+  eventGoldenSpec
+    "current structural payload after upcasting era"
+    "test/golden/event/quantity-recorded.v2.json"
+    structuralEvent
+    Evolution.structuralEventToJSON
+    Evolution.structuralEventFromJSON
+  historicalEventGoldenSpec
+    "version-1 payload runs the quantity upcaster"
+    "test/golden/event/quantity-recorded.v1.json"
+    structuralEvent
+    historicalStructuralBytes
+    Evolution.structuralEventFromJSON
+
+eventGoldenSpec ::
+  (Eq event, Show event) =>
+  String ->
+  FilePath ->
+  event ->
+  (event -> Aeson.Value) ->
+  (Aeson.Value -> Either String event) ->
+  Spec
+eventGoldenSpec label path expected encoder decoder = describe label $ do
+  update <- runIO (lookupEnv "KEIKI_UPDATE_GOLDENS")
+  case update of
+    Just _ -> do
+      runIO (LBS.writeFile path currentBytes)
+      it "regenerates and requires a clean review run" $
+        expectationFailure regenerationMessage
+    Nothing -> do
+      historicalBytes <- runIO (LBS.readFile path)
+      it "decodes checked-in bytes to the fixed event" $
+        case Aeson.eitherDecode historicalBytes of
+          Left message -> expectationFailure ("golden file is not valid JSON: " <> message)
+          Right value -> decoder value `shouldBe` Right expected
+      it "freezes current event encoder bytes" $
+        currentBytes `shouldBe` historicalBytes
+  where
+    currentBytes = Aeson.encode (encoder expected)
+
+historicalEventGoldenSpec ::
+  (Eq event, Show event) =>
+  String ->
+  FilePath ->
+  event ->
+  LBS.ByteString ->
+  (Aeson.Value -> Either String event) ->
+  Spec
+historicalEventGoldenSpec label path expected frozenBytes decoder = describe label $ do
+  update <- runIO (lookupEnv "KEIKI_UPDATE_GOLDENS")
+  case update of
+    Just _ -> do
+      runIO (LBS.writeFile path frozenBytes)
+      it "regenerates and requires a clean review run" $
+        expectationFailure regenerationMessage
+    Nothing -> do
+      historicalBytes <- runIO (LBS.readFile path)
+      it "decodes the historical document to the current event" $
+        case Aeson.eitherDecode historicalBytes of
+          Left message -> expectationFailure ("golden file is not valid JSON: " <> message)
+          Right value -> decoder value `shouldBe` Right expected
+      it "freezes the historical document bytes" $
+        historicalBytes `shouldBe` frozenBytes
+
 exemplarRegFile :: RegFile ExemplarSlots
 exemplarRegFile =
   RCons (Proxy @"retryCount") (3 :: Int) $
@@ -147,6 +239,27 @@ maybeNothingRegFile =
 
 exemplarTime :: UTCTime
 exemplarTime = read "2026-01-02 03:04:05 UTC"
+
+placedEvent :: Event.OrderEvent
+placedEvent = Event.Placed (Event.PlacedData (Event.OrderId 7) 3)
+
+additiveEvent :: Evolution.AdditiveEvent
+additiveEvent =
+  Evolution.ItemAdded
+    Evolution.ItemAddedData
+      { Evolution.orderId = T.pack "ord-7",
+        Evolution.discount = Evolution.Discount 0,
+        Evolution.note = Nothing
+      }
+
+structuralEvent :: Evolution.StructuralEvent
+structuralEvent = Evolution.QuantityRecorded (Evolution.QuantityRecordedData 3)
+
+historicalAdditiveBytes :: LBS.ByteString
+historicalAdditiveBytes = "{\"kind\":\"ItemAdded\",\"orderId\":\"ord-7\"}"
+
+historicalStructuralBytes :: LBS.ByteString
+historicalStructuralBytes = "{\"kind\":\"QuantityRecorded\",\"v\":1,\"qty\":3}"
 
 regenerationMessage :: String
 regenerationMessage =

@@ -82,7 +82,15 @@
 -- Checks (1) and (2) were verified by hand on 2026-06-06; the observed
 -- compile-fail text matched (1) verbatim. Checks (3), (4), and (5) were
 -- verified by hand on 2026-07-12 with the messages above.
-module Keiki.Codec.JSON.THEventSpec (spec) where
+module Keiki.Codec.JSON.THEventSpec
+  ( spec,
+    OrderId (..),
+    PlacedData (..),
+    OrderEvent (..),
+    orderEventToJSON,
+    orderEventFromJSON,
+  )
+where
 
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map

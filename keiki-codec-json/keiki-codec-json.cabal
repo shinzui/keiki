@@ -46,6 +46,7 @@ extra-doc-files:
 extra-source-files:
   bench/baseline.csv
   test/golden/*.json
+  test/golden/event/*.json
 
 source-repository head
   type:     git
