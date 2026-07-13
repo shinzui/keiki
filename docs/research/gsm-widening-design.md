@@ -3,6 +3,8 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> The opening `Maybe`-output snippets are the before-state this design widened;
+> the shipped `Edge.output` is `[OutTerm ...]`.
 
 **Status:** Design note for [ExecPlan 19](../plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md).
 **Date:** 2026-05-16.

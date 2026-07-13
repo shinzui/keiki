@@ -19,7 +19,7 @@ hidden-input check therefore runs against the current schema only. Snapshots
 carry a register-file shape hash; mismatched hashes invalidate the snapshot
 and force a replay from the start. The shape-hash primitive is shipped in
 [`Keiki.Shape`](../../src/Keiki/Shape.hs) and consumed by the JSON codec in
-the sibling package [`keiki-codec-json`](../../keiki-codec-json/); see
+the sibling package [`keiki-codec-json`](https://github.com/shinzui/keiki/tree/master/keiki-codec-json); see
 [`regfile-codec-design.md`](regfile-codec-design.md) for the worked
 example.
 
@@ -807,16 +807,13 @@ scope for v1.
 
 ## Snapshot invalidation rule
 
-Snapshots are tagged with a hash of the *current* register-file shape and
-the *current* vertex set. The shape comprises the ordered list of slot
-labels, the type of each slot (a stable identifier such as a fingerprint
-of the type), and the list of vertices. Pseudocode:
+Snapshots are tagged with a hash of the *current register-file shape*.
+The shape comprises the ordered list of slot labels and each slot's
+`CanonicalTypeName`. Vertex/schema semantics need a separate
+application-owned version. Pseudocode:
 
-    shapeHash :: SymTransducer phi rs s ci co -> ByteString
-    shapeHash t = sha256 . encode $
-      ( map slotLabelAndType (slotsOf @rs)
-      , [minBound .. maxBound] :: [s]
-      )
+    shapeHash :: KnownRegFileShape rs => Proxy rs -> Text
+    shapeHash = regFileShapeHash
 
 On snapshot read:
 
@@ -830,10 +827,10 @@ On snapshot read:
 Two notes on the rule:
 
 - The hash is over *type identity*, not *encoded shape*. Two slots
-  named the same but with different types must hash differently. The
-  cleanest implementation is `Typeable` plus a salt for stability across
-  GHC versions. The library specifies the *contract* (mismatched shape
-  invalidates); the *implementation* (which hash function) can evolve.
+  named the same but with different types must hash differently. keiki
+  pins built-in canonical names and lets applications override names for
+  their own types; changing that canonical encoding is a wire-format
+  change, guarded by golden fixtures.
 - The application is responsible for snapshot-pruning. Keiki does not
   garbage-collect old snapshots. If shape changes are frequent, the
   event store will accumulate stale snapshots; the application either
@@ -925,20 +922,21 @@ evolution responsibility away from the application.
 
 ---
 
-## Prototype implications (v1)
+## Release implications
 
-The v1 prototype assumes a single static schema, implements no upcasting
-or versioning machinery, and runs the hidden-input check on the current
-schema only. It uses one register-file shape and one event alphabet for
-the entire run; snapshot shape-tags can be a stub (the value is computed
-but never compared, since there is no second schema). The prototype
-demonstrates the formalism's correctness on the User Registration smoke
-test under the *fixed* schema (synthesis §4 fix-1: `confirmCode` in
-`AccountConfirmedData`); it does not exercise any of the three
-evolution scenarios above. Schema evolution is documented as deferred
-to v2, with this note as the directional input.
+The pure `keiki` core still sees one current typed event alphabet and
+runs replay validation against that schema only. Evolution happens
+before typed replay. The optional `keiki-codec-json` boundary now
+implements the one-envelope-to-one-envelope portion of this note:
+pinned wire kinds, an in-band version, additive missing-field defaults,
+and a compile-time-complete upcaster chain. Applications still own
+semantic migrations and every one-to-many split.
 
-That paragraph is what plan 4 copies verbatim into its own scoping.
+Snapshots use `regFileShapeHash` as a structural discriminator. A hash
+mismatch is a cache miss: discard the snapshot and replay the migrated
+event log. The hash identifies the register shape, not event semantics,
+so applications retain their own codec/schema version whenever a
+same-shape encoding or meaning changes.
 
 ---
 

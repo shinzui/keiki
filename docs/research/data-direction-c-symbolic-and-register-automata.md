@@ -3,6 +3,7 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> Prototype `Maybe`-output signatures likewise predate the shipped GSM widening.
 
 The base `Transducer s c e` requires `(Enum, Bounded)` on every parameter.
 That is what makes input/output projection, deadlock detection, and

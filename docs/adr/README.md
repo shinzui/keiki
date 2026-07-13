@@ -56,3 +56,7 @@ one.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-structural-re-indexing-for-sound-replay.md) | Structural re-indexing of `Term`/`OutFields` for sound replay | Accepted |
+| [0002](0002-event-logs-must-reproduce-forward-state.md) | Event logs must reproduce forward state | Accepted |
+| [0003](0003-proof-gates-fail-conservatively.md) | Proof gates fail conservatively | Accepted |
+| [0004](0004-composition-uses-snapshot-updates-and-checked-boundaries.md) | Composition uses snapshot updates and checked boundaries | Accepted |
+| [0005](0005-persisted-wire-identities-are-explicit-and-versioned.md) | Persisted wire identities are explicit and versioned | Accepted |

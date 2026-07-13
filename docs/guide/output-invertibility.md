@@ -121,29 +121,25 @@ argument is in `docs/research/recompute-and-verify-derived-outputs.md`.
 
 ---
 
-## 3. The failure is a plain `Nothing`, not an exception
+## 3. Replay reports where inversion failed
 
-`solveOutput` returns `Maybe ci`. The failure is an ordinary `Nothing`. There is no named
-error type in keiki, and no exception is thrown. A repo-wide search for `HydrationReplayFailed`
-finds **zero** hits in keiki's Haskell source — that named error is the **keiro/Rei runtime's**
-translation of keiki's `Nothing`, not a keiki symbol. If you are searching keiki for
-`HydrationReplayFailed`, you are looking in the wrong library.
+`solveOutput` itself still returns `Maybe ci`: `Nothing` means that one
+edge did not invert the observed event. Runtime callers should normally
+use the structured replay surface, which preserves the distinction
+between that local miss and failure of the event log as a whole.
 
-If you reach keiki *through the keiro runtime*, disambiguate keiro's three hydration failures
-before you debug — they are easy to confuse, and chasing one will send you looking in the wrong
-place for the others. All three live in keiro's `src/Keiro/Command.hs`:
+`applyEventStreamingEither` returns `ReplayNoInvertingEdge` when no
+outgoing edge can recover a guarded command, or
+`ReplayAmbiguousInversions` when more than one can. `replayEvents`,
+`applyEventsEither`, and `reconstituteEither` wrap the step reason in a
+`ReplayFailure` carrying the zero-based event index and the `InFlight`
+state immediately before failure. Queue mismatch and truncated
+multi-event logs have their own constructors, so do not diagnose them as
+output-invertibility defects.
 
-- **`HydrationReplayFailed` from an inversion `Nothing`** — keiro's `applyEvent` maps a
-  `Nothing` from `Keiki.applyEventStreaming` straight to this error. This is the case this page
-  governs: an output field that does not invert.
-- **`HydrationReplayFailed` from a final `InFlight` state** — replay finished mid-chain (a
-  multi-event edge was truncated). `finishReplay` rejects a non-final `InFlight`. *Same named
-  error, different cause* — nothing to do with output invertibility.
-- **`HydrationDecodeFailed`** — the recorded JSON bytes failed to decode. A codec failure,
-  separate from inversion entirely.
-
-When you see a replay failure, confirm you are in the first case (the inversion `Nothing`
-documented here) before applying any of the recipes below.
+The older `Maybe` functions remain compatibility wrappers. Prefer the
+`Either` functions in new integrations; inversion failure is data, not
+an exception or a defensive no-op.
 
 ---
 
@@ -195,13 +191,22 @@ the SMT solver — arithmetic belongs in guards and updates freely. Only outputs
 
 ---
 
-## 6. The build-time safety net: `checkHiddenInputs`
+## 6. The build-time safety net: `validateTransducer`
 
-You do not have to discover an invertibility problem at replay time. Beside `solveOutput` sits
-the static check `checkHiddenInputs` (`src/Keiki/Core.hs`, around lines 1104–1197). It walks
-every edge of a transducer and reports a `HiddenInputWarning` when the output cannot
-mechanically recover the command — for example when an output leaves a command-constructor slot
-unvisited, or when an ε-edge (one that emits no event) reads the command in its update.
+You do not have to discover an invertibility problem at replay time.
+`validateTransducer defaultValidationOptions` checks every edge against
+the replay evaluator's actual contract. `HiddenInput` reports command
+data absent from the whole output. `HeadUnrecoverable` reports data that
+appears only in a later event: streaming replay selects the edge by
+inverting the first event, so the head alone must recover every command
+field. The same umbrella also detects ambiguous inversions, unguarded
+input reads, and state-changing ε-edges.
+
+`checkHiddenInputs` remains available as the legacy focused slice, but
+new tests should assert the default umbrella is empty. For a multi-event
+edge, move every required command field into the **first** emitted event;
+tail events are equality-checked after edge selection and cannot help
+recover the command.
 
 "Build-time" here means it runs when you *evaluate* the transducer in a test or build step, not
 on the per-event runtime path. `docs/guide/symbolic-ci.md` shows how teams wire such checks into
@@ -364,9 +369,9 @@ name and a register read is an accepting output term, this round-trips.
 
 ## 9. See also
 
-- `src/Keiki/Core.hs` — the symbols this contract describes: `solveOutput` (~1039),
-  `gatherInpEntries`/`stepOne` (~1054–1071), `evalTerm` (~728–737),
-  `applyEvent`/`applyEventStreaming` (~882–966), `checkHiddenInputs` (~1104–1197).
+- `src/Keiki/Core.hs` — the symbols this contract describes: `solveOutput`,
+  `applyEventStreamingEither`, `replayEvents`, `reconstituteEither`, and
+  `validateTransducer`.
 - `docs/guide/user-guide.md` §10.3 — glossary entries for `solveOutput`, `applyEvent`, and
   `checkHiddenInputs`.
 - `docs/guide/why-smt.md` §5 — escape hatches and curated types, the dual concern to this page.

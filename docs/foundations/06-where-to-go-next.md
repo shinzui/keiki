@@ -11,7 +11,9 @@ These four cover the design as it stands today.
    The current direction for handling data, with two fully worked
    examples (an event-sourced aggregate and a process manager). Maps
    directly onto foundations `05`. This is the load-bearing design
-   synthesis — start here.
+   synthesis — start here for the formalism, but treat its prototype
+   API sketches as design history and use the user guide for release
+   signatures.
 
 2. **`formalism-choice-mealy-machines-vs-finite-state-transducers.md`** (~20 min)
    Sharper take on why the FST is the right choice for keiki versus
@@ -58,8 +60,8 @@ Read these when you hit the topic, not in order.
 
 - **`schema-evolution.md`**
   How to evolve event and register-file schemas across versions
-  without breaking replay. Forward-looking application-layer
-  guidance.
+  without breaking replay, including the optional JSON codec's pinned
+  kinds, in-band versions, additive defaults, and upcaster chain.
 
 - **`symbolic-analysis-and-runtime-implications.md`**
   What "symbolic analysis" means in keiki, what `Keiki.Symbolic`
@@ -114,7 +116,8 @@ the `head-to-head` group.
 For the action-oriented walkthrough, read **`docs/guide/user-guide.md`**.
 It covers the four-layer authoring model (`buildTransducer` →
 `from` → `onCmd`/`onEpsilon` → edge body), the TH derivations,
-running a transducer, the `Decider`/`Acceptor` façades,
+running a transducer through `stepEither` and structured replay, the
+`Acceptor` projections,
 composition, the symbolic analyses, common errors, and an
 extensive glossary. It's the right starting point if you're about
 to write a new aggregate.

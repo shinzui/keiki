@@ -3,6 +3,8 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> Treat prototype signatures as decision chronology; the shipped model uses
+> list-shaped edge output and no Decider layer.
 
 ## The Problem
 

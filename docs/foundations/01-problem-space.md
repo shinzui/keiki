@@ -86,7 +86,7 @@ described in `docs/research/effects-boundary.md`.
 - **One formalism.** An aggregate, a saga, and a workflow are all
   `Transducer s c e`. Composition rules apply uniformly.
 - **Mechanical derivation.** Define the transducer once; the library
-  derives the `decide`/`evolve` decomposition from it. They cannot
+  derives forward `stepEither` and inverse replay from it. They cannot
   disagree because they came from the same source.
 - **Analyzability.** Ask "can this deadlock?" or "is this refactoring
   equivalent to the old version?" as questions you can answer at build

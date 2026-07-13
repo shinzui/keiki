@@ -47,7 +47,7 @@ Template Haskell helpers in `src/Keiki/Generics/TH.hs` generate the constructor 
 - `deriveWireCtors` emits `wire<Short>` and `<Short>TermFields` declarations for event constructors.
 - `deriveView` emits the B-presentation singleton, view GADT, and projection function.
 
-The low-level AST surface in `src/Keiki/Core.hs` remains public for escape hatches and advanced tooling. The important names are `SymTransducer`, `RegFile`, `InCtor`, `WireCtor`, `Term`, `HsPred`, `Edge`, `step`, `reconstitute`, `applyEvent`, and `applyEvents`.
+The low-level AST surface in `src/Keiki/Core.hs` remains public for escape hatches and advanced tooling. The important names are `SymTransducer`, `RegFile`, `InCtor`, `WireCtor`, `Term`, `HsPred`, `Edge`, `stepEither`, `reconstituteEither`, `replayEvents`, and `validateTransducer`.
 
 Composition lives in `src/Keiki/Composition.hs` and `src/Keiki/Profunctor.hs`. The user-facing names are `compose`, `alternative`, `feedback1`, `SomeSymTransducer`, `someSymTransducer`, `lmapCi`, `rmapCo`, `dimapTransducer`, `lmapMaybeCi`, `identityTransducer`, and `arrTransducer`.
 
@@ -239,9 +239,11 @@ Document that `B.onEpsilon` is advanced and usually not the right spelling for c
 
 Reason: in real examples, silent command-triggered transitions use `B.onCmd inCtorContinue` plus `B.noEmit`, not `B.onEpsilon`. That is visible in `jitsurei/src/Jitsurei/LoanApplication.hs`. The name `onEpsilon` is formally correct, but it is a term of art. Keep it, and explain that most user-authored silent transitions should still be keyed by a command constructor.
 
-Document that `B.noEmit` is optional but recommended when silence is intentional.
+Document that `B.noEmit` is required when silence is intentional.
 
-Reason: an edge with no `emit` is already silent, but `B.noEmit` makes intent obvious in review and examples. This is documentation, not a rename.
+Reason: eager builder validation now rejects an edge that calls neither
+`emit`/`emitWith` nor `noEmit`. The explicit marker prevents an omitted
+event from silently becoming a persistence defect.
 
 Document that `feedback1` is one round only.
 

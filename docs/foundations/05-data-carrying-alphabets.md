@@ -163,7 +163,7 @@ file for accumulated data. Internally:
 data Edge phi rs ci co s = Edge
   { guard  :: phi                         -- predicate over (regs, input)
   , update :: Update rs ci                -- copyless register update
-  , output :: Maybe (OutTerm rs ci co)    -- term producing output
+  , output :: [OutTerm rs ci co]          -- zero, one, or many outputs
   , target :: s                           -- next control vertex
   }
 
@@ -194,9 +194,10 @@ term, and runs the (deterministic) update. This works mechanically when:
    a derived value.)
 2. The update only reads input fields that appear in the output term.
 
-When either fails, the library detects the problem **at build time**
-and either prompts the user to fix the schema or asks for a
-hand-written `apply` for that edge.
+When either fails, `validateTransducer defaultValidationOptions`
+rejects the model at build/test time. Fix the event schema or the edge;
+the release API has no hand-written per-edge `apply` escape hatch that
+could drift from forward execution.
 
 This is the property the EFSM extension surrendered, and that the
 symbolic-register formulation gets back. The two worked examples in

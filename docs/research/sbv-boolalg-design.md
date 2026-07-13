@@ -478,8 +478,9 @@ User Registration: `Sym Text`, `Sym UTCTime`. Both are provided by
 > uncompilable on those carriers and demands degenerate `KnownInCtors` for
 > non-aggregate `ci`. `sat` is never used through a polymorphic `BoolAlg phi`
 > constraint, so the split has no call-site cost. `unsafeWitness` and the
-> witness-free `symSat` are retired (witness-free satisfiability is `not .
-> symIsBot`); the real `symSatExt` (made repeated-read-correct by EP-42, and
+> witness-free `symSat` are retired. `not . symIsBot` means only “not
+> proved empty”; witness-bearing satisfiability is `sat`/`symSatExt`. The real
+> `symSatExt` (made repeated-read-correct by EP-42, and
 > total on unconstrained-`ci` predicates by constraining `seInputCtor` to the
 > known-constructor domain) is now the implementation of `sat`. The historical
 > design follows.

@@ -145,7 +145,9 @@ is internal but "real."
 
 ## A concrete FST
 
-Take the User Registration aggregate from `02` and write it as an FST:
+Take a letter-only simplification of the User Registration aggregate
+from `02` and write it as an FST (the shipped example later widens
+`StartRegistration` to two outputs):
 
 ```
 States  = { PotentialCustomer, RequiresConfirmation, Confirmed, Deleted }
@@ -160,7 +162,7 @@ Transitions:
   (PotentialCustomer,    StartRegistration)   →  RegistrationStarted   →  RequiresConfirmation
   (RequiresConfirmation, ConfirmAccount)      →  AccountConfirmed       →  Confirmed
   (RequiresConfirmation, ResendConfirmation)  →  ConfirmationResent     →  RequiresConfirmation
-  (RequiresConfirmation, FulfillGDPRRequest)  →  ε                      →  Deleted
+  (RequiresConfirmation, FulfillGDPRRequest)  →  AccountDeleted         →  Deleted
   (Confirmed,            FulfillGDPRRequest)  →  AccountDeleted          →  Deleted
 
 Anything not listed: δ returns Nothing.  Invariant.
@@ -168,8 +170,9 @@ Anything not listed: δ returns Nothing.  Invariant.
 
 Notes:
 
-- The GDPR transition from `RequiresConfirmation` is ε-output. State
-  changes; no event emitted.
+- Both GDPR transitions emit `AccountDeleted`. A silent deletion would
+  lose the state change during event-log replay, so the durable example
+  makes it observable.
 - `Deleted` is final. No transitions leave it.
 - Every "missing" entry (e.g., `(PotentialCustomer, ConfirmAccount)`)
   is an invariant violation: command rejected.

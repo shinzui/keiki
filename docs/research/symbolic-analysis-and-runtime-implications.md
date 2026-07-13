@@ -50,7 +50,8 @@ Three load-bearing analyses, all in `Keiki.Symbolic`:
   `SymPred` — now a method of the `Sat` *subclass* of `BoolAlg`, not
   `BoolAlg` itself — so `sat` returns a real, forceable witness. The
   old `symSat` placeholder-witness entry point is retired
-  (`not . symIsBot` is the witness-free "is it satisfiable?" check).
+  (`not . symIsBot` means only “not proved empty”; it does not distinguish
+  a satisfiable model from solver uncertainty).
 - **`isSingleValuedSym t`** — for every reachable vertex, asks
   `isBot` of every pairwise conjunction of outgoing-edge guards.
   Returns `True` iff the transducer is single-valued (synthesis §7

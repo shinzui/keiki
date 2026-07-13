@@ -3,6 +3,8 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> The formalism comparison still stands; prototype `Maybe`-output signatures do
+> not. The release edge output is list-shaped.
 
 These terms are often used interchangeably but they describe different
 levels of generality. The distinction matters for library design: crem

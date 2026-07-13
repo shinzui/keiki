@@ -50,7 +50,8 @@ in recommended reading order. The shortest path through the
 library's own design after the foundations is:
 
 1. `synthesis-c-foundation-b-presentation-with-worked-examples.md`
-   — the load-bearing design synthesis.
+   — the load-bearing formalism synthesis. Its prototype API sketches
+   are historical; use the user guide for current names and contracts.
 2. `effects-boundary.md` — the pure-core / runtime split.
 3. `architecture-comparison-keiki-vs-crem.md` — where keiki sits
    relative to the closest neighbour library.
@@ -61,7 +62,7 @@ generics).
 
 If you'd rather skip the design notes and start writing an
 aggregate, jump to **`docs/guide/user-guide.md`** — the action-
-oriented walkthrough of `Keiki.Builder`, the runtime façades, and
+oriented walkthrough of `Keiki.Builder`, the Core runtime API, and
 the symbolic analyses. It carries an extensive glossary covering
 every keiki, automata-theory, and event-sourcing term used in the
 codebase.

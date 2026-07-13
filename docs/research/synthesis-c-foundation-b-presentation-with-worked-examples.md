@@ -1,5 +1,13 @@
 # Synthesis: Symbolic-Register Foundation, Indexed-State Presentation
 
+> **Status (2026-07-13):** This is the load-bearing formalism
+> synthesis, not the release API reference. The closed term/output
+> representation and “C foundation, optional B presentation” decision
+> still stand. Prototype snippets below predate list-shaped GSM output,
+> the builder DSL, structured replay, default replay validation, and the
+> removal of `Keiki.Decider`. Use `docs/guide/user-guide.md` and current
+> module Haddocks for executable signatures.
+
 This note unifies Direction B (`data-direction-b-indexed-state-per-vertex.md`)
 and Direction C (`data-direction-c-symbolic-and-register-automata.md`) into a
 single proposal, then grounds it in two fully worked examples — an event-sourced
@@ -24,8 +32,8 @@ compose.
 typed register file. Edges unify guard, update, output, and target into
 a single `Edge` value, so `delta`, `omega`, and `rho` cannot disagree by
 construction. Predicates and update terms are a closed combinator
-language; the v1 carrier is a Haskell-function `BoolAlg`, with an
-SBV-backed instance deferred to v2.
+language; concrete `HsPred` evaluation serves runtime execution and the
+SBV-backed `SymPred` carrier supplies the opt-in z3 analysis path.
 
 **Layer indexed-state views on top, opt-in.** When a control vertex
 carries genuinely distinct data, the user (or a derived helper) can
@@ -323,10 +331,14 @@ userReg = SymTransducer
                                     , at          = regs ! #registeredAt
                                     })
                , target = RequiresConfirmation }
-          -- GDPR before confirmation: silent (ε)
+          -- Durable deletion must emit an event so replay sees the state change.
         , Edge { guard  = matchCmd \(FulfillGDPRRequest _) -> True
                , update = Set #deletedAt (\(FulfillGDPRRequest d) -> d.at)
-               , output = Nothing
+               , output = Just (mkOut $ \regs (FulfillGDPRRequest d) ->
+                                  AccountDeleted AccountDeletedData
+                                    { email = regs ! #email
+                                    , at    = d.at
+                                    })
                , target = Deleted }
         ]
 

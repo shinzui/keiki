@@ -35,7 +35,7 @@ states as the FST. They differ in what their transition function reads.
 
 ## Building both projections by hand
 
-Take the User Registration FST from `03`:
+Take the simplified User Registration FST from `03`:
 
 ```
 States  = { PotentialCustomer (PC), RequiresConfirmation (RC),
@@ -47,7 +47,7 @@ Transitions:
   (PC, StartRegistration)   → RegistrationStarted   → RC
   (RC, ConfirmAccount)      → AccountConfirmed      → C
   (RC, ResendConfirmation)  → ConfirmationResent    → RC
-  (RC, FulfillGDPRRequest)  → ε                     → D
+  (RC, FulfillGDPRRequest)  → AccountDeleted        → D
   (C,  FulfillGDPRRequest)  → AccountDeleted        → D
 ```
 
@@ -82,10 +82,11 @@ permitted by the model?"
   (PC, RegistrationStarted) → RC
   (RC, AccountConfirmed)    → C
   (RC, ConfirmationResent)  → RC
+  (RC, AccountDeleted)      → D
   (C,  AccountDeleted)      → D
 
-  (Note: the ε-transition from RC to D had no event, so it
-   produces no edge in the event projection.)
+  (Both deletion paths emit AccountDeleted. A silent state-changing
+   edge would be absent here and therefore could not be replayed.)
 ```
 
 This acceptor's "language" is the set of event sequences the
@@ -94,7 +95,7 @@ aggregate produces. For example:
 - `[RegistrationStarted, AccountConfirmed, AccountDeleted]` ✓
 - `[RegistrationStarted, ConfirmationResent, AccountConfirmed]` ✓
 - `[AccountConfirmed]` ✗ (no transition out of `PC`)
-- `[RegistrationStarted, AccountDeleted]` ✗ (no transition out of `RC`)
+- `[RegistrationStarted, AccountDeleted]` ✓
 
 The output projection answers "which event sequences could possibly
 have come from the model?"
@@ -109,6 +110,7 @@ Read the output projection again:
 (PC, RegistrationStarted) → RC
 (RC, AccountConfirmed)    → C
 (RC, ConfirmationResent)  → RC
+(RC, AccountDeleted)      → D
 (C,  AccountDeleted)      → D
 ```
 
@@ -118,6 +120,7 @@ Now read `evolve` from the decider in `02`:
 evolve PotentialCustomer    RegistrationStarted = RequiresConfirmation
 evolve RequiresConfirmation AccountConfirmed    = Confirmed
 evolve RequiresConfirmation ConfirmationResent  = RequiresConfirmation
+evolve RequiresConfirmation AccountDeleted      = Deleted
 evolve Confirmed            AccountDeleted      = Deleted
 evolve _ _                                       = (no transition)
 ```
@@ -154,6 +157,11 @@ decide cmd state = case (δ state cmd, ω state cmd) of
 (For multi-event commands, we extend ω to return a list of events;
 that's the GSM extension covered in the multi-event research note.
 The principle is unchanged.)
+
+This is a conceptual correspondence, not a promise of a
+`Keiki.Decider` record. The release API exposes `stepEither` for the
+forward direction and structured, `InFlight`-aware Core functions for
+replay; the earlier lossy Decider façade was removed.
 
 ## Why this matters
 

@@ -72,7 +72,7 @@ Everything else is the runtime's job. Concretely:
 - **Serialization.** JSON / CBOR / Protobuf to and from on-the-wire
   bytes. The pure layer talks only typed Haskell values. The
   *optional* sibling cabal package
-  [`keiki-codec-json`](../../keiki-codec-json/) ships JSON for
+  [`keiki-codec-json`](https://github.com/shinzui/keiki/tree/master/keiki-codec-json) ships JSON for
   `RegFile rs` (encoder, decoder, streaming encoder) plus a worked-
   example design note at
   [`regfile-codec-design.md`](regfile-codec-design.md); the
@@ -126,12 +126,13 @@ transducer and `step`) does not appear in any flagged line.
     5. The runtime fetches the current state for orderId from the event
        store and reconstitutes (s, regs).
        [IO] readStream :: EventStore -> OrderId -> IO [OrderOutput]
-       Pure: reconstitute orderPM events :: Maybe (Vertex, RegFile OrderRegs)
+       Pure: reconstituteEither orderPM events
+             :: Either (ReplayFailure Vertex OrderOutput)
+                       (Vertex, RegFile OrderRegs)
 
-    6. The runtime calls step orderPM (s, regs) (SubmitOrder data).
-       Pure: step is a total function on values. Returns
-       Just (s', regs', Just OrderAccepted-event) on success, Nothing
-       if the command is rejected by the current vertex.
+    6. The runtime calls stepEither orderPM (s, regs) (SubmitOrder data).
+       Pure: on success it returns Right (s', regs', [OrderAccepted-event]);
+       on rejection the Left explains whether no edge or multiple edges matched.
 
     7. The runtime appends the output event to the order stream.
        [IO] appendEvent :: EventStore -> OrderId -> OrderOutput -> IO ()
@@ -273,19 +274,18 @@ note. The other three are pinned here.
 transducer, a current state, and an input, it returns the next state,
 the updated register file, and the optional output:
 
-    step
+    stepEither
       :: SymTransducer phi rs s ci co
       -> (s, RegFile rs)
       -> ci
-      -> Maybe (s, RegFile rs, Maybe co)
+      -> Either (StepFailure s) (s, RegFile rs, [co])
 
-Semantics: `step` finds the unique outgoing edge whose guard models
+Semantics: `stepEither` finds the unique outgoing edge whose guard models
 `(regs, ci)`, runs the edge's `Update` to produce `regs'`, evaluates
 the edge's `output` term (if any) to produce `co`, and returns
-`(target edge, regs', maybeCo)`. If zero or more than one edge
-matches, `step` returns `Nothing`. If exactly one edge matches but
-its `output` is `Nothing` (the ε case), the returned `Maybe co` is
-`Nothing` — the input was processed silently.
+`(target edge, regs', outputs)`. Zero matches return `NoMatchingEdge`
+(or `NoOutgoingEdges`); multiple matches return `AmbiguousEdges`. An
+epsilon edge succeeds with `outputs = []`.
 
 `step` is the runtime's only call site for "advance the transducer by
 one input." Plan 4's smoke test calls `step` directly with hardcoded
@@ -301,16 +301,16 @@ that "familiar functions are projections, not fields," `delta` and
 `omega` project from `step` by ignoring or extracting the appropriate
 components.
 
-### `reconstitute`
+### `reconstituteEither`
 
-`reconstitute` is what plan 4 implements. Given a transducer and a
+Given a transducer and a
 list of output events (the durable record of what the transducer has
 emitted), it recovers `(state, regs)`:
 
-    reconstitute
+    reconstituteEither
       :: SymTransducer phi rs s ci co
       -> [co]
-      -> Maybe (s, RegFile rs)
+      -> Either (ReplayFailure s co) (s, RegFile rs)
 
 Semantics: starting from `(initial t, initialRegs t)`, fold each event
 through the inverse step. For each event, walk the outgoing edges of
@@ -318,35 +318,30 @@ the current vertex, find the unique edge whose `output` term is
 invertible against the event, recover the implied input (via
 `solveOutput`), and run the edge's update to advance `(s, regs)`.
 
-If `solveOutput` cannot determine a unique input — because the event
-is missing fields the update or guard reads, or because two edges
-produce the same event constructor — `reconstitute` returns `Nothing`.
+If replay cannot determine a unique edge/input, match a pending tail,
+or finish a multi-event chain, `reconstituteEither` returns the exact
+event index, prior `InFlight` state, and structured reason.
 This is the synthesis's hidden-input bug surfacing at runtime; the
 build-time check (next entry) catches the same condition statically.
 
-`reconstitute` does not consume commands; it consumes outputs. This
+`reconstituteEither` does not consume commands; it consumes outputs. This
 is intentional: the event store is a record of what the transducer
 *emitted*, not what it *received*. Replay reconstructs received
 inputs by inverting outputs.
 
-### `checkHiddenInputs`
+### `validateTransducer`
 
-A static analysis that scans every edge in the transducer and reports
-edges whose `update` or `guard` reads input fields not present in the
-edge's `output`. Returns a list of warnings (not a `Bool`) so that
-multiple problems are reported in one pass:
+A static umbrella that scans every edge for hidden inputs,
+head-recoverability, inversion ambiguity, guarded input reads,
+state-changing epsilon, determinism, and reachability. It returns all
+structured warnings in one pass:
 
-    checkHiddenInputs
-      :: SymTransducer phi rs s ci co
-      -> [HiddenInputWarning]
+    validateTransducer defaultValidationOptions t
+      :: [TransducerValidationWarning s]
 
-The shape of `HiddenInputWarning` (whether it carries vertex name,
-field name, both, or richer evidence) is a DSL-shape question owned
-by plan 1. This note commits only to the type signature and the
-contract: an empty list means `reconstitute` is total over
-well-formed event logs (modulo runtime corruption); a non-empty list
-identifies edges that may make `reconstitute` return `Nothing` even
-on log fragments produced by the transducer itself.
+Subject to honest constructor match/build functions, an empty default
+result means the transducer can replay every complete log it produces.
+`checkHiddenInputs` remains available as one focused legacy slice.
 
 The check's precision depends on how structurally `OutTerm` is
 encoded — see IP-2 in the master plan.
@@ -705,7 +700,8 @@ Two modules at minimum:
 - The types: `SymTransducer`, `Edge`, `Term`, `OutTerm`, `Update`,
   `RegFile`, `Index`, `BoolAlg phi`, and the helpers needed to
   construct them.
-- The functions: `step`, `reconstitute`, `applyEvent`, `applyEvents`,
+- The functions: `stepEither`, `reconstituteEither`, `replayEvents`,
+  `applyEventStreamingEither`, `applyEventsEither`,
   `delta`, `omega`, `solveOutput`, `evalTerm`, `evalOut`, `runUpdate`,
   `models`, `checkHiddenInputs`. (`isSingleValuedSym` lives in
   `Keiki.Symbolic` since it depends on the SBV-backed `BoolAlg`.)

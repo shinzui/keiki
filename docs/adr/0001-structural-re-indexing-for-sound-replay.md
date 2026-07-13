@@ -79,20 +79,21 @@ untouched.
   different constructors that share both `icName` and field schema still compare equal; the
   `icName` check is a diagnostic, not proof of identity. Establishing unforgeable identity is
   out of scope.
-- **Residual `unsafeCoerce` outside the replay path** (pre-existing trust boundaries, not
-  new soundness holes in inversion):
+- **Residual `unsafeCoerce` outside the replay path** (current trust boundaries, not
+  soundness holes in core inversion):
   - `Keiki.Composition.unsafeCoerceTerm` / `unsafeCoerceInCtor` — `compose`'s substitution
     relies on a runtime structural-alignment invariant (`icName == wcName` ⇒ same
     Generic-derived shape). `unsafeCoerceTerm` was *extended* to also realign `ifs` under the
     same justification.
-  - `Keiki.Profunctor.unsafeCoerceDisjointness` / `unsafeCoerceWrapperDict` — dictionary
-    fabrication for `Disjoint`/`Wrapper`, unrelated to `ifs`.
-  - `Keiki.Builder.reIndexPinnedInCtor` — **new**: `emit` bridges the existential `PeInCtor`'s
-    hidden `ifs` to the per-event record's schema. Justified by `onCmd` storing one and the
-    same `InCtor` in both places; it does **not** weaken replay soundness (the `OPack` it
-    builds is well-typed). Whether it can be eliminated by threading `ifs` through
-    `EdgeBuilder` is the subject of ADR-follow-up plan
-    `docs/plans/54-thread-input-field-schema-through-edgebuilder-to-remove-emit-s-coercion.md`.
+  - `Keiki.Profunctor.unsafeCoerceDisjointness` fabricates only the
+    methodless `Disjoint` constraint after a runtime slot-name overlap
+    check. The former `unsafeCoerceWrapperDict` / `KnownSlotNames`
+    fabrication was removed; `KnownSlots` evidence is now derived by
+    structural induction.
+- **Completed follow-up:** the builder now threads the enclosing
+  `onCmd` schema through `EdgeBuilder`; `emit` needs no coercion and
+  mismatched schemas are compile-time errors. Eager builder validation
+  also rejects contradictory `emitWith` constructors.
 - **`firstSym` complexity:** the combined-`InCtor` rework adds an index-shifting re-home walk
   whose correctness rests on the "one input constructor per edge" invariant (documented in
   the code). Its `solveOutput` is dead, so this affects only forward processing, which the

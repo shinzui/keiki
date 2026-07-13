@@ -74,7 +74,7 @@ Each `Edge` is a four-field record:
 ```haskell
 Edge { guard  :: Pred rs ci       -- synonym for HsPred rs ci
      , update :: Update rs w ci   -- existential w; closes here
-     , output :: Maybe (OutTerm rs ci co)
+     , output :: [OutTerm rs ci co]
      , target :: s
      }
 ```
@@ -137,7 +137,7 @@ The smart constructors from `Keiki.Core`:
 |---|---|
 | `UKeep` | identity update |
 | `USet ix term` | write `term` into slot at `ix` |
-| `combine u1 u2` (or backtick: `` u1 `combine` u2 ``) | sequence |
+| `combine u1 u2` (or backtick: `` u1 `combine` u2 ``) | combine disjoint writes with entry-snapshot semantics |
 
 A multi-write update reads as a `combine` chain:
 
@@ -165,15 +165,18 @@ annotate every `USet`.
 
 ### 3.3 `output`
 
-`Just (pack ic wc fs)` to emit, `Nothing` for an ε-edge.
+Use a list of packed outputs: `[]` for an ε-edge, one element for a
+letter edge, or several elements for a fixed multi-event chain.
 
 ```haskell
-output = Just $ pack
-            inCtorStart                            -- the InCtor
-            wireRegistrationStarted                -- the WireCtor
-            (OFCons (inpStart #email)              -- OutFields chain
-              (OFCons (inpStart #confirmCode)
-                (OFCons (inpStart #at) OFNil)))
+output =
+  [ pack
+      inCtorStart                            -- the InCtor
+      wireRegistrationStarted                -- the WireCtor
+      (OFCons (inpStart #email)              -- OutFields chain
+        (OFCons (inpStart #confirmCode)
+          (OFCons (inpStart #at) OFNil)))
+  ]
 ```
 
 The `OFCons … OFNil` chain is the heterogeneous list of
@@ -213,15 +216,15 @@ Edge
   { guard  = isGdpr
   , update = USet (#deletedAt :: IndexN "deletedAt" Regs UTCTime)
                   (inpGdpr #at)
-  , output = Nothing                  -- ε-edge
+  , output = []                       -- ε-edge
   , target = Deleted
   }
 ```
 
-The only difference from a non-ε edge is `output = Nothing`.
-`delta` advances the state, `omega` returns `Nothing`, and
-through the `Decider` façade `decide` returns `[]` (see
-user-guide §5.1).
+The only difference from a non-ε edge is `output = []`.
+`delta` advances the state and `omega` returns `[]`. If the edge changes
+the vertex or registers, default validation reports
+`StateChangingEpsilon`; do not use that shape for persisted state.
 
 ---
 
@@ -232,15 +235,16 @@ user-guide §5.1).
 - **`solveOutput`** — mechanical inversion still works; the
   hand-authored `OPack` carries enough information to derive
   `applyEvent`.
-- **`checkHiddenInputs`** — the build-time hidden-input check
+- **`validateTransducer`** — the complete build-time replay contract
   reads the `Edge` records directly, builder or not.
 - **`isSingleValuedSym`** — single-valuedness is `BoolAlg`-
   polymorphic over the predicate carrier; lift with `withSymPred`
   the same way.
-- **All evaluators** — `delta`, `omega`, `step`, `applyEvent`,
-  `reconstitute` are agnostic to authoring path.
-- **The `Decider`/`Acceptor` façades** — they consume
-  `SymTransducer` directly.
+- **All evaluators** — `delta`, `omega`, `stepEither`, structured
+  replay, and their compatibility wrappers are agnostic to authoring
+  path.
+- **The `Acceptor` projections** — they consume `SymTransducer`
+  directly.
 - **`compose`** — operates on `SymTransducer` values regardless
   of how they were built.
 

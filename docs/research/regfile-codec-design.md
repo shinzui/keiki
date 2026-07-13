@@ -50,20 +50,25 @@ the hash is
 
     sha256Hex (slotSym₁ ":" rendered₁ ";" slotSym₂ ":" rendered₂ ";" … "regfile:0")
 
-where `rendered` is `renderStableTypeRep` walking `splitApps` and
-emitting `<tyConModule>.<tyConName>` per `TyCon`, parenthesising
-applications canonically. Crucially:
+where `rendered` comes from `CanonicalTypeName`. Common scalar types
+have pinned module-independent names (`Int`, `Text`, `UTCTime`, and so
+on), and container instances recurse through the class (`Maybe(Int)`,
+`Either(Text,Int)`, ...). User-defined types may accept the
+`renderStableTypeRep` default or define an application-owned stable
+name. Crucially:
 
-- The hash **only** uses `tyConModule + tyConName + splitApps`.
+- Built-in identities do not depend on GHC's internal module layout.
+- The fallback renderer uses only `tyConModule + tyConName + splitApps`.
 - It **never** uses `tyConPackage` (varies with cabal version pins).
 - It **never** uses `Show TypeRep` (not contractually stable).
 - It **never** uses the raw `Type.Reflection.Fingerprint` (changes
   with GHC).
 
-The result is that the hash is byte-equal across every supported GHC
-patch and minor version, across rebuilds on different machines, and
-across cabal dependency-tree changes that do not rename or relocate the
-slot types' modules. The release-blocking gate at CI
+The result is that hashes over pinned built-ins are byte-equal across
+supported GHC majors as well as rebuilds and dependency-tree changes.
+Application types get the same guarantee when they pin their own
+`CanonicalTypeName`; the default deliberately retains module identity.
+The release-blocking gate at CI
 (`.github/workflows/ci.yml`) asserts this for every entry in
 `tested-with`; the §8 procedure documented in
 [`keiki-codec-json/CONTRIBUTING.md`](../../keiki-codec-json/CONTRIBUTING.md)

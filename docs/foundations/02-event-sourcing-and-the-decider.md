@@ -111,6 +111,8 @@ decide (StartRegistration email code at) PotentialCustomer =
   [ RegistrationStarted email code at, ConfirmationEmailSent email ]
 decide (ConfirmAccount code at) (RequiresConfirmation email expected)
   | code == expected = [ AccountConfirmed email at ]
+decide (FulfillGDPRRequest at) (RequiresConfirmation email _) =
+  [ AccountDeleted email at ]
 decide (FulfillGDPRRequest at) (Confirmed email) =
   [ AccountDeleted email at ]
 decide _ _ = []   -- invalid command in this state: produce no events
@@ -121,6 +123,7 @@ evolve PotentialCustomer (RegistrationStarted email code _) =
 evolve s@(RequiresConfirmation _ _) (ConfirmationEmailSent _) = s
 evolve (RequiresConfirmation email _) (AccountConfirmed _ _) =
   Confirmed email
+evolve (RequiresConfirmation _ _) (AccountDeleted _ _) = Deleted
 evolve (Confirmed _) (AccountDeleted _ _) = Deleted
 evolve s _ = s   -- shouldn't happen if decide is correct
 ```
@@ -166,9 +169,10 @@ The rest of the foundations — and the library — is built around making
 this contract mechanical instead of conventional.
 
 The move is: define the aggregate **once**, as a richer object (a
-finite-state transducer, covered in `03`), and **derive** both `decide`
-and `evolve` from that single definition. They cannot disagree because
-there's only one source of truth.
+finite-state transducer, covered in `03`), and derive both forward
+decision (`stepEither`) and inverse replay from that definition. The
+Decider vocabulary remains useful for the comparison, but the keiki
+release API does not expose a defensive four-field Decider façade.
 
 That's what the next two docs build up to.
 

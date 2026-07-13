@@ -364,23 +364,23 @@ Multi-event edges require a *static* output list. Conditional
 emission stays expressed as multiple disjoint-guarded edges, one
 per branch — exactly what `loanApplication` does today.
 
-The runtime drives this by calling `decide` with `Continue` when
+The runtime drives this by calling `stepEither` with `Continue` when
 the aggregate's vertex is internal:
 
 ```haskell
-let dec = toDecider loanApplication
 -- After enough evidence has been collected:
-decide dec Continue preApprovalState
--- ⇒ [] (silent advance to UnderReview)
+stepEither loanApplication preApprovalState Continue
+-- ⇒ Right (UnderReview, updatedRegs, [])
 -- Then a second tick:
-decide dec Continue underReviewState
--- ⇒ [ApplicationApproved …]   or   [ApplicationDeclined …]
+stepEither loanApplication underReviewState Continue
+-- ⇒ Right (Approved, ..., [ApplicationApproved …])
+-- or Right (Declined, ..., [ApplicationDeclined …])
 ```
 
 The runtime adapter that decides when to tick is application-level
 plumbing; the aggregate exposes no internal-vertex registry.
-(EP-20's `toMultiDecider` and `DriverConfig` previously automated
-this tick loop; both were retired in EP-19. See
+(The prototype `toMultiDecider`/`DriverConfig` and later lossy Decider
+façade were removed. See
 [user-guide.md §EP-19 migration](user-guide.md#ep-19-migration).)
 
 ---

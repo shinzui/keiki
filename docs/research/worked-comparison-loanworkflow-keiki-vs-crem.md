@@ -3,6 +3,7 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> Treat the old facade calls as comparison history, not executable release API.
 
 `architecture-comparison-keiki-vs-crem.md` compares the libraries
 abstractly. This doc walks the same comparison through a concrete,

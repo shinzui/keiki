@@ -89,7 +89,7 @@ Three observations on the shape:
   comparable. Tests assert on `runAcceptor` outputs instead.
 
 
-## Why the state carrier is `(s, RegFile rs)` and not `s`
+## Why the state carrier includes registers and replay progress
 
 Every edge guard depends on both the control vertex and the register
 file. `evalPred` (`src/Keiki/Core.hs:514`) reads registers via
@@ -99,11 +99,9 @@ guard, e.g., `RequiresConfirmation -> Confirmed` on
 acceptor must therefore thread the register file through each step,
 or it cannot evaluate guards on subsequent inputs.
 
-The state carrier is consequently the same pair `(s, RegFile rs)`
-that `delta` and `applyEvent` already use as their input/output type.
-This matches the choice `toDecider` makes in `src/Keiki/Decider.hs`
-and is inherent to the symbolic-register extension of foundations
-doc 04 (which presents the simpler register-free case).
+The input carrier is consequently `(s, RegFile rs)`. The output
+carrier is `(InFlight s co, RegFile rs)`: besides registers it must
+remember the expected tail while consuming a multi-event edge.
 
 
 ## The projections
@@ -122,17 +120,19 @@ Each projection is one Haskell binding wrapping the corresponding
       }
 
     outputAcceptor
-      :: BoolAlg phi (RegFile rs, ci)
+      :: (BoolAlg phi (RegFile rs, ci), Eq co)
       => SymTransducer phi rs s ci co
-      -> Acceptor co (s, RegFile rs)
+      -> Acceptor co (InFlight s co, RegFile rs)
     outputAcceptor t = Acceptor
-      { aStep    = \(s, regs) co -> applyEvent t s regs co
-      , aInitial = (initial t, initialRegs t)
-      , aIsFinal = \(s, _regs) -> isFinal t s
+      { aStep    = \(wrapper, regs) co -> applyEventStreaming t wrapper regs co
+      , aInitial = (Settled (initial t), initialRegs t)
+      , aIsFinal = \(wrapper, _regs) -> case wrapper of
+          Settled s   -> isFinal t s
+          InFlight {} -> False
       }
 
 `inputAcceptor` is `delta` curried into the acceptor record;
-`outputAcceptor` is `applyEvent` curried into the acceptor record.
+`outputAcceptor` is `applyEventStreaming` curried into the acceptor record.
 There is no further logic. The projection is just *naming what
 already exists*.
 
@@ -168,8 +168,8 @@ The acceptor's language is exactly the language foundations chapter
   t` iff it reaches a final state via successive `delta` calls.
 
 - `outputAcceptor t` accepts the event sequences `t` could have
-  produced. By construction `aStep (outputAcceptor t) (s, regs) co =
-  applyEvent t s regs co`, so an event sequence is accepted iff it
+  produced. By construction its step is `applyEventStreaming`, so a
+  multi-event tail is checked in order and an event sequence is accepted iff it
   replays cleanly through `reconstitute t`. The final-state predicate
   is the same `isFinal t` in both directions.
 
@@ -236,11 +236,10 @@ has one event (`EmailSent`) which lands at the terminal vertex.
     accepts (outputAcceptor emailDelivery)
             [EmailSent …]                           ==  True
 
-`emailDelivery` is preferred over `userReg` for the output-acceptor
-demonstration because every transition produces a wire event;
-`userReg`'s ε-edge `RequiresConfirmation -> Deleted` on
-`FulfillGDPRRequest` would block `applyEvent` replay through that
-edge (per the MP-4 retrospective).
+`emailDelivery` remains the smallest output-acceptor demonstration.
+The canonical `userReg` now works too: its pre-confirmation deletion
+emits `AccountDeleted`, and its multi-event registration chain is
+handled by the `InFlight` carrier.
 
 **Round-trip with `reconstitute`.** For any log,
 `fmap fst (runAcceptor (outputAcceptor t) log)` and
@@ -260,15 +259,11 @@ import. This matches the rationale that put `Keiki.Composition` in
 its own module (MP-4 / EP-11 Decision Log).
 
 
-## Relationship to `Keiki.Decider`
+## Relationship to the Core runtime API
 
-`Keiki.Decider.toDecider` projects a `SymTransducer` to a Chassaing-
-shape four-field record (`decide`, `evolve`, `initialState`,
-`isTerminal`). It's a *different* projection — Decider is shaped for
-"naive functional event sourcing" consumers and lifts both directions
-at once into a single record.
-
-`Acceptor` is shaped for the foundations-chapter view: one alphabet
-at a time, with the membership question (`accepts`) front-and-centre.
-Both projections coexist; neither subsumes the other. EP-12 does not
-modify `Keiki.Decider`.
+`Acceptor` is the foundations-chapter membership view: one alphabet at
+a time. Forward command processing and diagnostic hydration remain in
+`Keiki.Core` (`stepEither`, `replayEvents`, and the strict
+`*Either` replay functions). The former `Keiki.Decider` façade was
+removed because its defensive letter-only replay policy could not
+represent these failures or multi-event progress honestly.

@@ -3,6 +3,7 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> Treat those facade references as design chronology, not current API guidance.
 
 This note is the design record for the `Keiki.Generics` module added as
 a follow-up to MasterPlan 2's EP-2. It captures the boilerplate
@@ -749,7 +750,8 @@ Five small choices fix the shape:
    > moving `sat` out of `BoolAlg` into a `Sat` subclass whose
    > `SymPred` instance carries `(ExtractRegFile rs, KnownInCtors ci)`
    > and defines `sat = symSatExt`. `symSat` and `unsafeWitness` are
-   > retired; the witness-free check is `not . symIsBot`.
+   > retired; `not . symIsBot` is the witness-free “not proved empty”
+   > check, while witness-bearing satisfiability uses `sat`/`symSatExt`.
 
 **Implemented (see EP-9).** `Keiki.Symbolic` ships
 `symSatExt :: (ExtractRegFile rs, KnownInCtors ci) =>

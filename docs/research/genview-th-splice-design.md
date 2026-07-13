@@ -3,6 +3,7 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+> Treat those facade references as design chronology, not current API guidance.
 
 This note is the design record for the `deriveView` Template Haskell
 splice added to `Keiki.Generics.TH` under MasterPlan 5 / ExecPlan 13.

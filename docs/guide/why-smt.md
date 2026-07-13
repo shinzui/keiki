@@ -183,10 +183,11 @@ longer does):
   if the predicate were satisfiable — so a spurious `Unknown` causes
   the CI gate to fail, not pass. Loud, not silent.
 
-The same opaque `TApp` shapes that weaken the gate also block *output
-inversion*: an output field built with `TApp1`/`TApp2` (or with structural
-arithmetic) cannot be inverted by `solveOutput` on replay, so the event will
-not round-trip. The dual concern — which output shapes replay — is the
+The same opaque `TApp` shapes that weaken the gate are treated as
+*derived* output fields during replay. They can round-trip by
+recompute-and-verify when every command field they read is also carried
+by an invertible field; a command field hidden only inside a derived
+expression cannot be recovered. The dual concern — which output shapes replay — is the
 output-invertibility contract (`docs/guide/output-invertibility.md`). The
 positive redirect for bounds: a numeric or date bound belongs in a `PCmp`
 ordering guard over a curated ordered type (`UTCTime` is curated), so it

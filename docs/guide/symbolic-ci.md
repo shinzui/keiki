@@ -110,8 +110,9 @@ aggregate's input ctor declarations.
 > not `BoolAlg` itself) and on `SymPred` returns the **same real witness** as
 > `symSatExt` — so `case sat (SymPred g) of Just w -> models (SymPred g) w` is a
 > valid round-trip too (it was a crash before EP-44, when `sat` returned a
-> placeholder). The witness-free "is it satisfiable?" check that needs no
-> `ExtractRegFile`/`KnownInCtors` evidence is `not . symIsBot`.
+> placeholder). `not . symIsBot` is only the witness-free statement
+> “not proved empty”; it includes satisfiable and inconclusive solver
+> results. Use `sat`/`symSatExt` when you require a satisfiability witness.
 
 ---
 

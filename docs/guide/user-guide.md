@@ -230,20 +230,23 @@ Inside `B.do { … }`, the available operations:
 | `requireGuard p` | Conjoin an arbitrary `HsPred` to the guard |
 | `emit wc rec` | Set the output to a packed event |
 | `emitWith ic wc rec` | Same, supplying `InCtor` explicitly |
-| `noEmit` | Mark explicit ε-output (default if no `emit`) |
+| `noEmit` | Declare an intentional ε-output (required when there is no `emit`) |
 | `goto V` | Set the target vertex (required exactly once) |
 
 The order doesn't matter for correctness — the builder folds them
 into one `Edge` value at finalize time — but the conventional
 reading order is `requireEq` → register writes → `emit` → `goto`.
 
-Use `B.noEmit` when the lack of an event is part of the domain
-decision. It is idempotent and does not change the edge compared
-with omitting `emit`, but it gives reviewers and future maintainers
-a visible marker that the edge is intentionally silent. This is
-especially useful for `onCmd`-keyed state advances such as
-"Continue when ready" or "delete before confirmation without a
-public event."
+Every edge must choose its output intent: call `emit`/`emitWith` one or
+more times, or call `B.noEmit`. Omitting all three is an eager
+`DefectMissingOutputIntent`, reported with the source vertex and edge
+index as soon as the built transducer is evaluated. `noEmit` is
+idempotent and remains compatible with later `emit` calls, but its
+important role is making deliberate silence explicit. For a persisted
+event stream, also run `validateTransducer defaultValidationOptions`:
+an output-free edge that changes the vertex or registers is a
+`StateChangingEpsilon`, because replay cannot reproduce that state
+change from the event log.
 
 #### Writing guards with operators (EP-45)
 
@@ -376,11 +379,11 @@ The lower-level operator form is also accepted (same overload via
 B.emit wireEmailSent (d.recipient *: d.subject *: d.at *: B.oNil)
 ```
 
-Inside `onEpsilon` (no `InCtor` is bound), `emit` raises a
-finalize-time error directing you to `emitWith ic wc rec`.
+Inside `onEpsilon` (no `InCtor` is bound), `emit` is a compile-time
+type error; use `emitWith ic wc rec` when the edge really emits.
 
-Most `onEpsilon` edges should be silent and therefore use either
-`B.noEmit` or no emit call at all. If an internal edge really does
+Most `onEpsilon` edges should be silent and therefore use
+`B.noEmit`. If an internal edge really does
 need to emit a public event, use `emitWith` so the output remains
 invertible: `emitWith` supplies the `InCtor` witness that ordinary
 `emit` recovers from `onCmd`.
@@ -557,10 +560,14 @@ you need to persist your event sum as JSON, the sibling package
 import Keiki.Codec.JSON.Event (deriveEventCodecSkeleton, defaultEventCodecOptions)
 
 $(deriveEventCodecSkeleton defaultEventCodecOptions ''OrderEvent)
--- emits orderEventToJSON / orderEventFromJSON / orderEventEventTypes / orderEventKindMap
+-- also emits orderEventSchemaVersion
 ```
 
-Its key property is **no silent generic fallback**: a payload field is
+Each generated envelope carries a resolved `kind` and an in-band `v`
+schema version. Constructor renames can pin their historical wire kinds;
+additive fields can provide missing-key defaults; structural migrations
+use a compile-time-complete chain of one-envelope-to-one-envelope
+upcasters. Its other key property is **no silent generic fallback**: a payload field is
 handled by an explicit override, a passthrough instance, or it forces a
 compile-time decision (`FailAtCompileTime`) — so the stored JSON cannot
 drift from the event shape. It consumes no keiki-core symbols and the
@@ -579,11 +586,13 @@ operations are in `Keiki.Core`:
 | Function | Type | What it does |
 |---|---|---|
 | `delta t s regs ci` | `Maybe (s, RegFile rs)` | Forward step on a command (control + register update) |
-| `omega t s regs ci` | `Maybe co` | The event emitted by the firing edge (or `Nothing` for ε) |
+| `omega t s regs ci` | `[co]` | Events emitted by the unique firing edge (`[]` for ε) |
 | `step t (s, regs) ci` | `Maybe (s, RegFile rs, [co])` | `delta` and `omega` paired; the event list is `[]` for an ε-edge and length-2+ for a multi-event edge |
 | `stepEither t (s, regs) ci` | `Either (StepFailure s) (s, RegFile rs, [co])` | like `step`, but on rejection returns *why* instead of `Nothing` |
-| `applyEvent t s regs co` | `Maybe (s, RegFile rs)` | The inverse: replay an event (used by `evolve`) |
-| `reconstitute t events` | `Maybe (s, RegFile rs)` | Fold `applyEvent` over an event log |
+| `applyEventStreamingEither t wrapper regs co` | `Either (ReplayStepFailure s co) (InFlight s co, RegFile rs)` | Replay one observed event with exact inversion/queue diagnostics |
+| `replayEvents t seed events` | `Either (ReplayFailure s co) (InFlight s co, RegFile rs)` | Replay from any streaming seed; a page may end `InFlight` |
+| `applyEventsEither t seed events` | `Either (ReplayFailure s co) (s, RegFile rs)` | Strict chunk replay; rejects a truncated multi-event chain |
+| `reconstituteEither t events` | `Either (ReplayFailure s co) (s, RegFile rs)` | Strict full-log replay from the transducer's initial state |
 
 `delta`, `omega`, and `applyEvent` use **concrete predicate
 evaluation** (`evalPred`) — there is no solver in this path.
@@ -609,33 +618,28 @@ hide. It is the runtime witness of the same property `validateTransducer`'s
 (§8). Treat it as a defect, not an ordinary rejection. Keep `step` on hot
 paths where a bare accept/reject is enough.
 
-### 5.1 The Decider façade
+### 5.1 Structured replay failures
 
-Most users coming from event sourcing want the
-Chassaing-shape `Decider` record. `Keiki.Decider.toDecider`
-projects a `SymTransducer` onto:
+The release API deliberately has no `Keiki.Decider` façade. Its
+defensive `evolve` policy could silently retain the old state after a
+replay failure, and a four-field Decider cannot represent an
+`InFlight` multi-event chain honestly. Use `stepEither` for forward
+decisions and the structured Core replay functions above for hydration.
 
-```haskell
-data Decider c e s = Decider
-  { decide       :: c -> s -> [e]   -- via omega (singleton or [])
-  , evolve       :: s -> e -> s     -- via applyEvent (defensive no-op on Nothing)
-  , initialState :: s               -- (initial t, initialRegs t)
-  , isTerminal   :: s -> Bool       -- isFinal t
-  }
-```
+`ReplayFailure` records the zero-based event index, the `InFlight`
+state immediately before failure, and one of these reasons:
 
-One semantic gap documented at `toDecider`'s haddock:
+- `ReplayNoInvertingEdge`: no outgoing edge could recover a valid
+  command from the observed event;
+- `ReplayAmbiguousInversions`: more than one edge inverted it;
+- `ReplayQueueMismatch`: an observed tail event differed from the
+  pending multi-event queue; or
+- `ReplayLogTruncated`: strict replay ended with pending tail events.
 
-- **ε-edges**. `decide` returns `[]` for an input that fires an
-  ε-edge, so `evolve` is a no-op and the state doesn't transition
-  through the façade. Use `delta` directly when ε matters.
-
-`decide` returns the full event list from `omega`, including the
-length-2+ chain produced by a multi-event edge — see
-[multi-event-commands.md](multi-event-commands.md) for the
-authoring guide. For streaming event-by-event replay through a
-multi-event edge, use the `evolveStreaming` field, which threads
-the `Keiki.Core.InFlight` wrapper through the chain.
+The older `applyEventStreaming`, `applyEvents`, and `reconstitute`
+functions remain `Maybe` compatibility wrappers. Prefer the `Either`
+surface in new runtime code so a corrupt or incompatible log is never
+reported as an undifferentiated `Nothing`.
 
 ### 5.2 The Acceptor façade
 
@@ -645,7 +649,7 @@ the `Keiki.Core.InFlight` wrapper through the chain.
 | Function | Alphabet | Step |
 |---|---|---|
 | `inputAcceptor t` | command (`ci`) | `delta` |
-| `outputAcceptor t` | event (`co`) | `applyEvent` |
+| `outputAcceptor t` | event (`co`) | `applyEventStreaming` over `(InFlight s co, RegFile rs)` |
 
 Useful for "is this event log accepted by the aggregate?" and
 "can this command sequence reach a terminal vertex?" questions.
@@ -723,11 +727,11 @@ The other exports:
 
 | Export | What it does |
 |---|---|
-| `symIsBot p` | Is the predicate unsatisfiable? (`not . symIsBot` is the witness-free "is it satisfiable?" check — carries no extraction constraints) |
+| `symIsBot p` | Is the predicate definitely unsatisfiable? Inconclusive solver results conservatively return `False` |
 | `symSatExt p` | Is there a satisfying assignment, returning a concrete `(RegFile rs, ci)` witness. Since EP-44 this also backs `sat` on `SymPred`. Needs `ExtractRegFile rs` / `KnownInCtors ci`. |
 | `withSymPred t` | Re-tag a transducer's edge guards from `HsPred` to `SymPred` |
 | `isSingleValuedSym t` | All-pairs `isBot (g1 \`conj\` g2)` over each vertex's edges |
-| `Sym a` typeclass | Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime` |
+| `Sym a` typeclass | Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, `Int32`/`Int64` |
 
 ---
 
@@ -799,17 +803,20 @@ Each edge body must commit to one target.
 
 **`emit` inside `onEpsilon` without `emitWith`.**
 
-```
-Keiki.Builder.emit: no enclosing onCmd pinned an InCtor. …
-```
+This is a compile-time schema error. Use `emitWith ic wc rec` or move
+the `emit` inside an `onCmd`.
 
-Use `emitWith ic wc rec` or move the `emit` inside an `onCmd`.
+**Missing output intent.**
+
+Call `B.noEmit` on a deliberately silent edge. A bare `goto` now
+produces a located `DefectMissingOutputIntent`; silence is not inferred.
 
 ### Build-time validation (`validateTransducer`)
 
 `Keiki.Core.validateTransducer` is the umbrella check to put in every
-aggregate's test suite. One call runs three analyses over the `HsPred`
-carrier — purely, with no z3 process — and returns a flat list of
+aggregate's test suite. One call runs replay-safety, determinism, and
+reachability analyses over the `HsPred` carrier — purely, with no z3
+process — and returns a flat list of
 structured warnings; an empty list means well-formed:
 
 ```haskell
@@ -825,13 +832,18 @@ typed `EdgeRef s` — the same locator `stepEither` uses (§5):
 | Warning | Means | Fix |
 |---|---|---|
 | `HiddenInput` | an edge reads a command field its output doesn't emit, so the command can't be recovered on replay | add the field to the emitted event, or stop reading it (see below) |
+| `HeadUnrecoverable` | a later event carries command data absent from the first event | move every required command field into the first emitted event |
+| `InversionAmbiguity` | two edges have the same head wire constructor and replay may select both | use distinct head event constructors or restructure the edges |
+| `UnguardedInputRead` | an input-field read is not preceded by its constructor guard | guard with the matching `PInCtor`; builder `onCmd` does this automatically |
+| `StateChangingEpsilon` | an output-free edge changes vertex or registers, so persisted replay loses the change | emit a domain event; disable only for a deliberately non-persisted machine |
 | `NondeterministicPair` | two outgoing guards of one vertex can both hold | make the guards mutually exclusive (runtime witness: `stepEither`'s `AmbiguousEdges`) |
 | `PossiblyDeadEdge` | an edge can never fire (unreachable vertex, or statically-unsatisfiable guard) | remove it or fix the reachability/guard |
 
-`ValidationOptions` toggles each check (`failOnEpsilonReadsInput`,
-`checkDeterminism`, `checkReachability`, and the opt-in `warnOpaqueGuards`
-— see "Opaque guards and collections" below). `defaultValidationOptions`
-enables the three soundness checks and leaves the opaque-guard audit off.
+Construct `ValidationOptions` by record-updating
+`defaultValidationOptions`, so future replay checks stay enabled. The
+defaults enable hidden-input, head-recoverability, inversion-ambiguity,
+guarded-read, state-changing-epsilon, determinism, and reachability
+checks; only `warnOpaqueGuards` is off.
 
 The default path is **pure and conservative** — its determinism check flags
 only structurally-provable overlaps (never a false positive, but it can miss
@@ -944,13 +956,13 @@ this guide and in the haddocks.
 | **Aggregate** | A consistency boundary in DDD; in keiki, one transducer. State changes happen one command at a time and are recorded as an event log. |
 | **Command** | An external input requesting a state change. Type: `ci`. May be rejected (no satisfying edge fires). |
 | **Event** | A record of a state change that *did* happen. Type: `co`. Append-only; replayable. |
-| **Decider** | A four-field record (`decide`/`evolve`/`initialState`/`isTerminal`) introduced by Jérémie Chassaing. The naive functional model of an event-sourced aggregate. keiki derives it via `toDecider`. |
-| **Decide** | Function `c -> s -> [e]` mapping a command and current state to the events to emit. In keiki, derived from `omega`. |
-| **Evolve / apply** | Function `s -> e -> s` replaying one event onto the state. In keiki, derived from `applyEvent`. |
+| **Decider** | A four-field record (`decide`/`evolve`/`initialState`/`isTerminal`) introduced by Jérémie Chassaing. Useful comparison vocabulary, but not a keiki release API: the lossy façade was removed. |
+| **Decide** | Function `c -> s -> [e]` mapping a command and current state to emitted events. In keiki, use `stepEither` (or `step`) so state and output are computed together. |
+| **Evolve / apply** | Function replaying an event onto state. In keiki, the strict release surface is `applyEventStreamingEither`/`replayEvents`; `applyEvent` is the letter-only compatibility primitive. |
 | **Replay / reconstitute** | Folding `evolve`/`applyEvent` over an event log to recover the current state. |
 | **Projection** | A read-side view derived from the event log. Not the same as the per-vertex B-view (which projects the live slots out of the register file). |
 | **Saga / process manager** | A long-running coordinator of multiple aggregates. Modelled in keiki as a transducer whose input is an event alphabet and whose output is a command alphabet — an orchestrator. |
-| **ε-edge / epsilon edge / silent transition** | A transition that emits no event. Output is `Nothing`. Through the `Decider` façade, fires but produces `[]` events. |
+| **ε-edge / epsilon edge / silent transition** | A transition whose `output` list is empty. If it changes state, it is invalid for a persisted event stream because replay has no event from which to recover the change. |
 
 ### 10.2 Automata theory
 
@@ -965,7 +977,7 @@ this guide and in the haddocks.
 | **Vertex** | A control state. Members of the `s` type parameter. Finite (`Bounded`/`Enum`). |
 | **Edge / transition** | One outgoing arrow from a vertex. Carries a guard, an update, an output, and a target vertex. |
 | **δ (delta)** | The transition function: `state × input → state`. In keiki, `delta :: s -> RegFile rs -> ci -> Maybe (s, RegFile rs)`. |
-| **ω (omega)** | The output function: `state × input → output`. In keiki, `omega :: s -> RegFile rs -> ci -> Maybe co`. |
+| **ω (omega)** | The output function: `state × input → output`. In keiki, `omega :: s -> RegFile rs -> ci -> [co]`. |
 | **Acceptor** | A specialisation of an FST that ignores output and answers "does this input belong to the language?". |
 | **Final / accepting state** | A state in which the run is allowed to terminate. `isFinal` in keiki. |
 | **Single-valued** | At every reachable state, at most one outgoing edge fires for any given input. Single-valued SFTs have decidable equivalence (Veanes 2012); keiki targets this regime. |
@@ -983,7 +995,7 @@ this guide and in the haddocks.
 | **`RegFile rs`** | A typed heterogeneous tuple indexed by a slot list. The data the transducer remembers between transitions. |
 | **`Index rs r`** | A position into a register file pointing at a slot of type `r`. `ZIdx` is the head; `SIdx` the recursive constructor. |
 | **`IndexN s rs r`** | A slot-name-tagged index. The `s :: Symbol` parameter pins the slot's name in the type, which is what makes the static disjoint-targets check on `(.=)` possible. |
-| **`Term rs ci r`** | A small AST for expressions over registers and the input. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`, `TArith`. Smart constructors: `lit`, `proj`, `inpCtor`, `tadd`/`tsub`/`tmul` (operators `.+`/`.-`/`.*`). |
+| **`Term rs ci ifs r`** | A small AST for expressions over registers and the input schema `ifs`. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`, `TArith`. Smart constructors: `lit`, `proj`, `inpCtor`, `tadd`/`tsub`/`tmul` (operators `.+`/`.-`/`.*`). |
 | **`Pred rs ci`** | Synonym for `HsPred rs ci` (EP-45). The short, readable name for a guard's type. |
 | **`HsPred rs ci`** | The v1 predicate carrier. Constructors: `PTop`, `PBot`, `PAnd`, `POr`, `PNot`, `PEq`, `PInCtor`, `PCmp`. The preferred authoring surface is the EP-45 operators (`.>=`/`.<=`/`.==`/`./=`/`.&&`/`.||`/`pnot`, see §3.4) — thin aliases for these constructors; `matchInCtor` builds a `PInCtor`. |
 | **`SymPred rs ci`** | The v2 predicate carrier (a newtype over `HsPred`). Same constructors; the difference is the SBV-backed instances — `BoolAlg`'s `isBot` and the `Sat` class's `sat` dispatch to z3, giving precise answers and (for `sat`) a real `(RegFile rs, ci)` witness. |
@@ -993,13 +1005,13 @@ this guide and in the haddocks.
 | **`combine`** | Concatenate two `Update`s under a `Disjoint` constraint. The constraint enforces no register is written by both halves. |
 | **`InCtor ci ifs`** | Reified evidence that `ci`'s value can be matched against a specific constructor and its payload reassembled as a `RegFile ifs`. Carries the constructor's name (`icName`), a matcher (`icMatch`), and a builder (`icBuild`). Produced by `deriveAggregateCtors`. |
 | **`WireCtor co fs`** | Reified evidence for an event constructor — the dual of `InCtor` for the output side. Carries a builder over a nested-pair tuple. Produced by `deriveWireCtors`. |
-| **`OutFields rs ci fs`** | A heterogeneous list of `Term`s, one per event-payload field. Built with `(*:)` / `oNil` or via the TH-emitted `<Ctor>TermFields` record. |
+| **`OutFields rs ci ifs fs`** | A heterogeneous list of `Term`s, one per event-payload field, indexed by the same input schema as its enclosing `InCtor`. Built with `(*:)` / `oNil` or via the TH-emitted `<Ctor>TermFields` record. |
 | **`OutTerm rs ci co`** | A packaged output: `OPack ic wc fs`. Holds the input-side `InCtor` (so replay can recover the input), the wire-side `WireCtor`, and the field-term list. |
 | **`pack`** | Smart constructor for `OPack`. The argument shape `pack ic wc fs` is what `B.emit` produces under the hood. |
 | **`Edge phi rs ci co s`** | One outgoing transition. Fields: `guard`, `update`, `output`, `target`. |
-| **`step`** | Forward atomic operation: `(s, RegFile, ci) -> Maybe ((s, RegFile), Maybe co)`. `delta` and `omega` paired. |
-| **`applyEvent`** | The inverse step: `(s, RegFile, co) -> Maybe (s, RegFile)`. Used by `reconstitute` and `Decider.evolve`. Mechanically derived from `omega` via `solveOutput`; no per-edge inverse function needed. Which output shapes it can invert is the output-invertibility contract (`docs/guide/output-invertibility.md`). |
-| **`reconstitute`** | Fold `applyEvent` over an event log. The replay path. |
+| **`step`** | Forward atomic operation: `(s, RegFile, ci) -> Maybe (s, RegFile, [co])`. `delta` and `omega` paired. Prefer `stepEither` when a rejection reason matters. |
+| **`applyEvent`** | Letter-only inverse compatibility step: `(s, RegFile, co) -> Maybe (s, RegFile)`. For general replay use the `InFlight`-aware structured functions. |
+| **`reconstituteEither`** | Strict full-log replay from the initial state, returning a located `ReplayFailure` instead of collapsing failure to `Nothing`. `reconstitute` is its compatibility wrapper. |
 | **`solveOutput`** | The *runtime* inverter on the replay path (called by `applyEvent`/`applyEventStreaming`/`reconstitute`): recovers the command from an edge's invertible output fields and, since EP-47, *recomputes-and-verifies* any derived (`TApp`/`TArith`) fields forward (needs `Eq co`), so derived output fields round-trip too. The reason `applyEvent` exists at all without hand-written inverses. The full rule is the output-invertibility contract (`docs/guide/output-invertibility.md`); the relaxation is `docs/research/recompute-and-verify-derived-outputs.md`. |
 | **`checkHiddenInputs`** | Build-time analysis that flags edges whose update or guard reads an input field not present in the output term. Such edges can't be replayed from the event alone — it is the build-time net for the output-invertibility contract (`docs/guide/output-invertibility.md`). |
 | **`isSingleValuedSym`** | Symbolic single-valuedness check. For each vertex, asks `isBot` of every pairwise conjunction of outgoing-edge guards. Lives in `Keiki.Symbolic`. |
@@ -1022,7 +1034,7 @@ this guide and in the haddocks.
 | **`PartialEdge`** | The growing edge state inside an `EdgeBuilder` body. Internal — exposed only as the type `EdgeBuilder` wraps. |
 | **`PayloadProj`** | Opaque handle threaded into an `onCmd` body. Its `HasField` instance translates `d.fieldName` into a `TInpCtorField` term. |
 | **`ToOutFields`** | Typeclass that lets `B.emit` accept either a `<Ctor>TermFields` record or a bare `OutFields` value via the same call shape. |
-| **`<Ctor>TermFields rs ci`** | TH-emitted record companion to a `WireCtor`. Field names mirror the event payload's; field types are `Term rs ci`. The right-hand argument of `B.emit`. |
+| **`<Ctor>TermFields rs ci ifs`** | TH-emitted record companion to a `WireCtor`. Field names mirror the event payload's; field types are `Term rs ci ifs`. The right-hand argument of `B.emit`. |
 | **`buildTransducer`** | Top-level entry. Runs the `VertexBuilder` to produce a `SymTransducer`. |
 | **`from V do …`** | Group edges out of vertex `V`. |
 | **`onCmd ic body`** | Add an edge guarded by `matchInCtor ic`; `body` runs in `EdgeBuilder` with a `PayloadProj` argument. |
@@ -1033,10 +1045,10 @@ this guide and in the haddocks.
 | **`reg @"name"`** | Read a register slot as a `Term`, the read-side mirror of `slot @"name"`. The `TypeApplication` pins the name so no `:: Index Regs Ty` annotation is needed; unaffected by a `generic-lens` `IsLabel` that shadows bare `#name`. |
 | **`emit wc rec`** | Set the edge's output. `wc` is a `WireCtor`; `rec` is the field-keyed record (or a bare `OutFields`). The input-side `InCtor` is recovered from the enclosing `onCmd`. |
 | **`emitWith ic wc rec`** | Same as `emit` but with an explicit `InCtor`. Required inside `onEpsilon`. |
-| **`noEmit`** | Mark the edge as ε-output. Idempotent. |
+| **`noEmit`** | Declare the edge intentionally ε-output. Required when the body has no `emit`; idempotent. |
 | **`requireEq a b`** | Conjoin `a .== b` to the edge guard. |
 | **`requireGuard p`** | Conjoin an arbitrary `HsPred` to the edge guard. |
-| **`goto V`** | Set the edge's target vertex. Required exactly once per body; missing/duplicated `goto` raises a finalize-time error. |
+| **`goto V`** | Set the edge's target vertex. Required exactly once per body; eager builder validation reports missing/duplicated calls as located `BuilderError`s. |
 
 ### 10.5 GHC features used
 
@@ -1061,10 +1073,10 @@ this guide and in the haddocks.
 | **SBV** | "SMT-Based Verification" — Levent Erkok's Haskell library that compiles symbolic-value Haskell to SMT-LIB and dispatches to a back-end solver. |
 | **SMT solver** | A decision procedure for satisfiability modulo theories (linear arithmetic, strings, equality, etc.). z3 is the default. |
 | **z3** | Microsoft Research's SMT solver. Required at runtime for `Keiki.Symbolic`'s analyses. Install with `brew install z3` or `apt install z3`. |
-| **`Sym a`** | Typeclass for types that have an SBV representation. Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime`. |
-| **`SymRep a`** | The SBV-side representation of `a`. Associated type on `Sym`. E.g. `SymRep UTCTime = Integer` (POSIX seconds). |
+| **`Sym a`** | Typeclass for types that have an SBV representation. Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, and `Int32`/`Int64`. |
+| **`SymRep a`** | The SBV-side representation of `a`. Fixed-width integers use exact bit vectors; `UTCTime` uses lossless picoseconds; platform `Int` is modeled as unbounded `Integer`. |
 | **`sat` / `Sat phi a`** | Witness extraction: `sat :: phi -> Maybe a`, the sole method of the `Sat` subclass of `BoolAlg`. On `SymPred` it returns the real `symSatExt` witness (since EP-44); the old crashing placeholder is gone. |
-| **`symIsBot`** | Symbolic emptiness check. `True` iff the predicate is unsatisfiable. (`not . symIsBot` is the witness-free satisfiability check.) |
+| **`symIsBot`** | Symbolic emptiness check. `True` only for a definite solver `Unsatisfiable`; `Unknown`, `ProofError`, and other inconclusive results conservatively return `False`. |
 | **`symSatExt`** | Symbolic sat with concrete witness reconstruction. Requires `ExtractRegFile rs` and `KnownInCtors ci` evidence. Backs `sat` on `SymPred`. |
 | **`ExtractRegFile rs`** | Typeclass that materialises a `RegFile rs` from a name-keyed reader. The two instances cover `'[]` and `'(s, t) ': rs`. |
 | **`KnownInCtors ci`** | Typeclass enumerating a `ci`'s `InCtor` values for the witness extractor. Hand-written per aggregate (one entry per command constructor). |
@@ -1086,10 +1098,10 @@ names carry information once you know where they came from.
 | **edge** | Same — graph-theoretic name for a directed arrow between vertices. Each edge bundles a guard, an update, an output, and a target. |
 | **transducer** | Latin *transducere*, "to lead across". An automaton that *translates* one alphabet to another (input → output) instead of merely accepting or rejecting. The contrast term is *acceptor*, which has no output. |
 | **acceptor** | Formal-language theory. The simplest automaton: ingests a sequence, says yes or no based on whether it ends in a final state. keiki's `Acceptor` is the projection that drops the output side of a transducer. |
-| **decider** | Jérémie Chassaing's *Functional Event Sourcing Decider*. Chosen because it *decides* which events to emit given a command. keiki's `Decider` façade has the same four-field shape Chassaing publishes. |
+| **decider** | Jérémie Chassaing's *Functional Event Sourcing Decider*. keiki uses the term for comparison, but removed its lossy Decider façade before release; `stepEither` plus structured replay are the supported split. |
 | **δ (delta)** | Standard automata-theory notation for the transition function. Reused unchanged in keiki's `delta`. |
 | **ω (omega)** | Mealy-machine convention for the output function. Reused in keiki's `omega`. The original Mealy paper used different letters; ω became standard later. |
-| **ε-edge / epsilon edge / silent transition** | ε is the empty word in formal-language theory. An edge whose output is "no symbol" is conventionally labelled ε. In keiki, an ε-edge is one whose `output` field is `Nothing`. |
+| **ε-edge / epsilon edge / silent transition** | ε is the empty word in formal-language theory. An edge whose output is "no symbol" is conventionally labelled ε. In keiki, an ε-edge has `output = []`. |
 | **single-valued** | SFT literature (Veanes 2012). The transducer's relation is *valued* at most once per input — single-valued — instead of multi-valued. The single-valued case is where SFT equivalence is decidable. |
 | **single-use** | Bojańczyk's restriction on register automata (arXiv 1907.10504): each register is *used* (read) at most once per transition, after which it's consumed. Recovers decidable equivalence in the deterministic case. |
 | **copyless** | SST restriction (Alur & Černý). No register's content is *copied* to two registers in the same transition — what the rule forbids. The name describes the prohibition. |
@@ -1138,29 +1150,27 @@ names carry information once you know where they came from.
 ---
 
 <a id="ep-19-migration"></a>
-## 11. EP-19 migration: from the EP-20 façade to the GSM AST
+## 11. Migration to the release Core API
 
-If you previously used the EP-20 surface (`toMultiDecider`,
-`DriverConfig`, `chainTo`, `Continue` synthetic commands), here is
-the one-line-per-row mapping to the EP-19 (GSM widening) surface.
+If you used either prototype Decider surface, migrate directly to the
+release Core API. Fixed-shape chains still collapse into multiple
+`emit` calls on one edge; branching `Continue` commands remain real
+commands.
 
-| EP-20 (retired)                       | EP-19 (current)                       |
+| Prototype surface | Release surface |
 |---|---|
-| `toMultiDecider t cfg`                | `toDecider t` — `decide` returns the full event list directly via `omega`. |
+| `toMultiDecider t cfg` / `toDecider t` | `stepEither t state command` for forward decisions; `reconstituteEither` or `replayEvents` for hydration. |
 | `DriverConfig` + `isInternal`         | Deleted. The aggregate's vertex enum no longer needs internal-vs-public markers. |
 | `chainTo intermediate inCtor`         | Drop the verb. Put two `B.emit` calls in one `onCmd` body. Drop the intermediate vertex from the `Vertex` enum and the advancement `Continue` constructor from the command enum (for *fixed-shape* multi-event commands only — see below). |
 | `Continue` synthetic command (for fixed-shape chains) | Delete the constructor. Collapse `from PotentialCustomer` + `from Registering` into one block with two `emit`s. |
 | `Continue` synthetic command (for branching at `UnderReview`) | **Keep**. This is genuine branching, not a multi-event chain — the post-`Continue` edge fires approve *or* decline based on a guard. See `Jitsurei.LoanApplication`. |
 | `*DriverConfig` per-aggregate declarations | Delete. |
 | `Jitsurei.LoanApplicationChained`, `userRegChained` | Deleted; the canonical builder form now expresses the same thing via multi-`emit`. |
-| `applyEvents :: ... -> [co] -> Maybe (s, RegFile rs)` | Signature unchanged. Implementation now handles length-2+ chunks internally via the `InFlight` wrapper. |
-| `applyEvent :: ... -> s -> ... -> Maybe (s, RegFile rs)` | Signature unchanged (letter-only). For streaming replay through a length-2+ edge, use the new `applyEventStreaming :: ... -> InFlight s co -> ... -> Maybe (InFlight s co, RegFile rs)`. |
-| `Decider c e s`                       | `Decider c e s s_streaming` — gained the `evolveStreaming` field threaded through a new type parameter. Letter-only callers can ignore it. |
+| `applyEvents :: ... -> [co] -> Maybe (s, RegFile rs)` | Prefer `applyEventsEither`; the `Maybe` name remains a compatibility wrapper. |
+| `applyEvent` / `evolveStreaming` | Use `applyEventStreamingEither` for one event or `replayEvents` for a resumable stream. `applyEvent` remains explicitly letter-only. |
+| `Decider c e s` | Removed. There is no defensive no-op replay policy in the release API. |
 
-For the why-this-changed background, see the MasterPlan's Decision
-Log entry "Reverse the 2026-05-02 selection" at
-[`docs/masterplans/7-*.md`](../masterplans/7-multi-event-command-support-gsm-widening-vs-state-refinement-ergonomics.md);
-for the new authoring guide, see
+For multi-event authoring, see
 [`multi-event-commands.md`](multi-event-commands.md).
 
 ---

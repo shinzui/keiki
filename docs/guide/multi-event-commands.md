@@ -124,15 +124,18 @@ Keep it as a first-class vertex. Multi-event collapse is only for
 intermediate vertices that exist solely as synthesis artefacts for a
 multi-event command.
 
-## Forward direction: `decide` returns the full list
+## Forward direction: `stepEither` returns the full list
 
 ```haskell
-> let dec = toDecider userReg
-> decide dec (StartRegistration (StartRegistrationData "alice@x" "Z9F4" t0))
->            (PotentialCustomer, emptyRegs)
-[ RegistrationStarted   (RegistrationStartedData "alice@x" "Z9F4" t0)
-, ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")
-]
+> stepEither userReg (PotentialCustomer, emptyRegs)
+>   (StartRegistration (StartRegistrationData "alice@x" "Z9F4" t0))
+Right
+  ( RequiresConfirmation
+  , updatedRegs
+  , [ RegistrationStarted   (RegistrationStartedData "alice@x" "Z9F4" t0)
+    , ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")
+    ]
+  )
 ```
 
 Length matches the edge's `output` list. There is no façade or
@@ -161,6 +164,11 @@ Pass the full chunk; get back the unwrapped settled state. A chunk
 that ends mid-flight (the queue is non-empty at the chunk's end)
 returns `Nothing`.
 
+For new runtime code prefer `applyEventsEither`. It has the same success
+value but returns `ReplayFailure` with the exact event index and
+`ReplayLogTruncated pending` (or the exact event-step failure) on the
+`Left`.
+
 ### Streaming replay (no command boundaries)
 
 If the runtime sees one event at a time without knowing which command
@@ -182,11 +190,12 @@ applyEventStreaming
 
 Start from `Settled initialVertex`. Each observed event advances
 through `InFlight` for length-N edges and back to `Settled` when the
-queue empties. The `Decider` record's `evolveStreaming` field exposes
-this through the `Decider` façade.
+queue empties. Prefer `applyEventStreamingEither` when handling one
+event and `replayEvents` when folding a page or stream: both retain the
+`InFlight` state and return structured failures instead of `Nothing`.
 
-For most application code, chunk replay (`applyEvents` /
-`reconstitute`) is the right tool — the runtime adapter knows the
+For most application code, strict chunk replay (`applyEventsEither` /
+`reconstituteEither`) is the right tool — the runtime adapter knows the
 command boundary because it knows which command it just dispatched.
 Streaming replay is for runtimes that consume an opaque event log
 event-by-event.
@@ -223,13 +232,11 @@ shows the length-2 case for `StartRegistration`.
 
 ## Known caveats
 
-- **`decide` on ε-edges returns `[]`.** This is the documented
-  limitation in `Keiki.Decider`'s docstring: an edge with `output =
-  []` emits no event, so `decide` reports no event, and the
-  Chassaing-shape `evolve` can't replay it. The keiki transducer
-  itself transitions correctly via `delta`; the gap is at the
-  Decider-façade boundary. Use `delta` / `step` directly when ε-edges
-  matter to a caller.
+- **State-changing ε-edges are not persistable.** `stepEither` advances
+  them correctly, but an event log contains no evidence of the change.
+  `validateTransducer defaultValidationOptions` reports
+  `StateChangingEpsilon`; emit a domain event before mounting the model
+  on a durable event stream.
 - **Composition produces dead edges.** A length-N first-edge against a
   K-edge target produces K^N composite edges. Most have unsatisfiable
   substituted guards and never fire at `omega`/`delta`/`step` time,

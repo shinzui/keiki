@@ -211,32 +211,36 @@ Key choices:
   full-list index. Defined in `Keiki.Composition`.
 
 
-## `compose` — semantics
+## `compose` — letter-edge semantics
+
+This section gives the one-output base case. The later EP-19 section
+extends it to list-shaped multi-event output by expanding downstream
+paths; the EP-74 stateful addendum fixes the snapshot/threading details.
 
 The composite's edges from `(s1, s2)`:
 
 1. For each **ε-edge `e1`** in t1 from `s1` (i.e. `output e1 ==
-   Nothing`), one composite ε-edge:
+   []`), one composite ε-edge:
 
        Edge
          { guard  = liftLPred (guard e1)
          , update = liftLU (update e1)
-         , output = Nothing
+         , output = []
          , target = Composite (target e1) s2
          }
 
    t2 does not step on a t1 ε-edge — there is no `mid` for it to
    consume. The composite's `s2` is unchanged.
 
-2. For each **non-ε edge `e1`** in t1 from `s1` (i.e. `output e1 ==
-   Just o1`), and each `e2` in t2 from `s2`, one composite edge:
+2. For each **letter edge `e1`** in t1 from `s1` (i.e. `output e1 ==
+   [o1]`), and each `e2` in t2 from `s2`, one composite edge:
 
        Edge
          { guard  = PAnd (liftLPred (guard e1))
                           (substPred (guard e2) o1)
          , update = liftLU (update e1) `combine`
                     substUpdate (update e2) o1
-         , output = fmap (\o2 -> substOut o2 o1) (output e2)
+         , output = map (\o2 -> substOut o2 o1) (output e2)
          , target = Composite (target e1) (target e2)
          }
 
