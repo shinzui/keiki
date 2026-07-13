@@ -1,9 +1,12 @@
 module Keiki.CompositionStatefulSpec (spec) where
 
 import Control.Exception (evaluate)
+import Data.Text qualified as Text
 import Keiki.Composition (compose)
 import Keiki.Core
 import Keiki.Fixtures.ComposeStateful
+import Keiki.Render.Pretty (prettyPred)
+import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 import Test.Hspec
 
 spec :: Spec
@@ -27,11 +30,19 @@ spec = do
           outputs `shouldBe` [Stage1 10, Stage2 20]
         Nothing -> expectationFailure "expected the composed two-phase step to succeed"
 
-  describe "compose m2aSource wrongOrderSink" $
+  describe "compose m2aSource wrongOrderSink" $ do
     it "steps via the M2A edge without raising" $ do
-      pendingWith "EP-74 M5"
       let pipeline = compose m2aSource wrongOrderSink
       result <- evaluate (step pipeline (initial pipeline, initialRegs pipeline) ProduceA)
       case result of
         Just (_, _, outputs) -> outputs `shouldBe` [SawA 5]
         Nothing -> expectationFailure "expected the matching M2A edge to fire"
+
+    it "is safe for symbolic, pretty-printing, and replay walkers" $ do
+      let pipeline = compose m2aSource wrongOrderSink
+          renderedGuards = map (prettyPred . guard) (edgesOut pipeline (initial pipeline))
+      isSingleValuedSym (withSymPred pipeline) `shouldBe` True
+      sum (map Text.length renderedGuards) `shouldSatisfy` (> 0)
+      case reconstitute pipeline [SawA 5] of
+        Just _ -> pure ()
+        Nothing -> expectationFailure "expected the valid SawA event to replay"

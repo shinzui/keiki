@@ -432,6 +432,27 @@ nthTerm n (OFCons _ rest)
   | n > 0 = nthTerm (n - 1) rest
   | otherwise = Nothing
 
+-- | A structurally inert term whose value raises only when demanded.
+-- Structural walkers see an opaque 'TApp1' over a harmless literal, so a
+-- constructor-mismatched composite edge cannot crash validation or rendering.
+poisonTerm :: String -> Term rs ci ifs r
+poisonTerm message = TApp1 (\() -> error message) (TLit ())
+
+-- | Detect a field read for a constructor other than the mid constructor
+-- produced by the t1 output currently being substituted.
+termHasCtorMismatch :: String -> Term rs ci ifs r -> Bool
+termHasCtorMismatch _ (TLit _) = False
+termHasCtorMismatch _ (TReg _) = False
+termHasCtorMismatch expected (TInpCtorField ic _) = icName ic /= expected
+termHasCtorMismatch expected (TApp1 _ term) = termHasCtorMismatch expected term
+termHasCtorMismatch expected (TArith _ a b) =
+  termHasCtorMismatch expected a || termHasCtorMismatch expected b
+termHasCtorMismatch expected (TApp2 _ a b) =
+  termHasCtorMismatch expected a || termHasCtorMismatch expected b
+
+outCtorName :: OutTerm rs ci co -> String
+outCtorName (OPack _ wc _) = wcName wc
+
 -- | Substitute a t2-side 'Term' against t1's edge output. See the
 -- design note's "Substituting a Term" section for the rules.
 --
@@ -462,7 +483,7 @@ substTerm (TInpCtorField ic2 ix2) o1 =
                   -- type and the input field schema.
                   weakenLTerm @rs1 @rs2 (unsafeCoerceTerm tm)
                 Nothing ->
-                  error
+                  poisonTerm
                     ( "Keiki.Composition.compose: nthTerm overflow at\
                       \ position "
                         <> show n
@@ -474,16 +495,14 @@ substTerm (TInpCtorField ic2 ix2) o1 =
                            \ mid type."
                     )
       | otherwise ->
-          error
-            ( "Keiki.Composition.compose: TInpCtorField over "
+          poisonTerm
+            ( "Keiki.Composition.compose: t2-side guard, update, or output reads "
                 <> icName ic2
-                <> " but t1's edge produced "
+                <> " while t1's edge carries "
                 <> wcName wc1
-                <> " — caller should ensure structural alignment of mid's\
-                   \ constructors. Substitution at this position is\
-                   \ unsound; the composite edge guard's PInCtor\
-                   \ substitution should make the edge unsatisfiable\
-                   \ before evaluation reaches this term."
+                <> ". This composite edge cannot supply that constructor field;\
+                   \ its mismatched guard leaf should be unsatisfiable before\
+                   \ the value is demanded."
             )
 substTerm (TApp1 f t) o1 = TApp1 f (substTerm @rs1 @rs2 t o1)
 substTerm (TArith op a b) o1 =
@@ -526,14 +545,22 @@ substPred (POr p q) o1 =
     (substPred @rs1 @rs2 q o1)
 substPred (PNot p) o1 = PNot (substPred @rs1 @rs2 p o1)
 substPred (PEq a b) o1 =
-  PEq
-    (substTerm @rs1 @rs2 a o1)
-    (substTerm @rs1 @rs2 b o1)
+  if termHasCtorMismatch (outCtorName o1) a
+    || termHasCtorMismatch (outCtorName o1) b
+    then PBot
+    else
+      PEq
+        (substTerm @rs1 @rs2 a o1)
+        (substTerm @rs1 @rs2 b o1)
 substPred (PCmp op a b) o1 =
-  PCmp
-    op
-    (substTerm @rs1 @rs2 a o1)
-    (substTerm @rs1 @rs2 b o1)
+  if termHasCtorMismatch (outCtorName o1) a
+    || termHasCtorMismatch (outCtorName o1) b
+    then PBot
+    else
+      PCmp
+        op
+        (substTerm @rs1 @rs2 a o1)
+        (substTerm @rs1 @rs2 b o1)
 substPred (PInCtor ic2) o1 =
   case o1 of
     OPack _ wc1 _

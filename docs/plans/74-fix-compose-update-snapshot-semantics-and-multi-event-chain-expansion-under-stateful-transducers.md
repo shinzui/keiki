@@ -66,7 +66,7 @@ here, even if it requires splitting a partially completed task into two ("done" 
 - [x] (2026-07-13 03:37Z) M2 (prototyping): snapshot-semantics prototype for `runUpdate` in `src/Keiki/Core.hs`; full suite green; current-keiro and in-repo consumer blast-radius survey re-verified; promote decision recorded in the Decision Log
 - [x] (2026-07-13 03:37Z) M3: defect 1 fixed on the single-mid path; emit-then-increment test green; `runUpdate` haddock updated to match real semantics; `alternative` and `feedback1` audit complete
 - [x] (2026-07-13 03:39Z) M4: defect 2 fixed — chain expansion threads symbolic composed terms through a newest-first pending-write environment; two-phase chain and pre-existing stateless multi-event tests green
-- [ ] M5: defect 3 fixed — `substTerm` total via inert poison, guard leaves with mismatched input reads substitute to `PBot`; wrong-order-guard test green; structural walkers (symbolic check, pretty printer, replay) verified crash-free on cross-constructor composites
+- [x] (2026-07-13 03:42Z) M5: defect 3 fixed — `substTerm` total via inert poison, guard leaves with mismatched input reads substitute to `PBot`; wrong-order-guard test green; structural walkers (symbolic check, pretty printer, replay) verified crash-free on cross-constructor composites
 - [ ] M6: `test/Keiki/CompositionHomomorphismSpec.hs` — bounded-exhaustive semantic-homomorphism suite green (single-mid, multi-event, reject-agreement)
 - [ ] M7: documentation — `feedback1` haddock nesting constraint (defect 4), `compose` haddock, `docs/research/composition-combinators-design.md`, `docs/research/gsm-widening-design.md` §5, `CHANGELOG.md`; master plan registry row and progress box updated
 - [ ] `nix fmt -- --no-cache` clean; `cabal build all` and `cabal test all` green under GHC 9.12
@@ -127,6 +127,13 @@ implementation. Provide concise evidence.
   `unsafeCoerceTerm` is needed only to hide the pending term's existential input-field
   schema. The active two-phase regression now emits `[Stage1 10, Stage2 20]` and ends
   at phase `2`; the twelve focused multi-event/replay/rendering examples remain green.
+- (Implementation M5, 2026-07-13) Replacing constructor-mismatch and field-overflow
+  bottoms with opaque poison terms was sufficient for every structural walker; the
+  only remaining `error` in that substitution region is deliberately inside
+  `poisonTerm`'s value-level function. Leaf-level mismatch detection makes the
+  wrong-order M2B equality `PBot` before term substitution. The active forward step,
+  SBV single-valuedness check, pretty-printer traversal, and replay of `[SawA 5]` all
+  complete successfully in the focused four-example suite.
 
 
 ## Decision Log
