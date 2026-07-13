@@ -115,17 +115,20 @@ this.
 - [x] Milestone 1 (optional prototype): deliberately skipped the timeout-based
       end-to-end prototype because the pure constructor-level regression covers every
       verdict deterministically without introducing a timing-sensitive test. 2026-07-12.
-- [ ] Milestone 2: switch `Sym Word8/16/32/64` and `Sym Int32/64` to exact
+- [x] Milestone 2: switch `Sym Word8/16/32/64` and `Sym Int32/64` to exact
       fixed-width `SymRep`s in `src/Keiki/Symbolic.hs`; rewrite the
-      over-approximation comment block.
-- [ ] Milestone 2: switch `Sym UTCTime` to picosecond-resolution `Integer`
-      encoding; keep or revert per the fallback criterion in Milestone 2.
-- [ ] Milestone 2: regression tests — the `Word8` wraparound overlap the old
+      over-approximation comment block. 2026-07-12.
+- [x] Milestone 2: switch `Sym UTCTime` to picosecond-resolution `Integer`
+      encoding; keep or revert per the fallback criterion in Milestone 2. The
+      exact encoding was retained. 2026-07-12.
+- [x] Milestone 2: regression tests — the `Word8` wraparound overlap the old
       encoding missed, and the sub-second `UTCTime` overlap the old encoding
-      missed, in `test/Keiki/SymbolicSpec.hs`.
-- [ ] Milestone 2: confirm `test/Keiki/SymbolicSpec.hs`, `test/Keiki/ValidationSpec.hs`
+      missed, in `test/Keiki/SymbolicSpec.hs`. 2026-07-12.
+- [x] Milestone 2: confirm `test/Keiki/SymbolicSpec.hs`, `test/Keiki/ValidationSpec.hs`
       and `jitsurei/test/Jitsurei/OrderCartSymbolicSpec.hs` still pass (jitsurei's
       money type is `Word64` — its fixtures exercise the changed instances).
+      The complete core and jitsurei suites passed: 490 and 122 examples.
+      2026-07-12.
 - [ ] Milestone 3: implement the spine-walking `provablyOverlap` in
       `src/Keiki/Core.hs` (atom collection, constructor-consistency, integral
       interval reasoning, literal-witness probing).
@@ -202,6 +205,13 @@ implementation proceeds.
   pinning the inversion before asserting the new verdict is `False`. A timeout-based
   end-to-end prototype was deliberately not promoted because its timing behavior
   would make the suite less reliable without expanding verdict coverage.
+- **Exact encodings were compatible with every existing symbolic consumer.** The
+  new `Word8` fixture proves both guards concretely at 255 and z3 reports their
+  overlap under the exact bit-vector representation. The new `UTCTime` fixture
+  round-trips 0.5 seconds exactly and reports the open interval between 0.2 and
+  0.9 seconds as satisfiable. The complete core suite passed 490 examples and the
+  jitsurei suite passed 122, including OrderCart's `Word64` money witnesses; the
+  picosecond fallback was not needed.
 
 
 ## Decision Log
@@ -277,6 +287,12 @@ implementation proceeds.
   `x .> 0` / `x .> 5` pair, which pure literal probing alone cannot (no mentioned
   literal satisfies both strict bounds).
   Date: 2026-07-11.
+- Decision: Retain the picosecond `UTCTime` encoding; do not use the documented
+  whole-second fallback.
+  Rationale: sub-second round-trip and overlap regressions pass, as do all 490 core
+  and 122 jitsurei examples. No existing consumer depended on truncation, while the
+  exact encoding closes the concrete-versus-symbolic gap directly.
+  Date: 2026-07-12.
 
 
 ## Outcomes & Retrospective

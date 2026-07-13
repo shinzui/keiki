@@ -90,6 +90,7 @@ where
 
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
+import Data.Fixed (Fixed (MkFixed))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.Int (Int32, Int64)
 import Data.Kind (Type)
@@ -99,7 +100,7 @@ import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time (UTCTime)
+import Data.Time (UTCTime, nominalDiffTimeToSeconds, secondsToNominalDiffTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
@@ -143,72 +144,59 @@ instance Sym Integer where
   symDefault = 0
 
 -- | Encoded as 'Integer'. SBV does not provide an 'SInt'-of-arbitrary-
--- size; using 'Integer' avoids overflow surprises during translation.
+-- size; using 'Integer' means machine-width 'Int' wraparound is not modeled.
+-- Guards whose truth depends on 'Int' overflow should use an explicit
+-- fixed-width type instead.
 instance Sym Int where
   type SymRep Int = Integer
   toSym = fromIntegral
   fromSym = fromIntegral
   symDefault = 0
 
--- The fixed-width integer instances below all encode as the unbounded
--- mathematical 'Integer', exactly like 'Sym Int'. This is an
--- /over-approximation/: the modular wraparound of the Haskell @Word*@ /
--- @Int*@ type is not modeled. The consequence is sound for
--- satisfiability (every concrete model the solver finds is a real
--- witness once decoded through 'fromSym') but may miss an
--- unsatisfiability that depends on overflow (e.g. @x + 1 == 0@ over
--- 'Word64' is satisfiable at the type's wrap point but the 'Integer'
--- encoding reports it unsat). keiki's money and count guards are
--- equality and ordering checks against in-range literals, where the
--- over-approximation never bites. The motivating money type is
--- @Jitsurei.OrderCart@'s @Money = Word64@ (fixed-point minor units).
+-- The fixed-width instances use SBV's matching bit-vector representations, so
+-- their arithmetic has exactly the same modular wraparound as Haskell.
 
--- | Money and large counts. Encoded as 'Integer'; see the note above
--- on the unbounded-'Integer' over-approximation.
+-- | Money and large counts, modeled as an exact 64-bit unsigned value.
 instance Sym Word64 where
-  type SymRep Word64 = Integer
-  toSym = fromIntegral
-  fromSym = fromIntegral
+  type SymRep Word64 = Word64
+  toSym = id
+  fromSym = id
   symDefault = 0
 
--- | Item counts and similar 32-bit unsigned registers. Encoded as
--- 'Integer'; see the over-approximation note above.
+-- | Item counts and similar 32-bit unsigned registers, modeled exactly.
 instance Sym Word32 where
-  type SymRep Word32 = Integer
-  toSym = fromIntegral
-  fromSym = fromIntegral
+  type SymRep Word32 = Word32
+  toSym = id
+  fromSym = id
   symDefault = 0
 
--- | Quantities, basis points, and similar 16-bit unsigned registers.
--- Encoded as 'Integer'; see the over-approximation note above.
+-- | Quantities, basis points, and similar 16-bit unsigned registers, modeled
+-- exactly.
 instance Sym Word16 where
-  type SymRep Word16 = Integer
-  toSym = fromIntegral
-  fromSym = fromIntegral
+  type SymRep Word16 = Word16
+  toSym = id
+  fromSym = id
   symDefault = 0
 
--- | 8-bit unsigned (completeness). Encoded as 'Integer'; see the
--- over-approximation note above.
+-- | An exact 8-bit unsigned value.
 instance Sym Word8 where
-  type SymRep Word8 = Integer
-  toSym = fromIntegral
-  fromSym = fromIntegral
+  type SymRep Word8 = Word8
+  toSym = id
+  fromSym = id
   symDefault = 0
 
--- | 64-bit signed (completeness). Encoded as 'Integer'; see the
--- over-approximation note above.
+-- | An exact 64-bit signed value.
 instance Sym Int64 where
-  type SymRep Int64 = Integer
-  toSym = fromIntegral
-  fromSym = fromIntegral
+  type SymRep Int64 = Int64
+  toSym = id
+  fromSym = id
   symDefault = 0
 
--- | 32-bit signed (completeness). Encoded as 'Integer'; see the
--- over-approximation note above.
+-- | An exact 32-bit signed value.
 instance Sym Int32 where
-  type SymRep Int32 = Integer
-  toSym = fromIntegral
-  fromSym = fromIntegral
+  type SymRep Int32 = Int32
+  toSym = id
+  fromSym = id
   symDefault = 0
 
 -- | 'Text' is encoded as Haskell 'String' for SBV's 'SString' theory.
@@ -218,15 +206,18 @@ instance Sym Text where
   fromSym = T.pack
   symDefault = T.empty
 
--- | 'UTCTime' is encoded as Unix epoch seconds (an 'Integer').
--- The round-trip drops sub-second precision; this is intentional —
--- the User Registration aggregate's timestamps are at-second
--- granularity already, and Integer-encoded time comparisons are well
--- supported by SBV's z3 backend.
+-- | 'UTCTime' is encoded as picoseconds since the Unix epoch. The time
+-- library's 'NominalDiffTime' uses a fixed-point picosecond representation, so
+-- this 'Integer' encoding is lossless while remaining well supported by z3.
 instance Sym UTCTime where
   type SymRep UTCTime = Integer
-  toSym = round . utcTimeToPOSIXSeconds
-  fromSym = posixSecondsToUTCTime . fromIntegral
+  toSym t =
+    let MkFixed picoseconds =
+          nominalDiffTimeToSeconds (utcTimeToPOSIXSeconds t)
+     in picoseconds
+  fromSym picoseconds =
+    posixSecondsToUTCTime
+      (secondsToNominalDiffTime (MkFixed picoseconds))
   symDefault = posixSecondsToUTCTime 0
 
 -- | Reify a 'Sym' instance so it can be passed around as a

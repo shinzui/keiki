@@ -7,6 +7,7 @@ import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
 import Data.Text (Text)
 import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import Keiki.Symbolic
@@ -40,6 +41,77 @@ instance KnownInCtors AmtCmd where
 -- | The 'amount' slot index, named once for reuse.
 amountIdx :: Index AmountRegs Word64
 amountIdx = ZIdx
+
+-- | A small exact-bit-vector fixture whose overlapping guards are visible only
+-- when Word8 arithmetic wraps as it does at runtime.
+type ByteRegs = '[ '("byte", Word8)]
+
+byteIdx :: Index ByteRegs Word8
+byteIdx = ZIdx
+
+byteWrapGuard, byteHighGuard :: HsPred ByteRegs AmtCmd
+byteWrapGuard =
+  PCmp
+    CmpLe
+    (TArith OpAdd (proj byteIdx) (TLit 6))
+    (TLit 5)
+byteHighGuard = PCmp CmpGe (proj byteIdx) (TLit 250)
+
+byteWrapFixture ::
+  SymTransducer
+    (HsPred ByteRegs AmtCmd)
+    ByteRegs
+    Bool
+    AmtCmd
+    ()
+byteWrapFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge byteWrapGuard UKeep [] True,
+            Edge byteHighGuard UKeep [] True
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"byte") 0 RNil,
+      isFinal = (== True)
+    }
+
+-- | A picosecond-time fixture whose guards overlap between two sub-second
+-- bounds. Whole-second rounding used to turn this into an empty interval.
+type TimeRegs = '[ '("at", UTCTime)]
+
+timeIdx :: Index TimeRegs UTCTime
+timeIdx = ZIdx
+
+timeLower, timeUpper, timeWitness :: UTCTime
+timeLower = posixSecondsToUTCTime 0.2
+timeUpper = posixSecondsToUTCTime 0.9
+timeWitness = posixSecondsToUTCTime 0.5
+
+timeAfterGuard, timeBeforeGuard :: HsPred TimeRegs AmtCmd
+timeAfterGuard = PCmp CmpGt (proj timeIdx) (TLit timeLower)
+timeBeforeGuard = PCmp CmpLt (proj timeIdx) (TLit timeUpper)
+
+timePrecisionFixture ::
+  SymTransducer
+    (HsPred TimeRegs AmtCmd)
+    TimeRegs
+    Bool
+    AmtCmd
+    ()
+timePrecisionFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ Edge timeAfterGuard UKeep [] True,
+            Edge timeBeforeGuard UKeep [] True
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"at") (posixSecondsToUTCTime 0) RNil,
+      isFinal = (== True)
+    }
 
 -- | A two-edge transducer over a 'Word64' register. Both edges leave
 -- the @False@ vertex; the second edge carries a constant 'Word64'
@@ -290,6 +362,24 @@ spec = do
           (regs ! amountIdx) `shouldBe` (7 :: Word64)
           cmd `shouldBe` AmtTick
           evalPred p regs cmd `shouldBe` True
+
+  describe "exact fixed-width and picosecond encodings" $ do
+    it "finds a Word8 overlap that exists only through modular wraparound" $ do
+      let runtimeRegs = RCons (Proxy @"byte") 255 RNil
+      evalPred byteWrapGuard runtimeRegs AmtTick `shouldBe` True
+      evalPred byteHighGuard runtimeRegs AmtTick `shouldBe` True
+      checkTransitionDeterminismSym byteWrapFixture `shouldSatisfy` (not . null)
+      isSingleValuedSym (withSymPred byteWrapFixture) `shouldBe` False
+
+    it "round-trips UTCTime at sub-second precision" $ do
+      fromSym (toSym timeWitness) `shouldBe` timeWitness
+
+    it "finds an overlap between sub-second UTCTime bounds" $ do
+      let runtimeRegs = RCons (Proxy @"at") timeWitness RNil
+      evalPred timeAfterGuard runtimeRegs AmtTick `shouldBe` True
+      evalPred timeBeforeGuard runtimeRegs AmtTick `shouldBe` True
+      checkTransitionDeterminismSym timePrecisionFixture `shouldSatisfy` (not . null)
+      isSingleValuedSym (withSymPred timePrecisionFixture) `shouldBe` False
 
   describe "ordering predicate PCmp (EP-41 M2)" $ do
     it "constant contradiction 5 >= 10 over Word64 is symIsBot" $
