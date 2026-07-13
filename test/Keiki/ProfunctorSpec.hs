@@ -12,7 +12,9 @@ import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import GHC.Generics (Generic)
 import Keiki.Core
+import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
+import Keiki.LawHelpers (emittedLog, runScript)
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 import Test.Hspec
@@ -213,6 +215,29 @@ spec = do
       case mapped of
         SomeSymTransducer t ->
           fireOutputsOnly t sampleEmailCmd `shouldBe` expected
+
+  describe "forward and inversion observations" $ do
+    it "dimap id id preserves a four-command stateful forward trace" $ do
+      let mapped = dimapTransducer id id stageA
+          script = map MsgA [1, 5, 2, 3]
+      runScript mapped script `shouldBe` runScript stageA script
+
+    it "dimap composition preserves a four-command stateful forward trace" $ do
+      let f (MsgA n) = MsgA (n + 1)
+          f' (MsgA n) = MsgA (n * 2)
+          g (MsgB n) = MsgB (n + 3)
+          g' (MsgB n) = MsgB (n * 4)
+          direct = dimapTransducer (f' . f) (g . g') stageA
+          nested = dimapTransducer f g (dimapTransducer f' g' stageA)
+          script = map MsgA [1, 5, 2, 3]
+      runScript direct script `shouldBe` runScript nested script
+
+    it "dimap id id is not replay-equivalent" $ do
+      let mapped = dimapTransducer id id stageA
+          script = map MsgA [1, 5, 2, 3]
+      case reconstituteEither mapped (emittedLog mapped script) of
+        Left _ -> pure ()
+        Right _ -> expectationFailure "dimap id id unexpectedly replayed"
 
 -- * Hspec helpers ----------------------------------------------------------
 

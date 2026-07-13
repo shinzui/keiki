@@ -14,6 +14,8 @@ module Keiki.CategorySpec (spec) where
 
 import Control.Category (id, (.))
 import Control.Exception (evaluate)
+import Data.Either (isRight)
+import Data.Profunctor (lmap, rmap)
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import Keiki.Composition
@@ -21,6 +23,7 @@ import Keiki.Core
 import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Generics (Append)
+import Keiki.LawHelpers (emittedLog)
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 import Test.Hspec
@@ -102,6 +105,11 @@ runSteps (SomeSymTransducer t) inputs = go (initial t, initialRegs t) inputs
       Just (s', regs', cos_) -> (cos_ :) <$> go (s', regs') rest
 runSteps SomeSymIdentity inputs = Just (map (: []) inputs)
 
+replays :: (Eq co) => SomeSymTransducer ci co -> [ci] -> Bool
+replays (SomeSymTransducer transducer) inputs =
+  isRight (reconstituteEither transducer (emittedLog transducer inputs))
+replays SomeSymIdentity _ = True
+
 -- | The slot names the wrapper's hidden register file reports.
 wrapperSlotNames :: SomeSymTransducer ci co -> [String]
 wrapperSlotNames someT = case someT of
@@ -139,13 +147,20 @@ spec = do
       let wa = someSymTransducer stageA
           wb = someSymTransducer stageB
           wc = someSymTransducer stageC
-          inputs = [MsgA 1, MsgA 5, MsgA 2]
-          expected = Just [[MsgD 3], [MsgD 14], [MsgD 19]]
+          inputs = [MsgA 1, MsgA 5, MsgA 2, MsgA 3]
+          expected = Just [[MsgD 3], [MsgD 14], [MsgD 19], [MsgD 26]]
           left = runSteps ((wc . wb) . wa) inputs
           right = runSteps (wc . (wb . wa)) inputs
       left `shouldBe` right
       left `shouldBe` expected
       right `shouldBe` expected
+
+      -- stageA's derived-only MsgB output cannot reconstruct MsgA, so neither
+      -- association repairs the fixture's pre-existing replay defect. Keep
+      -- this as an explicit inversion counterexample alongside the forward
+      -- associativity observation above.
+      replays ((wc . wb) . wa) inputs `shouldBe` False
+      replays (wc . (wb . wa)) inputs `shouldBe` False
 
     it "L1 with concrete output: id . someEmail still emits the wire EmailEvent" $
       runOmega (id . someEmail) sampleSendEmail
@@ -173,6 +188,41 @@ spec = do
           composedR = someEmail . id
       runOmega composedL sampleSendEmail `shouldBe` [sampleEmailEvent]
       runOmega composedR sampleSendEmail `shouldBe` [sampleEmailEvent]
+
+  describe "PoisonedCompositionError on mapped boundaries" $ do
+    it "rejects an upstream rmap boundary" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          mapped = rmap (\(MsgB n) -> MsgB (n + 100)) wa
+      evaluate (wb . mapped)
+        `shouldThrow` (\e -> pceSide e == "upstream output")
+
+    it "rejects a downstream lmap boundary" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          mapped = lmap (\(MsgB n) -> MsgB (n + 100)) wb
+      evaluate (mapped . wa)
+        `shouldThrow` (\e -> pceSide e == "downstream input")
+
+    it "allows an output map outside composition and applies it" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          mapped = rmap (\(MsgC n) -> MsgC (n + 100)) (wb . wa)
+      runOmega mapped (MsgA 2) `shouldBe` [MsgC 105]
+
+    it "carries an outer output poison into the next boundary" $ do
+      let wa = someSymTransducer stageA
+          wb = someSymTransducer stageB
+          wc = someSymTransducer stageC
+          mapped = rmap (\(MsgC n) -> MsgC (n + 100)) (wb . wa)
+      evaluate (wc . mapped)
+        `shouldThrow` (\e -> pceSide e == "upstream output")
+
+    it "stamped concrete composition is dead instead of silently bypassing rmap" $ do
+      let concrete = compose (rmapCo id stageA) stageB
+      case step concrete (initial concrete, initialRegs concrete) (MsgA 2) of
+        Nothing -> pure ()
+        Just _ -> expectationFailure "stamped boundary unexpectedly fired"
 
   describe "nested stateful composition regressions" $ do
     it "touches the final stage's slots after a nested upstream composite" $ do
