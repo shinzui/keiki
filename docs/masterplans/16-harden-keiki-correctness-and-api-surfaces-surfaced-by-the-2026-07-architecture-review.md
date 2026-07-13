@@ -123,7 +123,7 @@ fire through).
 | 70 | Builder correctness hardening: eager finalize validation, closing the emit unsafeCoerce schema hole, and declaration-order edge merging | docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md | None | None | Complete |
 | 68 | Require explicit emit/noEmit intent on every Builder edge (pre-existing, adopted) | docs/plans/68-require-explicit-emit-noemit-intent-on-every-builder-edge.md | EP-70 | None | Complete |
 | 71 | Align build-time validation with replay: head-recoverability, cross-edge inversion ambiguity, and guard-implies-input-read checks | docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md | None | None | Complete |
-| 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | In Progress |
+| 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Complete |
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Not Started |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Not Started |
 | 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Not Started |
@@ -253,8 +253,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-68: every builder edge states emit/noEmit intent explicitly (rides EP-70's eager pass)
 - [x] EP-71: hidden-input check demands head-recoverability; the GHCi counterexample transducer is rejected
 - [x] EP-71: cross-edge inversion-ambiguity, guard-implies-input-read, and state-changing epsilon checks land; keiro warning-type migration documented
-- [ ] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
-- [ ] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
+- [x] EP-72: `reconstituteEither`/`applyEventsEither`/streaming fold with structured failure reasons
+- [x] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
 - [ ] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
 - [ ] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
 - [ ] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
@@ -326,6 +326,13 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   stricter checks, but its caller-options paths pass options through unchanged, so
   keiro EP-99 must force-enable head recoverability and state-changing-epsilon checks
   at the durable boundary as already specified.
+- EP-72 confirmed the master plan's replay vocabulary can share `EdgeRef` without
+  carrying register values, and that current keiro's duplicated hydration folds map
+  directly onto the new arbitrary-seed `replayEvents` API. The only additional live
+  Decider consumer was an in-workspace jitsurei assertion; it migrated mechanically to
+  `step`. The exact output-acceptor fail-before witness returned `False` for the
+  canonical multi-event User Registration log and passes with the new `InFlight`
+  carrier.
 
 
 ## Decision Log
@@ -440,16 +447,23 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Outcomes & Retrospective
 
-Four child plans are complete: EP-69, EP-70, the adopted EP-68, and EP-71. The core
+Five child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, and EP-72. The core
 memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
-validator half. EP-71 aligned default validation with replay through four default-on
+validator and structured-runtime halves. EP-71 aligned default validation with replay through four default-on
 checks, migrated the durable User Registration epsilon path, left an explicit
 non-durable classification on the Loan tutorial's process-control edge, and produced
-the shared fixtures EP-73 will consume. The full workspace test suite, formatter,
-GHCi counterexample, and keiki Haddocks pass. EP-72 is the next independent Phase 2
-plan; EP-73 is now unblocked on EP-71 but still waits on EP-72.
+the shared fixtures EP-73 will consume. EP-72 added exact replay failures and a
+seedable fold, removed the lossy Decider facade, and made the output acceptor agree
+with multi-event replay. The full workspace test suite, formatter, build, and Haddocks
+pass. EP-73 is now fully unblocked and is the next Phase 2 plan.
 
 ## Revision Notes
+
+- 2026-07-13: Completed EP-72. Added structured single-event and list-level replay
+  failures, an arbitrary-seed fold, strict `Either` facades with compatible `Maybe`
+  wrappers, removed the Decider facade after migrating its useful coverage, repaired
+  multi-event output-acceptor semantics, corrected public documentation, and passed
+  formatting, all builds, all four test suites, and all package Haddocks.
 
 - 2026-07-12: Completed EP-71. Added four default-on replay-safety diagnostics,
   shared replay-alignment fixtures, targeted regression coverage, corrected the User

@@ -899,9 +899,11 @@ delta t s regs ci =
 -- | Single-step output. Returns the list of events emitted by the
 -- unique active edge: @[]@ for an ε-edge, @[o]@ for a letter edge,
 -- @[o1, o2, ...]@ for a multi-event edge. Returns @[]@ if no edge
--- (or more than one edge) is active — the caller cannot distinguish
--- "no active edge" from "active ε-edge" from this function alone;
--- use 'step' or 'delta' if that distinction matters.
+-- is active or if more than one edge is active. Therefore @[]@ conflates
+-- three different outcomes: a rejected command, an ambiguous command,
+-- and an accepted ε-edge that emits nothing. Never interpret @[]@ as
+-- proof that a command was rejected; use 'stepEither' to distinguish all
+-- three outcomes with structured failures.
 omega ::
   (BoolAlg phi (RegFile rs, ci)) =>
   SymTransducer phi rs s ci co ->

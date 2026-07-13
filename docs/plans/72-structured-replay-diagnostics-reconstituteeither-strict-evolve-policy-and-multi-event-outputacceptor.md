@@ -76,9 +76,9 @@ must produce.
 - [x] (2026-07-13 00:01Z) M3: uniquely valuable replay assertions from `DeciderSpec` moved to Core replay specs before the obsolete spec is deleted
 - [x] (2026-07-13 00:04Z) M4: `outputAcceptor` state carrier changed to `(InFlight s co, RegFile rs)`; equivalence haddock now true
 - [x] (2026-07-13 00:04Z) M4: `test/Keiki/AcceptorSpec.hs`: multi-event acceptance spec (fails before the fix, passes after), truncation rejection, reconstitute-agreement spec updated
-- [ ] M5: `omega` haddock states the rejected/ε conflation loudly and points at `stepEither`
-- [ ] M5: haddocks on `reconstitute`/`applyEvents`/`applyEventStreaming` repointed so the `Either` variants are the primary documented surface
-- [ ] M5: `CHANGELOG.md` entry; full sweep `cabal build all`, `cabal test all`, `nix fmt -- --no-cache`; living sections updated
+- [x] (2026-07-13 00:08Z) M5: `omega` haddock states the rejected/ε conflation loudly and points at `stepEither`
+- [x] (2026-07-13 00:08Z) M5: haddocks on `reconstitute`/`applyEvents`/`applyEventStreaming` repointed so the `Either` variants are the primary documented surface
+- [x] (2026-07-13 00:08Z) M5: `CHANGELOG.md` entry; full sweep `cabal build all`, `cabal test all`, `nix fmt -- --no-cache`; living sections updated
 
 
 ## Surprises & Discoveries
@@ -216,7 +216,27 @@ as they occur.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-72 completed the replay API hardening without changing the observable behavior or
+signatures of current keiro's load-bearing `Maybe` entry points. Single-event replay
+now reports no-inverting-edge, ambiguous-inversion, and queue-mismatch failures;
+list-level replay adds exact zero-based positions and truncation. The arbitrary-seed
+`replayEvents` fold returns a final `InFlight` state so callers can span page
+boundaries, while `applyEventsEither` and `reconstituteEither` enforce complete logs.
+
+The lossy Decider facade was removed from the library, tests, examples, roadmap, and
+release notes. Its durable behavioral coverage moved to Core tests, and the historical
+research corpus now labels the removed API explicitly. `outputAcceptor` now carries
+`(InFlight s co, RegFile rs)`, making its documented agreement with `reconstitute`
+true for letter-only, multi-event, truncated, and foreign logs. The fail-before
+witness returned `False` for the canonical five-event User Registration log; the same
+assertion passes after the carrier correction.
+
+Final verification passed `nix fmt -- --no-cache`, `cabal build all`, all four
+workspace test suites (417 keiki examples, 96 jitsurei examples, 50 codec examples,
+and 7 codec-test examples), and `cabal haddock all`. Existing warnings are pre-existing
+and no new Haddock link failure was introduced. The main implementation lesson is that
+the honest unit of replay is not a bare vertex plus one event: it is an `InFlight`
+wrapper plus registers, with strict completion applied only at a log boundary.
 
 
 ## Context and Orientation
@@ -816,3 +836,8 @@ restated verbatim in intent), direct verification of `src/Keiki/Core.hs`,
 `src/Keiki/Decider.hs`, `src/Keiki/Acceptor.hs`, `test/Keiki/DeciderSpec.hs`,
 `test/Keiki/AcceptorSpec.hs`, `test/Keiki/Fixtures/UserRegistration.hs`, and the keiro
 prior art in `keiro/src/Keiro/Command.hs` (sibling repository).
+
+Revision note (2026-07-13): implemented all five milestones. Added structured replay
+failures and folds, removed the Decider facade after migrating its useful coverage,
+made `outputAcceptor` multi-event aware, corrected current documentation, and passed
+the complete build, test, format, and Haddock gates.

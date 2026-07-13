@@ -208,13 +208,15 @@ This is the data problem. It's the whole reason `05` exists.
 The library exports `Keiki.Acceptor.inputAcceptor` and
 `Keiki.Acceptor.outputAcceptor`, each producing an `Acceptor a s`
 record (step function, initial state, final-state predicate) from a
-`SymTransducer`. The state carrier is `(s, RegFile rs)` because edge
-guards depend on the register file as well as the control vertex.
+`SymTransducer`. The input carrier is `(s, RegFile rs)`. The output
+carrier is `(InFlight s co, RegFile rs)`, where `InFlight` remembers the
+expected tail while replaying a multi-event edge.
 Use `accepts (inputAcceptor t) cmds :: Bool` to ask whether a
 command sequence is in the input language; `accepts (outputAcceptor
 t) events :: Bool` for the event language. The output acceptor's
 `aStep` is exactly the `evolve` this chapter derives — it wraps
-`applyEvent`, which inverts ω mechanically.
+`applyEventStreaming`, which inverts the head of ω mechanically and checks
+the remaining evaluated events in order.
 
 ## Vocabulary recap
 

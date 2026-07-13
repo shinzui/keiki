@@ -17,6 +17,13 @@ and this project adheres to the
 - `DistinctNames` provides the canonical compile-time duplicate register-slot
   check, and `slotNamesOf` is now exported from `Keiki.Core` for structural
   constructor validation.
+- Structured replay diagnostics are available through
+  `applyEventStreamingEither`, `replayEvents`, `applyEventsEither`, and
+  `reconstituteEither`. `ReplayStepFailure`, `ReplayFailureReason`, and
+  `ReplayFailure` identify the failing event index, wrapper state, and exact
+  reason, including ambiguous inversion, queue mismatch, and truncated
+  multi-event chains. The existing `Maybe` functions remain compatibility
+  wrappers over this primary surface.
 
 ### Changed
 
@@ -68,11 +75,19 @@ and this project adheres to the
   `KnownSlots`/`SlotListWitness` evidence from `Keiki.Composition`, and composite
   evidence is derived by structural induction. The smart constructor's structural
   constraints are now expressed as `KnownSlots rs`.
+- `Keiki.Acceptor.outputAcceptor` now carries
+  `(InFlight s co, RegFile rs)` and steps with `applyEventStreaming`, so its
+  acceptance result agrees with `reconstitute` for multi-event and truncated
+  logs as well as letter-only logs.
 
 ### Removed
 
 - `Keiki.Builder` no longer uses `unsafeCoerce` to reinterpret the input schema
   recovered by `emit`; the schema relationship is represented in its types.
+- The lossy pre-release Decider facade has been removed. Use `stepEither` for
+  forward decisions and the structured `Keiki.Core` replay functions for
+  hydration; there is no letter-only replay facade that silently retains the
+  input state after a failure.
 
 
 ## [0.1.0.0] — 2026-06-07

@@ -3,6 +3,11 @@
 > Historical API note (2026-07-12): references below to the Decider facade
 > describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
 > for forward decisions and the structured Core replay functions for hydration.
+>
+> EP-72 release update (2026-07-13): code fragments below show the original
+> letter-only output carrier. The release API uses
+> `(InFlight s co, RegFile rs)` plus `applyEventStreaming`, making
+> `outputAcceptor` agree with `reconstitute` on multi-event and truncated logs.
 
 This note is the design record for the `Keiki.Acceptor` module added
 to keiki under MasterPlan 5 / ExecPlan 12. It names, at the level of

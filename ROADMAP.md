@@ -34,9 +34,11 @@ capability to the master plan that delivered it.
 - **List-shaped edge output** (`output :: [OutTerm rs ci co]`): one transition can
   emit zero, one, or N events in declaration order — a Generalized Sequential Machine,
   not a letter FST.
-- Streaming replay: the `InFlight s co` wrapper, `applyEvent` (letter-only),
-  `applyEventStreaming` (InFlight-aware), and `applyEvents` (atomic chunk replay over
-  command boundaries); `reconstitute` for the full fold.
+- Structured streaming replay: the `InFlight s co` wrapper,
+  `applyEventStreamingEither`, the arbitrary-seed `replayEvents` fold,
+  `applyEventsEither` for strict chunks, and `reconstituteEither` for full logs.
+  The historical `Maybe` entry points remain thin compatibility wrappers;
+  `applyEvent` remains the explicitly letter-only primitive.
 - `solveOutput` — mechanical inversion of each edge's output term, with the
   build-time **hidden-input** / **non-injective-output** checks that are the reason the
   library exists. _(Initiatives: MP-1, MP-2, MP-6, MP-7)_
