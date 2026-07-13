@@ -71,7 +71,7 @@ once (Milestone 1) and says so loudly.
 - [x] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants. 2026-07-12.
 - [ ] M5: repair mangled Haddock in `src/Keiki/Generics/TH.hs` and `keiki-codec-json/src/Keiki/Codec/JSON/TH.hs`; verify rendered HTML. Source repaired and Haddock reports 100% coverage for both modules on 2026-07-12; visual verification remains pending because the in-app browser reported no available browser instance.
 - [x] M6 (gated on EP-77): golden fixture files for the versioned event envelope under `keiki-codec-json/test/golden/event/`. 2026-07-12.
-- [ ] Final: `cabal build all`, `cabal test all`, `cabal haddock all`, `nix fmt -- --no-cache` all clean; master plan registry row and progress checkbox updated
+- [ ] Final: `cabal build all`, `cabal test all`, `cabal haddock all`, `nix fmt -- --no-cache` all clean; master plan registry row and progress checkbox updated. All four command gates passed on 2026-07-12; the master row remains In Progress and its checkbox remains unticked until the M5 rendered-HTML inspection can be completed in an available in-app browser.
 
 
 ## Surprises & Discoveries
@@ -237,7 +237,29 @@ here as implementation proceeds.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implementation is complete apart from the rendered-Haddock visual acceptance check.
+The plan replaced GHC-internal shape names with stable canonical literals, made
+container names honor nested overrides, and pinned the resulting canonical strings
+and hashes. Register-file tests now compare decoded values, cover `Maybe` and nested
+`Maybe` semantics, read 13 checked-in snapshot/event fixtures in both compatibility
+directions, and force a deliberately failing review run whenever those fixtures are
+regenerated. Encoding a partially initialized register file now fails with a targeted
+message and a documented precondition.
+
+The persistence-facing compile-time surface is also stricter: duplicate register
+names use EP-70's canonical `DistinctNames` guard, non-record TH payloads fail at the
+splice with a precise diagnostic, and the enumeration variants warn about unsupported
+constructors instead of silently omitting them. Both repaired TH modules report 100%
+Haddock coverage. A local-source build proved that current keiro still compiles
+unchanged, and the codec source distribution contains every nested event fixture.
+
+The final formatter, all-package build, four-suite test matrix, and all-package
+Haddock run pass. Mutation probes demonstrated that the stable-name sensitivity tests
+and both golden-file comparison directions have teeth. The only residual is visual:
+the in-app browser reported no available browser instance, so the two generated TH
+pages have not yet been inspected as rendered HTML. Once a browser instance is
+available, open the paths named in M5's verification procedure, confirm the worked
+examples are intact code blocks, then tick M5 and Final and complete the master row.
 
 
 ## Context and Orientation

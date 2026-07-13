@@ -361,6 +361,12 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   a complete one-to-one rung chain at splice time; one-to-many semantic splits remain
   at the application boundary. Exact integer parsing also required making the
   previously transitive `scientific` dependency direct.
+- EP-78 completed its source, test, packaging, mutation, and downstream-compatibility
+  work. Thirteen checked-in fixtures now pin snapshots, shapes, and versioned event
+  envelopes; shape names are independent of GHC-internal module moves; and the
+  persistence TH surface fails or warns early on ambiguous input. Both repaired TH
+  modules have 100% Haddock coverage, but the required rendered-page inspection is
+  still pending because the in-app browser reported no available browser instance.
 
 
 ## Decision Log
@@ -503,9 +509,21 @@ defaults, and a splice-time-complete structural migration chain. Its historical-
 fixtures and finalized documentation preserve the application boundary for semantic
 splits and outer-envelope version ownership. The full formatter, all-package build,
 four-suite test matrix, and relevant Haddocks are green. EP-78 is the final eligible
-plan and can now pin the finalized persistence formats.
+plan. Its implementation now pins finalized snapshot, shape, and event formats,
+hardens duplicate/ambiguous persistence declarations, passes all workspace command
+gates, packages every fixture, and builds current keiro unchanged. EP-78 and this
+MasterPlan remain In Progress solely because the required visual inspection of the
+two rendered TH Haddock pages could not run without an available in-app browser.
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-78's implementation and command gates. Stabilized shape
+  names, added value-level `Maybe` coverage and 13 guarded golden fixtures, clarified
+  partial-register failures, hardened persistence TH declarations, packaged the
+  fixtures, mutation-checked the guardrails, built current keiro unchanged, and
+  passed formatting, all-package build, all four test suites, and all Haddocks. Kept
+  EP-78 and the MasterPlan In Progress because the in-app browser had no instance for
+  the required rendered-Haddock visual check.
 
 - 2026-07-12: Completed EP-77. Added stable event wire kinds, in-band schema
   versions, default-on-missing additive decoding, a compile-time-complete one-to-one
