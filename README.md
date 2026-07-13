@@ -5,10 +5,10 @@ engines, and durable execution, built on one formalism: the
 symbolic-register finite-state transducer.
 
 keiki keeps the runtime boundary deliberately small. You describe an
-aggregate or workflow once as a typed transducer; the library derives
-the event-sourcing facade, replay, acceptors, projections, composition
-machinery, diagram renderers, and optional symbolic checks from that
-single declaration.
+aggregate or workflow once as a typed transducer; the library provides
+forward decisions, replay, acceptors, projections, composition machinery,
+diagram renderers, and optional symbolic checks from that single
+declaration.
 
 ## The name
 
@@ -44,15 +44,17 @@ runtime concepts:
 keiki models all three as **finite-state transducers** with a typed
 register file and predicate-labelled guards: a practical hybrid of
 Symbolic Finite Transducers and Streaming String Transducers. From one
-`SymTransducer` declaration, the library mechanically derives:
+`SymTransducer` declaration, the library provides:
 
-- the Chassaing-shape `Decider` (`decide`/`evolve`/`initialState`/`isTerminal`),
+- strict forward-decision and replay operations with structured failure diagnostics
+  (`stepEither`, `reconstituteEither`, and `replayEvents`),
 - input- and output-side `Acceptor`s,
 - per-vertex projections (the "B-presentation" view),
-- composition (`compose`, `alternative`, `feedback1`),
-- profunctor / `Category` / `Strong` / `Choice` instances,
+- checked sequential composition (`composeChecked`) plus `alternative` and `feedback1`,
+- profunctor / `Category` / `Strong` / `Choice` / `Arrow` instances,
 - Mermaid and Markdown renderers for documentation,
-- single-valuedness checks via SBV + z3 as an opt-in symbolic CI gate.
+- eager builder validation, default-on replay-safety checks, and optional
+  single-valuedness checks via SBV + z3.
 
 `delta` / `omega` / `applyEvent` use concrete predicate evaluation — no
 solver in the per-event hot path. Solver dispatch is reserved for
@@ -67,7 +69,9 @@ plus the downstream `jitsurei` worked-example package.
 The core package is intentionally codec-free. JSON support lives in
 [`keiki-codec-json`](keiki-codec-json/README.md), and downstream codec
 testing helpers live in
-[`keiki-codec-json-test`](keiki-codec-json-test/README.md).
+[`keiki-codec-json-test`](keiki-codec-json-test/README.md). The JSON event
+codec supports pinned wire kinds, in-band schema versions, and explicit
+upcaster chains for persisted-event evolution.
 
 ## Build
 
@@ -106,9 +110,9 @@ emailDelivery = B.buildTransducer EmailPending emptyRegFile
       B.goto EmailSentVertex
 ```
 
-`Decider`, `Acceptor`, replay, and the per-vertex view are all derived
-from this one declaration. See the sibling `jitsurei/` package for the
-full worked aggregates the test suite drives.
+Forward decisions, structured replay, `Acceptor`s, and the per-vertex
+view all operate from this one declaration. See the downstream
+`jitsurei` package for the full worked aggregates the test suite drives.
 
 ## Repository documentation
 

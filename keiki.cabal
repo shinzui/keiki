@@ -9,11 +9,12 @@ description:
   Transducers and Streaming String Transducers).
   .
   Provides a typed register-file (@RegFile rs@), a deterministic
-  transducer DSL with predicate-labelled guards, composition
-  combinators (sequential, alternative, single-step feedback), a
-  mechanically-derived @Decider@ facade, input- and output-side
-  acceptors, generic Mermaid renderers, and a GHC-upgrade-safe
-  shape hash (@Keiki.Shape@) for snapshot discrimination.
+  transducer DSL with eager builder validation and replay-safety
+  analyses, structured forward-decision and replay operations,
+  composition combinators (checked sequential, alternative,
+  single-step feedback), input- and output-side acceptors, generic
+  Mermaid renderers, and a GHC-upgrade-safe shape hash
+  (@Keiki.Shape@) for snapshot discrimination.
   .
   The library is intentionally codec-free: the pure layer talks
   only typed Haskell values. JSON serialisation lives in the

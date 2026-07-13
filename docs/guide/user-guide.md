@@ -2,15 +2,16 @@
 
 This guide is the action-oriented companion to the conceptual
 foundations. It walks through authoring an aggregate with
-`Keiki.Builder`, running it, deriving the standard façades
-(`Decider`, `Acceptor`), composing transducers, and opting in to
-the symbolic analyses. The glossary at the end defines every
-keiki-specific and automata-theory term used along the way.
+`Keiki.Builder`, running forward decisions and structured replay,
+deriving `Acceptor` and per-vertex views, composing transducers, and
+opting in to the symbolic analyses. The glossary at the end defines
+every keiki-specific and automata-theory term used along the way.
 
 If you have not read the foundations yet, the recommended path is:
 
 1. `docs/foundations/02-event-sourcing-and-the-decider.md` — the
-   `decide` / `evolve` shape this library is mechanically deriving.
+   `decide` / `evolve` comparison vocabulary that motivates keiki's
+   separate forward-decision and replay operations.
 2. `docs/foundations/03-finite-automata-and-transducers.md` — what an
    FST is and why edges look the way they do.
 3. `docs/foundations/05-data-carrying-alphabets.md` — predicates
