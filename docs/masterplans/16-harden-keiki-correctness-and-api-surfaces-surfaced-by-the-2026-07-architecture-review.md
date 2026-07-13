@@ -127,7 +127,7 @@ fire through).
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Complete |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Complete |
 | 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Complete |
-| 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | In Progress |
+| 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Complete |
 | 77 | Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding | docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md | None | None | Not Started |
 | 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | EP-70 | EP-77 | Not Started |
 
@@ -258,7 +258,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
 - [x] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
 - [x] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
-- [ ] EP-76: solver `Unknown` treated as not-bot; encoding caveats documented; pure overlap check catches same-ctor `PAnd` pairs
+- [x] EP-76: solver `Unknown` treated as not-bot; exact sized-integer and picosecond encodings landed; pure overlap check catches supported same-ctor `PAnd` pairs
 - [ ] EP-77: versioned event envelope with pinned wire kinds and default-on-missing decoding
 - [ ] EP-78: golden byte fixtures for both wire formats; `Maybe` slot coverage; shape hash stable across GHC majors
 
@@ -347,6 +347,14 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   replay succeeds when tested with a replayable stateful fixture. The same work proved
   `feedback1` advances two independent aggregate copies and cannot be presented as
   shared-state feedback.
+- EP-76 confirmed that solver uncertainty had been inverted only in `symIsBot`;
+  `symSatExt` was already honest about unavailable witnesses. Exact SBV bit-vectors
+  and picosecond `UTCTime` encodings passed every current consumer fixture. The pure
+  determinism pass now proves supported conjunction overlaps while an executable
+  subset check ensures every warning is also solver-backed. A `mori` reverse-
+  dependency scan found twelve registered project-level dependents, so the work kept
+  every existing symbolic signature and validation-warning constructor unchanged and
+  recorded newly surfaced true positives as a behavioral migration.
 
 
 ## Decision Log
@@ -461,8 +469,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Outcomes & Retrospective
 
-Eight child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, EP-73,
-EP-74, and EP-75. The core
+Nine child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, EP-73,
+EP-74, EP-75, and EP-76. The core
 memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
 validator and structured-runtime halves. EP-71 aligned default validation with replay through four default-on
 checks, migrated the durable User Registration epsilon path, left an explicit
@@ -480,10 +488,20 @@ safe for structural walkers, and a mutation-tested homomorphism suite pins the r
 EP-75 closes Phase 3: checked composition reports structural boundary drift,
 `alternative` has real arm guards, mapped categorical boundaries fail loudly,
 `feedback1` is explicitly a two-copy cascade, and the authoritative law-status section
-separates forward from replay observations without removing instances. EP-76 is the
-next eligible plan and owns symbolic Unknown handling and stronger overlap checks.
+separates forward from replay observations without removing instances. EP-76 closes
+Phase 4: solver uncertainty fails conservatively, fixed-width and
+sub-second concrete semantics are modeled exactly, and the pure validator reaches
+the common Builder conjunction shape without guessing through unsupported syntax.
+The full formatter, all-package build, four-suite test matrix, and keiki Haddocks are
+green. EP-77 is the next eligible plan and begins the persistence-codec phase.
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-76. Corrected solver-uncertainty handling, adopted exact
+  fixed-width and picosecond encodings, strengthened the pure overlap proof fragment,
+  documented the z3 exception boundary and downstream behavioral migration, surveyed
+  registered dependents, and passed formatting, all-package build, all four test
+  suites, and library Haddocks.
 
 - 2026-07-12: Completed EP-75. Added arm predicates, mapped-boundary provenance and
   loud errors, checked alignment diagnostics, the two-copy feedback contract, and

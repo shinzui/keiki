@@ -142,10 +142,12 @@ this.
       `checkTransitionDeterminismPure`, and `validateTransducer` documenting the
       exact decidable fragment and pushing the z3 pass as the exact gate.
       2026-07-12.
-- [ ] Milestone 4: document the `unsafePerformIO` / missing-z3 failure mode on the
+- [x] Milestone 4: document the `unsafePerformIO` / missing-z3 failure mode on the
       `BoolAlg (SymPred rs ci)` instance; add remaining caveats to
       `validateTransducer`'s haddock; changelog entry; format with
       `nix fmt -- --no-cache`; final `cabal build all && cabal test all`.
+      Formatting, the all-package build, all four test suites, and
+      `cabal haddock keiki` passed. 2026-07-12.
 
 
 ## Surprises & Discoveries
@@ -227,6 +229,18 @@ implementation proceeds.
   witness to overlap under the same inhabited-schema assumption as the historical
   bare-guard cases. The pre-existing symbolic-only fixture was corrected to assert
   that both pure and solver-backed passes report this true positive.
+- **The public dependency surface is broader than the direct keiro integration.**
+  `mori registry dependents shinzui/keiki --packages` found twelve registered
+  project-level dependents, including keiro, danwa, kawa, kioku, and kikan. The
+  additive verdict export and unchanged symbolic signatures therefore avoid a
+  coordinated source migration; the changelog calls out the intentional behavioral
+  migration when a newly discovered true overlap produces a warning.
+- **All completion gates stayed green.** `nix fmt -- --no-cache`,
+  `cabal build all`, all four suites under `cabal test all` (including 496 core
+  and 122 jitsurei examples), and `cabal haddock keiki` passed. Haddock retained
+  the repository's pre-existing unresolved-link and partial-field warnings but
+  generated documentation successfully with 100% declaration coverage for
+  `Keiki.Symbolic`.
 
 
 ## Decision Log
@@ -316,11 +330,35 @@ implementation proceeds.
   direction, and no warning constructors or validation options changed; current
   keiro's impact remains behavioral only (a newly reported pair is a real defect).
   Date: 2026-07-12.
+- Decision: Keep the existing pure-looking solver APIs and document that they throw
+  when z3 is unavailable rather than introducing an error-returning variant in this
+  plan.
+  Rationale: changing the established signatures would enlarge a focused soundness
+  repair into a downstream API migration. The `BoolAlg (SymPred rs ci)` instance,
+  `symIsBot`, and the symbolic validation functions now state the
+  `unsafePerformIO` boundary and z3-on-`PATH` requirement directly; solver uncertainty
+  itself is handled conservatively by the new pure verdict function.
+  Date: 2026-07-12.
 
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-76 is complete. `symIsBot` now accepts only a definite SBV `Unsatisfiable`
+result as proof of emptiness, while a directly tested pure helper pins the safe
+direction for `Unknown`, `ProofError`, and every other non-definitive result. Sized
+integer symbolic values preserve their concrete modular semantics, and `UTCTime`
+round-trips exactly at picosecond resolution. The pure validator now reaches the
+Builder-authored `PAnd` shape through a deliberately small proof fragment without
+turning unknown syntax into warnings; an executable subset check keeps every pure
+warning inside the z3-backed result.
+
+No existing symbolic name or signature, validation option, or warning constructor
+changed. The sole new public API is additive, and the changelog explains both the
+missing-z3 exception boundary and the possibility of newly surfaced true-positive
+warnings. Formatting, the all-package build, all four workspace test suites, and
+library Haddocks pass. The planned whole-second `UTCTime` fallback was unnecessary,
+and the optional timeout-provocation test was omitted because constructor-level
+solver-result tests cover the verdict deterministically.
 
 
 ## Context and Orientation
@@ -907,8 +945,7 @@ At the end of the plan the following hold, with full module paths:
   changes only via `symIsBot` and the encodings.
 - `Keiki.Symbolic.Sym` instances: `SymRep Word8 = Word8` (and likewise
   `Word16/32/64`, `Int32/64`); `SymRep UTCTime = Integer` at picosecond
-  resolution (or documented-caveat fallback per the Decision Log); `Sym Int` /
-  `Sym Integer` unchanged and documented.
+  resolution; `Sym Int` / `Sym Integer` unchanged and documented.
 - `Keiki.Core.provablyOverlap` — private; spine-walking, three-way-internally
   (overlap / disjoint / unknown), `Bool`-externally; zero false positives.
 - `Keiki.Core.checkTransitionDeterminismPure`, `Keiki.Core.validateTransducer`,
@@ -916,3 +953,12 @@ At the end of the plan the following hold, with full module paths:
   exported surfaces unchanged in shape (no new constructors, no new options
   field; coordination with EP-71 per the Decision Log); `determinismWarnings`
   populates `tvwInCtor` for spine guards.
+
+
+## Revision Notes
+
+- 2026-07-12: Completed all four milestones. Corrected solver-uncertainty handling,
+  adopted exact fixed-width and picosecond encodings, strengthened the pure overlap
+  proof fragment with subset regressions, documented solver and validator caveats,
+  surveyed registered dependents, and passed formatting, all-package build, all four
+  test suites, and library Haddocks.

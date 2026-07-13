@@ -10,6 +10,9 @@ and this project adheres to the
 
 ### Added
 
+- `Keiki.Symbolic.satResultIsProvablyUnsat` exposes the conservative solver
+  verdict used by symbolic emptiness checks: only a definite `Unsatisfiable`
+  result proves a predicate empty.
 - `Keiki.Composition.checkComposeAlignment` and `composeChecked` report
   constructor-name drift, unmatched expectations, field-arity mismatches, and
   mapped/poisoned boundary names with exact source edge locations.
@@ -33,6 +36,28 @@ and this project adheres to the
 
 ### Changed
 
+- Symbolic emptiness checks no longer mistake solver uncertainty for proof of
+  unsatisfiability. `symIsBot`, `symSatExt`, `isSingleValuedSym`,
+  `withSymPred`, `checkTransitionDeterminismSym`, and `checkDeadEdgesSym` keep
+  their existing names and signatures; `Unknown`, `ProofError`, and other
+  non-definitive solver results now fail conservatively instead of blessing a
+  guard pair as disjoint or an edge as dead. These pure-looking APIs still run
+  z3 through `unsafePerformIO` and throw if the solver is unavailable.
+- Symbolic encodings for `Word8`, `Word16`, `Word32`, `Word64`, `Int32`, and
+  `Int64` now use exact fixed-width SBV values, preserving modular wraparound.
+  `UTCTime` now round-trips at its native picosecond resolution instead of
+  truncating to whole seconds. Platform-sized `Int` remains modeled as an
+  unbounded `Integer`, so analyses whose truth depends on `Int` overflow should
+  use an explicitly sized type.
+- The pure determinism pass used by `validateTransducer` now proves overlap
+  through supported conjunction spines, including constructor consistency,
+  exact integral intervals, and concrete literal witnesses. Unsupported
+  disjunctions, negations, arithmetic, opaque terms, and variable-to-variable
+  comparisons remain unknown and produce no pure warning; use the z3-backed
+  checks as the exact gate. Existing consumers, including keiro, remain
+  source-compatible, but may see new `NondeterministicPair` warnings. Such
+  warnings are true positives and should be repaired or explicitly
+  acknowledged rather than suppressed by pinning the old behavior.
 - `SomeSymTransducer` now carries input/output poison provenance while retaining
   its one-argument compatibility pattern. Variance rewrites stamp constructor
   names with `#lmapped`/`#rmapped`; categorical composition across a poisoned
