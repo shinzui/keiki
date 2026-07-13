@@ -58,11 +58,11 @@ once (Milestone 1) and says so loudly.
 - [ ] M2: new spec `keiki-codec-json/test/Keiki/Codec/JSON/GoldenFileSpec.hs` with both test directions and `KEIKI_UPDATE_GOLDENS` regeneration mode
 - [ ] M2: wire GoldenFileSpec into `keiki-codec-json/test/Spec.hs` and the cabal file (`other-modules`, `extra-source-files`)
 - [ ] M2: additive downstream helper `Keiki.Codec.JSON.Test.GoldenFile` in `keiki-codec-json-test` with demo usage and demo golden file
-- [ ] M3: add `MaybeSlots` and `NestedMaybeSlots` to `keiki-codec-json/test/Keiki/Codec/JSON/Fixtures.hs`
-- [ ] M3: add inductive `EqRegFile` and strengthen in-tree round-trip properties to value-level comparison
+- [x] M3: add `MaybeSlots` and `NestedMaybeSlots` to `keiki-codec-json/test/Keiki/Codec/JSON/Fixtures.hs`. 2026-07-12.
+- [x] M3: add inductive `EqRegFile` and strengthen in-tree round-trip properties to value-level comparison. 2026-07-12.
 - [ ] M3: golden files for `MaybeSlots` (all-`Just` and all-`Nothing` variants) plus absent-key negative test
-- [ ] M3: targeted `Just Nothing` collapse unit tests and the "nested Maybe" wire-rule documentation
-- [ ] M3: additive `regFileCodecPropsEq` + `EqRegFile` export in `keiki-codec-json-test`, with the byte-idempotence limitation documented on the old `regFileCodecProps`
+- [x] M3: targeted `Just Nothing` collapse unit tests and the "nested Maybe" wire-rule documentation. 2026-07-12.
+- [x] M3: additive `regFileCodecPropsEq` + `EqRegFile` export in `keiki-codec-json-test`, with the byte-idempotence limitation documented on the old `regFileCodecProps`. 2026-07-12.
 - [ ] M4: sharpen the uninit-slot error message in `src/Keiki/Generics.hs`
 - [ ] M4: document the fully-initialized precondition on `RegFileToJSON` methods, module header, and `keiki-codec-json/README.md`
 - [ ] M4: pin the throwing behavior with a `shouldThrow` test
@@ -112,6 +112,12 @@ here as implementation proceeds.
   default produced four targeted failures, including the all-built-ins
   `GHC.Types` sensitivity check, proving the guardrail is live; restoring the
   explicit body returned both affected suites to green (498 core, 67 codec).
+- Value-level comparison closes a real property blind spot without changing
+  `RegFile`: the inductive `EqRegFile` walker supports both the in-tree suite and
+  downstream consumers. The new `MaybeSlots` properties passed 400 generated
+  checks across two encoders and determinism paths, while targeted examples pin
+  aeson's lossy `Just Nothing -> null -> Nothing` behavior and the strict
+  absent-key rule. The codec suite now passes 75 examples and the toolkit 11.
 
 
 ## Decision Log

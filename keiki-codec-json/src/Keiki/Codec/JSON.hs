@@ -20,6 +20,19 @@
 -- snapshots (catches structural drift, EP-36 §4 cases #1–9); the
 -- codec serialises the eligible ones.
 --
+-- == Wire-format rules
+--
+-- A @Nothing@ slot is present as explicit JSON @null@. Omitting the key is
+-- not equivalent: 'regFileFromJSON' rejects every absent slot. A nested
+-- @Maybe@ is not faithfully representable by aeson's standard instances:
+-- @Just Nothing@ and @Nothing@ both encode as @null@ and decode as outer
+-- @Nothing@. Avoid @Maybe (Maybe a)@ slots when that distinction matters, or
+-- wrap the inner optional value in a newtype with explicit JSON instances.
+--
+-- The 'Aeson.Value' path serializes object keys in aeson's KeyMap order
+-- (alphabetical with aeson 2.2), while 'regFileToEncoding' preserves slot-list
+-- order. The byte streams may differ; both decode to the same register file.
+--
 -- == Slot-value size guidance (P11)
 --
 -- keiki's per-slot dispatch overhead is microseconds at any realistic

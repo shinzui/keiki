@@ -5,7 +5,7 @@
 --
 -- Wires three helpers into a consumer's @hspec@ test suite:
 --
--- * 'regFileCodecProps' — four QuickCheck properties (Value-path and
+-- * 'regFileCodecProps' / 'regFileCodecPropsEq' — four QuickCheck properties (Value-path and
 --   Encoding-path round-trip, within-path determinism on both
 --   paths) against the consumer's own slot list. Mirror of the
 --   EP-36 M3 in-tree property suite at
@@ -34,8 +34,12 @@ module Keiki.Codec.JSON.Test
   ( -- * Arbitrary generator for slot lists
     ArbitraryRegFile (..),
 
+    -- * Value equality for slot lists
+    EqRegFile (..),
+
     -- * Round-trip + determinism properties
     regFileCodecProps,
+    regFileCodecPropsEq,
 
     -- * Sensitivity helper
     SomeKnownRegFileShape (..),
@@ -92,6 +96,19 @@ instance
   where
   arbRegFile = RCons (Proxy @s) <$> arbitrary <*> arbRegFile
 
+-- * Value equality for slot lists -------------------------------------------
+
+-- | Inductive equality for a heterogeneous 'RegFile'. Consumers receive an
+-- instance automatically when every slot value has 'Eq'.
+class EqRegFile (rs :: [Slot]) where
+  eqRegFile :: RegFile rs -> RegFile rs -> Bool
+
+instance EqRegFile '[] where
+  eqRegFile _ _ = True
+
+instance (Eq t, EqRegFile rs) => EqRegFile ('(s, t) ': rs) where
+  eqRegFile (RCons _ x xs) (RCons _ y ys) = x == y && eqRegFile xs ys
+
 -- * Round-trip + determinism properties -------------------------------------
 
 -- | Run the EP-36 M3 codec property suite against an arbitrary slot
@@ -107,12 +124,12 @@ instance
 --   'RegFile' yields byte-equal output.
 -- * /Encoding path within-path determinism (R9):/ same.
 --
--- Implementation note: 'RegFile' has no 'Eq' or 'Show' instance (the
--- slot list is heterogeneous), so the round-trip assertion uses the
--- re-encoded bytes as the comparison point. If the parsed
--- 'RegFile' re-encodes to the same bytes as the original, the
--- round-trip is structurally exact. This is the same trick the
--- in-tree EP-36 M3 spec uses.
+-- Implementation note: 'RegFile' has no general 'Eq' or 'Show' instance (the
+-- slot list is heterogeneous), so this compatibility helper compares re-encoded
+-- bytes. That cannot detect a lossy decode when the changed value re-encodes to
+-- the same bytes; aeson's @Just Nothing -> null -> Nothing@ collapse is the known
+-- example. Consumers whose slot values have 'Eq' should prefer
+-- 'regFileCodecPropsEq', which compares decoded values through 'EqRegFile'.
 --
 -- Type-application invocation form:
 --
@@ -174,6 +191,70 @@ regFileCodecProps = do
               Right rf' ->
                 AesonEnc.encodingToLazyByteString (regFileToEncoding rf')
                   === bytes
+
+    valueDeterministic :: RegFile rs -> Property
+    valueDeterministic rf =
+      Aeson.encode (regFileToJSON rf)
+        === Aeson.encode (regFileToJSON rf)
+
+    encodingDeterministic :: RegFile rs -> Property
+    encodingDeterministic rf =
+      AesonEnc.encodingToLazyByteString (regFileToEncoding rf)
+        === AesonEnc.encodingToLazyByteString (regFileToEncoding rf)
+
+-- | Value-comparing form of 'regFileCodecProps'. It runs the same four
+-- properties but compares decoded slot values through 'EqRegFile', closing the
+-- byte-idempotence blind spot of the compatibility helper.
+--
+-- @
+-- regFileCodecPropsEq \@MyAppSnapshotSlots
+-- @
+regFileCodecPropsEq ::
+  forall rs.
+  ( RegFileToJSON rs,
+    ArbitraryRegFile rs,
+    EqRegFile rs
+  ) =>
+  Spec
+regFileCodecPropsEq = do
+  describe "Roundtrip" $ do
+    it "Value path round-trips by value" $
+      forAllShow (arbRegFile @rs) showRf valueRoundTrip
+    it "Encoding path round-trips by value" $
+      forAllShow (arbRegFile @rs) showRf encodingRoundTrip
+
+  describe "Determinism (R9 within-path)" $ do
+    it "Value path is deterministic" $
+      forAllShow (arbRegFile @rs) showRf valueDeterministic
+    it "Encoding path is deterministic" $
+      forAllShow (arbRegFile @rs) showRf encodingDeterministic
+  where
+    showRf :: RegFile rs -> String
+    showRf = show . regFileToJSON
+
+    valueRoundTrip :: RegFile rs -> Property
+    valueRoundTrip rf =
+      let bytes = Aeson.encode (regFileToJSON rf)
+       in case Aeson.decode bytes of
+            Nothing ->
+              False
+                === error
+                  "Aeson.decode failed on our own Value-path encoder output"
+            Just value -> case regFileFromJSON @rs value of
+              Left message ->
+                False === error ("regFileFromJSON failed: " <> message)
+              Right decoded -> eqRegFile decoded rf === True
+
+    encodingRoundTrip :: RegFile rs -> Property
+    encodingRoundTrip rf =
+      let bytes = AesonEnc.encodingToLazyByteString (regFileToEncoding rf)
+       in case Aeson.decode bytes of
+            Nothing ->
+              False === error "Aeson.decode failed on streaming-encoder output"
+            Just value -> case regFileFromJSON @rs value of
+              Left message ->
+                False === error ("regFileFromJSON failed: " <> message)
+              Right decoded -> eqRegFile decoded rf === True
 
     valueDeterministic :: RegFile rs -> Property
     valueDeterministic rf =

@@ -8,6 +8,10 @@ module Keiki.Codec.JSON.Fixtures
   ( -- * Baseline slot list
     ExemplarSlots,
 
+    -- * Maybe wire-semantics slot lists
+    MaybeSlots,
+    NestedMaybeSlots,
+
     -- * Schema-evolution mutations (EP-36 §4 cases #1–9)
     AddSlots,
     RemoveSlots,
@@ -26,6 +30,9 @@ module Keiki.Codec.JSON.Fixtures
 
     -- * Arbitrary generator
     ArbitraryRegFile (..),
+
+    -- * Value equality
+    EqRegFile (..),
   )
 where
 
@@ -52,6 +59,17 @@ type ExemplarSlots =
      '("cooldownUntil", UTCTime),
      '("correlationId", Text)
    ]
+
+-- | Optional fields whose absent values are encoded as explicit JSON @null@.
+type MaybeSlots =
+  '[ '("lastError", Maybe Text),
+     '("approvedAt", Maybe UTCTime),
+     '("shippingAddress", Maybe Address)
+   ]
+
+-- | A deliberately lossy aeson shape: @Just Nothing@ and @Nothing@ both
+-- encode as JSON @null@.
+type NestedMaybeSlots = '[ '("nested", Maybe (Maybe Int))]
 
 -- * Schema-evolution mutations (EP-36 §4) ------------------------------------
 
@@ -186,3 +204,16 @@ instance
   ArbitraryRegFile ('(s, t) ': rs)
   where
   arbRegFile = RCons (Proxy @s) <$> arbitrary <*> arbRegFile
+
+-- * Value equality for 'RegFile rs' -----------------------------------------
+
+-- | Inductive heterogeneous equality. Each slot value is compared with its
+-- own 'Eq' instance.
+class EqRegFile (rs :: [Slot]) where
+  eqRegFile :: RegFile rs -> RegFile rs -> Bool
+
+instance EqRegFile '[] where
+  eqRegFile _ _ = True
+
+instance (Eq t, EqRegFile rs) => EqRegFile ('(s, t) ': rs) where
+  eqRegFile (RCons _ x xs) (RCons _ y ys) = x == y && eqRegFile xs ys

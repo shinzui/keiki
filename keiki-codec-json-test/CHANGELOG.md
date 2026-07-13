@@ -8,6 +8,12 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `EqRegFile` and `regFileCodecPropsEq` provide value-level heterogeneous
+  round-trip checks. The original byte-comparing `regFileCodecProps` remains for
+  compatibility, with its nested-`Maybe` blind spot now documented.
+
 
 ## [0.1.0.0] — 2026-06-07
 

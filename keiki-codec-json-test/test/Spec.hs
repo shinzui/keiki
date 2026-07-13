@@ -13,6 +13,7 @@ import Data.Proxy (Proxy (..))
 import Data.Text qualified as T
 import Keiki.Codec.JSON.Test
   ( regFileCodecProps,
+    regFileCodecPropsEq,
     regFileShapeSensitivitySpec,
     someKnownShape,
   )
@@ -41,6 +42,10 @@ main = hspec $ do
   describe
     "Keiki.Codec.JSON.Test.regFileCodecProps @DemoSlots"
     (regFileCodecProps @DemoSlots)
+
+  describe
+    "Keiki.Codec.JSON.Test.regFileCodecPropsEq @DemoSlots"
+    (regFileCodecPropsEq @DemoSlots)
 
   describe "Keiki.Codec.JSON.Test.regFileShapeSensitivitySpec" $
     regFileShapeSensitivitySpec

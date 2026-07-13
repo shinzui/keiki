@@ -33,7 +33,7 @@ import qualified Data.Text as T
 import Test.Hspec (describe, hspec)
 
 import Keiki.Codec.JSON.Test
-  ( regFileCodecProps
+  ( regFileCodecPropsEq
   , regFileShapeSensitivitySpec
   , someKnownShape
   )
@@ -57,7 +57,7 @@ main = hspec $ do
     })
 
   -- Round-trip + determinism over the snapshot's slot list.
-  describe "props: MySlots" (regFileCodecProps @MySlots)
+  describe "props: MySlots" (regFileCodecPropsEq @MySlots)
 
   -- Sensitivity: every named mutation must flip the shape hash.
   describe "sensitivity: MySlots" $
@@ -72,6 +72,12 @@ The toolkit assumes each slot type has `Aeson.ToJSON`,
 instance is usually enough), `Eq`, and `Show`. If your slot type
 lacks `Arbitrary`, write one — it is typically a one-liner via
 `quickcheck-instances` for the standard library types.
+
+`regFileCodecPropsEq` is the preferred round-trip helper: its inductive
+`EqRegFile` comparison checks decoded slot values. The older
+`regFileCodecProps` remains available for slot types without `Eq`, but it compares
+re-encoded bytes and therefore cannot detect lossy decodes that re-encode
+identically (notably `Just Nothing -> null -> Nothing`).
 
 ## When you don't need this
 
@@ -88,4 +94,4 @@ cabal test keiki-codec-json-test:keiki-codec-json-test-test
 
 The self-test exercises every public helper against a small toy
 fixture (`Email`, `DemoSlots`, `DemoSlotsRenamed`). Expected
-output: 7 examples, 0 failures.
+output: 11 examples, 0 failures.

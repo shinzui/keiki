@@ -90,6 +90,20 @@ a `Generic` instance for you. Multi-constructor sum types, positional
 (non-record-syntax) constructors, and type synonyms are rejected at
 splice time with a precise error message.
 
+## Register-file wire rules
+
+Every register slot is present in the JSON object. A `Nothing` slot encodes as
+explicit JSON `null`; omitting its key is an error, not another spelling of
+`Nothing`. A nested optional value is lossy under aeson's standard instances:
+`Just Nothing :: Maybe (Maybe a)` and outer `Nothing` both encode as `null` and
+decode as outer `Nothing`. Avoid nested-`Maybe` slots when that distinction
+matters, or wrap the inner optional value in a newtype with explicit JSON
+instances.
+
+The Value encoder emits aeson's object-key order, while the streaming Encoding
+path emits slot-list order. Their bytes may differ, but both decode to the same
+register file.
+
 ## Deriving an event codec skeleton
 
 A service that stores its events as JSON usually hand-writes a
