@@ -18,9 +18,11 @@ module Keiki.ArrowSpec (spec) where
 
 import Control.Arrow qualified as Arr
 import Control.Category qualified as Cat
+import Control.Exception (evaluate)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Keiki.Core
+import Keiki.LawHelpers (emittedLog, runScript)
 import Keiki.Profunctor
 import Test.Hspec
 
@@ -96,3 +98,29 @@ spec = do
             SomeSymIdentity ->
               expectationFailure
                 "Cat.id <<< arr f unexpectedly returned the sentinel"
+
+  describe "forward and inversion observations" $ do
+    it "standalone arr has a four-command forward trace" $ do
+      let lifted = Arr.arr (+ 1) :: SomeSymTransducer Int Int
+          script = [1, 2, 3, 4]
+      case lifted of
+        SomeSymTransducer transducer ->
+          runScript transducer script `shouldBe` map (\n -> [n + 1]) script
+        SomeSymIdentity -> expectationFailure "arr returned identity sentinel"
+
+    it "arr is not replay-equivalent" $ do
+      let lifted = Arr.arr (+ 1) :: SomeSymTransducer Int Int
+          script = [1, 2, 3, 4]
+      case lifted of
+        SomeSymTransducer transducer ->
+          case reconstituteEither transducer (emittedLog transducer script) of
+            Left _ -> pure ()
+            Right _ -> expectationFailure "arr unexpectedly replayed"
+        SomeSymIdentity -> expectationFailure "arr returned identity sentinel"
+
+    it "arr fusion fails loudly at the poisoned boundary" $ do
+      let fused =
+            (Arr.arr (+ 1) Cat.>>> Arr.arr (* 2)) ::
+              SomeSymTransducer Int Int
+      evaluate fused
+        `shouldThrow` (\e -> pceSide e == "upstream output")

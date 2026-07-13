@@ -24,11 +24,14 @@
 module Keiki.StrongSpec (spec) where
 
 import Control.Category qualified as Cat
+import Control.Exception (evaluate)
 import Data.Profunctor (Strong (..))
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import Keiki.Core
+import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
+import Keiki.LawHelpers (emittedLog, runScript)
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 import Test.Hspec
@@ -128,3 +131,41 @@ spec = do
         SomeSymIdentity ->
           expectationFailure
             "second' on a non-identity wrapper returned the identity sentinel"
+
+  describe "forward and inversion observations" $ do
+    it "first' threads every value through a four-command stateful trace" $ do
+      let lifted =
+            first' (someSymTransducer stageA) ::
+              SomeSymTransducer (MsgA, RequestId) (MsgB, RequestId)
+          script = zip (map MsgA [1, 5, 2, 3]) (map RequestId [10, 11, 12, 13])
+      case lifted of
+        SomeSymTransducer transducer ->
+          runScript transducer script
+            `shouldBe` [ [(MsgB 2, RequestId 10)],
+                         [(MsgB 10, RequestId 11)],
+                         [(MsgB 4, RequestId 12)],
+                         [(MsgB 6, RequestId 13)]
+                       ]
+        SomeSymIdentity -> expectationFailure "first' stateful fixture returned identity"
+
+    it "first' is not replay-equivalent because its wire matcher is poisoned" $ do
+      let lifted =
+            first' (someSymTransducer stageA) ::
+              SomeSymTransducer (MsgA, RequestId) (MsgB, RequestId)
+          script = zip (map MsgA [1, 5, 2, 3]) (map RequestId [10, 11, 12, 13])
+      case lifted of
+        SomeSymTransducer transducer ->
+          case reconstituteEither transducer (emittedLog transducer script) of
+            Left _ -> pure ()
+            Right _ -> expectationFailure "first' unexpectedly replayed"
+        SomeSymIdentity -> expectationFailure "first' stateful fixture returned identity"
+
+    it "first' composition fails loudly at its poisoned boundary" $ do
+      let firstA =
+            first' (someSymTransducer stageA) ::
+              SomeSymTransducer (MsgA, Bool) (MsgB, Bool)
+          firstB =
+            first' (someSymTransducer stageB) ::
+              SomeSymTransducer (MsgB, Bool) (MsgC, Bool)
+      evaluate (firstB Cat.. firstA)
+        `shouldThrow` (\e -> pceSide e == "upstream output")

@@ -27,8 +27,10 @@ import Data.Profunctor (Choice (..))
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import Keiki.Core
+import Keiki.Fixtures.ComposeStateful
 import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
+import Keiki.LawHelpers (emittedLog, runScript)
 import Keiki.Profunctor
 import Keiki.Symbolic (isSingleValuedSym, withSymPred)
 import Test.Hspec
@@ -116,6 +118,24 @@ spec = do
               SomeSymTransducer (Either MsgC Bool) (Either MsgD Bool)
       runSteps (cL Cat.. bL) [Left (MsgB 1), Right True, Left (MsgB 2)]
         `shouldBe` Just [[Left (MsgD 2)], [Right True], [Left (MsgD 5)]]
+
+    it "evolves independently over an interleaved four-command script" $ do
+      let lifted =
+            left' (someSymTransducer counterSource) ::
+              SomeSymTransducer (Either SourceCmd Bool) (Either MidVal Bool)
+          script = [Left Tick, Right True, Left Tick, Right False]
+      case lifted of
+        SomeSymTransducer transducer -> do
+          runScript transducer script
+            `shouldBe` [ [Left (MidVal 0)],
+                         [Right True],
+                         [Left (MidVal 1)],
+                         [Right False]
+                       ]
+          case reconstituteEither transducer (emittedLog transducer script) of
+            Right _ -> pure ()
+            Left _ -> expectationFailure "Choice replay failed"
+        SomeSymIdentity -> expectationFailure "left' stateful fixture returned identity"
 
   describe "right'" $ do
     it "Right input routes through the wrapped transducer" $ do
