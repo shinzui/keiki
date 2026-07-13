@@ -201,7 +201,13 @@ construction, but keiki does not check it — see §7.
 
 ---
 
-## 5. Option 3 — re-check via `feedback1` (atomic and DRY)
+## 5. Withdrawn option — `feedback1` is not shared-state re-check
+
+EP-75 proved that `feedback1` cannot implement this option: its policy command
+is consumed by an independent second copy of the transducer, so it does not see
+the state/register update made by the mutating command. The sketch below is
+retained only as the rejected design shape. Use Option 1 (an explicit/runtime
+`Recheck`) or Option 2 (split structural guards) instead.
 
 Keep the single, DRY threshold edge of Option 1, but fire it *inside* the
 transducer instead of from the router. The mutating command stays a plain
@@ -288,14 +294,15 @@ loses precision (`why-smt.md` §5).
 |---|---|---|---|---|
 | **Option 1** — external re-check | runtime/router (**unverified**) | green but vacuous | no | low |
 | **Option 2** — split mutating edge | the transducer (**verified**) | does real work | **yes**, with independent guards | high (× decrement verbs) |
-| **Option 3** — `feedback1` re-check | the transducer (**verified**) | input-ctor disjoint only | no (guards in different vertices) | low |
+| **Option 3** — `feedback1` re-check | **withdrawn: independent state copy** | n/a | n/a | n/a |
 
 The property keiki verifies is always *single-valuedness of the transducer* —
 never that a command gets dispatched, and never *completeness* (that some edge
-always fires). The structural win of Options 2 and 3 over Option 1 is
+always fires). The structural win of Option 2 over Option 1 is
 therefore not what the solver proves; it is that the threshold crossing
 becomes a transition **inside** the verified core, with no external trigger to
-omit. Option 2 adds a solver-checked boundary on top of that.
+omit. Option 2 adds a solver-checked boundary on top of that; Option 3 is not
+a valid shared-state implementation.
 
 Reachability — "is `NeedsReorder` reachable from `Stocked`?" — is a finite
 walk over `edgesOut`, no solver needed. Asserting it in a test is a cheap
@@ -329,8 +336,8 @@ the Option 1 caveat).
 - `docs/guide/why-smt.md` — what single-valuedness proves; the boundary bug
   Option 2 catches.
 - `docs/guide/symbolic-ci.md` — wiring the gate into CI.
-- `docs/guide/composition.md` §9 — `feedback1`, the one-round cascade behind
-  Option 3 (worked `toggle`/`echoPolicy` example in §9.4).
+- `docs/guide/composition.md` §9 — why `feedback1` is a two-copy cascade and
+  cannot implement Option 3.
 - `docs/guide/loan-application-tutorial.md` §7 — the synthetic `Continue`
   command and its sentinel-sourced clock (the §5 wrinkle). Note its
   `Continue` is driven by an external runtime tick — the Option 1 shape, not

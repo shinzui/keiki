@@ -7,8 +7,8 @@ combinators. Three are exported today:
   `t2`'s input).
 - **`alternative`** — disjoint-input dispatch over `Either ci1 ci2`
   (sibling aggregates evolving independently).
-- **`feedback1`** — single-step aggregate ↔ stateless-policy
-  cascade (one round of reaction per external command).
+- **`feedback1`** — an experimental two-copy cascade. It does not feed the
+  policy command back into the same aggregate state.
 
 The `1` is part of the contract: this is exactly one feedback
 round, not "run until no policy reacts." If a workflow can react an
@@ -30,8 +30,8 @@ A quick pick-list for event-sourced systems.
 |---|---|---|
 | Stage A's events drive stage B as a pipeline | `compose` | An alerting source emits `EmailCmd`s that the email-delivery aggregate consumes (the canonical `AlertSource ⨾ EmailDelivery` fixture); a fraud detector emits `FreezeAccount` commands that the accounts aggregate consumes |
 | Two sibling aggregates sharing one runtime channel, evolving independently | `alternative` | One service hosts both `Orders` and `Customers` bounded contexts behind a single HTTP API and command queue; a multi-tenant control plane manages both `Workspace` and `ApiKey` aggregates |
-| One round of policy reaction, event → follow-up command → second event, observed atomically | `feedback1` | An order placement that auto-confirms via a stateless confirm-policy (`PlaceOrder → OrderConfirmed` atomically); a form submission that runs a stateless validator before emitting `FormValidated` |
-| Many feedback rounds | nested `feedback1`s | A multi-step admission workflow where each round is a distinct policy reaction (capped statically by the nesting depth) |
+| One structural pass through `t → policy → independent t copy` | `feedback1` (experimental) | Simulation/analysis of an explicitly two-copy cascade; not aggregate self-feedback |
+| Shared-state policy reaction or many feedback rounds | model one aggregate transition or use a process manager | Auto-confirmation, validation, and compensation flows whose follow-up must observe the state changed by the external command |
 | Long-running orchestrator with its own state (saga / process manager) | hand-roll the saga as a transducer, then `compose`/`alternative` it with the participating aggregates | A booking saga that holds `(flight, hotel, car)` reservations and emits compensating commands on failure — the saga has its own register file and vertices |
 | Strict tuple input (`(a, c) → (b, d)`) or unbounded iteration | not shipped today | Re-deferred in MP-8; rationale in `docs/research/composition-combinators-design.md` under "Combinators beyond `compose`" |
 | Reshape one transducer's input or output alphabet (rename, wrap in a newtype, route a slice from a sum, upcast events to a new schema version) | `Keiki.Profunctor`'s `lmapCi` / `rmapCo` / `dimapTransducer` / `lmapMaybeCi` | These rewrite a single transducer's edges; they are not combinators between two transducers. See `profunctor.md` for the full guide and the variance caveat (rewritten transducers are forward-only — `solveOutput`/replay is lossy). |
@@ -241,7 +241,7 @@ result. The vertex type stacks: `Composite (Composite s1 s2) s3`,
 which `Bounded`/`Enum` derive cleanly.
 
 keiki ships sequential `compose`, disjoint-input `alternative`
-(§8), and single-step `feedback1` (§9). There is no separate
+(§8), and the experimental two-copy `feedback1` cascade (§9). There is no separate
 `Kleisli`: since EP-19 widened edges to multi-event, `compose`
 chains multi-event edges through T2 and so subsumes crem's
 `Kleisli` as well as `Sequential`. `parallel` remains deferred (no
@@ -337,9 +337,10 @@ Real-world shapes where this fits cleanly:
   this command"). The `Either` arms make the dispatch
   unambiguous — the wrapping decides which arm fires.
 - *Aggregates that should observe each other's state.* Use
-  `compose` (sequential) or `feedback1` (one round of policy
-  reaction) for that. `alternative` arms are oblivious to each
-  other.
+  `compose` for sequential coordination or model the reaction in one
+  aggregate/process manager. `feedback1` uses two independent copies
+  and does not provide shared-state feedback. `alternative` arms are
+  oblivious to each other.
 - *Sharding one aggregate across instances.* Doubling the vertex
   space to model two shards of `Orders` is rarely worthwhile;
   usually a single transducer with an `instanceId` field handles
@@ -468,7 +469,7 @@ For deeper background see `docs/guide/multi-event-commands.md` and
 
 ---
 
-## 9. `feedback1` — single-step aggregate ↔ policy
+## 9. `feedback1` — experimental two-copy cascade
 
 ### 9.1 The shape
 
@@ -488,10 +489,10 @@ feedback1
                    co
 ```
 
-Read it as: an aggregate `t :: ci → co` and a policy
-`f :: co → ci`, run as one round of cascade. The composite
+Read it as: a transducer `t :: ci → co` and a policy
+`f :: co → ci`, run as one structural cascade. The composite
 consumes one external `ci`, runs `t`, feeds the resulting `co`
-into `f`, feeds `f`'s output back into a second invocation of
+into `f`, feeds `f`'s output into an independent second copy of
 `t`, and emits *that* second `co` as the composite output.
 
 The implementation is literally:
@@ -503,65 +504,19 @@ feedback1 t f = compose t (compose f t)
 The composite vertex `Composite s1 (Composite s2 s1)` reflects
 this — outer `t` state, then `(policy state, inner t state)`.
 
-### 9.2 When to use it in event sourcing
+### 9.2 Release contract
 
-`feedback1` models the **aggregate ↔ stateless-policy** loop
-that's common in small process-manager and saga sub-shapes. The
-policy should be a pure routing/checking transducer, not a durable
-orchestrator. Use it when:
+`feedback1 t f = compose t (compose f t)` contains two independent copies of
+`t`. The first handles the external command; the policy-produced command is
+handled by the second copy from its own control state/register segment. A
+toggle regression demonstrates the distinction: both copies finish `On`,
+whereas one shared toggle processing two commands would finish `Off`.
 
-- exactly one round of reaction belongs in the same logical step
-  as the triggering command, and
-- the policy's decision is a pure function of the aggregate's
-  emitted event (no policy-side history needed).
-
-Real-world shapes where this fits cleanly:
-
-- **Auto-fulfilment with idempotent confirmation.** A user
-  submits `PlaceOrder`; the order aggregate emits
-  `OrderAccepted`; a stateless policy turns it into
-  `ConfirmAcceptance` (e.g. stamping a confirmation number from
-  the event); the order aggregate consumes the confirmation and
-  emits `OrderConfirmed`. Wiring this as
-  `feedback1 orderAggregate confirmPolicy` makes
-  `PlaceOrder → OrderConfirmed` one atomic step in the event
-  log; the intermediate `OrderAccepted`/`ConfirmAcceptance`
-  pair never escapes the composite.
-- **Form validation and acknowledgement.** A `SubmitForm`
-  command produces a `FormSubmitted` event; a stateless
-  validator inspects the event's payload and emits
-  `MarkValidated` (or `MarkInvalid`); the form aggregate
-  consumes the verdict and emits the public event
-  `FormValidated` (or `FormRejected`). The consumer of the
-  composite sees one external command in, one external event
-  out, with the validation pass hidden inside.
-- **Notification dispatch with deduplication.** A `LogIn` event
-  triggers a stateless policy that emits a
-  `SendLoginNotification` command if the device is unrecognised
-  (decision based purely on payload fields, not history); the
-  notifications aggregate consumes the command and emits
-  `LoginNotificationSent`. The composite emits a single
-  observable event per `LogIn`.
-- **Reservation auto-release on expiry.** A
-  `CheckReservation` command produces an `ExpiryDetected` event
-  carrying the timestamp; a stateless policy compares
-  payload-vs-now and emits `ReleaseReservation`; the aggregate
-  consumes the release and emits the public
-  `ReservationReleased` event. (This works because the timestamp
-  comparison is encoded in the policy's *guards*, not in
-  policy-side state.)
-- **Single-step compensation.** A failed payment emits
-  `PaymentDeclined`; a stateless compensation policy emits the
-  matching `MarkOrderUnpaid` command; the order aggregate
-  consumes it and emits `OrderMarkedUnpaid`. One round, no
-  policy state, exactly the shape `feedback1` is designed for.
-- **CQRS read-model invalidation.** An admin `EditCatalogItem`
-  produces `CatalogItemEdited`; a stateless policy emits
-  `InvalidateCache` for the affected ids (computed from the
-  event payload); the cache aggregate consumes the
-  invalidation and emits `CacheInvalidated`. The composite
-  exposes the invalidation as part of the same step as the
-  edit.
+Do not use this API for auto-confirmation, validation, compensation, or any
+aggregate reaction whose follow-up must observe the state changed by the
+external command. Model that reaction as one aggregate transition/edge chain,
+or coordinate it through a process manager. There is no `feedback1Checked`:
+alphabet alignment cannot turn two copies into shared state.
 
 `feedback1` is **not** for:
 
@@ -585,8 +540,8 @@ Real-world shapes where this fits cleanly:
   command targets a *different* aggregate than the one that
   emitted the triggering event, the natural fit is two stages
   glued by `compose` (or a saga aggregate), not `feedback1`.
-  `feedback1`'s shape is "the same aggregate reacts to its own
-  event via a policy".
+  `feedback1` only cascades between two copies of the same
+  aggregate type; it does not make either copy observe the other.
 - *Durable workflow execution.* `feedback1` has no opinion about
   sleeping, retrying external effects, human approval, child
   workflows, or named-step checkpoints. Those are runtime concerns
@@ -613,8 +568,8 @@ today, you have two options:
 1. Model the round-trip as a single, longer-lived aggregate that
    internalises the policy as additional vertices (the
    "expanded" form).
-2. Hand-author the cascade as one transducer (drop down to
-   `Keiki.Core` `Edge` records and bypass the combinator).
+2. Give the reaction its own durable process-manager transducer and
+   compose that explicitly with the participating aggregate stages.
 
 ### 9.4 A worked example
 
@@ -639,6 +594,7 @@ underlying `compose` calls.
 
 **Limitations:**
 
+- Two independent copies; not shared-state aggregate feedback (§9.2).
 - Stateless aggregate only (§9.3).
 - Vertex space is `|s1| × |s2| × |s1|`; nesting multiplies it.
   Watch the symbolic check's runtime if you nest deeply.

@@ -39,9 +39,10 @@ patterns (per the orchestration note) need composition:
    commands_of_B`; the composite system is
    `compose A (compose pm B)`.
 
-3. **Aggregate ↔ policy feedback loop** — an aggregate's output
-   drives a policy that produces commands which loop back to the
-   aggregate. The natural shape is `feedback t f`.
+3. **Aggregate ↔ policy reaction** — an aggregate's output drives a
+   policy that produces a follow-up command. The originally proposed
+   shape was `feedback t f`; the shipped `feedback1` was later proven
+   to be a two-copy cascade, not shared-state aggregate feedback.
 
 Today, keiki users authoring any of these patterns hand-roll
 event/command plumbing. Each per-pair gluing is a candidate site
@@ -888,8 +889,8 @@ guards.
 - The Left-arm and Right-arm aggregates are entirely independent —
   they do not share state, do not observe each other's events, and
   do not synchronize. Authors who need cross-aggregate coordination
-  use `compose` (for sequential coordination) or `feedback1` (for
-  aggregate ↔ policy round trips).
+  use `compose` for sequential coordination or model a stateful
+  process manager. `feedback1` is only an explicit two-copy cascade.
 
 #### Acceptance criteria for the implementation EP
 
@@ -977,16 +978,16 @@ Divergences from the record above:
                        co
 
 The composite is `compose t (compose policy t)` rendered as a single
-combinator: t's output `co` drives the policy, the policy's output
-`ci` drives a second copy of t, and the final output is t's `co`.
+two-copy cascade: t's output `co` drives the policy, the policy's output
+`ci` drives a second, independent copy of t, and the final output is t's `co`.
 "Single-step" means exactly one round of policy reaction per external
 command. Multi-round patterns are expressed by composing multiple
 `feedback1`s.
 
 The asymmetry in the register file (`Append rs1 (Append rs2 rs1)`)
 reflects that t appears twice; the second t copy reads its own slot
-prefix. Implementation note: the second t may share state with the
-first via shared `rs1`; the per-vertex enumeration in
+prefix. The two copies do not share control state or registers; the
+per-vertex enumeration in
 `isSingleValuedSym` walks the composite's full product vertex.
 
 #### Semantics
@@ -1023,10 +1024,16 @@ command, aggregate processes it.
     loop :: SymTransducer ... AggCmd AggEvent
     loop = feedback1 aggregate policy
 
-`step loop initial externalCmd` advances the aggregate, runs the
+`step loop initial externalCmd` advances the outer copy, runs the
 policy on the resulting event to compute a follow-up command,
-advances the aggregate again with the follow-up, and emits the
+advances the independent inner copy with the follow-up, and emits the
 second aggregate event as the composite's output.
+
+This operation must not be used as shared-state aggregate feedback. EP-75's
+toggle regression proves the distinction: both copies move Off → On, whereas
+one shared toggle processing two commands would finish Off. No
+`feedback1Checked` API is offered because alignment validation cannot repair
+that state-sharing contract.
 
 #### Preservation arguments
 
@@ -1290,7 +1297,7 @@ sections above.
 |----------------------------------------------------------------|-----------------------------------------------------|
 | Which of the four MP-8 combinators are admitted?               | `alternative` and `feedback1`. `parallel` and `Kleisli` were re-deferred at MP-8 time; EP-19 later subsumed `Kleisli` into `compose` (see row below). |
 | `feedback`'s iteration model                                   | Single-step `feedback1 t f`. Pure trivially; multi-round patterns nest `feedback1`s. |
-| `alternative`'s mutual-exclusion check                         | None new. The `Either ci1 ci2` input alphabet makes the cross-transducer check vacuous; `isSingleValuedSym` on the composite suffices. |
+| `alternative`'s mutual-exclusion check                         | No caller-facing check. EP-75 added real `PLeftArm` / `PRightArm` predicates to every lifted guard, making the `Either` arms concretely and symbolically disjoint even when an underlying guard is `PTop`; `isSingleValuedSym` still checks each arm's own edges. |
 | `Kleisli`'s status                                             | No longer deferred (EP-19, 2026-05-16). EP-19 widened `Edge.output` to a list (via Approach 2, GSM widening, not the Approach 3 originally anticipated) and `compose`'s `composeEdge`/`expandPaths` now performs the multi-event chaining `Kleisli` would have. `compose` subsumes both `Sequential` and `Kleisli`; no separate combinator is warranted. |
 | `parallel`'s status                                            | Re-deferred. The strict-tuple shape doesn't fit keiki's queue-driven runtime; `alternative` covers the bounded-context use case. |
 | Module shape for new combinators                               | Extend `Keiki.Composition`. New combinators reuse `WeakenR` / `weakenL*` / `subst*`. |

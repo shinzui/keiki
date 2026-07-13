@@ -10,6 +10,12 @@ and this project adheres to the
 
 ### Added
 
+- `Keiki.Composition.checkComposeAlignment` and `composeChecked` report
+  constructor-name drift, unmatched expectations, field-arity mismatches, and
+  mapped/poisoned boundary names with exact source edge locations.
+- `PLeftArm` and `PRightArm` give `alternative` concrete and symbolic
+  `Either`-arm exclusion even when an underlying edge guard is `PTop`.
+
 - `Keiki.Builder.buildTransducerEither` returns all eagerly located builder
   defects as structured `BuilderError` values. `BuilderDefect` and
   `renderBuilderErrors` expose the same validation and historical message format
@@ -26,6 +32,14 @@ and this project adheres to the
   wrappers over this primary surface.
 
 ### Changed
+
+- `SomeSymTransducer` now carries input/output poison provenance while retaining
+  its one-argument compatibility pattern. Variance rewrites stamp constructor
+  names with `#lmapped`/`#rmapped`; categorical composition across a poisoned
+  boundary raises `PoisonedCompositionError` instead of silently bypassing a
+  map or producing a dead pipeline.
+- `feedback1` is documented as its actual two-copy cascade contract, not
+  shared-state aggregate feedback; no `feedback1Checked` API is exposed.
 
 - `runUpdate` now gives `UCombine` snapshot (parallel-assignment)
   semantics: every right-hand side reads the edge-entry register file and

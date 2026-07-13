@@ -242,6 +242,17 @@ spec :: Spec
 spec = do
   describe "feedback1 toggleAgg togglePolicy" $ do
     describe "single-step cascade" $ do
+      it "documents two independent aggregate copies, not shared-state feedback" $
+        case step loop (initial loop, initialRegs loop) externalCmd of
+          Just (Composite outerT (Composite _ innerT), _, _) -> do
+            outerT `shouldBe` On
+            innerT `shouldBe` On
+            -- A shared toggle would process the policy command from the
+            -- outer copy's new On state and finish Off. The inner On proves
+            -- that feedback1 instead starts its second copy from Off.
+            innerT `shouldNotBe` Off
+          Nothing -> expectationFailure "two-copy cascade rejected its command"
+
       it "Composite Off (Composite Pol Off) -- TgFlip{42} --> Composite On (Composite Pol On), emitting TgFlipped{42}" $
         case step loop (initial loop, initialRegs loop) externalCmd of
           Just (Composite outerT (Composite policy innerT), _, [co]) -> do

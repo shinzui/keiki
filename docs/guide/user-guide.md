@@ -667,7 +667,7 @@ without leaving keiki's pure core. Pick by shape:
 |---|---|---|
 | `compose t1 t2` | sequential, `t1`'s output drives `t2`'s input | Pipelines: an alerter emits `EmailCmd`s that the email-delivery aggregate consumes; a fraud detector emits commands the accounts aggregate consumes |
 | `alternative t1 t2` | disjoint dispatch over `Either ci1 ci2` to two independent arms | Sibling aggregates in one service: `Orders` + `Customers` bounded contexts behind one queue; multi-tenant control plane managing `Workspace` + `ApiKey` aggregates |
-| `feedback1 t f` | one round of cascade — t emits, stateless policy `f` reacts, t consumes the reaction | Auto-confirm flows (`PlaceOrder → OrderConfirmed` as one atomic step), validation passes (`SubmitForm → FormValidated`), single-step compensation handlers |
+| `feedback1 t f` | experimental two-copy cascade — outer `t` emits, policy `f` reacts, an independent `t` copy consumes the reaction | Structural simulation only; not shared-state auto-confirmation, validation, or compensation |
 
 All three preserve `solveOutput`, `checkHiddenInputs`, and
 symbolic single-valuedness. Common preconditions:
@@ -683,7 +683,10 @@ symbolic single-valuedness. Common preconditions:
 - For `feedback1`: the inner aggregate `t` must be **stateless**
   (`rs1 = '[]`). The `Disjoint`-on-`Append` constraint reduces
   to "t's slots disjoint from themselves" otherwise. A
-  shared-state variant is documented as a future extension.
+  shared-state variant is documented as a future extension. The current
+  operation's two control-state copies are independent; use a single
+  aggregate transition or process manager when the follow-up must observe the
+  state changed by the external command.
 
 `docs/guide/composition.md` covers each combinator in depth — the
 shapes, preservation arguments, worked examples, common errors,
