@@ -1,214 +1,235 @@
 # keiki — Roadmap
 
-This is a living status document. It records **what is already implemented**, what
-remains before the first Hackage release, and what is deliberately deferred or out of
-scope. For the authoritative, version-stamped change log see [`CHANGELOG.md`](CHANGELOG.md);
-for milestone-by-milestone execution detail see the master plans in
+This is the living status document for the keiki workspace. It records what is
+released, what is implemented on the current branch, what is a candidate for future
+work, and what is deliberately outside the pure core. For version-stamped changes see
+[`CHANGELOG.md`](CHANGELOG.md); for design and delivery history see the master plans in
 [`docs/masterplans/`](docs/masterplans/) and their child exec-plans in
 [`docs/plans/`](docs/plans/).
 
-_Last updated: 2026-07-12._
+_Last updated: 2026-07-13._
 
 ## Status at a glance
 
-- **Pre-1.0, pre-Hackage.** The next published release is `0.1.0.0`.
-- **All 13 master-plan initiatives are complete.** The planned v0.1 surface — the
-  symbolic-register transducer formalism described in
-  [`docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md`](docs/research/synthesis-c-foundation-b-presentation-with-worked-examples.md)
-  — has shipped.
-- **Validated end-to-end** by the downstream `jitsurei` package (eight worked-example
-  aggregates) plus ~260 in-tree `hspec` assertions, on GHC 9.12.2 (macOS aarch64 and
-  Linux x86_64).
-- **Only remaining gate to `0.1.0.0`:** maintainer-held release steps (the
-  `tested-with` matrix expansion and the actual Hackage upload — EP-37 M2).
+- **Published, pre-1.0.** The current coordinated release is `0.2.0.0`, published on
+  Hackage for [`keiki`](https://hackage.haskell.org/package/keiki-0.2.0.0),
+  [`keiki-codec-json`](https://hackage.haskell.org/package/keiki-codec-json-0.2.0.0),
+  and
+  [`keiki-codec-json-test`](https://hackage.haskell.org/package/keiki-codec-json-test-0.2.0.0).
+  The initial `0.1.0.0` release shipped on 2026-06-07; `0.2.0.0` shipped on
+  2026-07-13.
+- **The planned surface and the architecture-hardening pass are complete.** All 16
+  master-plan initiatives are resolved. The latest initiative closed the builder,
+  replay, composition, symbolic-analysis, and persistence defects found by the July
+  2026 architecture review.
+- **No release is currently queued.** The `Unreleased` sections are empty and there is
+  no active `0.3` milestone. New work should begin with a concrete consumer need and a
+  scoped plan rather than treating the deferred list below as a commitment.
+- **Supported toolchain:** GHC 9.12 (`tested-with: GHC >=9.12 && <9.13`); CI runs GHC
+  9.12.2 on Ubuntu. A local `cabal test all` on GHC 9.12.4 currently passes **735
+  examples across four suites**: 498 core, 102 JSON codec, 13 codec-test toolkit, and
+  122 `jitsurei` examples.
 
-## What's implemented
+## Current release surface
 
-Everything below is shipped and under test. The "Initiative" column links each
-capability to the master plan that delivered it.
+### Pure transducer core and replay
 
-### The pure core (`Keiki.Core`)
-
-- The `RegFile rs` typed register file and the `SymTransducer` GADT — the slot /
+- `Keiki.Core` provides the typed `RegFile rs`, the `SymTransducer` GADT, and the slot /
   predicate / command / event / output algebra.
-- **List-shaped edge output** (`output :: [OutTerm rs ci co]`): one transition can
-  emit zero, one, or N events in declaration order — a Generalized Sequential Machine,
-  not a letter FST.
-- Structured streaming replay: the `InFlight s co` wrapper,
-  `applyEventStreamingEither`, the arbitrary-seed `replayEvents` fold,
-  `applyEventsEither` for strict chunks, and `reconstituteEither` for full logs.
-  The historical `Maybe` entry points remain thin compatibility wrappers;
-  `applyEvent` remains the explicitly letter-only primitive.
-- `solveOutput` — mechanical inversion of each edge's output term, with the
-  build-time **hidden-input** / **non-injective-output** checks that are the reason the
-  library exists. _(Initiatives: MP-1, MP-2, MP-6, MP-7)_
+- Edges have list-shaped output (`output :: [OutTerm rs ci co]`), so one command can
+  emit zero, one, or many events in declaration order.
+- Forward decisions are available through `step` and the diagnostic `stepEither` /
+  `StepFailure` surface.
+- Replay supports single events, strict chunks, complete logs, and resumable
+  multi-event streams through `InFlight s co`, `applyEventStreamingEither`,
+  `replayEvents`, `applyEventsEither`, and `reconstituteEither`. The historical
+  `Maybe` entry points are compatibility wrappers over the structured `Either` path.
+- Replay failures identify the event index, wrapper state, and exact reason, including
+  failed or ambiguous inversion, an unexpected queued event, and a truncated
+  multi-event chain.
+- `solveOutput` mechanically inverts edge output terms. Hidden command inputs,
+  ambiguous inversion, and non-injective output shapes can be detected before a
+  transducer is admitted to a durable boundary. Derived event fields can use the
+  recompute-and-verify path.
+- `runUpdate` uses snapshot (parallel-assignment) semantics: every right-hand side
+  reads the edge-entry register file.
 
-### Authoring & ergonomics
+### Authoring, derivation, and validation
 
-- `Keiki.Builder` — the monadic edge-authoring DSL: `from` / `onCmd` / `goto` / `emit`,
-  the `.=` (and synonym `=:`) slot-assignment operators, the `slot @"name"` writer and
-  `reg @"name"` register-read helpers. _(MP-3, MP-13)_
-- `Keiki.Generics` — `RegFieldsOf`, `GRecord`, `mkInCtor` / `mkWireCtor` (+ `…Via`
-  variants), `mkWireCtor0` for singleton events, and `EmptyRegFile`. _(MP-3)_
-- `Keiki.Generics.TH` — Template-Haskell derivation: enumerated `deriveAggregateCtors`
-  / `deriveWireCtors` / `deriveView`, the zero-enumeration `deriveAggregateCtorsAll` /
-  `deriveWireCtorsAll`, and the fused `deriveAggregate` that covers an aggregate's
-  command and event constructors in one splice. _(MP-3, MP-13)_
+- `Keiki.Builder` is the monadic authoring DSL (`from`, `onCmd`, `onEpsilon`, `goto`,
+  `emit`, `noEmit`, `.=` / `=:` and `reg`). Every edge must declare its output intent.
+- Builder finalization is eager. `buildTransducerEither` returns all located
+  `BuilderError`s; `buildTransducer` preserves the exception-based convenience path.
+  Missing or repeated `goto` and mismatched `emitWith` no longer hide behind lazy
+  edge evaluation; duplicate `from` blocks merge in declaration order with stable
+  per-vertex indices.
+- The enclosing command schema is carried in `EdgeBuilder`, so passing another
+  command's generated term-fields record to `emit` is a compile-time error. Register
+  slot names are required to satisfy `DistinctNames`.
+- `Keiki.Generics` and `Keiki.Generics.TH` provide record-derived input/wire
+  constructors, singleton-event support, per-vertex views, zero-enumeration `*All`
+  splices, the fused `deriveAggregate`, and the `*With` variants for per-constructor
+  suffix overrides and exclusions.
+- `validateTransducer` returns structured warnings from a pure default pass. Its
+  default replay-safety checks cover hidden inputs, head-event recoverability,
+  cross-edge inversion ambiguity, constructor guards before input-field reads,
+  state-changing epsilon edges, determinism, and possibly-dead edges. Opaque guard
+  auditing is opt-in.
+- `Keiki.Operators` offers the predicate operators from a qualified namespace for
+  projects that also use `lens` or `generic-lens` operators.
 
-### Derived projections
+### Symbolic analysis
 
-- `Keiki.Acceptor` — input- and output-side acceptor projections
-  (`inputAcceptor` / `outputAcceptor` / `runAcceptor` / `accepts`). _(MP-5)_
-- B-presentation per-vertex views via the `deriveView` splice (the `View`/`SVertex`
-  GADTs). _(MP-5)_
+- `Keiki.Symbolic` provides SBV + z3-backed satisfiability, emptiness, witness, dead
+  edge, and single-valuedness analyses. Solver work is build-time only; `delta`,
+  `omega`, `step`, and replay use concrete evaluation.
+- Solver uncertainty is conservative: only a definite `Unsatisfiable` result proves a
+  predicate empty. `Unknown`, `ProofError`, and other non-definitive results do not
+  bless a proof gate.
+- The symbolic translator memoizes repeated reads, supports structural arithmetic,
+  preserves fixed-width integer wraparound and `UTCTime` picosecond precision, and
+  produces real `sat` witnesses.
+- The pure overlap pass recognizes the common constructor-and-conjunction fragment.
+  Unsupported boolean or opaque syntax remains unknown. The stronger symbolic gate
+  requires z3 and remains bounded by the documented concrete encodings.
 
-### Composition & the typeclass tower
+### Projections and composition
 
-- `Keiki.Composition` — `composeChecked` validates constructor-name/field alignment
-  before sequential composition; `alternative` uses real disjoint `Either` arm guards;
-  and `feedback1` is explicitly a two-copy cascade, not shared aggregate feedback; plus
-  the n-ary `wireCtor3At*` / `inCtor3At*` / `outTerm3At*` injectors for arity-3 event
-  families. _(MP-4, MP-8, MP-13)_
-- `Keiki.Profunctor` — the existential `SomeSymTransducer` wrapper with the variance
-  combinators (`lmapCi` / `rmapCo` / `dimapTransducer` / `lmapMaybeCi`) and the
-  `Profunctor` / `Functor` / `Category` / `Strong` / `Choice` / `Arrow` instances.
-  _(MP-9)_
-  - **`Category` forward fragment.** `id` is a sentinel constructor (so identity
-    holds definitionally); `(.)` delegates to `compose` after a **runtime** slot-name
-    overlap check — the wrapper hides `rs`, so the static `Disjoint` constraint can't
-    be discharged at the boundary. Overlap raises `CategoryOverlapError`; otherwise the
-    disjointness evidence is methodless and runtime-checked. A mapped boundary raises
-    `PoisonedCompositionError`; stateful forward associativity is covered in
-    `CategorySpec`, but the partial throws preclude unqualified lawfulness.
-  - **`Choice` forward and replay fragment** (`left'` / `right'`) is built on
-    `Keiki.Composition.alternative`. The lifting preserves replay when the underlying
-    transducer is replayable; it does not repair an underlying inversion defect. Real
-    `PLeftArm` / `PRightArm` predicates keep even epsilon guards disjoint, and
-    `left' id = id` holds by construction. (`+++` / `|||` belong to `ArrowChoice`,
-    which is out of scope.)
-  - **`Strong` forward-only fragment** (`first'` / `second'`) threads an unrelated value
-    (`first'` via `firstSym`, `second'` via `swap`). It **drops the `solveOutput`
-    round-trip** — `firstSym` poisons the paired-input `icBuild`, so events on those
-    edges can't be inverted (forward `delta` / `omega` is unaffected).
-  - **`Arrow` forward-only fragment** ships `arr`, but an `arr`-lifted function is opaque to the symbolic
-    `Term` AST, so `arr` (like `Strong`) **drops the round-trip**, and `arr f >>> arr g`
-    does **not** fuse to `arr (g . f)`: the poisoned boundary now throws loudly instead
-    of producing a dead composite. `first'` chains fail the same way. `arr` is a
-    composition primitive. This is a by-design boundary, not a gap (see below).
+- `Keiki.Acceptor` derives input- and output-side acceptors. The output acceptor is
+  `InFlight`-aware, so it agrees with multi-event replay on complete and truncated
+  logs.
+- `deriveView` supplies B-presentation per-vertex projections.
+- `Keiki.Composition` provides checked sequential composition, `alternative`, and
+  `feedback1`. `composeChecked` reports constructor-name, field-arity, and mapped
+  boundary drift with source-edge locations. Stateful and multi-event sequential
+  composition is covered by homomorphism tests.
+- `alternative` uses concrete `PLeftArm` / `PRightArm` guards. `feedback1` is a
+  two-copy cascade, not shared aggregate feedback.
+- `Keiki.Profunctor` exposes `SomeSymTransducer`, variance combinators, and
+  `Profunctor`, `Functor`, `Category`, `Strong`, `Choice`, and `Arrow` instances.
+  Composite register evidence is derived structurally rather than fabricated with
+  `unsafeCoerce`; overlapping slots and poisoned mapped boundaries fail loudly.
+- The categorical surface is intentionally a documented fragment: `Strong` and
+  `arr` preserve forward behavior but cannot preserve output inversion, and arbitrary
+  function application is not added to the symbolic term AST merely to make `Arrow`
+  fusion lawful.
 
-### Symbolic analysis (build-time only)
+### Persistence and JSON packages
 
-- `Keiki.Symbolic` — SBV + z3-backed `sat` / `isBot` / `isSingleValuedSym` analyses for
-  the opt-in symbolic-CI single-valuedness gate.
-- A memoizing translator, structural **arithmetic terms** (`TArith` / `NumOp`,
-  `tadd`/`tsub`/`tmul`) in the term language, and real `sat` witnesses via the `Sat`
-  class (the placeholder witness is retired). _(MP-2, MP-12)_
-- These run only at build time; `delta` / `omega` / `applyEvent` use concrete predicate
-  evaluation with no solver in the hot path.
+- `Keiki.Shape` supplies codec-independent snapshot discrimination through
+  `CanonicalTypeName`, `KnownRegFileShape`, canonical shape text, and SHA-256 hashes.
+  Built-in and container names are pinned independently of GHC-internal module paths.
+- `keiki-codec-json` provides strict and streaming `RegFile` JSON codecs plus TH
+  derivation. Duplicate slot names are rejected at compile time and encoding an
+  uninitialized register produces a slot-named failure.
+- Its event codec supports explicitly pinned wire kinds, an in-band schema version,
+  default-on-missing additive fields, and a compile-time-complete one-envelope to
+  one-envelope upcaster chain. Semantic splits and merges remain application-owned.
+- `keiki-codec-json-test` provides value-level round-trip properties, shape-sensitivity
+  checks, per-slot goldens, and whole-register-file golden-file tests.
+- Checked-in snapshot, shape-hash, current-event, and historical-event fixtures pin
+  the persistence formats. The `0.2.0.0` shape-name change intentionally invalidates
+  older non-empty snapshot hashes; consumers recover by replaying their event log.
 
-### Output-invertibility & recompute-and-verify
+### Inspection, rendering, and documentation tooling
 
-- The exact output-invertibility contract is documented in
-  [`docs/guide/output-invertibility.md`](docs/guide/output-invertibility.md) (which
-  term shapes round-trip, which abort, and the `Nothing`-not-exception semantics).
-- `solveOutput` now **recomputes and verifies derived event fields** on replay (via
-  `recomputeDerivedFields` + `Eq co`), so an edge can emit a computed value and still
-  certify round-trip safety. _(MP-13)_
+- `Keiki.Render.Pretty` renders predicates, terms, and updates in domain-readable
+  form while marking opaque functions and literal values honestly.
+- `Keiki.Render.Inspector` produces deterministic Markdown edge inventories with
+  source/target, command and event constructors, guards, and written slots.
+- `Keiki.Render.Mermaid` covers single transducers, sequential composites,
+  alternatives, feedback cascades, nested diagrams, multi-diagram atlases, readable
+  guards, multiline labels, multi-event layouts, and stable state IDs separate from
+  display labels. Historical default output remains byte-identical.
+- `Keiki.Render.Markdown` replaces marked diagram blocks, and
+  `Keiki.Render.Validate` provides pure heuristic validation for generated diagrams
+  and atlases.
 
-### Persistence-adjacent & codecs
+### Examples and regression posture
 
-- `Keiki.Shape` — a GHC-upgrade-safe shape hash for snapshot discrimination
-  (`CanonicalTypeName`, `KnownRegFileShape`, `regFileShapeHash`, `renderStableTypeRep`,
-  `sha256Hex`), reusable by any codec. _(MP-11)_
-- **`keiki-codec-json`** (sibling package) — the `RegFileToJSON` codec, its TH
-  derivation helpers, a property-test toolkit for downstream codec users, and
-  `tasty-bench` baselines. _(MP-11)_
+- The in-workspace `jitsurei` package exercises eight worked aggregates, including
+  `UserRegistration`, `OrderCart`, `EmailDelivery`, `LoanApplication`, and the
+  multi-stage loan workflow.
+- The permanent decide/replay property harness checks that validation-clean
+  transducers reproduce forward state from their emitted logs. Deliberately invalid
+  fixtures remain as teeth for state-changing epsilon, hidden-input, derived-output,
+  and composition failure modes.
+- `Keiki.NoThunks` assertions cover strict evaluation of register files and
+  per-vertex state.
+- Persistence tests pin both encoder paths and historical migration behavior; the
+  symbolic suite covers conservative solver handling and exact concrete encodings.
 
-### Visualization
+## Release history
 
-- `Keiki.Render.Mermaid` — renderers for single transducers and composites (flat
-  cross-product and nested Shape B), shape-aware renderers for `alternative` and
-  `feedback1`, the `toMermaidAtlas` multi-diagram entry point, and opt-in structural
-  edge-summary annotations (`MermaidOptions` / `toMermaidWith`). _(MP-10, MP-13)_
+| Version | Date | Summary |
+|---------|------|---------|
+| `0.1.0.0` | 2026-06-07 | Initial Hackage release of the symbolic-register transducer core and both JSON sibling packages. |
+| `0.2.0.0` | 2026-07-13 | Architecture hardening: eager typed builder validation, replay-aligned validation and diagnostics, corrected stateful composition, conservative symbolic proof gates, stable persistence identities, and versioned event codecs. |
 
-### Strictness & examples
+All three public packages are released together. The repeatable procedure is in
+[`docs/research/release-procedure.md`](docs/research/release-procedure.md).
 
-- `Keiki.NoThunks` — strict-evaluation assertions for the register file and per-vertex
-  state. _(MP-3 era)_
-- Worked aggregates driving the suite: `UserRegistration`, `OrderCart`,
-  `EmailDelivery`, the cross-context `LoanApplication`, and more in the downstream
-  `jitsurei` package (eight aggregates total). _(MP-1, MP-4, MP-7, MP-13)_
+## What may come next
 
-### Master-plan ledger
+There is no committed `0.3` scope. The following are candidates or consciously
+deferred designs, not scheduled deliverables:
 
-| #  | Initiative | Status |
-|----|------------|--------|
-| 1  | Validate symbolic-register direction via Haskell prototype | ✅ Complete |
-| 2  | Retire v1 escape hatches (TInpProj + SBV BoolAlg) | ✅ Complete |
-| 3  | `Keiki.Generics` DX follow-ups (TH, Decider facade) | ✅ Complete |
-| 4  | Composition combinators on `SymTransducer` (`compose`) | ✅ Complete |
-| 5  | Acceptor projections and `genView` TH splice (B-presentation) | ✅ Complete |
-| 6  | Retire remaining escape hatches (OFn, PMatchC, `unsafeCombine`) | ✅ Complete |
-| 7  | Multi-event command support (GSM widening) | ✅ Complete |
-| 8  | Composition beyond sequential (`alternative`, `feedback1`) | ✅ Complete |
-| 9  | Profunctor / Category / Strong / Choice / Arrow instances | ✅ Complete |
-| 10 | Mermaid topology renderer | ✅ Complete |
-| 11 | `keiki-codec-json` package — implementation and rollout | ✅ Complete |
-| 12 | Symbolic arithmetic terms, memoization, real `sat` witnesses | ✅ Complete |
-| 13 | API improvements surfaced by the Rei migration | ✅ Complete |
+- **First-class keyed collection registers.** EP-60 completed its design/prototype
+  gate with a NO-GO because the motivating consumer was not blocked. Whole-list
+  storage remains supported; opaque collection guards can be surfaced by the opt-in
+  validation audit. Reopen the design only for a concrete keyed-collection consumer.
+- **More composition forms.** `parallel`, `Kleisli`, and `ArrowChoice` (`+++` / `|||`)
+  remain deferred. Any proposal must preserve or explicitly classify replay and
+  symbolic-analysis behavior.
+- **Alternative diagram formats.** DOT / Graphviz remains a possible sibling to the
+  Mermaid renderer, with no plan currently open.
+- **Additional codecs.** CBOR or Protobuf support should follow the sibling-package
+  pattern rather than adding serialization dependencies to `keiki` core.
+- **A wider GHC support matrix.** The release currently supports GHC 9.12 only. When
+  support is deliberately widened, update `tested-with` and CI together and run the
+  persistence golden gates on every supported compiler.
 
-## What's next
+## Stable boundaries and non-goals
 
-### Toward `0.1.0.0` (the immediate milestone)
+- `keiki` remains a **pure core**. Runtime effects, persistence drivers, timers,
+  retries, process-manager orchestration, and deployment concerns belong in runtime
+  packages such as keiro, not in `SymTransducer`.
+- The core remains **codec-free**. `Keiki.Shape` exposes identity; sibling packages own
+  concrete wire formats.
+- Arbitrary Haskell functions remain opaque to symbolic analysis. The library will
+  not weaken its inversion and proof model to make every categorical law total.
+- Event schema evolution can automate structural one-event-to-one-event migrations;
+  semantic migrations, splits, merges, and outer storage-envelope policy stay at the
+  application boundary.
 
-The public surface is frozen and the changelog drafted; the coordinated Hackage release
-(EP-37) is held for the maintainer. Remaining steps:
+## Master-plan ledger
 
-- Expand the `tested-with` GHC matrix and run it (EP-37 M2).
-- Add `source-repository head` stanzas (deferred during metadata polish).
-- Publish `keiki` and `keiki-codec-json` to Hackage per
-  [`docs/research/release-procedure.md`](docs/research/release-procedure.md).
-
-### Deferred by design / candidate future work
-
-These were considered and consciously deferred, not forgotten:
-
-- **`parallel` and `Kleisli` composition combinators** — re-deferred in MP-8 after the
-  design milestone admitted only `alternative` and `feedback1`.
-- **`ArrowChoice`** (`+++` / `|||`) on `SomeSymTransducer` — declared out of scope in
-  MP-9.
-- **Law-faithful `Arrow` fusion** (`arr f >>> arr g == arr (g . f)`) — *won't-do, by
-  design.* Honoring it would require putting arbitrary function application into the
-  symbolic `Term` AST, which would make terms untranslatable to SBV and break the
-  build-time invertibility / single-valuedness guarantees keiki exists to provide.
-  `arr` stays an adapter, not a composition primitive; attempts now raise
-  `PoisonedCompositionError` at construction.
-- **DOT / Graphviz rendering** — listed as a future Mermaid-alternative format,
-  deferred in MP-10.
-- **Schema evolution** — the design note
-  ([`docs/research/schema-evolution.md`](docs/research/schema-evolution.md)) is written;
-  the opt-in event-codec contract is finalized by
-  [EP-77](docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md),
-  while the pure core remains version-agnostic.
-
-### Explicitly out of scope for the pure core
-
-These are runtime concerns by design and live (or will live) in sibling packages, not
-in `keiki`:
-
-- **Serialization** — JSON / CBOR / Protobuf codecs. JSON ships today as
-  `keiki-codec-json`; other formats would follow the same sibling-package pattern. The
-  `Keiki.Shape` hash discriminates snapshots regardless of codec.
-- **Runtime, effects, persistence, timers, and the process-manager driver** — I/O and
-  durability concerns the pure transducer deliberately does not own (see
-  [`docs/research/effects-boundary.md`](docs/research/effects-boundary.md)).
+| # | Initiative | Status |
+|---|------------|--------|
+| 1 | Validate the symbolic-register direction with a Haskell prototype | Complete |
+| 2 | Retire the first v1 escape hatches (`TInpProj`, SBV `BoolAlg`) | Complete |
+| 3 | Generics and authoring DX follow-ups | Complete |
+| 4 | Sequential composition on `SymTransducer` | Complete |
+| 5 | Acceptor projections and B-presentation views | Complete |
+| 6 | Retire the remaining v1 escape hatches | Complete |
+| 7 | Multi-event command support (GSM widening) | Complete |
+| 8 | Alternative and feedback composition | Complete |
+| 9 | Profunctor and categorical instances | Complete |
+| 10 | Mermaid topology rendering | Complete |
+| 11 | JSON codec packages, persistence shape hash, and initial release | Complete |
+| 12 | Symbolic arithmetic, memoization, and real witnesses | Complete |
+| 13 | API improvements surfaced by the Rei migration | Complete |
+| 14 | DSL, validation, and event-codec improvements from the keiro consumer audit | Complete; collection extension deferred at its gate |
+| 15 | Mermaid and documentation rendering improvements from the diagram audit | Complete |
+| 16 | Correctness, replay, composition, symbolic, and persistence hardening | Complete |
 
 ## Reading this alongside the other docs
 
 | Document | Answers |
 |----------|---------|
 | `README.md` | What keiki is and a first taste. |
-| `ROADMAP.md` (this file) | What's done, what's next, what's out of scope. |
-| `CHANGELOG.md` | The authoritative, version-stamped change log. |
-| `docs/masterplans/` + `docs/plans/` | How each capability was designed and delivered. |
+| `ROADMAP.md` (this file) | What is released, what may come next, and what is out of scope. |
+| `CHANGELOG.md` | The authoritative version-stamped package changes. |
+| `docs/masterplans/` + `docs/plans/` | How each initiative was designed and delivered. |
+| `docs/adr/` | The stable architecture decisions extracted from that work. |
 | `docs/foundations/` + `docs/guide/` | How to learn and use the library. |
