@@ -706,7 +706,7 @@ checkTransitionDeterminismSym = checkTransitionDeterminism . withSymPred
 -- does not diagnose an edge as dead, because it is not proof of unsatisfiability.
 -- Requires z3 on @PATH@.
 checkDeadEdgesSym ::
-  (Bounded s, Enum s, Show s) =>
+  (Bounded s, Enum s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   [DeadEdgeWarning s]
 checkDeadEdgesSym t =

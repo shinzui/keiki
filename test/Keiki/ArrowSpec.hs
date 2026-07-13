@@ -38,9 +38,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (42 :: Int)
             `shouldBe` [("42" :: Text)]
-        SomeSymIdentity ->
-          expectationFailure
-            "Arr.arr unexpectedly returned the identity sentinel"
 
     it "lifts identity-shaped functions but does not detect them as Cat.id" $ do
       -- Arr.arr id has the identity *behaviour* on every input but
@@ -66,9 +63,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (42 :: Int, "extra" :: Text)
             `shouldBe` [("42", "extra")]
-        SomeSymIdentity ->
-          expectationFailure
-            "Arr.first on a non-identity wrapper returned the sentinel"
 
   describe "Cat.id and the Arrow instance interplay" $ do
     it "Cat.id passes through arr-style values verbatim" $
@@ -82,11 +76,6 @@ spec = do
             SomeSymTransducer t ->
               omega t (initial t) (initialRegs t) (99 :: Int)
                 `shouldBe` [("99" :: Text)]
-            SomeSymIdentity ->
-              expectationFailure
-                "arr f >>> Cat.id unexpectedly returned the sentinel \
-                \— the sentinel short-circuit returns the non-sentinel arg, \
-                \so we expect SomeSymTransducer here"
 
     it "Cat.id <<< arr f passes through verbatim too" $
       let lifted :: SomeSymTransducer Int Text
@@ -95,9 +84,6 @@ spec = do
             SomeSymTransducer t ->
               omega t (initial t) (initialRegs t) (5 :: Int)
                 `shouldBe` [("5" :: Text)]
-            SomeSymIdentity ->
-              expectationFailure
-                "Cat.id <<< arr f unexpectedly returned the sentinel"
 
   describe "forward and inversion observations" $ do
     it "standalone arr has a four-command forward trace" $ do

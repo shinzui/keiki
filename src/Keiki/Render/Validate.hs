@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+
 -- | Pure, cheap structural-heuristic validators for rendered keiki
 -- Mermaid diagrams and Mermaid atlas documents.
 --
@@ -14,6 +16,9 @@
 -- rather than a 'Keiki.Core.SymTransducer', so there is no shared code.
 --
 -- See @docs/plans/66-pure-mermaid-diagram-and-atlas-validation-helpers.md@.
+-- The warning type intentionally exposes constructor-specific record fields;
+-- callers are expected to pattern-match on its constructors before reading
+-- them.
 module Keiki.Render.Validate
   ( MermaidValidationOptions (..),
     defaultMermaidValidationOptions,
@@ -23,7 +28,6 @@ module Keiki.Render.Validate
   )
 where
 
-import Data.List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T

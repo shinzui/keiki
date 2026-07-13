@@ -1,4 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
+-- Constructor derivation emits complete command/event helper families; this
+-- spec deliberately exercises only the helpers needed for composition.
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 -- | EP-48: N-ary event-family codec composition and singleton events.
 --

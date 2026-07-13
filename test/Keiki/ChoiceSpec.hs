@@ -84,10 +84,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Left sampleSendEmail)
             `shouldBe` [(Left sampleEmailEvent)]
-        SomeSymIdentity ->
-          expectationFailure
-            "left' (someSymTransducer emailDelivery) unexpectedly returned \
-            \the identity sentinel"
 
     it "Right input passes through unchanged on the identity arm" $ do
       let routedLeft :: SomeSymTransducer (Either EmailCmd Int) (Either EmailEvent Int)
@@ -96,10 +92,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Right (42 :: Int))
             `shouldBe` [(Right 42)]
-        SomeSymIdentity ->
-          expectationFailure
-            "left' (someSymTransducer emailDelivery) unexpectedly returned \
-            \the identity sentinel"
 
     it "preserves Cat.id on the sentinel: left' Cat.id == Cat.id" $ do
       let lifted :: SomeSymTransducer (Either Int Bool) (Either Int Bool)
@@ -135,7 +127,6 @@ spec = do
           case reconstituteEither transducer (emittedLog transducer script) of
             Right _ -> pure ()
             Left _ -> expectationFailure "Choice replay failed"
-        SomeSymIdentity -> expectationFailure "left' stateful fixture returned identity"
 
   describe "right'" $ do
     it "Right input routes through the wrapped transducer" $ do
@@ -145,10 +136,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Right sampleSendEmail)
             `shouldBe` [(Right sampleEmailEvent)]
-        SomeSymIdentity ->
-          expectationFailure
-            "right' (someSymTransducer emailDelivery) unexpectedly returned \
-            \the identity sentinel"
 
     it "Left input passes through unchanged on the identity arm" $ do
       let routedRight :: SomeSymTransducer (Either Int EmailCmd) (Either Int EmailEvent)
@@ -157,10 +144,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (Left (7 :: Int))
             `shouldBe` [(Left 7)]
-        SomeSymIdentity ->
-          expectationFailure
-            "right' (someSymTransducer emailDelivery) unexpectedly returned \
-            \the identity sentinel"
 
     it "preserves Cat.id on the sentinel: right' Cat.id == Cat.id" $ do
       let lifted :: SomeSymTransducer (Either Bool Int) (Either Bool Int)
@@ -186,15 +169,9 @@ spec = do
              SomeSymTransducer (Either EmailCmd Int) (Either EmailEvent Int) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
-        SomeSymIdentity ->
-          expectationFailure
-            "left' on a non-identity wrapper returned the identity sentinel"
 
     it "single-valuedness is preserved across right'" $
       case right' someEmail ::
              SomeSymTransducer (Either Int EmailCmd) (Either Int EmailEvent) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
-        SomeSymIdentity ->
-          expectationFailure
-            "right' on a non-identity wrapper returned the identity sentinel"

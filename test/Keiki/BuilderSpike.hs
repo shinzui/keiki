@@ -242,10 +242,13 @@ spec = do
 
   describe "EP-15 M2 spike: misuse error messages" $ do
     it "missing goto fires at finalize time with the expected message" $
-      -- `head` forces the first element of the edges list, which is
-      -- the result of `finalizeEdge`. `length` would only walk the
-      -- spine and not trigger the error.
-      evaluate (head (edgesOut coffeeMissingGoto Idle))
+      -- Force the first element, which is the result of `finalizeEdge`.
+      -- `length` would only walk the spine and not trigger the error.
+      evaluate
+        ( case edgesOut coffeeMissingGoto Idle of
+            edge : _ -> edge
+            [] -> error "coffeeMissingGoto unexpectedly has no edges"
+        )
         `shouldThrow` errorCall
           ( "Keiki.Builder: edge #0 from Idle: goto missing. "
               <> "Each onCmd/onEpsilon body must end with "
@@ -253,7 +256,11 @@ spec = do
           )
 
     it "duplicated goto fires at finalize time with the expected message" $
-      evaluate (head (edgesOut coffeeDoubleGoto Idle))
+      evaluate
+        ( case edgesOut coffeeDoubleGoto Idle of
+            edge : _ -> edge
+            [] -> error "coffeeDoubleGoto unexpectedly has no edges"
+        )
         `shouldThrow` errorCall
           ( "Keiki.Builder: edge #0 from Idle: goto called "
               <> "more than once. Each onCmd/onEpsilon body must "

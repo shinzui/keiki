@@ -61,10 +61,6 @@ data TriggerAlertData = TriggerAlertData
 data AlertCmd = TriggerAlert TriggerAlertData
   deriving stock (Eq, Show, Generic)
 
--- | The source aggregate's *output* type is EmailCmd — so the
--- composite's mid alphabet aligns with EmailDelivery's input.
-type AlertEvent = EmailCmd
-
 -- | Register file for the source aggregate. Mirrors EmailRegs in
 -- field shape but with distinct slot names so 'Append AlertRegs
 -- EmailRegs' has no name collisions (the keiki RegFile is

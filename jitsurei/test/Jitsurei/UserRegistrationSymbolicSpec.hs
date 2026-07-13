@@ -59,13 +59,16 @@ spec = do
     -- concrete (RegFile, UserCmd). evalPred on the witness must
     -- agree.
     it "ConfirmAccount edge guard: sat → witness → models agrees" $ do
-      let g = guard (head (edgesOut userReg RequiresConfirmation))
-      case symSatExt g of
-        Nothing ->
-          expectationFailure
-            "ConfirmAccount edge guard reported unsat"
-        Just (regs, cmd) ->
-          evalPred g regs cmd `shouldBe` True
+      case edgesOut userReg RequiresConfirmation of
+        [] -> expectationFailure "RequiresConfirmation has no outgoing edges"
+        edge : _ -> do
+          let g = guard edge
+          case symSatExt g of
+            Nothing ->
+              expectationFailure
+                "ConfirmAccount edge guard reported unsat"
+            Just (regs, cmd) ->
+              evalPred g regs cmd `shouldBe` True
 
     -- A standalone PEq predicate with a literal: confirms the
     -- witness extractor can recover both an InCtor field value and

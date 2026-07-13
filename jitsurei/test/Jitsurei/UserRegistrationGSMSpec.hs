@@ -56,17 +56,19 @@ spec = do
             ]
           chunked = applyEvents userReg (PotentialCustomer, emptyRegs) evs
 
-          streamed = do
-            (w1, r1) <-
-              applyEventStreaming
-                userReg
-                (Settled PotentialCustomer)
-                emptyRegs
-                (head evs)
-            (w2, r2) <- applyEventStreaming userReg w1 r1 (evs !! 1)
-            case w2 of
-              Settled v -> Just (v, r2)
-              _ -> Nothing
+          streamed = case evs of
+            firstEvent : secondEvent : _ -> do
+              (w1, r1) <-
+                applyEventStreaming
+                  userReg
+                  (Settled PotentialCustomer)
+                  emptyRegs
+                  firstEvent
+              (w2, r2) <- applyEventStreaming userReg w1 r1 secondEvent
+              case w2 of
+                Settled v -> Just (v, r2)
+                _ -> Nothing
+            _ -> Nothing
       case (chunked, streamed) of
         (Just (cs, _), Just (ss, _)) -> cs `shouldBe` ss
         _ ->

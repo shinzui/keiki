@@ -267,15 +267,8 @@ spec = do
       case id . someEmail of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
-        SomeSymIdentity ->
-          expectationFailure
-            "id . someEmail unexpectedly short-circuited to SomeSymIdentity \
-            \— someEmail is not the identity sentinel"
 
     it "single-valuedness is preserved across right identity" $
       case someEmail . id of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
-        SomeSymIdentity ->
-          expectationFailure
-            "someEmail . id unexpectedly short-circuited to SomeSymIdentity"

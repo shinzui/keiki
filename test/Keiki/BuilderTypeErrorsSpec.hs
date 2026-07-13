@@ -1,7 +1,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
+-- Constructor derivation emits helpers beyond those needed by these
+-- compile-time error fixtures.
+{-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors -Wno-unused-top-binds #-}
 
 module Keiki.BuilderTypeErrorsSpec (spec) where
 
@@ -50,15 +52,15 @@ isTypeError _ = True
 
 type DupRegs = '[ '("dup", Int), '("dup", Bool)]
 
-dupRegs :: RegFile DupRegs
-dupRegs = RCons (Proxy @"dup") 0 (RCons (Proxy @"dup") False RNil)
+_dupRegs :: RegFile DupRegs
+_dupRegs = RCons (Proxy @"dup") 0 (RCons (Proxy @"dup") False RNil)
 
-duplicateSlots :: SymTransducer (HsPred DupRegs ()) DupRegs Vertex () ()
-duplicateSlots =
-  B.buildTransducer Start dupRegs (const False) do
+_duplicateSlots :: SymTransducer (HsPred DupRegs ()) DupRegs Vertex () ()
+_duplicateSlots =
+  B.buildTransducer Start _dupRegs (const False) do
     B.from Start (pure ())
 
--- Removing -fdefer-type-errors makes 'duplicateSlots' fail compilation with:
+-- Removing -fdefer-type-errors makes '_duplicateSlots' fail compilation with:
 --
 -- Keiki: register file declares slot "dup" more than once.
 -- Slot names in a register file must be pairwise distinct;

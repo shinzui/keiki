@@ -78,10 +78,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (sampleSendEmail, requestId)
             `shouldBe` [(sampleEmailEvent, requestId)]
-        SomeSymIdentity ->
-          expectationFailure
-            "first' (someSymTransducer emailDelivery) unexpectedly returned \
-            \the identity sentinel"
 
     it "preserves Cat.id on the sentinel: first' Cat.id == Cat.id" $ do
       let lifted :: SomeSymTransducer (Int, Bool) (Int, Bool)
@@ -100,10 +96,6 @@ spec = do
         SomeSymTransducer t ->
           omega t (initial t) (initialRegs t) (requestId, sampleSendEmail)
             `shouldBe` [(requestId, sampleEmailEvent)]
-        SomeSymIdentity ->
-          expectationFailure
-            "second' (someSymTransducer emailDelivery) unexpectedly returned \
-            \the identity sentinel"
 
     it "preserves Cat.id on the sentinel: second' Cat.id == Cat.id" $ do
       let lifted :: SomeSymTransducer (Bool, Int) (Bool, Int)
@@ -119,18 +111,12 @@ spec = do
              SomeSymTransducer (EmailCmd, RequestId) (EmailEvent, RequestId) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
-        SomeSymIdentity ->
-          expectationFailure
-            "first' on a non-identity wrapper returned the identity sentinel"
 
     it "single-valuedness is preserved across second'" $
       case second' someEmail ::
              SomeSymTransducer (RequestId, EmailCmd) (RequestId, EmailEvent) of
         SomeSymTransducer t ->
           isSingleValuedSym (withSymPred t) `shouldBe` True
-        SomeSymIdentity ->
-          expectationFailure
-            "second' on a non-identity wrapper returned the identity sentinel"
 
   describe "forward and inversion observations" $ do
     it "first' threads every value through a four-command stateful trace" $ do
@@ -146,7 +132,6 @@ spec = do
                          [(MsgB 4, RequestId 12)],
                          [(MsgB 6, RequestId 13)]
                        ]
-        SomeSymIdentity -> expectationFailure "first' stateful fixture returned identity"
 
     it "first' is not replay-equivalent because its wire matcher is poisoned" $ do
       let lifted =
@@ -158,7 +143,6 @@ spec = do
           case reconstituteEither transducer (emittedLog transducer script) of
             Left _ -> pure ()
             Right _ -> expectationFailure "first' unexpectedly replayed"
-        SomeSymIdentity -> expectationFailure "first' stateful fixture returned identity"
 
     it "first' composition fails loudly at its poisoned boundary" $ do
       let firstA =

@@ -3,7 +3,10 @@
 -- Same reasoning for any future helpers that re-export the constraint
 -- as a typed witness.
 {-# LANGUAGE TypeAbstractions #-}
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+-- Validation diagnostics intentionally expose constructor-specific record
+-- selectors. Changing them to total fields would break the public diagnostic
+-- API, so keep the partiality explicit and silence the definition-site warning.
+{-# OPTIONS_GHC -Wno-partial-fields -Wno-redundant-constraints #-}
 
 -- | The pure core of keiki: the symbolic-register transducer.
 --

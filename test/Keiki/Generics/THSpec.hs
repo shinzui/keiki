@@ -1,4 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
+-- Every splice emits a complete helper family; individual examples exercise
+-- complementary subsets of those generated bindings.
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Keiki.Generics.THSpec (spec) where
 

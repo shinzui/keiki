@@ -67,7 +67,9 @@ spec = do
 
   describe "EP-15 M5: per-step delta/omega agreement" $ do
     it "step 1 (PotentialCustomer + RegistrationStarted) — both forms agree" $ do
-      stepAgreement PotentialCustomer emptyRegs (head canonicalLog)
+      case canonicalLog of
+        firstEvent : _ -> stepAgreement PotentialCustomer emptyRegs firstEvent
+        [] -> expectationFailure "canonical event log is unexpectedly empty"
 
     it "applyEvents on the 2-event entrance chunk — both forms agree on landing vertex" $ do
       -- EP-19 M7: the entrance is now a single length-2 multi-event
@@ -108,22 +110,6 @@ stepAgreement s regs ev = do
   let astStep = applyEvent userRegAST s regs ev
       builtStep = applyEvent userReg s regs ev
   fmap fst astStep `shouldBe` fmap fst builtStep
-
--- | Replay a single event against the AST form, used to set up the
--- pre-state for a per-step test. Mirrors how
--- 'Jitsurei.UserRegistrationSpec' walks the log.
-replayOne ::
-  SymTransducer
-    (HsPred UserRegRegs UserCmd)
-    UserRegRegs
-    Vertex
-    UserCmd
-    UserEvent ->
-  Vertex ->
-  RegFile UserRegRegs ->
-  UserEvent ->
-  Maybe (Vertex, RegFile UserRegRegs)
-replayOne = applyEvent
 
 -- | Chunked replay of a partial event list. EP-19 M7: the entrance
 -- to UserRegistration is now a length-2 multi-event edge, so the

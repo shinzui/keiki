@@ -1,6 +1,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
+-- Constructor derivation emits a complete helper family; each fixture uses
+-- only the members relevant to the behavior under test.
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 -- | EP-15 M6: hand-written unit tests for 'Keiki.Builder'. Tests use
 -- a tiny in-spec toy transducer (single-slot register file, two
@@ -10,7 +13,6 @@ module Keiki.BuilderSpec (spec) where
 
 import Control.Exception (evaluate)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import GHC.Generics (Generic)
 import Keiki.Builder ((.=), (=:))
 import Keiki.Builder qualified as B
@@ -69,9 +71,6 @@ $( deriveWireCtors
      ]
  )
 
-t0 :: UTCTime
-t0 = UTCTime (fromGregorian 2026 5 2) (secondsToDiffTime 0)
-
 -- * Auxiliary toy: 2-slot register file for case 2 -----------------------
 
 type TwoRegs = '[ '("x", Int), '("y", Int)]
@@ -113,6 +112,7 @@ showGuard (PAnd a b) = "PAnd (" <> showGuard a <> ") (" <> showGuard b <> ")"
 showGuard (POr a b) = "POr (" <> showGuard a <> ") (" <> showGuard b <> ")"
 showGuard (PNot p) = "PNot (" <> showGuard p <> ")"
 showGuard (PEq _ _) = "PEq <term> <term>"
+showGuard (PCmp _ _ _) = "PCmp <op> <term> <term>"
 showGuard (PInCtor _) = "PInCtor <ic>"
 showGuard PLeftArm = "PLeftArm"
 showGuard PRightArm = "PRightArm"

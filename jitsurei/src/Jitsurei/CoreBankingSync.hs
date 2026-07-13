@@ -4,6 +4,9 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
+-- Constructor derivation emits predicate helpers in addition to the exported
+-- constructors and field projections used by this example.
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 -- | The CoreBankingSync Process aggregate (EP-34 M4). A *Process* in
 -- the keiki sense is a transducer whose input alphabet is *events*

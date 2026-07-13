@@ -4,6 +4,9 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TemplateHaskell #-}
+-- Constructor derivation emits predicate helpers in addition to the exported
+-- constructors and field projections used by this example.
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 -- | The downstream Loan aggregate (EP-34 M4). Mirrors the production
 -- @QualifiedAgent@ aggregate at
