@@ -67,11 +67,13 @@ here, even if it requires splitting a partially completed task into two ("done" 
       `THEventSpec` module header. The targeted suite passed 50 examples and all
       three temporary misconfiguration builds failed with their expected messages.
       2026-07-12.
-- [ ] Milestone 2: versioned envelope — `versionFieldName`, `currentVersion`,
+- [x] Milestone 2: versioned envelope — `versionFieldName`, `currentVersion`,
       `<prefix>SchemaVersion` binding; encode stamps the version; decode reads it
-      (absent means version 1) and rejects ahead/invalid versions.
-- [ ] Milestone 2: envelope shape and version-error tests green, including decoding
-      version-absent bytes.
+      (absent means version 1) and rejects ahead/invalid versions. 2026-07-12.
+- [x] Milestone 2: envelope shape and version-error tests green, including decoding
+      version-absent bytes. The targeted suite passed 55 examples. Temporary builds
+      also reproduced the splice-time `currentVersion = 0` and colliding envelope-key
+      failures. 2026-07-12.
 - [ ] Milestone 3: default-on-missing — `FieldCodec` gains `fcOnMissing`; `fieldCodec`
       smart constructor added; `Maybe`-typed passthrough fields decode a missing key
       as `Nothing`.
@@ -100,6 +102,13 @@ implementation. Provide concise evidence.
   `Placed.kind`. Restoring the valid pinned fixture produced 50 green codec examples;
   the resolved `eventTypes`, `kindMap`, encoder, decoder, and allowed-kind error all
   agree on `"order.placed"`.
+- **The exact integer-version parser needs a direct dependency.** Aeson exposes
+  `Number` values but not `Scientific.toBoundedInteger`; the existing transitive
+  package was not directly visible to the library. Adding `scientific ^>=0.3` made
+  the import explicit and preserved keiro's checked conversion semantics. The
+  targeted suite passed 55 examples, including version-absent, ahead, below-one,
+  and malformed stamps; temporary builds pinned the two envelope-option validation
+  errors before code generation.
 
 
 ## Decision Log

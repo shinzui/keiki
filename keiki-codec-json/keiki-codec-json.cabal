@@ -79,6 +79,7 @@ library
     , base              ^>=4.21
     , containers        ^>=0.7
     , keiki             ^>=0.1
+    , scientific        ^>=0.3
     , template-haskell  ^>=2.23
     , text              ^>=2.1
 

@@ -152,11 +152,12 @@ spec = describe "deriveEventCodecSkeleton" $ do
 
   describe "kind discriminator + override usage" $ do
     -- orderEventToJSON (Placed (PlacedData (OrderId 7) 3))
-    -- == {"kind":"order.placed","orderId":"ord-7","qty":3}
+    -- == {"kind":"order.placed","v":1,"orderId":"ord-7","qty":3}
     it "Placed carries the kind key, the override output, and the passthrough field" $
       orderEventToJSON placed
         `shouldBe` Aeson.object
           [ "kind" Aeson..= (T.pack "order.placed" :: Text),
+            "v" Aeson..= (1 :: Int),
             "orderId" Aeson..= (T.pack "ord-7" :: Text),
             "qty" Aeson..= (3 :: Int)
           ]
@@ -172,9 +173,57 @@ spec = describe "deriveEventCodecSkeleton" $ do
         )
         `shouldBe` Right placed
 
-    it "Cancelled encodes to just the kind object" $
+    it "Cancelled encodes to just the envelope keys" $
       orderEventToJSON cancelled
-        `shouldBe` Aeson.object ["kind" Aeson..= (T.pack "Cancelled" :: Text)]
+        `shouldBe` Aeson.object
+          [ "kind" Aeson..= (T.pack "Cancelled" :: Text),
+            "v" Aeson..= (1 :: Int)
+          ]
+
+  describe "schema version envelope" $ do
+    it "exports the current schema version" $
+      orderEventSchemaVersion `shouldBe` 1
+
+    it "treats a missing version key as version 1" $
+      orderEventFromJSON
+        ( Aeson.object
+            [ "kind" Aeson..= (T.pack "order.placed" :: Text),
+              "orderId" Aeson..= (T.pack "ord-7" :: Text),
+              "qty" Aeson..= (3 :: Int)
+            ]
+        )
+        `shouldBe` Right placed
+
+    it "rejects an event written by a newer codec" $
+      orderEventFromJSON
+        ( Aeson.object
+            [ "kind" Aeson..= (T.pack "Cancelled" :: Text),
+              "v" Aeson..= (2 :: Int)
+            ]
+        )
+        `shouldBe` ( Left "event schema version 2 is ahead of codec version 1" ::
+                       Either String OrderEvent
+                   )
+
+    it "rejects a schema version below 1" $
+      orderEventFromJSON
+        ( Aeson.object
+            [ "kind" Aeson..= (T.pack "Cancelled" :: Text),
+              "v" Aeson..= (0 :: Int)
+            ]
+        )
+        `shouldBe` (Left "invalid event schema version: 0" :: Either String OrderEvent)
+
+    it "rejects a non-integral schema-version value" $
+      orderEventFromJSON
+        ( Aeson.object
+            [ "kind" Aeson..= (T.pack "Cancelled" :: Text),
+              "v" Aeson..= (T.pack "one" :: Text)
+            ]
+        )
+        `shouldBe` ( Left "field v: expected an integer schema version" ::
+                       Either String OrderEvent
+                   )
 
   describe "decoder error paths" $ do
     it "an unknown kind is reported" $

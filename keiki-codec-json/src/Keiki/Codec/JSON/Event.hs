@@ -16,7 +16,7 @@
 -- >   | Cancelled
 -- >   deriving stock (Eq, Show)
 --
--- the splice @$(deriveEventCodecSkeleton opts ''OrderEvent)@ emits four
+-- the splice @$(deriveEventCodecSkeleton opts ''OrderEvent)@ emits five
 -- top-level bindings (prefix derived by lower-casing the first letter of the
 -- type name):
 --
@@ -24,10 +24,11 @@
 -- > orderEventFromJSON   :: Aeson.Value -> Either String OrderEvent
 -- > orderEventEventTypes :: [Data.Text.Text]                    -- wire kinds, in order
 -- > orderEventKindMap    :: [(Data.Text.Text, Data.Text.Text)]  -- (ctor, kind)
+-- > orderEventSchemaVersion :: Int
 --
 -- Each constructor encodes to a JSON object carrying a @"kind"@
 -- discriminator (the pinned wire kind, or the constructor name by default)
--- plus one entry per payload field.
+-- and an in-band @"v"@ schema version, plus one entry per payload field.
 -- The decoder reads @"kind"@, branches, and reassembles the payload field
 -- by field.
 --
@@ -75,6 +76,7 @@ module Keiki.Codec.JSON.Event
     -- * Runtime helpers (referenced by generated code; not usually called directly)
     lookupField,
     lookupText,
+    lookupVersion,
     aesonResultToEither,
   )
 where
@@ -86,6 +88,7 @@ import Data.Char (toLower)
 import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Scientific qualified as Scientific
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -128,12 +131,17 @@ data EventCodecOptions = EventCodecOptions
     --     this map use their Haskell name. Override keys and resolved wire kinds
     --     are validated when the splice runs.
     kindOverrides :: Map String String,
+    -- | the in-band schema-version key; default @"v"@
+    versionFieldName :: String,
+    -- | current schema version stamped by the encoder; must be at least @1@
+    currentVersion :: Int,
     -- | behaviour for unhandled fields; default 'FailAtCompileTime'
     onMissingCodec :: OnMissingCodec
   }
 
 -- | Empty field and kind overrides, empty passthrough,
--- @kindFieldName = "kind"@, @onMissingCodec = 'FailAtCompileTime'@.
+-- @kindFieldName = "kind"@, @versionFieldName = "v"@,
+-- @currentVersion = 1@, and @onMissingCodec = 'FailAtCompileTime'@.
 defaultEventCodecOptions :: EventCodecOptions
 defaultEventCodecOptions =
   EventCodecOptions
@@ -141,6 +149,8 @@ defaultEventCodecOptions =
       passthroughFields = Set.empty,
       kindFieldName = "kind",
       kindOverrides = Map.empty,
+      versionFieldName = "v",
+      currentVersion = 1,
       onMissingCodec = FailAtCompileTime
     }
 
@@ -159,6 +169,21 @@ lookupText k o = do
   case v of
     Aeson.String t -> Right t
     _ -> Left ("field " <> Key.toString k <> ": expected a string")
+
+-- | Read an in-band schema version. An absent key means version @1@; a
+-- present value must be an integral JSON number representable as an 'Int'.
+lookupVersion :: Key.Key -> Aeson.Object -> Either String Int
+lookupVersion k o = case KeyMap.lookup k o of
+  Nothing -> Right 1
+  Just (Aeson.Number number) ->
+    maybe
+      (Left expectedInteger)
+      Right
+      (Scientific.toBoundedInteger number)
+  Just _ -> Left expectedInteger
+  where
+    expectedInteger =
+      "field " <> Key.toString k <> ": expected an integer schema version"
 
 -- | Adapt aeson's 'Aeson.Result' to @Either String@.
 aesonResultToEither :: Aeson.Result a -> Either String a
@@ -187,6 +212,7 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
     _ -> pure ()
 
   validateWireKinds opts tyName ctors
+  validateVersionEnvelope opts ctors
 
   -- No-silent-fallback safety net: classify each payload field; an
   -- unhandled field is one in neither overrides nor passthrough.
@@ -219,6 +245,7 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
       fromJSONN = mkName (prefix <> "FromJSON")
       eventTypesN = mkName (prefix <> "EventTypes")
       kindMapN = mkName (prefix <> "KindMap")
+      schemaVersionN = mkName (prefix <> "SchemaVersion")
       tyT = conT tyName
 
   -- Encoder: one clause per constructor.
@@ -229,13 +256,14 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
   vVar <- newName "v"
   oVar <- newName "o"
   kVar <- newName "kind"
+  versionVar <- newName "version"
   fromSig <- sigD fromJSONN [t|Aeson.Value -> Either String $tyT|]
   fromDef <-
     funD
       fromJSONN
       [ clause
           [varP vVar]
-          (normalB (decoderBody opts prefix vVar oVar kVar ctors))
+          (normalB (decoderBody opts prefix vVar oVar kVar versionVar ctors))
           []
       ]
 
@@ -274,6 +302,11 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
           )
           []
       ]
+  svSig <- sigD schemaVersionN [t|Int|]
+  svDef <-
+    funD
+      schemaVersionN
+      [clause [] (normalB (litE (IntegerL (fromIntegral (currentVersion opts))))) []]
 
   pure $
     todoBindings
@@ -284,7 +317,9 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
            etSig,
            etDef,
            kmSig,
-           kmDef
+           kmDef,
+           svSig,
+           svDef
          ]
 
 -- * Encoder generation -------------------------------------------------------
@@ -295,11 +330,14 @@ encodeClause opts ec = case ecPayload ec of
   Nothing ->
     clause
       [conP (ecCtorName ec) []]
-      (normalB [|Aeson.object [$(kindPair)]|])
+      (normalB [|Aeson.object [$(kindPair), $(versionPair)]|])
       []
   Just (_pc, fields) -> do
     pVar <- newName "p"
-    let pairs = kindPair : map (fieldPair opts (ecCtorName ec) pVar) fields
+    let pairs =
+          kindPair
+            : versionPair
+            : map (fieldPair opts (ecCtorName ec) pVar) fields
     clause
       [conP (ecCtorName ec) [varP pVar]]
       (normalB [|Aeson.object $(listE pairs)|])
@@ -309,6 +347,11 @@ encodeClause opts ec = case ecPayload ec of
       [|
         $(keyE (kindFieldName opts))
           Aeson..= (T.pack $(stringE (wireKindOf opts (ecCtorName ec))) :: Text)
+        |]
+    versionPair =
+      [|
+        $(keyE (versionFieldName opts))
+          Aeson..= ($(litE (IntegerL (fromIntegral (currentVersion opts)))) :: Int)
         |]
 
 -- | One @"field" .= <encoded>@ pair.
@@ -329,17 +372,17 @@ encodeFieldExpr opts ctorName pVar (fn, sel, _ft) =
 
 -- | The full @fromJSON@ body: @case v of Object o -> ...; _ -> Left ...@.
 decoderBody ::
-  EventCodecOptions -> String -> Name -> Name -> Name -> [EvCtor] -> Q Exp
-decoderBody opts prefix vVar oVar kVar ctors =
+  EventCodecOptions -> String -> Name -> Name -> Name -> Name -> [EvCtor] -> Q Exp
+decoderBody opts prefix vVar oVar kVar versionVar ctors =
   caseE
     (varE vVar)
     [ match
         (conP 'Aeson.Object [varP oVar])
         ( normalB
             ( infixE
-                (Just [|lookupText $(keyE (kindFieldName opts)) $(varE oVar)|])
+                (Just [|lookupVersion $(keyE (versionFieldName opts)) $(varE oVar)|])
                 (varE '(>>=))
-                (Just (lamE [varP kVar] (dispatch opts oVar kVar ctors)))
+                (Just (lamE [varP versionVar] versionGuard))
             )
         )
         [],
@@ -348,6 +391,28 @@ decoderBody opts prefix vVar oVar kVar ctors =
         (normalB [|Left $(stringE (prefix <> ": expected a JSON object"))|])
         []
     ]
+  where
+    currentVersionE = litE (IntegerL (fromIntegral (currentVersion opts)))
+    dispatchCurrent =
+      infixE
+        (Just [|lookupText $(keyE (kindFieldName opts)) $(varE oVar)|])
+        (varE '(>>=))
+        (Just (lamE [varP kVar] (dispatch opts oVar kVar ctors)))
+    versionGuard =
+      [|
+        if $(varE versionVar) < 1
+          then Left ("invalid event schema version: " <> show $(varE versionVar))
+          else
+            if $(varE versionVar) > ($currentVersionE :: Int)
+              then
+                Left
+                  ( "event schema version "
+                      <> show $(varE versionVar)
+                      <> " is ahead of codec version "
+                      <> show ($currentVersionE :: Int)
+                  )
+              else $dispatchCurrent
+        |]
 
 -- | Nested @if kind == "C" then <build C> else ...@ ending in an
 -- unknown-kind 'Left'.
@@ -511,6 +576,48 @@ validateWireKinds opts tyName ctors = do
         (_, fields) <- maybe [] (: []) (ecPayload ec),
         (fieldName, _, _) <- fields,
         fieldName == kindFieldName opts
+      ]
+
+validateVersionEnvelope :: EventCodecOptions -> [EvCtor] -> Q ()
+validateVersionEnvelope opts ctors = do
+  if currentVersion opts < 1
+    then
+      fail $
+        "deriveEventCodecSkeleton: currentVersion must be >= 1, got "
+          <> show (currentVersion opts)
+          <> "."
+    else pure ()
+
+  if kindFieldName opts == versionFieldName opts
+    then
+      fail $
+        "deriveEventCodecSkeleton: kindFieldName "
+          <> show (kindFieldName opts)
+          <> " collides with versionFieldName "
+          <> show (versionFieldName opts)
+          <> "; choose distinct envelope keys."
+    else pure ()
+
+  case versionCollisions of
+    [] -> pure ()
+    collisions ->
+      fail . intercalate "\n" $
+        [ "deriveEventCodecSkeleton: payload field "
+            <> nameBase ctorName
+            <> "."
+            <> fieldName
+            <> " collides with versionFieldName "
+            <> show (versionFieldName opts)
+            <> "; rename the field or choose a versionFieldName no payload uses."
+        | (ctorName, fieldName) <- collisions
+        ]
+  where
+    versionCollisions =
+      [ (ecCtorName ec, fieldName)
+      | ec <- ctors,
+        (_, fields) <- maybe [] (: []) (ecPayload ec),
+        (fieldName, _, _) <- fields,
+        fieldName == versionFieldName opts
       ]
 
 -- * Reflection ---------------------------------------------------------------
