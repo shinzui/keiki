@@ -1,5 +1,9 @@
 # Multi-Event Commands: Three Approaches
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 ## The Problem
 
 The letter-by-letter FST formalism maps each (state, command) pair to exactly

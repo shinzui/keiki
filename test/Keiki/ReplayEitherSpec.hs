@@ -247,3 +247,34 @@ spec = do
       case applyEventsEither userReg (initial userReg, initialRegs userReg) corrupted of
         Left _ -> pure ()
         Right _ -> expectationFailure "applyEventsEither accepted corrupted log"
+
+  describe "former Decider behavioral coverage" $ do
+    it "replays the complete multi-event output of one forward step" $ do
+      let command = StartRegistration (StartRegistrationData "alice@x" "Z9F4" (t 0))
+      case stepEither userReg (initial userReg, initialRegs userReg) command of
+        Left failure -> expectationFailure ("forward step failed: " <> show failure)
+        Right (_, _, emitted) -> do
+          emitted `shouldBe` [headEvent, tailEvent]
+          case applyEventsEither userReg (initial userReg, initialRegs userReg) emitted of
+            Right (vertex, _) -> vertex `shouldBe` RequiresConfirmation
+            Left failure -> expectationFailure ("multi-event replay failed: " <> show failure)
+
+    it "preserves the durable pre-confirmation deletion path" $ do
+      let startCommand = StartRegistration (StartRegistrationData "bob@x" "S0E1" (t 0))
+          deleteCommand = FulfillGDPRRequest (FulfillGDPRRequestData (t 999))
+      case stepEither userReg (initial userReg, initialRegs userReg) startCommand of
+        Left failure -> expectationFailure ("registration failed: " <> show failure)
+        Right (_, _, startEvents) ->
+          case applyEventsEither userReg (initial userReg, initialRegs userReg) startEvents of
+            Left failure -> expectationFailure ("registration replay failed: " <> show failure)
+            Right preDeletion@(RequiresConfirmation, _) ->
+              case stepEither userReg preDeletion deleteCommand of
+                Left failure -> expectationFailure ("deletion failed: " <> show failure)
+                Right (_, _, deletionEvents) -> do
+                  deletionEvents
+                    `shouldBe` [AccountDeleted (AccountDeletedData "bob@x" (t 999))]
+                  case applyEventsEither userReg preDeletion deletionEvents of
+                    Right (vertex, _) -> vertex `shouldBe` Deleted
+                    Left failure -> expectationFailure ("deletion replay failed: " <> show failure)
+            Right (other, _) ->
+              expectationFailure ("expected RequiresConfirmation, got " <> show other)

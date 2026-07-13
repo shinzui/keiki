@@ -8,7 +8,6 @@ module Jitsurei.UserRegistrationGSMSpec (spec) where
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Jitsurei.UserRegistration
 import Keiki.Core
-import Keiki.Decider
 import Test.Hspec
 
 t :: Integer -> UTCTime
@@ -17,21 +16,22 @@ t s = UTCTime (fromGregorian 2026 5 16) (secondsToDiffTime s)
 spec :: Spec
 spec = do
   describe "userReg's collapsed entrance (EP-19 M7)" $ do
-    it "decide on StartRegistration returns a 2-element event list" $ do
-      let d = toDecider userReg
-          cmd =
+    it "step on StartRegistration returns a 2-element event list" $ do
+      let cmd =
             StartRegistration
               (StartRegistrationData "alice@x" "Z9F4" (t 0))
-          evs = decide d cmd (initialState d)
-      length evs `shouldBe` 2
-      case evs of
-        [ RegistrationStarted rs,
-          ConfirmationEmailSent ces
-          ] -> do
-            rs.email `shouldBe` "alice@x"
-            rs.confirmCode `shouldBe` "Z9F4"
-            ces.email `shouldBe` "alice@x"
-        _ -> expectationFailure ("unexpected event order: " <> show evs)
+      case step userReg (initial userReg, initialRegs userReg) cmd of
+        Nothing -> expectationFailure "step rejected StartRegistration"
+        Just (_, _, evs) -> do
+          length evs `shouldBe` 2
+          case evs of
+            [ RegistrationStarted rs,
+              ConfirmationEmailSent ces
+              ] -> do
+                rs.email `shouldBe` "alice@x"
+                rs.confirmCode `shouldBe` "Z9F4"
+                ces.email `shouldBe` "alice@x"
+            _ -> expectationFailure ("unexpected event order: " <> show evs)
 
     it "applyEvents round-trips the 2-event chunk to RequiresConfirmation" $ do
       let evs =

@@ -1,5 +1,9 @@
 # Acceptor projections (input/output) on `SymTransducer` — design
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 This note is the design record for the `Keiki.Acceptor` module added
 to keiki under MasterPlan 5 / ExecPlan 12. It names, at the level of
 data and code, the two acceptor projections that

@@ -1,5 +1,9 @@
 # Worked comparison: the LoanWorkflow in keiki vs. crem
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 `architecture-comparison-keiki-vs-crem.md` compares the libraries
 abstractly. This doc walks the same comparison through a concrete,
 medium-sized example — the **LoanWorkflow** from EP-34

@@ -1,5 +1,9 @@
 # Multi-event commands via state-refinement ergonomics
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 This note records the design that EP-20 ships in the keiki library to
 make multi-event commands ergonomic without changing the AST. It is
 the canonical decision under MasterPlan 7

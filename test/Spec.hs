@@ -17,7 +17,6 @@ import Keiki.CoreApplyEventsSpec qualified
 import Keiki.CoreHiddenInputsGSMSpec qualified
 import Keiki.CoreInFlightSpec qualified
 import Keiki.CoreSpec qualified
-import Keiki.DeciderSpec qualified
 import Keiki.Generics.THSpec qualified
 import Keiki.NoThunksSpec qualified
 import Keiki.OperatorsQualifiedSpec qualified
@@ -56,7 +55,6 @@ main = hspec $ do
   describe "Keiki.Core.applyEvents (EP-20 M2)" Keiki.CoreApplyEventsSpec.spec
   describe "Keiki.Core.InFlight / streaming (EP-19 M3)" Keiki.CoreInFlightSpec.spec
   describe "Keiki.Core.checkHiddenInputs (EP-19 M4 union)" Keiki.CoreHiddenInputsGSMSpec.spec
-  describe "Keiki.Decider" Keiki.DeciderSpec.spec
   describe "Keiki.Generics.TH" Keiki.Generics.THSpec.spec
   describe "Keiki.NoThunks" Keiki.NoThunksSpec.spec
   describe "Keiki.Core operators (EP-45)" Keiki.OperatorsSpec.spec

@@ -1,5 +1,9 @@
 # Keiki.Generics design — DX evaluation of Generic-derived aggregate helpers
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 This note is the design record for the `Keiki.Generics` module added as
 a follow-up to MasterPlan 2's EP-2. It captures the boilerplate
 problem the module solves, the tools used (typeclass-driven traversal

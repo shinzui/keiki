@@ -72,8 +72,8 @@ must produce.
 - [x] (2026-07-12 23:58Z) M2: `replayEvents` seedable fold implemented with strict index accounting
 - [x] (2026-07-12 23:58Z) M2: `applyEventsEither` and `reconstituteEither` implemented; `applyEvents` and `reconstitute` re-expressed as thin wrappers
 - [x] (2026-07-12 23:58Z) M2: list-level specs: corrupted-log index/reason, truncated multi-event chain, mid-chain seed resume, fold returns final `InFlight` wrapper without failing
-- [ ] M3: `Keiki.Decider` removed from `keiki.cabal`, source, tests, exports, and documentation
-- [ ] M3: uniquely valuable replay assertions from `DeciderSpec` moved to Core replay specs before the obsolete spec is deleted
+- [x] (2026-07-13 00:01Z) M3: `Keiki.Decider` removed from `keiki.cabal`, source, tests, exports, and documentation
+- [x] (2026-07-13 00:01Z) M3: uniquely valuable replay assertions from `DeciderSpec` moved to Core replay specs before the obsolete spec is deleted
 - [ ] M4: `outputAcceptor` state carrier changed to `(InFlight s co, RegFile rs)`; equivalence haddock now true
 - [ ] M4: `test/Keiki/AcceptorSpec.hs`: multi-event acceptance spec (fails before the fix, passes after), truncation rejection, reconstitute-agreement spec updated
 - [ ] M5: `omega` haddock states the rejected/ε conflation loudly and points at `stepEither`
@@ -112,6 +112,10 @@ as they occur.
 - Noted (2026-07-11): keiro already built everything this plan adds, by hand, twice —
   see Context and Orientation for the prior-art walkthrough of `hydrate` /
   `hydrateFull`.
+- Discovered (2026-07-13, implementation): current keiro had no Decider import, but
+  the in-workspace `jitsurei` GSM regression still used `toDecider` solely to assert
+  the forward two-event output. Migrating it to `step` preserved the behavior and
+  allowed `cabal test all` to verify all four suites after module removal.
 
 
 ## Decision Log
@@ -193,6 +197,16 @@ as they occur.
   facade's removal is coordinated as a pre-release API deletion. Everything else in
   this plan is additive except the acceptor carrier correction.
   Date: 2026-07-12
+
+- Decision: preserve historical research documents that describe the removed Decider
+  experiments, but add a prominent API-status note to every affected document instead
+  of rewriting their historical design reasoning as if it had never existed.
+  Rationale: the research corpus is a decision record; erasing old alternatives would
+  make it misleading in a different way. The notices direct current readers to
+  `stepEither` and the structured Core replay surface, while ROADMAP, changelog,
+  haddocks, cabal exposure, source, tests, and examples now describe only the release
+  API.
+  Date: 2026-07-13
 
 
 ## Outcomes & Retrospective

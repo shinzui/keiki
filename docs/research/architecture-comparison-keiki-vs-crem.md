@@ -1,5 +1,9 @@
 # Comparison: keiki vs. crem
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 [crem](https://github.com/tweag/crem) (Compositional Representable
 Executable Machines) is a Haskell library by Marco Sampellegrini that
 provides composable Mealy machines with type-level topology enforcement.

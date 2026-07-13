@@ -5,7 +5,7 @@
 -- builder is purely additive on top of "Keiki.Core": every edge it
 -- produces is a value of the existing 'Keiki.Core.Edge' type, and
 -- the resulting 'Keiki.Core.SymTransducer' is consumed unchanged by
--- "Keiki.Acceptor", "Keiki.Composition", "Keiki.Decider",
+-- "Keiki.Acceptor", "Keiki.Composition",
 -- "Keiki.Symbolic", and the example-side specs.
 --
 -- == Why a builder

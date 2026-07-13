@@ -65,7 +65,6 @@ library
     Keiki.Builder
     Keiki.Composition
     Keiki.Core
-    Keiki.Decider
     Keiki.Generics
     Keiki.Generics.TH
     Keiki.Internal.Slots
@@ -116,7 +115,6 @@ test-suite keiki-test
     Keiki.CoreHiddenInputsGSMSpec
     Keiki.CoreInFlightSpec
     Keiki.CoreSpec
-    Keiki.DeciderSpec
     Keiki.Fixtures.CounterPipeline
     Keiki.Fixtures.EmailDelivery
     Keiki.Fixtures.RegisterEmission

@@ -1,5 +1,9 @@
 # GSM Widening Design: First-Class Multi-Event Commands
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 **Status:** Design note for [ExecPlan 19](../plans/19-multi-event-commands-via-edge-output-widening-gsm-expansion.md).
 **Date:** 2026-05-16.
 **Parent research:** [multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md](multi-event-commands-state-refinement-gsm-expansion-and-multidecider.md)

@@ -1,5 +1,9 @@
 # Direction C: Symbolic and Register Automata as a Basis for keiki
 
+> Historical API note (2026-07-12): references below to the Decider facade
+> describe a pre-0.1 design that has been removed. Use `Keiki.Core.stepEither`
+> for forward decisions and the structured Core replay functions for hydration.
+
 The base `Transducer s c e` requires `(Enum, Bounded)` on every parameter.
 That is what makes input/output projection, deadlock detection, and
 exhaustive contract checks possible — and what keeps payload data off the

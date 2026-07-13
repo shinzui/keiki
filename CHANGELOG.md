@@ -98,13 +98,6 @@ symbolic-register transducer formalism described in
 - `Keiki.Builder` — the monadic edge-authoring DSL.
 - `Keiki.Composition` — sequential, alternative, and single-step
   feedback combinators on `SymTransducer`s.
-- `Keiki.Decider` — the Chassaing-shape `Decider` facade
-  (`decide` / `evolve` / `evolveStreaming` / `initialState` /
-  `isTerminal`) derived mechanically from a `SymTransducer`.
-  `decide` returns the full event list directly, including
-  length-2+ chains from multi-event edges; `evolveStreaming`
-  threads the `Keiki.Core.InFlight` wrapper through length-N
-  edges for event-by-event streaming replay.
 - `Keiki.Generics` — `RegFieldsOf`, `GRecord`, `mkInCtor` /
   `mkInCtorVia`, `mkWireCtor` / `mkWireCtorVia`, plus `EmptyRegFile`.
 - `Keiki.Generics.TH` — `deriveAggregateCtors`, `deriveWireCtors`,

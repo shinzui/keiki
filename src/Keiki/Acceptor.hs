@@ -30,7 +30,7 @@
 --
 -- See @docs/research/acceptor-projections-design.md@ for the design
 -- record (deferred scope, why the state carrier is
--- @(s, 'Keiki.Core.RegFile' rs)@, relationship to 'Keiki.Decider').
+-- @(s, 'Keiki.Core.RegFile' rs)@, and relationship to Core replay).
 module Keiki.Acceptor
   ( -- * The acceptor projection
     Acceptor (..),

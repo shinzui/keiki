@@ -55,9 +55,6 @@ capability to the master plan that delivered it.
 
 ### Derived projections
 
-- `Keiki.Decider` — the Chassaing-shape `Decider` facade
-  (`decide` / `evolve` / `evolveStreaming` / `initialState` / `isTerminal`), derived
-  mechanically from a `SymTransducer`. _(MP-3)_
 - `Keiki.Acceptor` — input- and output-side acceptor projections
   (`inputAcceptor` / `outputAcceptor` / `runAcceptor` / `accepts`). _(MP-5)_
 - B-presentation per-vertex views via the `deriveView` splice (the `View`/`SVertex`
