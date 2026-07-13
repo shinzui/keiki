@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1484"
+     height="887"
+     viewBox="0 0 1484 887"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">keiki — 継起</title>
+  <desc id="description">
+    The approved horizontal keiki logo, with one three-state machine
+    incorporated into each kanji and no composition operator between them.
+  </desc>
+
+  <!--
+    The approved source artwork was generated as a raster image. Referencing
+    the matching PNG preserves its glyph shapes and state-machine details
+    exactly instead of substituting a different Japanese typeface.
+  -->
+  <image width="1484"
+         height="887"
+         href="keiki-logo.png"
+         xlink:href="keiki-logo.png"
+         preserveAspectRatio="xMidYMid meet"/>
+</svg>

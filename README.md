@@ -1,5 +1,9 @@
 # keiki — 継起
 
+<p align="center">
+  <img src="docs/assets/keiki-logo.png" alt="keiki — 継起 logo" width="720">
+</p>
+
 A Haskell library for the **pure core** of event sourcing, workflow
 engines, and durable execution, built on one formalism: the
 symbolic-register finite-state transducer.
