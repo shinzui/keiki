@@ -74,11 +74,13 @@ here, even if it requires splitting a partially completed task into two ("done" 
       version-absent bytes. The targeted suite passed 55 examples. Temporary builds
       also reproduced the splice-time `currentVersion = 0` and colliding envelope-key
       failures. 2026-07-12.
-- [ ] Milestone 3: default-on-missing — `FieldCodec` gains `fcOnMissing`; `fieldCodec`
+- [x] Milestone 3: default-on-missing — `FieldCodec` gains `fcOnMissing`; `fieldCodec`
       smart constructor added; `Maybe`-typed passthrough fields decode a missing key
-      as `Nothing`.
-- [ ] Milestone 3: decode-old-bytes fixture (pre-field-addition literal JSON) and
-      property round-trips including `Maybe` fields green.
+      as `Nothing`. 2026-07-12.
+- [x] Milestone 3: decode-old-bytes fixture (pre-field-addition literal JSON) and
+      property round-trips including `Maybe` fields green. The new evolution module
+      also pins present-null behavior and required-field strictness; the targeted
+      suite passed 61 examples. 2026-07-12.
 - [ ] Milestone 4: upcaster chain — `upcasters :: [(Int, Name)]` option, splice-time
       completeness validation, migration applied before constructor dispatch,
       `migrateEnvelope` runtime helper.
@@ -109,6 +111,13 @@ implementation. Provide concise evidence.
   targeted suite passed 55 examples, including version-absent, ahead, below-one,
   and malformed stamps; temporary builds pinned the two envelope-option validation
   errors before code generation.
+- **Defaulting can stay local without weakening anti-drift checks.** The literal
+  pre-addition bytes omit the version, explicit-default, and `Maybe` fields yet
+  decode to the declared constant and `Nothing`. A required passthrough field still
+  fails with `missing field: orderId`, and 100 generated `Nothing`/`Just` values
+  round-trip. Because classification still requires every field to be listed as an
+  override or passthrough, the new read compatibility does not reintroduce a generic
+  fallback.
 
 
 ## Decision Log

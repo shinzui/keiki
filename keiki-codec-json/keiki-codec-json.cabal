@@ -110,6 +110,7 @@ test-suite keiki-codec-json-test
     Keiki.Codec.JSON.GoldenSpec
     Keiki.Codec.JSON.PropSpec
     Keiki.Codec.JSON.SensitivitySpec
+    Keiki.Codec.JSON.THEventEvolutionSpec
     Keiki.Codec.JSON.THEventSpec
     Keiki.Codec.JSON.THSpec
 

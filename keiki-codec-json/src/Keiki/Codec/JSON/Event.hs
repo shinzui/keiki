@@ -37,9 +37,13 @@
 -- A payload field is encoded one of three ways, chosen by /field name/:
 --
 --   * if its name is a key of 'fieldCodecOverrides', the author-supplied
---     'FieldCodec' functions are spliced in;
+--     'FieldCodec' functions are spliced in; an absent key uses
+--     'fcOnMissing' when supplied and otherwise remains an error;
 --   * else if its name is in 'passthroughFields', the field's own
---     'Aeson.ToJSON' \/ 'Aeson.FromJSON' instances are used;
+--     'Aeson.ToJSON' \/ 'Aeson.FromJSON' instances are used. A field whose
+--     reified type is syntactically @Maybe t@ decodes an absent key as
+--     'Nothing'; type synonyms are not expanded, and all other passthrough
+--     fields remain strict;
 --   * otherwise the field is /unhandled/, and 'onMissingCodec' decides:
 --     'FailAtCompileTime' (the default) aborts the splice listing every
 --     unhandled field, while 'EmitTodoBindings' emits a clearly-named
@@ -65,6 +69,7 @@
 module Keiki.Codec.JSON.Event
   ( -- * Options
     FieldCodec (..),
+    fieldCodec,
     OnMissingCodec (..),
     EventCodecOptions (..),
     defaultEventCodecOptions,
@@ -75,6 +80,7 @@ module Keiki.Codec.JSON.Event
 
     -- * Runtime helpers (referenced by generated code; not usually called directly)
     lookupField,
+    lookupFieldMaybe,
     lookupText,
     lookupVersion,
     aesonResultToEither,
@@ -102,11 +108,23 @@ import Language.Haskell.TH
 --
 --   * 'fcEncode' names a function @fieldType -> Aeson.Value@ (e.g. @idText@);
 --   * 'fcDecode' names a function @Aeson.Value -> Either String fieldType@
---     (e.g. @parseIdText@).
+--     (e.g. @parseIdText@);
+--   * 'fcOnMissing' optionally names a top-level /constant/ of the field type,
+--     used only when the JSON key is absent.
 data FieldCodec = FieldCodec
   { fcEncode :: Name,
-    fcDecode :: Name
+    fcDecode :: Name,
+    fcOnMissing :: Maybe Name
   }
+
+-- | Construct a strict field codec with no missing-key default.
+fieldCodec :: Name -> Name -> FieldCodec
+fieldCodec encodeName decodeName =
+  FieldCodec
+    { fcEncode = encodeName,
+      fcDecode = decodeName,
+      fcOnMissing = Nothing
+    }
 
 -- | What to do for a payload field whose name appears in neither
 -- 'fieldCodecOverrides' nor 'passthroughFields'.
@@ -161,6 +179,10 @@ lookupField :: Key.Key -> Aeson.Object -> Either String Aeson.Value
 lookupField k o = case KeyMap.lookup k o of
   Just v -> Right v
   Nothing -> Left ("missing field: " <> Key.toString k)
+
+-- | Total object lookup: 'Nothing' when the key is absent.
+lookupFieldMaybe :: Key.Key -> Aeson.Object -> Maybe Aeson.Value
+lookupFieldMaybe = KeyMap.lookup
 
 -- | Look a key up and require its value to be a JSON string.
 lookupText :: Key.Key -> Aeson.Object -> Either String Text
@@ -457,12 +479,32 @@ mkApplicative ctorQ (d : ds) =
 
 -- | @Either String fieldType@ decoder for one field.
 decodeFieldExpr :: EventCodecOptions -> Name -> Name -> (String, Name, Type) -> Q Exp
-decodeFieldExpr opts oVar ctorName (fn, _sel, _ft) =
+decodeFieldExpr opts oVar ctorName (fn, _sel, ft) =
   let getV = [|lookupField $(keyE fn) $(varE oVar)|]
    in case classify opts fn of
-        Override fc -> [|$(varE (fcDecode fc)) =<< $getV|]
-        Passthrough -> [|(aesonResultToEither . Aeson.fromJSON) =<< $getV|]
+        Override fc -> case fcOnMissing fc of
+          Nothing -> [|$(varE (fcDecode fc)) =<< $getV|]
+          Just missingDefault ->
+            [|
+              case lookupFieldMaybe $(keyE fn) $(varE oVar) of
+                Nothing -> Right $(varE missingDefault)
+                Just fieldValue -> $(varE (fcDecode fc)) fieldValue
+              |]
+        Passthrough
+          | isSyntacticMaybe ft ->
+              [|
+                case lookupFieldMaybe $(keyE fn) $(varE oVar) of
+                  Nothing -> Right Nothing
+                  Just fieldValue -> aesonResultToEither (Aeson.fromJSON fieldValue)
+                |]
+          | otherwise -> [|(aesonResultToEither . Aeson.fromJSON) =<< $getV|]
         Unhandled -> [|$(varE (todoName ctorName fn)) =<< $getV|]
+
+isSyntacticMaybe :: Type -> Bool
+isSyntacticMaybe (SigT ty _) = isSyntacticMaybe ty
+isSyntacticMaybe (ParensT ty) = isSyntacticMaybe ty
+isSyntacticMaybe (AppT (ConT maybeName) _) = maybeName == ''Maybe
+isSyntacticMaybe _ = False
 
 -- * TODO bindings ------------------------------------------------------------
 

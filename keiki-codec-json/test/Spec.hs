@@ -20,6 +20,7 @@ import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
 import Keiki.Codec.JSON.GoldenSpec qualified
 import Keiki.Codec.JSON.PropSpec qualified
 import Keiki.Codec.JSON.SensitivitySpec qualified
+import Keiki.Codec.JSON.THEventEvolutionSpec qualified
 import Keiki.Codec.JSON.THEventSpec qualified
 import Keiki.Codec.JSON.THSpec qualified
 import Keiki.Core (RegFile (..))
@@ -39,6 +40,7 @@ main = hspec $ do
   describe "M3 golden hash" Keiki.Codec.JSON.GoldenSpec.spec
   describe "EP-38 deriveRegFileCodec" Keiki.Codec.JSON.THSpec.spec
   describe "EP-59 deriveEventCodecSkeleton" Keiki.Codec.JSON.THEventSpec.spec
+  describe "EP-77 event schema evolution" Keiki.Codec.JSON.THEventEvolutionSpec.spec
 
 spec :: Spec
 spec = do

@@ -80,9 +80,9 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Keiki.Codec.JSON.Event
   ( EventCodecOptions (..),
-    FieldCodec (..),
     defaultEventCodecOptions,
     deriveEventCodecSkeleton,
+    fieldCodec,
   )
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Text.Read (readMaybe)
@@ -125,7 +125,7 @@ data OrderEvent
 $( deriveEventCodecSkeleton
      defaultEventCodecOptions
        { fieldCodecOverrides =
-           Map.fromList [("orderId", FieldCodec 'orderIdToJSON 'orderIdFromJSON)],
+           Map.fromList [("orderId", fieldCodec 'orderIdToJSON 'orderIdFromJSON)],
          passthroughFields = Set.fromList ["qty", "trackingNo"],
          kindOverrides = Map.fromList [("Placed", "order.placed")]
        }
