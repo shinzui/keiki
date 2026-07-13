@@ -187,7 +187,9 @@ These were considered and consciously deferred, not forgotten:
   deferred in MP-10.
 - **Schema evolution** — the design note
   ([`docs/research/schema-evolution.md`](docs/research/schema-evolution.md)) is written;
-  the contract is still being sharpened against real consumers.
+  the opt-in event-codec contract is finalized by
+  [EP-77](docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md),
+  while the pure core remains version-agnostic.
 
 ### Explicitly out of scope for the pure core
 

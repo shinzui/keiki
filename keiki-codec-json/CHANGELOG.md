@@ -8,6 +8,26 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- Event-codec schema evolution through pinned constructor wire kinds,
+  default-on-missing payload decoding, and a compile-time-complete chain of
+  one-envelope-to-one-envelope upcasters.
+- `fieldCodec`, a strict smart constructor for `FieldCodec`, plus generated
+  `<prefix>SchemaVersion` bindings.
+
+### Changed
+
+- **Breaking:** `EventCodecOptions` now also carries `kindOverrides`,
+  `versionFieldName`, `currentVersion`, and `upcasters`.
+- **Breaking:** `FieldCodec` gains the `fcOnMissing` field. Positional
+  construction should be replaced with `fieldCodec` and a record update when a
+  missing-key default is required.
+- **Breaking:** generated event envelopes now contain an in-band `"v"` field;
+  version-absent historical objects decode as version 1.
+- **Breaking:** generated `EventTypes` and `KindMap` bindings contain resolved
+  wire kinds, including pinned values, rather than assuming constructor names.
+
 
 ## [0.1.0.0] — 2026-06-07
 

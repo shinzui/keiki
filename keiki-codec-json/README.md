@@ -109,9 +109,10 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import Keiki.Codec.JSON.Event
   ( EventCodecOptions (..)
-  , FieldCodec (..)
+  , FieldCodec (fcOnMissing)
   , defaultEventCodecOptions
   , deriveEventCodecSkeleton
+  , fieldCodec
   )
 
 newtype OrderId = OrderId Int deriving stock (Eq, Show)
@@ -138,7 +139,7 @@ data OrderEvent
 $(deriveEventCodecSkeleton
     defaultEventCodecOptions
       { fieldCodecOverrides =
-          Map.fromList [("orderId", FieldCodec 'orderIdToJSON 'orderIdFromJSON)]
+          Map.fromList [("orderId", fieldCodec 'orderIdToJSON 'orderIdFromJSON)]
       , passthroughFields = Set.fromList ["qty", "trackingNo"]
       }
     ''OrderEvent)
@@ -147,15 +148,18 @@ $(deriveEventCodecSkeleton
 --   orderEventFromJSON   :: Aeson.Value -> Either String OrderEvent
 --   orderEventEventTypes :: [Text]
 --   orderEventKindMap    :: [(Text, Text)]
+--   orderEventSchemaVersion :: Int
 ```
 
 Each constructor encodes to an object carrying a `"kind"` discriminator
-(its constructor name) plus one entry per payload field, so
+(its constructor name unless pinned) and a `"v"` schema version, plus one
+entry per payload field, so
 `orderEventToJSON (Placed (PlacedData (OrderId 7) 3))` is
-`{"kind":"Placed","orderId":"ord-7","qty":3}` — note `orderId` is the
-override's output, not a generic `Int`. The `orderEventEventTypes` /
-`orderEventKindMap` bindings are plain `Text` (no Keiro dependency) so a
-downstream can feed them to Keiro's `Codec.eventTypes`.
+`{"kind":"Placed","v":1,"orderId":"ord-7","qty":3}` — note `orderId`
+is the override's output, not a generic `Int`. The
+`orderEventEventTypes` / `orderEventKindMap` bindings contain the resolved
+wire kinds as plain `Text` (no Keiro dependency), and
+`orderEventSchemaVersion` contains the configured current version.
 
 **No silent generic fallback.** Each payload field is encoded by *name*:
 an override (`fieldCodecOverrides`), a passthrough using the field's own
@@ -170,6 +174,73 @@ changing, or dropping, the stored JSON.
 Constructors that are multi-argument, use record syntax directly, or are
 GADT/infix are rejected at splice time with a precise message; wrap a
 single record payload type instead (`Placed PlacedData`).
+
+### Evolving an event schema
+
+There are three common changes, each with a distinct codec move.
+
+1. **Add a payload field without bumping the version.** For an optional
+   field such as `note :: Maybe Text`, add `"note"` to
+   `passthroughFields`; a missing key decodes as `Nothing`, while an
+   explicit JSON `null` also follows aeson's normal `Maybe` decoder. For a
+   non-`Maybe` field, provide a named default constant through the override:
+
+   ```haskell
+   defaultPriority :: Priority
+   defaultPriority = NormalPriority
+
+   priorityCodec :: FieldCodec
+   priorityCodec =
+     (fieldCodec 'priorityToJSON 'priorityFromJSON)
+       { fcOnMissing = Just 'defaultPriority }
+   ```
+
+   Put `priorityCodec` in `fieldCodecOverrides`. Keep `currentVersion`
+   unchanged: this is an additive compatibility rule, not a structural
+   migration. Required fields without either form of default still fail with
+   `missing field: <name>`.
+
+2. **Rename a Haskell constructor without changing stored bytes.** Pin the
+   renamed constructor to its historical discriminator:
+
+   ```haskell
+   kindOverrides = Map.fromList [("OrderPlaced", "Placed")]
+   ```
+
+   Override keys are current constructor names. The splice rejects unknown
+   keys and duplicate resolved wire kinds, while encoding, decoding,
+   `EventTypes`, and `KindMap` all use the pinned wire value.
+
+3. **Restructure a payload.** Increment `currentVersion` and register one
+   whole-envelope upcaster for every historical step:
+
+   ```haskell
+   upcastOrderV1 :: Aeson.Value -> Either String Aeson.Value
+   upcastOrderV1 = ... -- rewrite a version-1 object into version-2 shape
+
+   currentVersion = 2
+   upcasters = [(1, 'upcastOrderV1)]
+   ```
+
+   An absent `"v"` is version 1. Before constructor dispatch, the decoder
+   runs every rung from the stored version to the current version. For
+   `currentVersion = n`, the splice requires exactly the source versions
+   `[1 .. n - 1]`; gaps, duplicates, and out-of-range entries fail at compile
+   time. A rung is one-envelope-to-one-envelope. If one historical event must
+   split into several current events, do that in the application's event-store
+   adapter as described in
+   [`docs/research/schema-evolution.md`](../docs/research/schema-evolution.md).
+
+Unknown object keys are intentionally ignored by the event decoder so additive
+deployments can overlap. This differs from the RegFile snapshot decoder, which
+rejects extra keys because a snapshot must match one exact register shape.
+
+The in-band `"v"` is opt-in version ownership for applications that have no
+outer event envelope. If an application already owns out-of-band metadata — for
+example, a keiro-style `schemaVersion` beside the payload — keep this codec's
+`currentVersion = 1` and evolve at that outer layer. Running both schemes with
+different version numbers is a configuration error; neither layer detects the
+disagreement for the other.
 
 ## When to use the streaming encoder
 

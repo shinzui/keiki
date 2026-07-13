@@ -88,11 +88,14 @@ here, even if it requires splitting a partially completed task into two ("done" 
       and manual compile-fail check for a chain gap. The targeted suite passed 66
       examples; temporary builds also pinned duplicate and out-of-range source
       diagnostics. 2026-07-12.
-- [ ] Milestone 5: documentation — `Event.hs` module haddock, `keiki-codec-json/README.md`,
+- [x] Milestone 5: documentation — `Event.hs` module haddock, `keiki-codec-json/README.md`,
       `docs/research/schema-evolution.md` finalized-contract section, `ROADMAP.md`
       sharpened-contract bullet, `keiki-codec-json/CHANGELOG.md`, asymmetric-strictness
-      note; master plan 16 progress row ticked.
-- [ ] Full gate: `cabal build all`, `cabal test all`, `nix fmt -- --no-cache` all clean.
+      note; master plan 16 progress row ticked. 2026-07-12.
+- [x] Full gate: `cabal build all`, `cabal test all`, `nix fmt -- --no-cache`, and
+      `cabal haddock keiki-codec-json` all clean. The four suites passed 496, 122,
+      66, and 7 examples respectively with zero failures; the event-codec Haddocks
+      report 100% coverage. 2026-07-12.
 
 
 ## Surprises & Discoveries
@@ -127,6 +130,11 @@ implementation. Provide concise evidence.
   the old rung, and a rejected rung reports `upcaster from version 1: missing qty`.
   Temporary builds reproduced missing, duplicate, and out-of-range chain failures;
   the restored codec suite passed 66 examples.
+- **The research note's “library” boundary needed one explicit layer split.** Its
+  original conclusion remains correct for the aeson-free core and for applications
+  that own their event-store adapters, while the sibling JSON package now supplies
+  an optional realization. The dated addendum records that distinction without
+  weakening the chosen (d + c) model or moving one-to-many evolution into the codec.
 
 
 ## Decision Log
@@ -258,7 +266,24 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+The event codec now has a pre-release persistence contract rather than a constructor-
+name convention. Encoders stamp an in-band schema version and resolved wire kind;
+decoders guard the version, apply a splice-time-complete 1-to-1 migration chain,
+dispatch on the migrated kind, and then apply explicit or syntactic-`Maybe` defaults.
+Constructor renames can preserve stored bytes, additive fields can remain version-
+neutral, and structural changes have an exact rung protocol.
+
+The tests cover all three promised evolution moves with literal historical bytes and
+pin the failure boundaries: invalid versions fail at decode, invalid wire-kind and
+chain configurations fail while compiling the splice, and required fields remain
+strict. Manual mutation checks reproduced every compile-time diagnostic. The final
+workspace gate passed all four suites (496 core, 122 jitsurei, 66 codec, 7 toolkit),
+the formatter, all-package build, and codec Haddocks.
+
+The deliberate limit is unchanged: a rung maps one stored envelope to one current
+envelope. Semantic splits remain in the application-owned event-store adapter, and
+applications with outer metadata versioning should leave the in-band codec version
+at 1. EP-78 can now pin this finalized envelope with byte-level fixtures.
 
 
 ## Context and Orientation
@@ -918,3 +943,12 @@ documented contrast only), golden BYTE fixtures (owned by
 `docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md`,
 which pins the envelope this plan ships), and any 1-to-many upcasting (application
 boundary, per the research note).
+
+
+## Revision Notes
+
+- 2026-07-12: Completed EP-77. Added stable wire-kind overrides, in-band schema
+  versions, explicit and `Maybe` missing-field defaults, a compile-time-complete
+  one-to-one upcaster chain, historical-byte and property coverage, manual
+  compile-fail validation, and the finalized public evolution contract. Passed
+  formatting, all-package build, all four test suites, and codec Haddocks.

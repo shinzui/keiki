@@ -893,6 +893,38 @@ is "the application, on its own cadence".
 
 ---
 
+## The derived codec's realization of this contract (EP-77)
+
+Addendum, 2026-07-12. The chosen model remains **(d) an explicit upcaster at
+the event-store boundary, with (c) additive-only as the default convention**.
+EP-77 does not make the pure `keiki` core version-aware: `SymTransducer`,
+`solveOutput`, validation, and register replay still consume only the current
+typed event schema.
+
+What changed after the original note was written is the optional JSON boundary.
+`keiki-codec-json`'s derived event codec now offers an opt-in in-band realization
+for applications that want the sibling package to own that part of the boundary:
+
+- an integer envelope version, with an absent version interpreted as version 1;
+- pinned wire kinds so Haskell constructor renames need not rename persisted data;
+- a compile-time-complete chain of one-envelope-to-one-envelope upcasters; and
+- default-on-missing field decoding for additive evolution.
+
+The application still supplies every default and upcaster body and owns their
+semantics. In particular, the derived codec cannot represent the model's
+one-historical-event-to-many-current-events split. That case remains in the
+application's event-store adapter, exactly as the contract above specifies. An
+application with its own outer versioned envelope may also leave the derived codec
+at version 1 and implement the whole policy at that outer layer.
+
+Thus the earlier statements that the library does not prescribe version tags or
+ship migration machinery should be read as statements about the pure core and the
+application-owned default. EP-77 adds a convenience realization in an explicitly
+opt-in codec package; it does not change the core model or transfer semantic
+evolution responsibility away from the application.
+
+---
+
 ## Prototype implications (v1)
 
 The v1 prototype assumes a single static schema, implements no upcasting

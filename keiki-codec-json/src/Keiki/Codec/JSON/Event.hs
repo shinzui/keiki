@@ -29,8 +29,33 @@
 -- Each constructor encodes to a JSON object carrying a @"kind"@
 -- discriminator (the pinned wire kind, or the constructor name by default)
 -- and an in-band @"v"@ schema version, plus one entry per payload field.
--- The decoder validates the stored version, runs every required whole-object
--- upcaster, then reads @"kind"@ and reassembles the payload field by field.
+--
+-- Decoding follows a fixed pipeline: validate the stored version (an absent
+-- @"v"@ means version 1), run every required whole-object upcaster in order,
+-- dispatch on the migrated @"kind"@, then decode payload fields and apply any
+-- missing-key defaults. Upcasters run before dispatch, so a structural change
+-- may rewrite the discriminator as well as payload keys.
+--
+-- == Evolving an event schema
+--
+-- For an additive field, keep 'currentVersion' unchanged and either make the
+-- field a syntactic @Maybe t@ passthrough or give its 'FieldCodec' an
+-- 'fcOnMissing' constant. For a structural payload change, increment
+-- 'currentVersion' and add the complete next rung to 'upcasters'. For a Haskell
+-- constructor rename, preserve its old wire discriminator with 'kindOverrides'.
+--
+-- Each upcaster maps one envelope to one envelope. Splitting one historical
+-- event into several current events remains an application-boundary concern;
+-- see @docs/research/schema-evolution.md@ for that wider contract. The pure
+-- @keiki@ core remains version-agnostic.
+--
+-- == Unknown object keys
+--
+-- Event decoding intentionally ignores keys that are not current payload or
+-- envelope fields. This permits old and new readers to coexist during additive
+-- deployments. The snapshot-oriented @RegFileToJSON@ decoder instead rejects
+-- extra keys because a register snapshot must match one exact shape; the two
+-- codecs serve different compatibility contracts.
 --
 -- == No silent generic fallback (the anti-drift property)
 --
@@ -63,9 +88,9 @@
 -- == Negative-test procedure (manual)
 --
 -- See @Keiki.Codec.JSON.THEventSpec@ for the documented procedure that
--- exercises the 'FailAtCompileTime' and 'EmitTodoBindings' behaviours; the
--- two cases cannot live as a passing unit test because one is a compile
--- failure.
+-- exercises compile-time configuration failures and the 'EmitTodoBindings'
+-- behaviour. Those checks cannot all live as passing unit tests because their
+-- expected result is a compile failure.
 module Keiki.Codec.JSON.Event
   ( -- * Options
     FieldCodec (..),
