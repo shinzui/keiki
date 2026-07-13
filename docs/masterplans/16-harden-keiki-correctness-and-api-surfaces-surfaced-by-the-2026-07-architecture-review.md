@@ -126,7 +126,7 @@ fire through).
 | 72 | Structured replay diagnostics, Decider removal, and multi-event outputAcceptor | docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md | None | None | Complete |
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Complete |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Complete |
-| 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Not Started |
+| 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Complete |
 | 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Not Started |
 | 77 | Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding | docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md | None | None | Not Started |
 | 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | EP-70 | EP-77 | Not Started |
@@ -257,7 +257,7 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 - [x] EP-72: `Keiki.Decider` removed; `outputAcceptor` is InFlight-aware
 - [x] EP-73: round-trip property (fold `step`, replay the complete emitted log, states agree) green over every default-validation-clean fixture; invalid state-changing epsilon has an explicit teeth fixture
 - [x] EP-74: composed updates see pre-update registers; multi-event chain expansion consistent for stateful t2; stateful composition fixtures
-- [ ] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
+- [x] EP-75: checked composition is primary; real Either-arm predicates fix `alternative`; `feedback1` state-sharing contract resolved; forward/replay law results recorded without removing instances
 - [ ] EP-76: solver `Unknown` treated as not-bot; encoding caveats documented; pure overlap check catches same-ctor `PAnd` pairs
 - [ ] EP-77: versioned event envelope with pinned wire kinds and default-on-missing decoding
 - [ ] EP-78: golden byte fixtures for both wire formats; `Maybe` slot coverage; shape hash stable across GHC majors
@@ -341,6 +341,12 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
   wrong-order input-field guard is bottom under plain sequential stepping, while
   `compose` deliberately refines that error path to an unsatisfiable leaf so other
   matching edges remain defined.
+- EP-75's law audit separated an inherited fixture defect from a typeclass result:
+  `CounterPipeline.stageA` is intentionally non-replayable, so both Category
+  associations fail replay even though their four-command forward traces agree. Choice
+  replay succeeds when tested with a replayable stateful fixture. The same work proved
+  `feedback1` advances two independent aggregate copies and cannot be presented as
+  shared-state feedback.
 
 
 ## Decision Log
@@ -455,7 +461,8 @@ snapshot goldens in EP-78 are independent and can proceed after EP-70).
 
 ## Outcomes & Retrospective
 
-Seven child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, EP-73, and EP-74. The core
+Eight child plans are complete: EP-69, EP-70, the adopted EP-68, EP-71, EP-72, EP-73,
+EP-74, and EP-75. The core
 memory/type-safety and builder-authoring phase is closed, and Phase 2 now has its
 validator and structured-runtime halves. EP-71 aligned default validation with replay through four default-on
 checks, migrated the durable User Registration epsilon path, left an explicit
@@ -470,10 +477,18 @@ also found and fixed LoanApplication's direct-withdraw uninitialized-register re
 Phase 2 is closed, and EP-74 closes the stateful execution half of Phase 3: composed
 single-event and multi-event updates now match sequential snapshots, substitution is
 safe for structural walkers, and a mutation-tested homomorphism suite pins the result.
-EP-75 is now dependency-ready and owns checked composition, categorical law
-classification, `alternative`, and `feedback1` contract follow-through.
+EP-75 closes Phase 3: checked composition reports structural boundary drift,
+`alternative` has real arm guards, mapped categorical boundaries fail loudly,
+`feedback1` is explicitly a two-copy cascade, and the authoritative law-status section
+separates forward from replay observations without removing instances. EP-76 is the
+next eligible plan and owns symbolic Unknown handling and stronger overlap checks.
 
 ## Revision Notes
+
+- 2026-07-12: Completed EP-75. Added arm predicates, mapped-boundary provenance and
+  loud errors, checked alignment diagnostics, the two-copy feedback contract, and
+  multi-step forward/replay law observations; mutation-checked the flagship behaviors
+  and passed formatting, build, full tests, and Haddock.
 
 - 2026-07-13: Completed EP-74. Promoted snapshot update semantics after a green
   workspace suite and current-keiro survey, threaded typed symbolic writes through

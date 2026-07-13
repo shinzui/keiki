@@ -7,7 +7,7 @@ for milestone-by-milestone execution detail see the master plans in
 [`docs/masterplans/`](docs/masterplans/) and their child exec-plans in
 [`docs/plans/`](docs/plans/).
 
-_Last updated: 2026-05-22._
+_Last updated: 2026-07-12._
 
 ## Status at a glance
 
@@ -64,33 +64,36 @@ capability to the master plan that delivered it.
 
 ### Composition & the typeclass tower
 
-- `Keiki.Composition` — `compose` (sequential), `alternative` (sum-input dispatch over
-  `Either`), and `feedback1` (single-step aggregate ↔ stateless-policy reduction); plus
+- `Keiki.Composition` — `composeChecked` validates constructor-name/field alignment
+  before sequential composition; `alternative` uses real disjoint `Either` arm guards;
+  and `feedback1` is explicitly a two-copy cascade, not shared aggregate feedback; plus
   the n-ary `wireCtor3At*` / `inCtor3At*` / `outTerm3At*` injectors for arity-3 event
   families. _(MP-4, MP-8, MP-13)_
 - `Keiki.Profunctor` — the existential `SomeSymTransducer` wrapper with the variance
   combinators (`lmapCi` / `rmapCo` / `dimapTransducer` / `lmapMaybeCi`) and the
   `Profunctor` / `Functor` / `Category` / `Strong` / `Choice` / `Arrow` instances.
   _(MP-9)_
-  - **`Category`** is complete. `id` is a sentinel constructor (so the identity laws
-    hold by definition); `(.)` delegates to `compose` after a **runtime** slot-name
+  - **`Category` forward fragment.** `id` is a sentinel constructor (so identity
+    holds definitionally); `(.)` delegates to `compose` after a **runtime** slot-name
     overlap check — the wrapper hides `rs`, so the static `Disjoint` constraint can't
     be discharged at the boundary. Overlap raises `CategoryOverlapError`; otherwise the
-    disjointness evidence is `unsafeCoerce`-fabricated. Laws are covered behaviourally
-    in `CategorySpec`.
-  - **`Choice`** (`left'` / `right'`) is the cleanest of the arrow-flavored instances:
-    it is built on `Keiki.Composition.alternative`, whose `leftInCtor` / `rightInCtor`
-    arm wrappers are invertible, so it **preserves the `solveOutput` round-trip** (more
-    preservation than `lmapCi` / `rmapCo`, which poison `icBuild`). The `left' id = id`
-    law holds by construction. (`+++` / `|||` are not `Data.Profunctor.Choice` methods —
-    they belong to `ArrowChoice`, which is out of scope.)
-  - **`Strong`** (`first'` / `second'`) threads an unrelated value through a transducer
+    disjointness evidence is methodless and runtime-checked. A mapped boundary raises
+    `PoisonedCompositionError`; stateful forward associativity is covered in
+    `CategorySpec`, but the partial throws preclude unqualified lawfulness.
+  - **`Choice` forward and replay fragment** (`left'` / `right'`) is built on
+    `Keiki.Composition.alternative`. The lifting preserves replay when the underlying
+    transducer is replayable; it does not repair an underlying inversion defect. Real
+    `PLeftArm` / `PRightArm` predicates keep even epsilon guards disjoint, and
+    `left' id = id` holds by construction. (`+++` / `|||` belong to `ArrowChoice`,
+    which is out of scope.)
+  - **`Strong` forward-only fragment** (`first'` / `second'`) threads an unrelated value
     (`first'` via `firstSym`, `second'` via `swap`). It **drops the `solveOutput`
     round-trip** — `firstSym` poisons the paired-input `icBuild`, so events on those
     edges can't be inverted (forward `delta` / `omega` is unaffected).
-  - **`Arrow`** ships `arr`, but an `arr`-lifted function is opaque to the symbolic
+  - **`Arrow` forward-only fragment** ships `arr`, but an `arr`-lifted function is opaque to the symbolic
     `Term` AST, so `arr` (like `Strong`) **drops the round-trip**, and `arr f >>> arr g`
-    does **not** fuse to `arr (g . f)` — `arr` is a standalone adapter, not a
+    does **not** fuse to `arr (g . f)`: the poisoned boundary now throws loudly instead
+    of producing a dead composite. `first'` chains fail the same way. `arr` is a
     composition primitive. This is a by-design boundary, not a gap (see below).
 
 ### Symbolic analysis (build-time only)
@@ -178,7 +181,8 @@ These were considered and consciously deferred, not forgotten:
   design.* Honoring it would require putting arbitrary function application into the
   symbolic `Term` AST, which would make terms untranslatable to SBV and break the
   build-time invertibility / single-valuedness guarantees keiki exists to provide.
-  `arr` stays an adapter, not a composition primitive.
+  `arr` stays an adapter, not a composition primitive; attempts now raise
+  `PoisonedCompositionError` at construction.
 - **DOT / Graphviz rendering** — listed as a future Mermaid-alternative format,
   deferred in MP-10.
 - **Schema evolution** — the design note

@@ -87,19 +87,19 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 here, even if it requires splitting a partially completed task into two ("done" vs.
 "remaining"). This section must always reflect the actual current state of the work.
 
-- [ ] M1: failing test — `alternative` with a `PTop`-guarded (onEpsilon-style) t2 edge misfires on `Left` inputs
-- [ ] M1: real `Either`-arm predicate constructors added to `HsPred`, concrete evaluation, symbolic translation, validation walkers, and renderers
-- [ ] M1: `alternative` unconditionally conjoins the correct arm predicate onto every lifted guard; false mutual-exclusion claim rewritten
-- [ ] M1: M1 tests green (`cabal test all`), including symbolic single-valuedness on the fixed composite
-- [ ] M2: name stamping — `contraInCtor` / `contraMaybeInCtor` append `"#lmapped"`, `mapWireCtor` appends `"#rmapped"` in `src/Keiki/Profunctor.hs`
-- [ ] M2: poison provenance carried on `SomeSymTransducer`; set by `Profunctor` / `Strong` / `Arrow` instances
-- [ ] M2: `Cat..` raises `PoisonedCompositionError` when the boundary alphabet is poisoned; tests for both directions
-- [ ] M3: `ComposeAlignmentWarning` type + `checkComposeAlignment` in `src/Keiki/Composition.hs`
-- [ ] M3: `composeChecked` entry point; misaligned-names, arity-mismatch, and poisoned-name specs
-- [ ] M3: `feedback1` two-copy-state regression added; shared-state redesign versus explicit cascade rename decided before any `feedback1Checked` API is documented as safe
-- [ ] M4: module-level "Law status" haddock section in `src/Keiki/Profunctor.hs`; scattered caveats point at it
-- [ ] M4: `ROADMAP.md` composition bullets updated; experimental marking added to both modules
-- [ ] M5: forward and replay/inversion law tests (multi-step, stateful) added; unresolved failures recorded as API-design decisions, not hidden by weaker equality
+- [x] M1: failing test — `alternative` with a `PTop`-guarded (onEpsilon-style) t2 edge misfires on `Left` inputs
+- [x] M1: real `Either`-arm predicate constructors added to `HsPred`, concrete evaluation, symbolic translation, validation walkers, and renderers
+- [x] M1: `alternative` unconditionally conjoins the correct arm predicate onto every lifted guard; false mutual-exclusion claim rewritten
+- [x] M1: M1 tests green (`cabal test all`), including symbolic single-valuedness on the fixed composite
+- [x] M2: name stamping — `contraInCtor` / `contraMaybeInCtor` append `"#lmapped"`, `mapWireCtor` appends `"#rmapped"` in `src/Keiki/Profunctor.hs`
+- [x] M2: poison provenance carried on `SomeSymTransducer`; set by `Profunctor` / `Strong` / `Arrow` instances
+- [x] M2: `Cat..` raises `PoisonedCompositionError` when the boundary alphabet is poisoned; tests for both directions
+- [x] M3: `ComposeAlignmentWarning` type + `checkComposeAlignment` in `src/Keiki/Composition.hs`
+- [x] M3: `composeChecked` entry point; misaligned-names, arity-mismatch, and poisoned-name specs
+- [x] M3: `feedback1` two-copy-state regression added; shared-state redesign versus explicit cascade rename decided before any `feedback1Checked` API is documented as safe
+- [x] M4: module-level "Law status" haddock section in `src/Keiki/Profunctor.hs`; scattered caveats point at it
+- [x] M4: `ROADMAP.md` composition bullets updated; experimental marking added to both modules
+- [x] M5: forward and replay/inversion law tests (multi-step, stateful) added; unresolved failures recorded as API-design decisions, not hidden by weaker equality
 
 
 ## Surprises & Discoveries
@@ -107,8 +107,23 @@ here, even if it requires splitting a partially completed task into two ("done" 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet. Authoring-time findings that shaped the design are recorded in the Decision
-Log and in "Context and Orientation" below.)
+- The stateful `CounterPipeline.stageA` fixture is intentionally not replayable: its
+  derived-only `MsgB` output cannot reconstruct `MsgA`. Both Category associations
+  therefore pass the four-step forward associativity trace and fail replay. The Choice
+  replay observation was moved to the replayable `counterSource` fixture so it measures
+  `left'` lifting rather than inheriting this unrelated defect.
+- `feedback1`'s two copies are observable even for a stateless toggle: one external
+  command leaves both copies `On`, whereas one shared toggle consuming the external and
+  policy commands would finish `Off`.
+- The alignment scan must traverse every event in an upstream output chain and continue
+  from every downstream target. The multi-event fixture would miss the second symbol if
+  the scan only inspected output heads.
+- Flagship mutation checks all failed as intended: deleting the alternative arm
+  conjunction broke the onEpsilon regression; deleting `#rmapped` made concrete
+  composition fire and removed the poison warning; bypassing `composeChecked` let the
+  exact name drift through; changing the final expected stateful law output broke the
+  associativity spec. The documentation milestone was checked with Haddock and the
+  `ROADMAP.md` `first'` search rather than a source mutation.
 
 
 ## Decision Log
@@ -196,17 +211,36 @@ Log and in "Context and Orientation" below.)
   merely because `step` traces agree.
   Date: 2026-07-12
 
-- Decision: do not introduce `feedback1Checked` until the two-copy-state semantics of
-  `feedback1 t f = compose t (compose f t)` are resolved.
+- Decision: retain `feedback1` as an explicitly experimental two-copy cascade and do
+  not introduce `feedback1Checked`.
   Rationale: an alignment check cannot make the operation feed a policy command into
-  the same aggregate state. The implementation must either become a shared-state
-  feedback construction or be renamed/documented as a two-copy cascade; current keiro
-  aggregate guidance must follow that choice.
+  the same aggregate state. Documentation and keiro-facing guidance now direct
+  shared-state policy reactions to one aggregate transition or a process manager.
   Date: 2026-07-12
 
-- Decision: (placeholder — record every further decision made while implementing.)
-  Rationale: …
-  Date: …
+- Decision: lower `PLeftArm` / `PRightArm` through profunctor contramaps into exact
+  guard-only `PInCtor`s stamped with `#lmapped`.
+  Rationale: after changing the input type, a structural `Either` predicate cannot
+  remain in `HsPred rs ci'`. The synthetic matcher preserves concrete forward behavior;
+  the poison stamp keeps it out of checked/categorical composition and advertises the
+  conservative symbolic encoding for EP-76.
+  Date: 2026-07-12
+
+- Decision: represent wrapper provenance as strict input/output Booleans beside the
+  existential transducer, with the public one-argument `SomeSymTransducer` retained as
+  a compatibility pattern synonym.
+  Rationale: two flags express exactly which boundary may be crossed, propagate through
+  outer maps and composites, and avoid a source break for existing construction and
+  pattern matching.
+  Date: 2026-07-12
+
+- Decision: classify categorical behavior from the observed tests, including negative
+  replay results, rather than treating any forward trace as a full law proof.
+  Rationale: Profunctor, Strong, and Arrow rewrites are forward-only; Choice preserves
+  replay for a replayable underlying transducer; Category identity is definitional and
+  stateful forward associativity holds, but composition remains partial at overlap and
+  poisoned boundaries. The module-level Law status section is authoritative.
+  Date: 2026-07-12
 
 
 ## Outcomes & Retrospective
@@ -214,7 +248,20 @@ Log and in "Context and Orientation" below.)
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-75 closes the remaining diagnosed composition footguns without removing public
+instances. `alternative` now has concrete and symbolic arm exclusion even for `PTop`;
+mapped wrapper boundaries fail loudly and concrete mapped names cannot silently align;
+`checkComposeAlignment` / `composeChecked` expose name, arity, poison, and multi-event
+chain diagnostics before construction; and `feedback1` is documented according to its
+actual two-copy state model.
+
+The law audit now has four-command stateful forward and replay observations. It confirms
+the Category forward fragment and replay-preserving Choice lift while retaining explicit
+counterexamples for Profunctor, Strong, Arrow, and the intentionally non-replayable
+Category fixture. `cabal test all`, `cabal build all`, `cabal haddock keiki`, formatting,
+and the four mutation checks pass. The remaining design question—whether to split or
+remove forward-only categorical capabilities—is deliberately deferred to a separate API
+decision.
 
 
 ## Context and Orientation
@@ -883,3 +930,8 @@ Revision note (2026-07-12, validation pass): specified how arm predicates surviv
 under profunctor contramap — the one traversal that cannot stay structural), repaired
 the garbled dependency sentence (M2 is gated on EP-69; M1 may run in parallel with
 both hard dependencies), and repaired the truncated Purpose intro.
+
+Revision note (2026-07-12, implementation complete): implemented all five milestones,
+recorded the observed forward/replay classifications and two-copy feedback contract,
+added mutation evidence, and completed the full build, test, Haddock, and formatting
+gates under intention `intention_01kxc5whw1en3ra4nh728m53ka`.

@@ -23,7 +23,7 @@ and `docs/masterplans/9-profunctor-and-category-instances-on-symtransducer.md`.
 | A new event-schema version (`EventV2`) ships and you need to upcast the existing aggregate's `EventV1` to it on the wire | `rmapCo upcast` | Post-composes: forward emissions are upcasted before crossing the runtime boundary; aggregate code is untouched. |
 | You want to plug a keiki transducer into ecosystem code that expects `Data.Profunctor.Profunctor` (lens optics, free-arrow DSLs, generic plumbing) | `someSymTransducer` then `dimap` / `lmap` / `rmap` | The wrapper hides `rs` and `s`, exposing the standard `Profunctor` shape. |
 | A keiki transducer needs both a command rename and an event rename in one step | `dimapTransducer fIn fOut` (or `dimap` on the wrapper) | Equivalent to `rmapCo fOut . lmapCi fIn`; documented as the one-shot helper. |
-| You want to compose two aggregates whose alphabets *almost* match, but one has a wrapper newtype | `lmapCi unwrap` or `rmapCo wrap` on the offending side, *then* `compose` | The wrapper rewrites the AST so the natural-alphabet `compose` typechecks. |
+| You want to compose two aggregates whose alphabets *almost* match | Author an explicit invertible adapter transducer, then use `composeChecked` | A variance map is forward-only and its stamped constructor name is deliberately rejected at a composition boundary. |
 
 What this module is **not** for:
 
@@ -291,13 +291,15 @@ expects a `Functor`-shaped target.
 
 ---
 
-## 7. Real-world use case: bridging mismatched alphabets before `compose`
+## 7. Mismatched alphabets at a composition boundary
 
 `Keiki.Composition.compose` requires `t1`'s output type to equal
-`t2`'s input type. When the natural alphabets *almost* match —
-say, one has a `Versioned` newtype wrapper — `lmapCi` / `rmapCo`
-on the concrete transducer (not the wrapper) are the right
-adapter:
+`t2`'s input type. A variance rewrite can make those Haskell types
+line up, but it is not a safe composition adapter: `lmapCi` and
+`rmapCo` stamp rewritten constructor names with `#lmapped` and
+`#rmapped`. `composeChecked` reports those names, while categorical
+wrapper composition raises `PoisonedCompositionError` at the mapped
+boundary.
 
 ```haskell
 -- Stage 1's natural output is `Versioned EmailCmd`.
@@ -308,24 +310,21 @@ stage1
 emailDelivery
   :: Guarded EmailRegs EmailVertex EmailCmd EmailEvent
 
--- The composite needs the alphabets to align. Two equivalent fixes:
+-- Write an honest structural adapter whose InCtor and WireCtor both
+-- describe the Versioned constructor and can invert one another.
+unversionAdapter
+  :: Guarded AdapterRegs AdapterVertex
+       (Versioned EmailCmd) EmailCmd
 
--- Option A: rewrite stage 1's output to drop the wrapper.
-stage1' = rmapCo unversion stage1
-
--- Option B: rewrite stage 2's input to expect the wrapper.
-emailDelivery' = lmapCi versioned emailDelivery
-
--- Either yields a clean compose:
-pipelineA = compose stage1' emailDelivery
-pipelineB = compose stage1  emailDelivery'
+pipeline = do
+  stage1AndAdapter <- composeChecked stage1 unversionAdapter
+  composeChecked stage1AndAdapter emailDelivery
 ```
 
-Pick whichever side is more natural to rewrite. The variance
-caveat applies to whichever side is rewritten — you lose
-`solveOutput` round-trip *only* on the rewritten edges; the
-other side's edges are unaffected. (`compose` itself does not
-introduce a variance loss.)
+For an output-only presentation change, map *outside* an already
+composed wrapper (`rmap g (t2 . t1)`), where the map is not crossed by
+another composition boundary. When a middle alphabet really differs,
+use an explicit replayable adapter with honest constructor descriptors.
 
 ---
 
