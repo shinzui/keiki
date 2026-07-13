@@ -7,10 +7,12 @@
 -- on missing slot, extra slot, type mismatch.
 module Main (main) where
 
+import Control.Exception (ErrorCall (..), evaluate)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encoding qualified as AesonEnc
 import Data.ByteString.Lazy qualified as LBS
 import Data.Kind (Type)
+import Data.List (isPrefixOf)
 import Data.Maybe (fromJust)
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
@@ -25,12 +27,14 @@ import Keiki.Codec.JSON.THEventEvolutionSpec qualified
 import Keiki.Codec.JSON.THEventSpec qualified
 import Keiki.Codec.JSON.THSpec qualified
 import Keiki.Core (RegFile (..))
+import Keiki.Generics (emptyRegFile)
 import Test.Hspec
   ( Spec,
     describe,
     hspec,
     it,
     shouldBe,
+    shouldThrow,
   )
 
 main :: IO ()
@@ -116,6 +120,13 @@ spec = do
                   ]
               )
       isExtraFieldsLeft r `shouldBe` True
+
+    it "throws a slot-named error when encoding an unwritten slot" $ do
+      let uninitialized =
+            emptyRegFile :: RegFile '[ '("retryCount", Int)]
+      evaluate (LBS.length (Aeson.encode (regFileToJSON uninitialized)))
+        `shouldThrow` \(ErrorCall message) ->
+          "uninit: retryCount" `isPrefixOf` message
 
   describe "Multi-slot RegFile (Int + Text)" $ do
     let rf :: RegFile '[ '("retryCount", Int), '("note", Text)]

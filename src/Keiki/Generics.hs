@@ -314,7 +314,9 @@ mkWireCtor0 name singleton =
 -- | Derive an initial 'RegFile' for any slot list. Every slot is
 -- pre-bound to a deferred error tagged with the slot's name so reads
 -- of an uninitialized slot crash with a targeted message instead of
--- a silent bottom.
+-- a silent bottom. Every slot must be written before the register file is
+-- read or encoded; 'emptyRegFile' is an initialization scaffold, not an
+-- encodable snapshot.
 class EmptyRegFile (rs :: [Slot]) where
   emptyRegFile :: RegFile rs
 
@@ -328,7 +330,12 @@ instance
   emptyRegFile =
     RCons
       (Proxy @s)
-      (error ("uninit: " ++ symbolVal (Proxy @s)))
+      ( error
+          ( "uninit: "
+              ++ symbolVal (Proxy @s)
+              ++ " (slot read before first write; a RegFile must be fully initialized before it is read or encoded)"
+          )
+      )
       emptyRegFile
 
 -- * Sum-walking machinery -------------------------------------------------

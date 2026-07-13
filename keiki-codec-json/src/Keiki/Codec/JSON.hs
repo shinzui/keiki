@@ -22,6 +22,12 @@
 --
 -- == Wire-format rules
 --
+-- Every slot must have been written before encoding. Encoding a register file
+-- seeded by @Keiki.Generics.emptyRegFile@ but not fully initialized throws an
+-- 'Control.Exception.ErrorCall' whose message starts with @uninit:@. On the
+-- streaming path the exception can surface after an earlier part of the object
+-- has already been emitted, so snapshot only fully hydrated aggregates.
+--
 -- A @Nothing@ slot is present as explicit JSON @null@. Omitting the key is
 -- not equivalent: 'regFileFromJSON' rejects every absent slot. A nested
 -- @Maybe@ is not faithfully representable by aeson's standard instances:
@@ -147,6 +153,10 @@ instance
 class (RegFileWalk rs) => RegFileToJSON (rs :: [Slot]) where
   -- | Encode a slot list as a JSON object whose keys are the slot
   -- symbols, in slot-list order.
+  --
+  -- Precondition: every slot must have been written. An unwritten
+  -- @Keiki.Generics.emptyRegFile@ slot throws an
+  -- 'Control.Exception.ErrorCall' whose message starts with @uninit:@.
   regFileToJSON :: RegFile rs -> Aeson.Value
   regFileToJSON = Aeson.object . regFilePairs
 
@@ -155,6 +165,11 @@ class (RegFileWalk rs) => RegFileToJSON (rs :: [Slot]) where
   -- 'Aeson.Value' intermediate. Recommended for RegFiles with
   -- multi-MB slot values; see the module header's "Slot-value size
   -- guidance".
+  --
+  -- Precondition: every slot must have been written. An unwritten
+  -- @Keiki.Generics.emptyRegFile@ slot throws an
+  -- 'Control.Exception.ErrorCall' whose message starts with @uninit:@,
+  -- potentially after earlier bytes have been emitted downstream.
   regFileToEncoding :: RegFile rs -> Aeson.Encoding
   regFileToEncoding = Aeson.pairs . regFileSeries
 

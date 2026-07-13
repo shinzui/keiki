@@ -18,6 +18,10 @@ and this project adheres to the
 
 ### Changed
 
+- Encoding now documents and pins the existing fully-initialized-register
+  precondition. Unwritten `emptyRegFile` slots throw a slot-named `ErrorCall`;
+  keiro already snapshots only fully populated register files, so it needs no
+  source change.
 - **Breaking:** snapshot shape hashes now use keiki's pinned built-in type names.
   Every non-empty shape hash changes once; stores keyed by an old hash ignore that
   snapshot and replay from the event log. Keiro already treats this mismatch as a

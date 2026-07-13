@@ -92,6 +92,12 @@ splice time with a precise error message.
 
 ## Register-file wire rules
 
+Every register slot must be written before encoding. `emptyRegFile` is an
+initialization scaffold whose unwritten slots throw an `ErrorCall` beginning with
+`uninit:` when read or encoded; it is not an encodable snapshot. On the streaming
+path that exception can surface after earlier bytes have already been emitted, so
+snapshot only fully hydrated aggregates.
+
 Every register slot is present in the JSON object. A `Nothing` slot encodes as
 explicit JSON `null`; omitting its key is an error, not another spelling of
 `Nothing`. A nested optional value is lossy under aeson's standard instances:

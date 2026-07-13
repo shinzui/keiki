@@ -63,9 +63,9 @@ once (Milestone 1) and says so loudly.
 - [x] M3: golden files for `MaybeSlots` (all-`Just` and all-`Nothing` variants) plus absent-key negative test. 2026-07-12.
 - [x] M3: targeted `Just Nothing` collapse unit tests and the "nested Maybe" wire-rule documentation. 2026-07-12.
 - [x] M3: additive `regFileCodecPropsEq` + `EqRegFile` export in `keiki-codec-json-test`, with the byte-idempotence limitation documented on the old `regFileCodecProps`. 2026-07-12.
-- [ ] M4: sharpen the uninit-slot error message in `src/Keiki/Generics.hs`
-- [ ] M4: document the fully-initialized precondition on `RegFileToJSON` methods, module header, and `keiki-codec-json/README.md`
-- [ ] M4: pin the throwing behavior with a `shouldThrow` test
+- [x] M4: sharpen the uninit-slot error message in `src/Keiki/Generics.hs`. 2026-07-12.
+- [x] M4: document the fully-initialized precondition on `RegFileToJSON` methods, module header, and `keiki-codec-json/README.md`. 2026-07-12.
+- [x] M4: pin the throwing behavior with a `shouldThrow` test. 2026-07-12.
 - [ ] M5: reuse EP-70's duplicate-slot-name guard (`DistinctNames (Names rs)`) on the `RegFileToJSON` instance, with documented manual negative test
 - [ ] M5: early record-payload validation on the TH command side (`src/Keiki/Generics/TH.hs`)
 - [ ] M5: `reportWarning` for constructors silently skipped by the `*All` TH variants
@@ -124,6 +124,11 @@ here as implementation proceeds.
   passed 89 examples and the toolkit 13. Mutating the checked-in exemplar Value
   fixture from retry count 3 to 4 produced both required failures (decoded value
   mismatch and current-byte mismatch), proving that both checks read the file.
+- Forcing the length of the lazy bytes from the Value encoder is sufficient to
+  surface the deferred `emptyRegFile` sentinel. The pinned test observes the
+  expanded `uninit: retryCount (slot read before first write; ...)` `ErrorCall`,
+  while the public documentation makes the streaming path's possible partial
+  emission explicit. The codec suite now passes 90 examples.
 
 
 ## Decision Log
