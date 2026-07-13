@@ -207,6 +207,24 @@ proveP p = do
 
 spec :: Spec
 spec = do
+  describe "satResultIsProvablyUnsat" $ do
+    it "treats Unknown as not provably empty" $ do
+      let unknown = SBV.SatResult (SBV.Unknown SBV.z3 SBV.UnknownTimeOut)
+      -- The old implementation negated modelExists, which turns Unknown into
+      -- the unsound "provably empty" verdict pinned by this contrast.
+      not (SBV.modelExists unknown) `shouldBe` True
+      satResultIsProvablyUnsat unknown `shouldBe` False
+
+    it "treats ProofError as not provably empty" $ do
+      let proofError = SBV.SatResult (SBV.ProofError SBV.z3 ["boom"] Nothing)
+      satResultIsProvablyUnsat proofError `shouldBe` False
+
+    it "trusts a definite unsatisfiable result and rejects a satisfiable one" $ do
+      unsatisfiable <- SBV.sat (pure SBV.sFalse :: SBV.Symbolic SBV.SBool)
+      satisfiable <- SBV.sat (pure SBV.sTrue :: SBV.Symbolic SBV.SBool)
+      satResultIsProvablyUnsat unsatisfiable `shouldBe` True
+      satResultIsProvablyUnsat satisfiable `shouldBe` False
+
   describe "Either-arm predicates" $ do
     let leftTinyFoo :: InCtor (Either TinyCmd Bool) '[]
         leftTinyFoo =

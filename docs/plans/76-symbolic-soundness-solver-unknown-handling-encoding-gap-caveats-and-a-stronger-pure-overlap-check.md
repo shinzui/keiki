@@ -100,21 +100,21 @@ this.
 - [x] Plan authored; every defect below verified against the working tree and the
       SBV package sources (citations in Context and Orientation; evidence in
       Surprises & Discoveries). 2026-07-11.
-- [ ] Milestone 1: factor the pure solver-verdict interpreter
+- [x] Milestone 1: factor the pure solver-verdict interpreter
       `satResultIsProvablyUnsat` in `src/Keiki/Symbolic.hs` and rewire `symIsBot`
-      through it.
-- [ ] Milestone 1: audit every other `SBV.SatResult` inspection in
+      through it. 2026-07-12.
+- [x] Milestone 1: audit every other `SBV.SatResult` inspection in
       `src/Keiki/Symbolic.hs` (`symSatExt` is the only other one; its direction is
-      correct — document, don't change).
-- [ ] Milestone 1: correct the `symIsBot` haddock (it currently *claims* the
+      correct — document, don't change). 2026-07-12.
+- [x] Milestone 1: correct the `symIsBot` haddock (it currently *claims* the
       conservative Unknown behavior the code does not implement) and document the
-      `Nothing`-means-unsat-or-unknown semantics on `symSatExt`.
-- [ ] Milestone 1: unit tests for `satResultIsProvablyUnsat` over hand-built
+      `Nothing`-means-unsat-or-unknown semantics on `symSatExt`. 2026-07-12.
+- [x] Milestone 1: unit tests for `satResultIsProvablyUnsat` over hand-built
       `Unknown` / `ProofError` results and real z3-produced `Satisfiable` /
-      `Unsatisfiable` results, in `test/Keiki/SymbolicSpec.hs`.
-- [ ] Milestone 1 (optional prototype): try to provoke a real end-to-end `Unknown`
-      deterministically via a z3 timeout; promote to a regression test if reliable,
-      otherwise record the attempt in Surprises & Discoveries and discard.
+      `Unsatisfiable` results, in `test/Keiki/SymbolicSpec.hs`. 2026-07-12.
+- [x] Milestone 1 (optional prototype): deliberately skipped the timeout-based
+      end-to-end prototype because the pure constructor-level regression covers every
+      verdict deterministically without introducing a timing-sensitive test. 2026-07-12.
 - [ ] Milestone 2: switch `Sym Word8/16/32/64` and `Sym Int32/64` to exact
       fixed-width `SymRep`s in `src/Keiki/Symbolic.hs`; rewrite the
       over-approximation comment block.
@@ -195,6 +195,13 @@ implementation proceeds.
   `SolverContext` method, `Data/SBV/Core/Data.hs:572`) for the optional
   Unknown-provocation prototype. keiki's cabal bound is `sbv >=11.7 && <15`
   (`keiki.cabal:91`).
+- **Milestone 1 kept the regression deterministic.** The focused test run reported
+  three passing examples for `satResultIsProvablyUnsat`: a hand-built `Unknown`, a
+  hand-built `ProofError`, and real z3 sat/unsat results. The `Unknown` test also
+  evaluates the old expression `not (SBV.modelExists unknown)` to `True`, directly
+  pinning the inversion before asserting the new verdict is `False`. A timeout-based
+  end-to-end prototype was deliberately not promoted because its timing behavior
+  would make the suite less reliable without expanding verdict coverage.
 
 
 ## Decision Log

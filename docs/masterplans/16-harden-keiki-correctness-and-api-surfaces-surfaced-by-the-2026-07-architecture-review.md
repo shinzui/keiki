@@ -127,7 +127,7 @@ fire through).
 | 73 | Decide-replay round-trip property harness across all fixtures | docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md | EP-71 | EP-72 | Complete |
 | 74 | Fix compose update-snapshot semantics and multi-event chain expansion under stateful transducers | docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md | None | None | Complete |
 | 75 | Composition alignment validation and forward-fragment law documentation for the categorical instances | docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md | EP-69, EP-74 | None | Complete |
-| 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | Not Started |
+| 76 | Symbolic soundness: solver Unknown handling, encoding-gap caveats, and a stronger pure overlap check | docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md | None | EP-71 | In Progress |
 | 77 | Event codec schema evolution: version tags, wire-kind pinning, and default-on-missing decoding | docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md | None | None | Not Started |
 | 78 | Persistence wire-format hardening: golden byte fixtures, Maybe slot coverage, and stable shape-hash names | docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md | EP-70 | EP-77 | Not Started |
 

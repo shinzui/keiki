@@ -66,6 +66,7 @@ module Keiki.Symbolic
     SymGuarded,
 
     -- * Solver-backed analyses
+    satResultIsProvablyUnsat,
     symIsBot,
     symSatExt,
 
@@ -569,7 +570,10 @@ type SymGuarded rs s ci co = SymTransducer (SymPred rs ci) rs s ci co
 -- | The v2 'BoolAlg' instance. The five structural methods compose
 -- 'HsPred' constructors. 'models' delegates to the v1 'evalPred'
 -- (concrete evaluation, no solver call). 'isBot' routes through
--- 'symIsBot', which dispatches to z3 via SBV. Witness extraction
+-- 'symIsBot', which dispatches to an external z3 process via SBV and
+-- 'unsafePerformIO'. Consequently, evaluating 'isBot' throws an exception from
+-- otherwise pure code when z3 is not on @PATH@; the repository's nix development
+-- shell supplies it. Witness extraction
 -- ('Keiki.Core.sat') lives in the separate 'Sat' instance below, which
 -- carries the 'ExtractRegFile' / 'KnownInCtors' evidence it needs; this
 -- instance is deliberately /unconstrained/ so the witness-free analyses
@@ -597,19 +601,38 @@ instance
 
 -- * Solver-backed analyses --------------------------------------------------
 
--- | Symbolic emptiness check. Translates the predicate to an SBV
--- expression and asks z3 whether any model exists; @True@ when none
--- does (the predicate is bot), @False@ otherwise (including the
--- conservative 'Unknown' fallback). The 'unsafePerformIO' wrapper is
--- justified because every SBV query is deterministic for a given
--- predicate and side-effect-free outside the solver process.
+-- | Interpret a solver result for emptiness ('Keiki.Core.isBot') purposes.
+-- Returns 'True' only for a definite 'SBV.Unsatisfiable' result. Every other
+-- result means "not provably empty": that includes 'SBV.Satisfiable',
+-- 'SBV.Unknown' (for example, a timeout or an incomplete string-theory query),
+-- 'SBV.ProofError', 'SBV.DeltaSat', and 'SBV.SatExtField'. This is the
+-- conservative direction for callers that use emptiness to bless two guards as
+-- disjoint or to diagnose an edge as dead.
+satResultIsProvablyUnsat :: SBV.SatResult -> Bool
+satResultIsProvablyUnsat (SBV.SatResult result) = case result of
+  SBV.Unsatisfiable {} -> True
+  SBV.Satisfiable {} -> False
+  SBV.DeltaSat {} -> False
+  SBV.SatExtField {} -> False
+  SBV.Unknown {} -> False
+  SBV.ProofError {} -> False
+
+-- | Symbolic emptiness check. Translates the predicate to an SBV expression and
+-- asks z3 whether it is definitely unsatisfiable. A 'True' result proves the
+-- predicate is bot; 'False' means either satisfiable or that the solver gave up.
+-- The latter can occur for 'Text' guards translated through z3's string theory.
+-- This conservative failure direction may surface an overlap warning but never
+-- blesses an uncertain pair as disjoint. Requires z3 on @PATH@; because the call
+-- is wrapped in 'unsafePerformIO', a missing solver throws from pure code. The
+-- wrapper is justified because each query is deterministic for a given predicate
+-- and side-effect-free outside the solver process.
 {-# NOINLINE symIsBot #-}
 symIsBot :: HsPred rs ci -> Bool
 symIsBot p = unsafePerformIO $ do
   res <- SBV.sat $ do
     env <- mkSymEnv
     translatePred env p
-  pure (not (SBV.modelExists res))
+  pure (satResultIsProvablyUnsat res)
 
 -- * Single-valuedness ------------------------------------------------------
 
@@ -621,7 +644,8 @@ symIsBot p = unsafePerformIO $ do
 -- 'BoolAlg'-polymorphic; precision depends on the chosen 'isBot'
 -- implementation. With 'SymPred', this is the v2 SBV-backed
 -- decision; with the v1 'HsPred' instance the answer is the v1
--- syntactic over-approximation.
+-- syntactic over-approximation. A solver 'SBV.Unknown' is conservatively treated
+-- as a possibly overlapping pair, so this function returns 'False'.
 isSingleValuedSym ::
   forall phi rs s ci co.
   (BoolAlg phi (RegFile rs, ci), Bounded s, Enum s) =>
@@ -673,7 +697,8 @@ withSymPred t =
 -- 'withSymPred' and runs the 'BoolAlg'-polymorphic 'checkTransitionDeterminism'
 -- at the 'SymPred' carrier, whose 'isBot' is the exact z3 decision. Unlike the
 -- pure path in 'validateTransducer', this catches register-value-dependent and
--- other non-syntactic overlaps. Requires z3 on @PATH@.
+-- other non-syntactic overlaps. A solver 'SBV.Unknown' conservatively produces a
+-- warning rather than blessing the pair as disjoint. Requires z3 on @PATH@.
 checkTransitionDeterminismSym ::
   (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
@@ -686,7 +711,9 @@ checkTransitionDeterminismSym = checkTransitionDeterminism . withSymPred
 -- It does NOT compute the register configurations reachable at each vertex, so
 -- it still cannot catch the FieldResource case (a guard satisfiable in
 -- isolation but never under the registers reachable there); that needs a full
--- reachable-state fixpoint and is left as future work. Requires z3 on @PATH@.
+-- reachable-state fixpoint and is left as future work. A solver 'SBV.Unknown'
+-- does not diagnose an edge as dead, because it is not proof of unsatisfiability.
+-- Requires z3 on @PATH@.
 checkDeadEdgesSym ::
   (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
@@ -820,7 +847,10 @@ instance KnownInCtors () where
 -- outside the solver process). Since EP-44 it /is/ the implementation
 -- of the 'Keiki.Core.Sat' method 'sat' on 'SymPred' (via the
 -- @Sat (SymPred …)@ instance, which carries the 'ExtractRegFile' /
--- 'KnownInCtors' evidence the witness-free 'BoolAlg' class cannot).
+-- 'KnownInCtors' evidence the witness-free 'BoolAlg' class cannot). A 'Nothing'
+-- result means only that no model was found: the predicate may be unsatisfiable,
+-- or the solver may have returned 'SBV.Unknown'. Callers must not treat
+-- 'Nothing' as a proof of emptiness; 'symIsBot' returns 'True' only for that proof.
 {-# NOINLINE symSatExt #-}
 symSatExt ::
   forall rs ci.
