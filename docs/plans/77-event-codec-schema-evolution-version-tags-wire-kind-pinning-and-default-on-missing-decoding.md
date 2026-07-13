@@ -58,13 +58,15 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 here, even if it requires splitting a partially completed task into two ("done" vs.
 "remaining"). This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `kindOverrides` wire-kind pinning; `eventTypes`/`kindMap` emit wire
+- [x] Milestone 1: `kindOverrides` wire-kind pinning; `eventTypes`/`kindMap` emit wire
       kinds; compile-time rejection of unknown override keys, duplicate wire kinds,
       and payload fields colliding with `kindFieldName`; unknown-kind decode error
-      lists the allowed kinds.
-- [ ] Milestone 1: rename-via-pinning round-trip test and updated `THEventSpec`
+      lists the allowed kinds. 2026-07-12.
+- [x] Milestone 1: rename-via-pinning round-trip test and updated `THEventSpec`
       assertions green; manual compile-fail protocol extended in the
-      `THEventSpec` module header.
+      `THEventSpec` module header. The targeted suite passed 50 examples and all
+      three temporary misconfiguration builds failed with their expected messages.
+      2026-07-12.
 - [ ] Milestone 2: versioned envelope — `versionFieldName`, `currentVersion`,
       `<prefix>SchemaVersion` binding; encode stamps the version; decode reads it
       (absent means version 1) and rejects ahead/invalid versions.
@@ -92,8 +94,12 @@ here, even if it requires splitting a partially completed task into two ("done" 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet. Plan-authoring verification of the four defects is recorded in Context and
-Orientation below, with file:line citations against the current working tree.)
+- **Splice-time validation gives exact diagnostics without a runtime surface.**
+  Temporary test edits reproduced all three Milestone 1 rejection paths: unknown
+  override key `"Plcaed"`, duplicate wire kind `"order.event"`, and payload field
+  `Placed.kind`. Restoring the valid pinned fixture produced 50 green codec examples;
+  the resolved `eventTypes`, `kindMap`, encoder, decoder, and allowed-kind error all
+  agree on `"order.placed"`.
 
 
 ## Decision Log

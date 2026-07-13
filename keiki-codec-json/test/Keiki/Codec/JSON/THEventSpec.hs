@@ -45,8 +45,32 @@
 --    @_todo_Placed_discount@ in @cabal repl@ shows the binding exists.
 --    Revert afterwards.
 --
--- Both behaviours were verified by hand on 2026-06-06; the observed
--- compile-fail text matched (1) verbatim.
+-- 3. Duplicate wire kinds. Add
+--    @kindOverrides = Map.fromList [("Placed", "order.event"),
+--    ("Shipped", "order.event")]@, build the test target, and expect:
+--
+--    @
+--    deriveEventCodecSkeleton: wire kind "order.event" is claimed by more
+--    than one constructor: Placed, Shipped. Wire kinds must be unique per
+--    event type.
+--    @
+--
+--    Revert the override.
+--
+-- 4. Discriminator collision. Add @kind :: Text@ to @PlacedData@ and list
+--    @"kind"@ in 'passthroughFields', build the test target, and expect:
+--
+--    @
+--    deriveEventCodecSkeleton: payload field Placed.kind collides with
+--    kindFieldName "kind"; rename the field or choose a kindFieldName no
+--    payload uses.
+--    @
+--
+--    Revert the field and passthrough entry.
+--
+-- Checks (1) and (2) were verified by hand on 2026-06-06; the observed
+-- compile-fail text matched (1) verbatim. Checks (3) and (4) were verified
+-- by hand on 2026-07-12 with the messages above.
 module Keiki.Codec.JSON.THEventSpec (spec) where
 
 import Data.Aeson qualified as Aeson
@@ -102,7 +126,8 @@ $( deriveEventCodecSkeleton
      defaultEventCodecOptions
        { fieldCodecOverrides =
            Map.fromList [("orderId", FieldCodec 'orderIdToJSON 'orderIdFromJSON)],
-         passthroughFields = Set.fromList ["qty", "trackingNo"]
+         passthroughFields = Set.fromList ["qty", "trackingNo"],
+         kindOverrides = Map.fromList [("Placed", "order.placed")]
        }
      ''OrderEvent
  )
@@ -127,20 +152,20 @@ spec = describe "deriveEventCodecSkeleton" $ do
 
   describe "kind discriminator + override usage" $ do
     -- orderEventToJSON (Placed (PlacedData (OrderId 7) 3))
-    -- == {"kind":"Placed","orderId":"ord-7","qty":3}
+    -- == {"kind":"order.placed","orderId":"ord-7","qty":3}
     it "Placed carries the kind key, the override output, and the passthrough field" $
       orderEventToJSON placed
         `shouldBe` Aeson.object
-          [ "kind" Aeson..= (T.pack "Placed" :: Text),
+          [ "kind" Aeson..= (T.pack "order.placed" :: Text),
             "orderId" Aeson..= (T.pack "ord-7" :: Text),
             "qty" Aeson..= (3 :: Int)
           ]
 
-    it "the orderId override ran (string \"ord-7\", not the integer 7)" $
+    it "a pinned wire kind decodes independently of the Haskell constructor name" $
       -- If a generic Int codec had been silently used, this would be 7.
       orderEventFromJSON
         ( Aeson.object
-            [ "kind" Aeson..= (T.pack "Placed" :: Text),
+            [ "kind" Aeson..= (T.pack "order.placed" :: Text),
               "orderId" Aeson..= (T.pack "ord-7" :: Text),
               "qty" Aeson..= (3 :: Int)
             ]
@@ -155,20 +180,23 @@ spec = describe "deriveEventCodecSkeleton" $ do
     it "an unknown kind is reported" $
       orderEventFromJSON
         (Aeson.object ["kind" Aeson..= (T.pack "Nope" :: Text)])
-        `shouldBe` (Left "unknown event kind: Nope" :: Either String OrderEvent)
+        `shouldBe` ( Left
+                       "unknown event kind: Nope (expected one of: order.placed, Shipped, Cancelled)" ::
+                       Either String OrderEvent
+                   )
 
     it "a non-object is reported" $
       orderEventFromJSON (Aeson.toJSON (5 :: Int))
         `shouldBe` (Left "orderEvent: expected a JSON object" :: Either String OrderEvent)
 
   describe "Keiro-feeding surfaces" $ do
-    it "EventTypes lists the constructors in declaration order" $
+    it "EventTypes lists resolved wire kinds in declaration order" $
       orderEventEventTypes
-        `shouldBe` map T.pack ["Placed", "Shipped", "Cancelled"]
+        `shouldBe` map T.pack ["order.placed", "Shipped", "Cancelled"]
 
     it "KindMap pairs each constructor name with its kind string" $
       orderEventKindMap
-        `shouldBe` [ (T.pack "Placed", T.pack "Placed"),
+        `shouldBe` [ (T.pack "Placed", T.pack "order.placed"),
                      (T.pack "Shipped", T.pack "Shipped"),
                      (T.pack "Cancelled", T.pack "Cancelled")
                    ]

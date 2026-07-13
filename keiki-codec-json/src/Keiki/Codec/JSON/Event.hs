@@ -22,11 +22,12 @@
 --
 -- > orderEventToJSON     :: OrderEvent -> Aeson.Value
 -- > orderEventFromJSON   :: Aeson.Value -> Either String OrderEvent
--- > orderEventEventTypes :: [Data.Text.Text]                    -- ctor names, in order
+-- > orderEventEventTypes :: [Data.Text.Text]                    -- wire kinds, in order
 -- > orderEventKindMap    :: [(Data.Text.Text, Data.Text.Text)]  -- (ctor, kind)
 --
 -- Each constructor encodes to a JSON object carrying a @"kind"@
--- discriminator (the constructor name) plus one entry per payload field.
+-- discriminator (the pinned wire kind, or the constructor name by default)
+-- plus one entry per payload field.
 -- The decoder reads @"kind"@, branches, and reassembles the payload field
 -- by field.
 --
@@ -123,18 +124,23 @@ data EventCodecOptions = EventCodecOptions
     passthroughFields :: Set String,
     -- | the discriminator key; default @"kind"@
     kindFieldName :: String,
+    -- | constructor base name to stable wire kind. Constructors omitted from
+    --     this map use their Haskell name. Override keys and resolved wire kinds
+    --     are validated when the splice runs.
+    kindOverrides :: Map String String,
     -- | behaviour for unhandled fields; default 'FailAtCompileTime'
     onMissingCodec :: OnMissingCodec
   }
 
--- | Empty overrides, empty passthrough, @kindFieldName = "kind"@,
--- @onMissingCodec = 'FailAtCompileTime'@.
+-- | Empty field and kind overrides, empty passthrough,
+-- @kindFieldName = "kind"@, @onMissingCodec = 'FailAtCompileTime'@.
 defaultEventCodecOptions :: EventCodecOptions
 defaultEventCodecOptions =
   EventCodecOptions
     { fieldCodecOverrides = Map.empty,
       passthroughFields = Set.empty,
       kindFieldName = "kind",
+      kindOverrides = Map.empty,
       onMissingCodec = FailAtCompileTime
     }
 
@@ -179,6 +185,8 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
           <> show tyName
           <> " has no constructors; pass an event sum type."
     _ -> pure ()
+
+  validateWireKinds opts tyName ctors
 
   -- No-silent-fallback safety net: classify each payload field; an
   -- unhandled field is one in neither overrides nor passthrough.
@@ -240,7 +248,7 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
           []
           ( normalB
               ( listE
-                  [ [|T.pack $(stringE (nameBase (ecCtorName ec)))|]
+                  [ [|T.pack $(stringE (wireKindOf opts (ecCtorName ec)))|]
                   | ec <- ctors
                   ]
               )
@@ -255,9 +263,12 @@ deriveEventCodecSkeletonAs prefix opts tyName = do
           []
           ( normalB
               ( listE
-                  [ [|(T.pack $(stringE nm), T.pack $(stringE nm))|]
-                  | ec <- ctors,
-                    let nm = nameBase (ecCtorName ec)
+                  [ [|
+                      ( T.pack $(stringE (nameBase (ecCtorName ec))),
+                        T.pack $(stringE (wireKindOf opts (ecCtorName ec)))
+                      )
+                      |]
+                  | ec <- ctors
                   ]
               )
           )
@@ -297,7 +308,7 @@ encodeClause opts ec = case ecPayload ec of
     kindPair =
       [|
         $(keyE (kindFieldName opts))
-          Aeson..= (T.pack $(stringE (nameBase (ecCtorName ec))) :: Text)
+          Aeson..= (T.pack $(stringE (wireKindOf opts (ecCtorName ec))) :: Text)
         |]
 
 -- | One @"field" .= <encoded>@ pair.
@@ -341,16 +352,28 @@ decoderBody opts prefix vVar oVar kVar ctors =
 -- | Nested @if kind == "C" then <build C> else ...@ ending in an
 -- unknown-kind 'Left'.
 dispatch :: EventCodecOptions -> Name -> Name -> [EvCtor] -> Q Exp
-dispatch opts oVar kVar =
+dispatch opts oVar kVar ctors =
   foldr
     ( \ec elseQ ->
         [|
-          if $(varE kVar) == T.pack $(stringE (nameBase (ecCtorName ec)))
+          if $(varE kVar) == T.pack $(stringE (wireKindOf opts (ecCtorName ec)))
             then $(buildCtorDecode opts oVar ec)
             else $elseQ
           |]
     )
-    [|Left ("unknown event kind: " <> T.unpack $(varE kVar))|]
+    [|
+      Left
+        ( "unknown event kind: "
+            <> T.unpack $(varE kVar)
+            <> $(stringE expectedKinds)
+        )
+      |]
+    ctors
+  where
+    expectedKinds =
+      " (expected one of: "
+        <> intercalate ", " (map (wireKindOf opts . ecCtorName) ctors)
+        <> ")"
 
 -- | Decode one constructor's payload: @C \<$> (PayloadCtor \<$> d1 \<*> ...)@.
 buildCtorDecode :: EventCodecOptions -> Name -> EvCtor -> Q Exp
@@ -418,6 +441,77 @@ isUnhandled :: EventCodecOptions -> String -> Bool
 isUnhandled opts fn =
   not (fn `Map.member` fieldCodecOverrides opts)
     && not (fn `Set.member` passthroughFields opts)
+
+-- * Wire-kind validation ----------------------------------------------------
+
+wireKindOf :: EventCodecOptions -> Name -> String
+wireKindOf opts ctorName =
+  Map.findWithDefault ctorBase ctorBase (kindOverrides opts)
+  where
+    ctorBase = nameBase ctorName
+
+validateWireKinds :: EventCodecOptions -> Name -> [EvCtor] -> Q ()
+validateWireKinds opts tyName ctors = do
+  case unknownOverrideKeys of
+    [] -> pure ()
+    unknownKeys ->
+      fail . intercalate "\n" $
+        [ "deriveEventCodecSkeleton: kindOverrides key "
+            <> show key
+            <> " is not a constructor of "
+            <> nameBase tyName
+            <> "."
+        | key <- unknownKeys
+        ]
+
+  case duplicateWireKinds of
+    [] -> pure ()
+    duplicates ->
+      fail . intercalate "\n" $
+        [ "deriveEventCodecSkeleton: wire kind "
+            <> show wireKind
+            <> " is claimed by more than one constructor: "
+            <> intercalate ", " owners
+            <> ". Wire kinds must be unique per event type."
+        | (wireKind, owners) <- duplicates
+        ]
+
+  case discriminatorCollisions of
+    [] -> pure ()
+    collisions ->
+      fail . intercalate "\n" $
+        [ "deriveEventCodecSkeleton: payload field "
+            <> nameBase ctorName
+            <> "."
+            <> fieldName
+            <> " collides with kindFieldName "
+            <> show (kindFieldName opts)
+            <> "; rename the field or choose a kindFieldName no payload uses."
+        | (ctorName, fieldName) <- collisions
+        ]
+  where
+    ctorBaseNames = map (nameBase . ecCtorName) ctors
+    knownConstructors = Set.fromList ctorBaseNames
+    unknownOverrideKeys =
+      Set.toList (Map.keysSet (kindOverrides opts) `Set.difference` knownConstructors)
+    wireKindOwners =
+      Map.fromListWith
+        (flip (<>))
+        [ (wireKindOf opts (ecCtorName ec), [nameBase (ecCtorName ec)])
+        | ec <- ctors
+        ]
+    duplicateWireKinds =
+      [ (wireKind, owners)
+      | (wireKind, owners) <- Map.toList wireKindOwners,
+        length owners > 1
+      ]
+    discriminatorCollisions =
+      [ (ecCtorName ec, fieldName)
+      | ec <- ctors,
+        (_, fields) <- maybe [] (: []) (ecPayload ec),
+        (fieldName, _, _) <- fields,
+        fieldName == kindFieldName opts
+      ]
 
 -- * Reflection ---------------------------------------------------------------
 
