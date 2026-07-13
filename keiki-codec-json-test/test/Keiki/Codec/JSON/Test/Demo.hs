@@ -9,12 +9,16 @@ module Keiki.Codec.JSON.Test.Demo
   ( Email (..),
     DemoSlots,
     DemoSlotsRenamed,
+    demoRegFile,
   )
 where
 
 import Data.Aeson qualified as Aeson
+import Data.Proxy (Proxy (..))
 import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Keiki.Core (RegFile (..))
 import Keiki.Shape (CanonicalTypeName)
 import Test.QuickCheck (Arbitrary (..))
 import Test.QuickCheck.Instances ()
@@ -43,3 +47,8 @@ type DemoSlotsRenamed =
   '[ '("emailAddress", Email),
      '("count", Int)
    ]
+
+demoRegFile :: RegFile DemoSlots
+demoRegFile =
+  RCons (Proxy @"email") (Email (T.pack "a@b.c")) $
+    RCons (Proxy @"count") (7 :: Int) RNil

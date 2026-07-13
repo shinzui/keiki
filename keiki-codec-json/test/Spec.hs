@@ -17,6 +17,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.TypeLits (Symbol)
 import Keiki.Codec.JSON (regFileFromJSON, regFileToEncoding, regFileToJSON)
+import Keiki.Codec.JSON.GoldenFileSpec qualified
 import Keiki.Codec.JSON.GoldenSpec qualified
 import Keiki.Codec.JSON.PropSpec qualified
 import Keiki.Codec.JSON.SensitivitySpec qualified
@@ -38,6 +39,7 @@ main = hspec $ do
   describe "M3 properties" Keiki.Codec.JSON.PropSpec.spec
   describe "M3 sensitivity" Keiki.Codec.JSON.SensitivitySpec.spec
   describe "M3 golden hash" Keiki.Codec.JSON.GoldenSpec.spec
+  describe "EP-78 checked-in persistence goldens" Keiki.Codec.JSON.GoldenFileSpec.spec
   describe "EP-38 deriveRegFileCodec" Keiki.Codec.JSON.THSpec.spec
   describe "EP-59 deriveEventCodecSkeleton" Keiki.Codec.JSON.THEventSpec.spec
   describe "EP-77 event schema evolution" Keiki.Codec.JSON.THEventEvolutionSpec.spec

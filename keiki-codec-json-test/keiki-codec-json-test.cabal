@@ -1,6 +1,6 @@
-cabal-version:   3.0
-name:            keiki-codec-json-test
-version:         0.1.0.0
+cabal-version:      3.0
+name:               keiki-codec-json-test
+version:            0.1.0.0
 synopsis:
   Property-test toolkit for keiki-codec-json downstream consumers.
 
@@ -22,16 +22,18 @@ description:
   for production do not transitively pick up @QuickCheck@ /
   @hspec@ / @quickcheck-instances@.
 
-license:         BSD-3-Clause
-author:          Nadeem Bitar
-maintainer:      nadeem@gmail.com
-copyright:       2026 Nadeem Bitar
-category:        Codec, Testing
-build-type:      Simple
-tested-with:     GHC >=9.12 && <9.13
+license:            BSD-3-Clause
+author:             Nadeem Bitar
+maintainer:         nadeem@gmail.com
+copyright:          2026 Nadeem Bitar
+category:           Codec, Testing
+build-type:         Simple
+tested-with:        GHC >=9.12 && <9.13
 extra-doc-files:
   CHANGELOG.md
   README.md
+
+extra-source-files: test/golden/*.json
 
 source-repository head
   type:     git
@@ -59,6 +61,7 @@ library
   exposed-modules:
     Keiki.Codec.JSON.Test
     Keiki.Codec.JSON.Test.Golden
+    Keiki.Codec.JSON.Test.GoldenFile
 
   hs-source-dirs:  src
   build-depends:

@@ -43,7 +43,9 @@ extra-doc-files:
   CONTRIBUTING.md
   README.md
 
-extra-source-files: bench/baseline.csv
+extra-source-files:
+  bench/baseline.csv
+  test/golden/*.json
 
 source-repository head
   type:     git
@@ -107,6 +109,7 @@ test-suite keiki-codec-json-test
   main-is:        Spec.hs
   other-modules:
     Keiki.Codec.JSON.Fixtures
+    Keiki.Codec.JSON.GoldenFileSpec
     Keiki.Codec.JSON.GoldenSpec
     Keiki.Codec.JSON.PropSpec
     Keiki.Codec.JSON.SensitivitySpec

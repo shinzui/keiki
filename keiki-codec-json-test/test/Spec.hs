@@ -21,11 +21,13 @@ import Keiki.Codec.JSON.Test.Demo
   ( DemoSlots,
     DemoSlotsRenamed,
     Email (..),
+    demoRegFile,
   )
 import Keiki.Codec.JSON.Test.Golden
   ( SlotGolden (..),
     slotGoldenSpec,
   )
+import Keiki.Codec.JSON.Test.GoldenFile (regFileGoldenFileSpec)
 import Test.Hspec (describe, hspec)
 
 main :: IO ()
@@ -46,6 +48,12 @@ main = hspec $ do
   describe
     "Keiki.Codec.JSON.Test.regFileCodecPropsEq @DemoSlots"
     (regFileCodecPropsEq @DemoSlots)
+
+  describe "Keiki.Codec.JSON.Test.GoldenFile.regFileGoldenFileSpec" $
+    regFileGoldenFileSpec
+      "DemoSlots"
+      "test/golden/demo-regfile.value.json"
+      demoRegFile
 
   describe "Keiki.Codec.JSON.Test.regFileShapeSensitivitySpec" $
     regFileShapeSensitivitySpec

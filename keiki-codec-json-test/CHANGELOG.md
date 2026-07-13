@@ -13,6 +13,9 @@ and this project adheres to the
 - `EqRegFile` and `regFileCodecPropsEq` provide value-level heterogeneous
   round-trip checks. The original byte-comparing `regFileCodecProps` remains for
   compatibility, with its nested-`Maybe` blind spot now documented.
+- `Keiki.Codec.JSON.Test.GoldenFile.regFileGoldenFileSpec` pins a whole
+  register file against checked-in JSON in both directions, with a deliberately
+  failing `KEIKI_UPDATE_GOLDENS` regeneration workflow.
 
 
 ## [0.1.0.0] — 2026-06-07

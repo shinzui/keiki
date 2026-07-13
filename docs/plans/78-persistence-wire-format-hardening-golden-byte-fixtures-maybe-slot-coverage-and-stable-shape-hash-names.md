@@ -54,13 +54,13 @@ once (Milestone 1) and says so loudly.
 - [x] M1: update pinned values in `test/Keiki/ShapeSpec.hs` and `keiki-codec-json/test/Keiki/Codec/JSON/GoldenSpec.hs`. 2026-07-12.
 - [x] M1: add the no-`GHC.Internal` sensitivity test and full pinned canonical string for `ExemplarSlots`. 2026-07-12.
 - [x] M1: document the one-time hash migration (Haddock + both CHANGELOGs, keiro impact statement). 2026-07-12.
-- [ ] M2: create `keiki-codec-json/test/golden/` fixture files (exemplar Value path, exemplar Encoding path, shape canonical+hash)
-- [ ] M2: new spec `keiki-codec-json/test/Keiki/Codec/JSON/GoldenFileSpec.hs` with both test directions and `KEIKI_UPDATE_GOLDENS` regeneration mode
-- [ ] M2: wire GoldenFileSpec into `keiki-codec-json/test/Spec.hs` and the cabal file (`other-modules`, `extra-source-files`)
-- [ ] M2: additive downstream helper `Keiki.Codec.JSON.Test.GoldenFile` in `keiki-codec-json-test` with demo usage and demo golden file
+- [x] M2: create `keiki-codec-json/test/golden/` fixture files (exemplar Value path, exemplar Encoding path, shape canonical+hash). 2026-07-12.
+- [x] M2: new spec `keiki-codec-json/test/Keiki/Codec/JSON/GoldenFileSpec.hs` with both test directions and `KEIKI_UPDATE_GOLDENS` regeneration mode. 2026-07-12.
+- [x] M2: wire GoldenFileSpec into `keiki-codec-json/test/Spec.hs` and the cabal file (`other-modules`, `extra-source-files`). 2026-07-12.
+- [x] M2: additive downstream helper `Keiki.Codec.JSON.Test.GoldenFile` in `keiki-codec-json-test` with demo usage and demo golden file. 2026-07-12.
 - [x] M3: add `MaybeSlots` and `NestedMaybeSlots` to `keiki-codec-json/test/Keiki/Codec/JSON/Fixtures.hs`. 2026-07-12.
 - [x] M3: add inductive `EqRegFile` and strengthen in-tree round-trip properties to value-level comparison. 2026-07-12.
-- [ ] M3: golden files for `MaybeSlots` (all-`Just` and all-`Nothing` variants) plus absent-key negative test
+- [x] M3: golden files for `MaybeSlots` (all-`Just` and all-`Nothing` variants) plus absent-key negative test. 2026-07-12.
 - [x] M3: targeted `Just Nothing` collapse unit tests and the "nested Maybe" wire-rule documentation. 2026-07-12.
 - [x] M3: additive `regFileCodecPropsEq` + `EqRegFile` export in `keiki-codec-json-test`, with the byte-idempotence limitation documented on the old `regFileCodecProps`. 2026-07-12.
 - [ ] M4: sharpen the uninit-slot error message in `src/Keiki/Generics.hs`
@@ -118,6 +118,12 @@ here as implementation proceeds.
   checks across two encoders and determinism paths, while targeted examples pin
   aeson's lossy `Just Nothing -> null -> Nothing` behavior and the strict
   absent-key rule. The codec suite now passes 75 examples and the toolkit 11.
+- The guarded golden regeneration protocol is observably fail-closed: setting
+  `KEIKI_UPDATE_GOLDENS=1` rewrote all seven in-tree fixtures and the downstream
+  demo, then failed both suites deliberately. After unsetting it, the codec suite
+  passed 89 examples and the toolkit 13. Mutating the checked-in exemplar Value
+  fixture from retry count 3 to 4 produced both required failures (decoded value
+  mismatch and current-byte mismatch), proving that both checks read the file.
 
 
 ## Decision Log

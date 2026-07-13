@@ -41,6 +41,9 @@ import Keiki.Codec.JSON.Test.Golden
   ( SlotGolden (..)
   , slotGoldenSpec
   )
+import Keiki.Codec.JSON.Test.GoldenFile
+  ( regFileGoldenFileSpec
+  )
 
 -- Your slot type and slot lists:
 -- data Email = Email Text deriving (...)
@@ -55,6 +58,13 @@ main = hspec $ do
     { sgInput = Email (T.pack "alice@example.com")
     , sgBytes = "\"alice@example.com\""
     })
+
+  -- Whole-snapshot backward compatibility. `myFixture` is a fixed
+  -- `RegFile MySlots`; add the JSON file to extra-source-files.
+  regFileGoldenFileSpec
+    "MySlots"
+    "test/golden/my-slots.value.json"
+    myFixture
 
   -- Round-trip + determinism over the snapshot's slot list.
   describe "props: MySlots" (regFileCodecPropsEq @MySlots)
@@ -78,6 +88,15 @@ lacks `Arbitrary`, write one — it is typically a one-liner via
 `regFileCodecProps` remains available for slot types without `Eq`, but it compares
 re-encoded bytes and therefore cannot detect lossy decodes that re-encode
 identically (notably `Just Nothing -> null -> Nothing`).
+
+When an intentional wire change requires regenerating whole-snapshot files, use
+the guarded two-run workflow:
+
+```sh
+KEIKI_UPDATE_GOLDENS=1 cabal test   # rewrites files, then fails deliberately
+cabal test                          # must pass with the variable unset
+git diff test/golden/               # review every changed byte
+```
 
 ## When you don't need this
 
