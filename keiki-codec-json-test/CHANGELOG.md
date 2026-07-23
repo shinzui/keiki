@@ -9,6 +9,15 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.3.1.0] — 2026-07-23
+
+### Changed
+
+- Co-released with `keiki-0.3.1.0` and `keiki-codec-json-0.3.1.0`; existing
+  `^>=0.3` bounds admit the additive shape API while retaining the current PVP
+  major range.
+
+
 ## [0.3.0.0] — 2026-07-23
 
 ### Changed

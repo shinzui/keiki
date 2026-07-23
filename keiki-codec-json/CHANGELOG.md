@@ -9,6 +9,14 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.3.1.0] — 2026-07-23
+
+### Changed
+
+- Co-released with `keiki-0.3.1.0`; the existing `keiki ^>=0.3` bound admits
+  the new additive `Keiki.Shape` API without widening the PVP major range.
+
+
 ## [0.3.0.0] — 2026-07-23
 
 ### Changed

@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               keiki-codec-json
-version:            0.3.0.0
+version:            0.3.1.0
 synopsis:           Optional JSON codec for keiki's RegFile.
 description:
   Sibling package to keiki providing a JSON encoder, decoder, and

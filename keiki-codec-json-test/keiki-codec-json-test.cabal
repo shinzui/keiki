@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               keiki-codec-json-test
-version:            0.3.0.0
+version:            0.3.1.0
 synopsis:
   Property-test toolkit for keiki-codec-json downstream consumers.
 
