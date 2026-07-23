@@ -1,0 +1,22 @@
+.claude/
+.agents/
+CLAUDE.local.md
+
+# Cabal build artifacts
+dist/
+dist-newstyle/
+.cabal-sandbox/
+cabal.sandbox.config
+.ghc.environment.*
+.envrc
+dist
+dist-*
+cabal-dev
+.direnv
+cabal.project.local
+.pre-commit-config.yaml
+node_modules/
+.DS_Store
+site/assets/pragmata/
+site-dist/
+.mina/
