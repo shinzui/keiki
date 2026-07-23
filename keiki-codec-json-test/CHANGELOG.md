@@ -9,6 +9,15 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.3.0.0] — 2026-07-23
+
+### Changed
+
+- Updated the internal `keiki`, `keiki-codec-json`, and
+  `keiki-codec-json-test` dependency bounds to co-release with
+  `keiki-0.3.0.0`.
+
+
 ## [0.2.0.0] — 2026-07-13
 
 ### Added
