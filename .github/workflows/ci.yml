@@ -23,7 +23,7 @@ jobs:
         # Keep this matrix aligned with keiki.cabal `tested-with`.
         # Expanding it to >= 2 GHC versions is a Phase B prerequisite
         # tracked on EP-37 — see MP-11 Dependency Graph.
-        ghc: ['9.12.2']
+        ghc: ['9.12.4']
 
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
       - uses: haskell-actions/setup@v2
         id: setup-haskell
         with:
-          ghc-version: '9.12.2'
+          ghc-version: '9.12.4'
           cabal-version: 'latest'
 
       - name: Build + test with --allow-newer text
@@ -101,7 +101,7 @@ jobs:
 
       - uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.12.2'
+          ghc-version: '9.12.4'
           cabal-version: 'latest'
 
       - name: Build bench

@@ -189,10 +189,14 @@ cat > cabal.project <<'EOF'
 packages: keiki-X.Y.Z.W
           keiki-codec-json-X.Y.Z.W
           keiki-codec-json-test-X.Y.Z.W
-with-compiler: ghc-9.12.2
+with-compiler: ghc-9.12.4
 EOF
 cabal build all && cabal test all
 ```
+
+Use the current project toolchain (`ghc-9.12.4` at the time of writing),
+rather than treating a particular patch release as a compatibility
+requirement. Keep this command aligned with the flake's GHC 9.12 toolchain.
 
 Both must pass. A failure means a file the in-tree build picks up implicitly
 is missing from the sdist — add it to the relevant `.cabal` field and re-run.

@@ -54,7 +54,7 @@ Before running any `cabal upload`, verify each item.
 keiki supports **GHC 9.12 only**. The `tested-with` field in
 `keiki.cabal` and `keiki-codec-json.cabal` is `GHC == 9.12.*`, and the
 `.github/workflows/ci.yml` `test` job's matrix must match it
-(`ghc: ['9.12.2']`).
+(`ghc: ['9.12.4']`).
 
 The release-blocking gate is the
 `keiki-codec-json/test/Keiki/Codec/JSON/GoldenSpec.hs` assertion that
@@ -131,7 +131,7 @@ The extracted tarballs must build green in an isolated directory:
     packages: keiki-X.Y.Z.0
               keiki-codec-json-X.Y.Z.0
               keiki-codec-json-test-X.Y.Z.0
-    with-compiler: ghc-9.12.2
+    with-compiler: ghc-9.12.4
     EOF
 
     cabal build all
@@ -141,6 +141,10 @@ A failure on the extracted-and-rebuilt copy means a file referenced
 by the in-tree build is missing from the sdist (typically an
 `extra-source-files:` omission). Fix the relevant `.cabal` field and
 re-run.
+
+Keep the compiler patch version aligned with the project's flake toolchain;
+the compatibility policy is GHC 9.12, not a permanent pin to a historic
+patch release.
 
 
 ## The upload sequence
