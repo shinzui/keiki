@@ -9,6 +9,17 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.3.1.0] — 2026-07-23
+
+### Added
+
+- `Keiki.Shape.CanonicalStateShape`, `stateShapeCanonical`, and
+  `stateShapeHash` provide a generic, deterministic control-state discriminator
+  for snapshot compatibility. The canonical form records datatype and
+  constructor identity plus field type names; semantic fold changes still need
+  an explicit version or fold fingerprint.
+
+
 ## [0.3.0.0] — 2026-07-23
 
 ### Added

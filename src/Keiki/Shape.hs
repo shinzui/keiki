@@ -1,13 +1,14 @@
 {-# LANGUAGE DefaultSignatures #-}
 
--- | The /shape hash/ for @RegFile rs@.
+-- | Shape hashes for control states and @RegFile rs@ values.
 --
 -- A snapshot persister (see keiro's @StateCodec (s, RegFile rs)@) needs a
--- compact discriminator for the type-level slot list. 'regFileShapeHash'
--- provides it: a SHA-256 of a canonical, deterministic rendering of every
--- slot's name and type. Built-in scalar and container names are pinned to
--- Haskell-source spellings, so GHC's internal module reorganizations do not
--- invalidate their hashes.
+-- compact discriminator for both halves of the persisted state.
+-- 'stateShapeHash' hashes a generic rendering of the control-state datatype;
+-- 'regFileShapeHash' hashes a canonical rendering of the type-level slot
+-- list. Built-in scalar and container names are pinned to Haskell-source
+-- spellings, so GHC's internal module reorganizations do not invalidate their
+-- hashes.
 --
 -- The hash is sensitive to structural changes (slot rename / addition /
 -- removal / reordering / type change) and insensitive to incidental
@@ -26,7 +27,11 @@
 -- of the snapshot story: the hash discriminates eligible snapshots; the
 -- codec serialises the eligible ones.
 module Keiki.Shape
-  ( -- * Shape hash
+  ( -- * Control-state shape hash
+    CanonicalStateShape (..),
+    stateShapeHash,
+
+    -- * Register-file shape hash
     KnownRegFileShape (..),
     regFileShapeHash,
 
@@ -46,6 +51,7 @@ import Data.Bits (shiftR, (.&.))
 import Data.ByteString qualified as BS
 import Data.Char (intToDigit)
 import Data.Int (Int16, Int32, Int64, Int8)
+import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -54,6 +60,7 @@ import Data.Time.Calendar (Day)
 import Data.Time.Clock (UTCTime)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
+import GHC.Generics qualified as G
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Keiki.Core (Slot)
 import Type.Reflection
@@ -190,7 +197,85 @@ instance
         T.pack ")"
       ]
 
--- * Shape hash --------------------------------------------------------------
+-- * Control-state shape hash ------------------------------------------------
+
+-- | Canonical structural identity for a control-state datatype.
+--
+-- The generic default records the datatype name, constructor names and order,
+-- and each constructor field's 'CanonicalTypeName'. It intentionally does not
+-- record field names, values, typeclass instances, function bodies, guards,
+-- updates, or any other runtime semantics. A snapshot consumer must therefore
+-- use a separate version or fold fingerprint for semantic changes that this
+-- structural description cannot see.
+--
+-- Application datatypes normally opt in with an empty instance:
+--
+-- > data State = Pending | Complete Text
+-- >   deriving stock (Generic)
+-- >
+-- > instance CanonicalStateShape State
+class CanonicalStateShape a where
+  -- | Canonical pre-hash rendering of the control-state datatype.
+  stateShapeCanonical :: Proxy a -> Text
+  default stateShapeCanonical ::
+    (GStateShape (G.Rep a)) =>
+    Proxy a ->
+    Text
+  stateShapeCanonical _ = gStateShapeCanonical (Proxy @(G.Rep a))
+
+-- | Generic rendering used by the 'CanonicalStateShape' default.
+class GStateShape (f :: Type -> Type) where
+  gStateShapeCanonical :: Proxy f -> Text
+
+instance (G.Datatype d, GStateShape f) => GStateShape (G.M1 G.D d f) where
+  gStateShapeCanonical _ =
+    T.concat
+      [ T.pack "state:",
+        T.pack (G.datatypeName (undefined :: G.M1 G.D d f ())),
+        T.pack "{",
+        gStateShapeCanonical (Proxy @f),
+        T.pack "}"
+      ]
+
+instance (G.Constructor c, GStateShape f) => GStateShape (G.M1 G.C c f) where
+  gStateShapeCanonical _ =
+    let constructor = T.pack (G.conName (undefined :: G.M1 G.C c f ()))
+        fields = gStateShapeCanonical (Proxy @f)
+     in if T.null fields
+          then constructor
+          else T.concat [constructor, T.pack "(", fields, T.pack ")"]
+
+instance (GStateShape f) => GStateShape (G.M1 G.S s f) where
+  gStateShapeCanonical _ = gStateShapeCanonical (Proxy @f)
+
+instance (GStateShape left, GStateShape right) => GStateShape (left G.:+: right) where
+  gStateShapeCanonical _ =
+    T.concat
+      [ gStateShapeCanonical (Proxy @left),
+        T.pack "|",
+        gStateShapeCanonical (Proxy @right)
+      ]
+
+instance (GStateShape left, GStateShape right) => GStateShape (left G.:*: right) where
+  gStateShapeCanonical _ =
+    T.concat
+      [ gStateShapeCanonical (Proxy @left),
+        T.pack ",",
+        gStateShapeCanonical (Proxy @right)
+      ]
+
+instance GStateShape G.U1 where
+  gStateShapeCanonical _ = T.empty
+
+instance (CanonicalTypeName field) => GStateShape (G.K1 i field) where
+  gStateShapeCanonical _ = canonicalTypeName (Proxy @field)
+
+-- | Shape hash of a control-state datatype, as lower-case hexadecimal
+-- SHA-256 over the UTF-8 bytes of 'stateShapeCanonical'. Pure, no 'IO'.
+stateShapeHash :: forall a. (CanonicalStateShape a) => Proxy a -> Text
+stateShapeHash p = sha256Hex (stateShapeCanonical p)
+
+-- * Register-file shape hash -------------------------------------------------
 
 -- | The class governing slot-lists that carry a shape hash. The
 -- inductive method 'regFileShapeCanonical' assembles the pre-hash

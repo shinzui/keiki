@@ -13,13 +13,16 @@ import Data.Text qualified as T
 import Data.Time.Calendar (Day)
 import Data.Time.Clock (UTCTime)
 import Data.Word (Word16, Word32, Word64, Word8)
+import GHC.Generics (Generic)
 import GHC.TypeLits (Symbol)
 import Keiki.Shape
-  ( CanonicalTypeName (..),
+  ( CanonicalStateShape (..),
+    CanonicalTypeName (..),
     regFileShapeCanonical,
     regFileShapeHash,
     renderStableTypeRep,
     sha256Hex,
+    stateShapeHash,
   )
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Type.Reflection (someTypeRep)
@@ -28,6 +31,45 @@ data ApplicationType
 
 instance CanonicalTypeName ApplicationType where
   canonicalTypeName _ = T.pack "ApplicationType-v1"
+
+data LifecycleState
+  = Pending
+  | Active
+  | Complete
+  deriving stock (Generic)
+
+instance CanonicalStateShape LifecycleState
+
+data LifecycleStateWithoutComplete
+  = PendingWithoutComplete
+  | ActiveWithoutComplete
+  deriving stock (Generic)
+
+instance CanonicalStateShape LifecycleStateWithoutComplete
+
+data LifecycleStateWithRenamedConstructor
+  = Waiting
+  | ActiveRenamed
+  | CompleteRenamed
+  deriving stock (Generic)
+
+instance CanonicalStateShape LifecycleStateWithRenamedConstructor
+
+data RecordStateInt = RecordStateInt
+  { recordCountInt :: Int,
+    recordNoteInt :: Maybe Text
+  }
+  deriving stock (Generic)
+
+instance CanonicalStateShape RecordStateInt
+
+data RecordStateText = RecordStateText
+  { recordCountText :: Text,
+    recordNoteText :: Maybe Text
+  }
+  deriving stock (Generic)
+
+instance CanonicalStateShape RecordStateText
 
 type BuiltInSlots =
   '[ '("unit", ()),
@@ -58,6 +100,33 @@ type BuiltInSlots =
 
 spec :: Spec
 spec = do
+  describe "stateShapeCanonical" $ do
+    it "records datatype name, constructor names, and declaration order" $
+      stateShapeCanonical (Proxy @LifecycleState)
+        `shouldBe` T.pack "state:LifecycleState{Pending|Active|Complete}"
+
+    it "records constructor field types but not record field names" $
+      stateShapeCanonical (Proxy @RecordStateInt)
+        `shouldBe` T.pack "state:RecordStateInt{RecordStateInt(Int,Maybe(Text))}"
+
+  describe "stateShapeHash" $ do
+    it "changes when an enum constructor is removed" $
+      stateShapeHash (Proxy @LifecycleState)
+        `shouldSatisfy` (/= stateShapeHash (Proxy @LifecycleStateWithoutComplete))
+
+    it "changes when an enum constructor is renamed" $
+      stateShapeHash (Proxy @LifecycleState)
+        `shouldSatisfy` (/= stateShapeHash (Proxy @LifecycleStateWithRenamedConstructor))
+
+    it "changes when a record field type changes" $
+      stateShapeHash (Proxy @RecordStateInt)
+        `shouldSatisfy` (/= stateShapeHash (Proxy @RecordStateText))
+
+    it "is stable and matches its sha256Hex-of-canonical definition" $ do
+      let p = Proxy @LifecycleState
+      stateShapeHash p `shouldBe` stateShapeHash p
+      stateShapeHash p `shouldBe` sha256Hex (stateShapeCanonical p)
+
   describe "renderStableTypeRep" $ do
     it "renders Int as GHC.Types.Int (no module path drift on 9.12.*)" $
       renderStableTypeRep (someTypeRep (Proxy @Int))
