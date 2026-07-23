@@ -102,7 +102,8 @@ t1 =
                         OFNil
                     )
                 ],
-              target = Q
+              target = Q,
+              mode = Live
             }
         ],
       initial = Q,
@@ -160,7 +161,8 @@ t2 =
                         OFNil
                     )
                 ],
-              target = Z
+              target = Z,
+              mode = Live
             },
           Edge
             { guard = matchInCtor inCtorMidB,
@@ -177,7 +179,8 @@ t2 =
                         OFNil
                     )
                 ],
-              target = Z
+              target = Z,
+              mode = Live
             }
         ],
       initial = Z,

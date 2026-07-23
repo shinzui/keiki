@@ -61,7 +61,8 @@ multi =
                       wcEchoed
                       (OFCons (TInpCtorField inCtorBegin (#payload :: Index '[ '("payload", Int)] Int)) OFNil)
                   ],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],

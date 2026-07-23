@@ -127,7 +127,8 @@ pingerEdges = \case
                 wirePong
                 (OFCons (inpPing #nonce) OFNil)
             ],
-          target = PingDone
+          target = PingDone,
+          mode = Live
         }
     ]
   PingDone -> []

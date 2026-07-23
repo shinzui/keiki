@@ -1106,6 +1106,7 @@ data PartialPath rs1 rs2 ci1 co s2
       ![OutTerm (Append rs1 rs2) ci1 co] -- accumulated outputs in order
       ![PendingWrite (Append rs1 rs2) ci1] -- earlier t2 writes, newest first
       !s2 -- t2-state after consuming so far
+      !EdgeMode -- accumulated mode: 'Live' iff every component edge is
 
 -- * compose ----------------------------------------------------------------
 
@@ -1448,7 +1449,8 @@ compose t1 t2 =
           { guard = weakenLPred @rs1 @rs2 (guard e1),
             update = weakenLUpdate @rs1 @rs2 u1,
             output = [],
-            target = Composite (target e1) s2
+            target = Composite (target e1) s2,
+            mode = mode e1
           }
 
     productEdge ::
@@ -1486,7 +1488,8 @@ compose t1 t2 =
                 (weakenLUpdate @rs1 @rs2 u1)
                 (substUpdate @rs1 @rs2 u2 o1),
             output = map (\o2 -> substOut @rs1 @rs2 o2 o1) (output e2),
-            target = Composite (target e1) (target e2)
+            target = Composite (target e1) (target e2),
+            mode = mode e1 <> mode e2
           }
 
     -- \| The starting point for EP-19 M6's chain expansion. Carries
@@ -1505,6 +1508,7 @@ compose t1 t2 =
           []
           []
           s2
+          (mode e1)
 
     -- \| Enumerate all t2-edge paths that consume the supplied
     -- mid-symbol list in order, starting from the path's current
@@ -1522,9 +1526,9 @@ compose t1 t2 =
     expandPaths [] path = [path]
     expandPaths (o : rest) path =
       case path of
-        PartialPath g u outs env s2 ->
+        PartialPath g u outs env s2 m ->
           concatMap
-            (\e2 -> expandPaths rest (stepPath g u outs env o s2 e2))
+            (\e2 -> expandPaths rest (stepPath g u outs env m o s2 e2))
             (edgesOut t2 s2)
 
     -- \| Extend a path by one t2-edge consuming one mid-symbol.
@@ -1537,11 +1541,12 @@ compose t1 t2 =
       Update (Append rs1 rs2) w ci1 ->
       [OutTerm (Append rs1 rs2) ci1 co] ->
       [PendingWrite (Append rs1 rs2) ci1] ->
+      EdgeMode ->
       OutTerm rs1 ci1 mid ->
       s2 ->
       Edge (HsPred rs2 mid) rs2 mid co s2 ->
       PartialPath rs1 rs2 ci1 co s2
-    stepPath g u outs env o _s2 e2 = case e2 of
+    stepPath g u outs env m o _s2 e2 = case e2 of
       Edge {update = u2} ->
         let stepGuard =
               applyEnvPred env (substPred @rs1 @rs2 (guard e2) o)
@@ -1558,6 +1563,7 @@ compose t1 t2 =
               (outs ++ stepOutputs)
               nextEnv
               (target e2)
+              (m <> mode e2)
 
     -- \| Convert a fully-expanded path to a composite edge by
     -- borrowing t1's @target@ for the composite's target.
@@ -1570,12 +1576,13 @@ compose t1 t2 =
         ci1
         co
         (Composite s1 s2)
-    finalizePath e1 (PartialPath g u outs _env s2End) =
+    finalizePath e1 (PartialPath g u outs _env s2End m) =
       Edge
         { guard = g,
           update = u,
           output = outs,
-          target = Composite (target e1) s2End
+          target = Composite (target e1) s2End,
+          mode = m
         }
 
 -- * alternative -----------------------------------------------------------
@@ -1682,7 +1689,8 @@ alternative t1 t2 =
                     . weakenLOut @rs1 @rs2
                 )
                 (output e1),
-            target = Composite (target e1) s2
+            target = Composite (target e1) s2,
+            mode = mode e1
           }
 
     liftEdgeR ::
@@ -1712,7 +1720,8 @@ alternative t1 t2 =
                     . weakenROut @rs1 @rs2
                 )
                 (output e2),
-            target = Composite s1 (target e2)
+            target = Composite s1 (target e2),
+            mode = mode e2
           }
 
 -- * feedback1 ------------------------------------------------------------

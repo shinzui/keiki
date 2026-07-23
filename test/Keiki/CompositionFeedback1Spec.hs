@@ -127,7 +127,8 @@ toggleEdges = \case
                 wireFlipped
                 (OFCons (inpFlip #tValue) OFNil)
             ],
-          target = On
+          target = On,
+          mode = Live
         }
     ]
   On ->
@@ -140,7 +141,8 @@ toggleEdges = \case
                 wireFlipped
                 (OFCons (inpFlip #tValue) OFNil)
             ],
-          target = Off
+          target = Off,
+          mode = Live
         }
     ]
 
@@ -202,7 +204,8 @@ policyEdges = \case
                 wirePFlip
                 (OFCons (inpPFlipped #tValue) OFNil)
             ],
-          target = Pol
+          target = Pol,
+          mode = Live
         }
     ]
 

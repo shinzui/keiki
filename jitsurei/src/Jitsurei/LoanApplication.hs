@@ -710,7 +710,8 @@ loanApplicationASTEdges = \case
                     )
                 )
             ],
-          target = CollectingDocuments
+          target = CollectingDocuments,
+          mode = Live
         },
       Edge
         { guard = isWithdraw,
@@ -733,7 +734,8 @@ loanApplicationASTEdges = \case
                     )
                 )
             ],
-          target = Withdrawn
+          target = Withdrawn,
+          mode = Live
         }
     ]
   CollectingDocuments ->
@@ -757,7 +759,8 @@ loanApplicationASTEdges = \case
                     (OFCons (inpSubmitIncome #at) OFNil)
                 )
             ],
-          target = CollectingDocuments
+          target = CollectingDocuments,
+          mode = Live
         },
       Edge
         { guard = isSubmitId,
@@ -777,7 +780,8 @@ loanApplicationASTEdges = \case
                     (OFCons (inpSubmitId #at) OFNil)
                 )
             ],
-          target = CollectingDocuments
+          target = CollectingDocuments,
+          mode = Live
         },
       Edge
         { guard = isRecordScore,
@@ -794,7 +798,8 @@ loanApplicationASTEdges = \case
                     (OFCons (inpRecordScore #at) OFNil)
                 )
             ],
-          target = CollectingDocuments
+          target = CollectingDocuments,
+          mode = Live
         },
       Edge
         { guard = isRecordEmployment,
@@ -813,7 +818,8 @@ loanApplicationASTEdges = \case
                     (OFCons (inpRecordEmployment #at) OFNil)
                 )
             ],
-          target = CollectingDocuments
+          target = CollectingDocuments,
+          mode = Live
         },
       Edge
         { guard = isWithdraw,
@@ -833,7 +839,8 @@ loanApplicationASTEdges = \case
                     )
                 )
             ],
-          target = Withdrawn
+          target = Withdrawn,
+          mode = Live
         },
       -- "ε-edge" — no public event — fired by Continue when the
       -- threshold guards hold. See builder-form durability caveat.
@@ -841,7 +848,8 @@ loanApplicationASTEdges = \case
         { guard = isContinue .&& readyForReviewGuard,
           update = UKeep,
           output = [],
-          target = UnderReview
+          target = UnderReview,
+          mode = Live
         }
     ]
   UnderReview ->
@@ -869,7 +877,8 @@ loanApplicationASTEdges = \case
                     )
                 )
             ],
-          target = Approved
+          target = Approved,
+          mode = Live
         },
       Edge
         { guard = isContinue .&& pnot approvalGuard,
@@ -895,7 +904,8 @@ loanApplicationASTEdges = \case
                     )
                 )
             ],
-          target = Declined
+          target = Declined,
+          mode = Live
         },
       Edge
         { guard = isWithdraw,
@@ -915,7 +925,8 @@ loanApplicationASTEdges = \case
                     )
                 )
             ],
-          target = Withdrawn
+          target = Withdrawn,
+          mode = Live
         }
     ]
   Approved -> []

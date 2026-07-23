@@ -199,6 +199,9 @@ module Keiki.Builder
     requireGt,
     requireGe,
 
+    -- ** Edge mode
+    replayOnly,
+
     -- ** Termination
     goto,
 
@@ -223,6 +226,7 @@ import GHC.TypeLits (KnownSymbol, Symbol)
 import Keiki.Core
   ( Cmp (..),
     Edge (..),
+    EdgeMode (..),
     HsPred (..),
     InCtor (..),
     Index,
@@ -290,7 +294,10 @@ data PartialEdge rs ci co v (pin :: Maybe [Slot]) (w :: [Symbol]) = PartialEdge
     pePinned :: Pinned ci pin,
     -- | Whether the body explicitly chose to emit or remain silent.
     -- Any 'emit', 'emitWith', or 'noEmit' call sets this to 'True'.
-    peOutputDecided :: Bool
+    peOutputDecided :: Bool,
+    -- | The edge's 'EdgeMode'. Starts 'Live'; a 'replayOnly' call in
+    -- the body switches it to 'ReplayOnly'.
+    peMode :: EdgeMode
   }
 
 -- | Whether an edge body has an enclosing input constructor. The
@@ -525,6 +532,15 @@ emitWith ic wc rec = EdgeBuilder $ \pe ->
 noEmit :: EdgeBuilder rs ci co v pin w w ()
 noEmit = EdgeBuilder $ \pe -> ((), pe {peOutputDecided = True})
 
+-- | Mark the edge under construction 'ReplayOnly': it is excluded
+-- from forward stepping and participates in inversion only when no
+-- 'Live' edge attributes the observed event. Use it to retain the
+-- removed region of a tightened guard (@old-guard ∧ ¬new-guard@) as
+-- a replay-only twin so events stored under the old rule keep an
+-- inverting edge. Idempotent; position in the body is irrelevant.
+replayOnly :: EdgeBuilder rs ci co v pin w w ()
+replayOnly = EdgeBuilder $ \pe -> ((), pe {peMode = ReplayOnly})
+
 -- * Field-keyed record sugar ---------------------------------------------
 
 -- | Convert a value of any type bearing the wire-side fields of an
@@ -680,7 +696,8 @@ onCmd ic body = EdgeListBuilder $ \_src acc ->
             peOutput = [],
             peTargets = [],
             pePinned = PinCtor ic,
-            peOutputDecided = False
+            peOutputDecided = False,
+            peMode = Live
           }
       (_, finalPE) = runEdgeBuilder (body (PayloadProj ic)) initial
       edge = finalizeEdge finalPE
@@ -704,7 +721,8 @@ onEpsilon body = EdgeListBuilder $ \_src acc ->
             peOutput = [],
             peTargets = [],
             pePinned = PinNone,
-            peOutputDecided = False
+            peOutputDecided = False,
+            peMode = Live
           }
       (_, finalPE) = runEdgeBuilder body initial
       edge = finalizeEdge finalPE
@@ -753,7 +771,8 @@ finalizeEdge pe = case peTargets pe of
               { guard = peGuard pe,
                 update = peUpdate pe,
                 output = peOutput pe,
-                target = t
+                target = t,
+                mode = peMode pe
               }
   [] -> Left DefectMissingGoto
   ts@(_ : _ : _) -> Left (DefectMultipleGoto (length ts))

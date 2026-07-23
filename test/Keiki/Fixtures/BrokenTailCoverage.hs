@@ -123,7 +123,8 @@ brokenTailCoverage =
                       wireQuotaAssigned
                       (provisionQuota *: oNil)
                   ],
-                target = BtcProvisioned
+                target = BtcProvisioned,
+                mode = Live
               }
           ]
         BtcProvisioned -> []

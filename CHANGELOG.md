@@ -9,6 +9,49 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.3.0.0] — 2026-07-23
+
+### Added
+
+- `Keiki.Core.EdgeMode` (`Live` / `ReplayOnly`): a first-class edge mode for
+  guard evolution. A `ReplayOnly` edge is never taken by forward stepping
+  (`delta` / `step` / `stepEither` filter on `Live`) and participates in
+  inversion only when no `Live` edge attributes the observed event — inversion
+  (`applyEvent`, `applyEventStreamingEither`) is now **two-phase**, with
+  ambiguity judged within the phase that produced candidates. Use it to retain
+  the removed region of a tightened guard (`old-guard ∧ ¬new-guard`) as a
+  replay-only twin so events stored under the old rule keep an inverting edge.
+  The `Semigroup`/`Monoid` instances (`Live` identity, `ReplayOnly` absorbing)
+  define the mode of composed edges.
+- `Keiki.Builder.replayOnly` marks the edge under construction `ReplayOnly`.
+
+### Changed
+
+- **Breaking:** `Edge` gained the field `mode :: EdgeMode`. Existing
+  construction sites should set `mode = Live` to keep their exact previous
+  semantics. Composition (`compose`, `alternative`), the profunctor rewrites,
+  and `withSymPred` propagate the mode (a composite edge is `Live` only when
+  every component is).
+- Static checks are mode-aware: the determinism family
+  (`checkTransitionDeterminism`, `checkTransitionDeterminismPure`,
+  `determinismWarnings`, `isSingleValuedSym`) considers only `Live`/`Live`
+  pairs (only live edges compete in forward dispatch), and
+  `inversionAmbiguityWarnings` flags only same-mode pairs (cross-mode pairs are
+  resolved deterministically by the live-first phase order). All other checks —
+  hidden-input, head-recoverability, guard-implies-input-read, state-changing
+  epsilon, opaque-guard, and both dead-edge analyses (structural reachability
+  still traverses replay-only targets: a vertex reachable only through a
+  replay-only edge stays live for replay continuation) — apply to replay-only
+  edges unchanged.
+
+### Migration
+
+- Deleting a deployed replay-only twin re-creates exactly the break it fixed
+  (stored events in the removed region lose their inverting edge). Delete a
+  twin only once every stream containing the region's events is terminal or
+  truncated.
+
+
 ## [0.2.0.0] — 2026-07-13
 
 ### Added

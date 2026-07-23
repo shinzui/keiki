@@ -226,7 +226,8 @@ emailDeliveryASTEdges = \case
                     )
                 )
             ],
-          target = EmailSentVertex
+          target = EmailSentVertex,
+          mode = Live
         }
     ]
   EmailSentVertex -> []

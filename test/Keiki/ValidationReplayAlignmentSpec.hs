@@ -82,7 +82,8 @@ ambiguousTransducerWith secondWire =
                       wireLogged
                       (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int) *: oNil)
                   ],
-                target = True
+                target = True,
+                mode = Live
               },
             Edge
               { guard = matchInCtor inCtorY,
@@ -93,7 +94,8 @@ ambiguousTransducerWith secondWire =
                       secondWire
                       (TInpCtorField inCtorY (#value :: Index AmbiguousFields Int) *: oNil)
                   ],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],
@@ -122,7 +124,8 @@ readGuardTransducer edgeGuard =
                     (#seen :: IndexN "seen" ReadRegs Int)
                     (TInpCtorField inCtorX (#value :: Index AmbiguousFields Int)),
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],
@@ -169,13 +172,13 @@ epsilonTransducer epsilonCase =
         EpsilonStart ->
           case epsilonCase of
             ChangesVertexOnly ->
-              [Edge (matchInCtor inCtorX) UKeep [] EpsilonEnd]
+              [Edge (matchInCtor inCtorX) UKeep [] EpsilonEnd Live]
             WritesRegistersOnly ->
-              [Edge (matchInCtor inCtorX) setSeen [] EpsilonStart]
+              [Edge (matchInCtor inCtorX) setSeen [] EpsilonStart Live]
             ChangesBoth ->
-              [Edge (matchInCtor inCtorX) setSeen [] EpsilonEnd]
+              [Edge (matchInCtor inCtorX) setSeen [] EpsilonEnd Live]
             NoOpSelfLoop ->
-              [Edge (matchInCtor inCtorX) UKeep [] EpsilonStart]
+              [Edge (matchInCtor inCtorX) UKeep [] EpsilonStart Live]
         EpsilonEnd -> [],
       initial = EpsilonStart,
       initialRegs = RCons (Proxy @"seen") 0 RNil,

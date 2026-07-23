@@ -583,7 +583,8 @@ orderCartASTEdges = \case
                     )
                 )
             ],
-          target = OpenWithItems
+          target = OpenWithItems,
+          mode = Live
         }
     ]
   OpenWithItems ->
@@ -608,7 +609,8 @@ orderCartASTEdges = \case
                     )
                 )
             ],
-          target = OpenWithItems
+          target = OpenWithItems,
+          mode = Live
         },
       Edge
         { guard = isRemoveItem,
@@ -628,7 +630,8 @@ orderCartASTEdges = \case
                     (OFCons (inpRemoveItem #at) OFNil)
                 )
             ],
-          target = OpenWithItems
+          target = OpenWithItems,
+          mode = Live
         },
       Edge
         { guard = isApplyDiscount,
@@ -648,7 +651,8 @@ orderCartASTEdges = \case
                     )
                 )
             ],
-          target = OpenWithItems
+          target = OpenWithItems,
+          mode = Live
         },
       Edge
         { guard = isReserve,
@@ -665,7 +669,8 @@ orderCartASTEdges = \case
                     (OFCons (inpReserve #at) OFNil)
                 )
             ],
-          target = Reserved
+          target = Reserved,
+          mode = Live
         },
       Edge
         { guard = isCancel,
@@ -682,7 +687,8 @@ orderCartASTEdges = \case
                     (OFCons (inpCancel #at) OFNil)
                 )
             ],
-          target = Cancelled
+          target = Cancelled,
+          mode = Live
         }
     ]
   Reserved ->
@@ -707,7 +713,8 @@ orderCartASTEdges = \case
                     )
                 )
             ],
-          target = Paid
+          target = Paid,
+          mode = Live
         },
       Edge
         { guard = isCancel,
@@ -724,7 +731,8 @@ orderCartASTEdges = \case
                     (OFCons (inpCancel #at) OFNil)
                 )
             ],
-          target = Cancelled
+          target = Cancelled,
+          mode = Live
         }
     ]
   Paid ->
@@ -752,7 +760,8 @@ orderCartASTEdges = \case
                     )
                 )
             ],
-          target = Shipped
+          target = Shipped,
+          mode = Live
         },
       Edge
         { guard = isRequestRefund,
@@ -766,7 +775,8 @@ orderCartASTEdges = \case
                     (OFCons (inpRequestRefund #at) OFNil)
                 )
             ],
-          target = Paid
+          target = Paid,
+          mode = Live
         },
       Edge
         { guard = isProcessRefund,
@@ -786,7 +796,8 @@ orderCartASTEdges = \case
                     )
                 )
             ],
-          target = Refunded
+          target = Refunded,
+          mode = Live
         }
     ]
   Shipped ->
@@ -802,7 +813,8 @@ orderCartASTEdges = \case
                 wireOrderDelivered
                 (OFCons (inpDeliver #at) OFNil)
             ],
-          target = Delivered
+          target = Delivered,
+          mode = Live
         }
     ]
   Delivered -> []

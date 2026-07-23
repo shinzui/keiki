@@ -32,6 +32,7 @@ import Keiki.Render.MermaidSpec qualified
 import Keiki.Render.PrettySpec qualified
 import Keiki.Render.ValidateSpec qualified
 import Keiki.ReplayEitherSpec qualified
+import Keiki.ReplayOnlySpec qualified
 import Keiki.RoundTripSpec qualified
 import Keiki.ShapeSpec qualified
 import Keiki.StepEitherSpec qualified
@@ -72,6 +73,7 @@ main = hspec $ do
   describe "Keiki.RecomputeVerify (EP-47)" Keiki.RecomputeVerifySpec.spec
   describe "Keiki.RoundTrip (EP-73)" Keiki.RoundTripSpec.spec
   describe "Keiki.Core structured replay (EP-72)" Keiki.ReplayEitherSpec.spec
+  describe "Keiki.Core replay-only edges (keiro MP-24 EP-6)" Keiki.ReplayOnlySpec.spec
   describe "Keiki.Render.Inspector (EP-62)" Keiki.Render.InspectorSpec.spec
   describe "Keiki.Render.Markdown (EP-65)" Keiki.Render.MarkdownSpec.spec
   describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec

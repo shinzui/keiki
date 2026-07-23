@@ -102,7 +102,8 @@ splitTransducer outputs =
               { guard = matchInCtor inCtorBegin,
                 update = UKeep,
                 output = outputs,
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],

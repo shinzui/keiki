@@ -114,7 +114,8 @@ counterStage ic wc mkField =
               update = USet IZ (tadd (TReg ZIdx) (TInpCtorField ic ZIdx)),
               output =
                 [pack ic wc (OFCons (mkField (TInpCtorField ic ZIdx)) OFNil)],
-              target = StageVertex
+              target = StageVertex,
+              mode = Live
             }
         ],
       initial = StageVertex,

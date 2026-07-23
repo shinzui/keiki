@@ -217,7 +217,8 @@ counterSource =
                     wireMidVal
                     (proj (#srcCount :: Index CounterRegs Int) *: oNil)
                 ],
-              target = CounterVertex
+              target = CounterVertex,
+              mode = Live
             }
         ],
       initial = CounterVertex,
@@ -241,7 +242,8 @@ lastValueSink =
                     wireOutVal
                     (inpCtor inCtorMidVal (#v :: Index '[ '("v", Int)] Int) *: oNil)
                 ],
-              target = SinkVertex
+              target = SinkVertex,
+              mode = Live
             }
         ],
       initial = SinkVertex,
@@ -260,7 +262,8 @@ pairSource =
                 [ pack inCtorGo wireMidVal (lit 10 *: oNil),
                   pack inCtorGo wireMidVal (lit 20 *: oNil)
                 ],
-              target = PairVertex
+              target = PairVertex,
+              mode = Live
             }
         ],
       initial = PairVertex,
@@ -283,7 +286,8 @@ twoPhaseSink =
                     wireStage1
                     (inpCtor inCtorMidVal (#v :: Index '[ '("v", Int)] Int) *: oNil)
                 ],
-              target = PhaseVertex
+              target = PhaseVertex,
+              mode = Live
             },
           Edge
             { guard =
@@ -296,7 +300,8 @@ twoPhaseSink =
                     wireStage2
                     (inpCtor inCtorMidVal (#v :: Index '[ '("v", Int)] Int) *: oNil)
                 ],
-              target = PhaseVertex
+              target = PhaseVertex,
+              mode = Live
             }
         ],
       initial = PhaseVertex,
@@ -312,7 +317,8 @@ m2aSource =
             { guard = matchInCtor inCtorProduceA,
               update = UKeep,
               output = [pack inCtorProduceA wireM2A (lit 5 *: oNil)],
-              target = M2SourceVertex
+              target = M2SourceVertex,
+              mode = Live
             }
         ],
       initial = M2SourceVertex,
@@ -335,7 +341,8 @@ wrongOrderSink =
                     wireSawA
                     (inpCtor inCtorM2A (#a :: Index '[ '("a", Int)] Int) *: oNil)
                 ],
-              target = WrongVertex
+              target = WrongVertex,
+              mode = Live
             },
           Edge
             { guard =
@@ -348,7 +355,8 @@ wrongOrderSink =
                     wireSawB
                     (inpCtor inCtorM2B (#b :: Index '[ '("b", Int)] Int) *: oNil)
                 ],
-              target = WrongVertex
+              target = WrongVertex,
+              mode = Live
             }
         ],
       initial = WrongVertex,

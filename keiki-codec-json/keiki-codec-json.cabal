@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               keiki-codec-json
-version:            0.2.0.0
+version:            0.2.0.1
 synopsis:           Optional JSON codec for keiki's RegFile.
 description:
   Sibling package to keiki providing a JSON encoder, decoder, and
@@ -81,7 +81,7 @@ library
     , aeson             ^>=2.2
     , base              ^>=4.21
     , containers        ^>=0.7
-    , keiki             ^>=0.2
+    , keiki             ^>=0.3
     , scientific        ^>=0.3
     , template-haskell  ^>=2.23
     , text              ^>=2.1
@@ -96,7 +96,7 @@ benchmark keiki-codec-json-bench
     , base              ^>=4.21
     , bytestring        ^>=0.12
     , deepseq           ^>=1.5
-    , keiki             ^>=0.2
+    , keiki             ^>=0.3
     , keiki-codec-json  ^>=0.2
     , tasty-bench       ^>=0.4  || ^>=0.5
     , text              ^>=2.1
@@ -124,7 +124,7 @@ test-suite keiki-codec-json-test
     , bytestring            ^>=0.12
     , containers            ^>=0.7
     , hspec                 ^>=2.11
-    , keiki                 ^>=0.2
+    , keiki                 ^>=0.3
     , keiki-codec-json      ^>=0.2
     , QuickCheck            ^>=2.15
     , quickcheck-instances  ^>=0.3

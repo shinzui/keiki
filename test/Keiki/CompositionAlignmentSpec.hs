@@ -42,7 +42,8 @@ misnamedStageB =
             { guard = PInCtor typoInMsgB,
               update = UKeep,
               output = [],
-              target = StageVertex
+              target = StageVertex,
+              mode = Live
             }
         ],
       initial = StageVertex,
@@ -64,7 +65,8 @@ arityStageB =
                   ),
               update = UKeep,
               output = [],
-              target = StageVertex
+              target = StageVertex,
+              mode = Live
             }
         ],
       initial = StageVertex,

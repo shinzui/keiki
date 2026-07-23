@@ -96,6 +96,7 @@ module Keiki.Core
 
     -- * Edges and the transducer
     Edge (..),
+    EdgeMode (..),
     SymTransducer (..),
     Guarded,
     applyEdgeUpdate,
@@ -653,12 +654,46 @@ instance Sat (HsPred rs ci) (RegFile rs, ci) where
 -- the static disjointness check at the *introduction* point of any
 -- 'Update' value (via 'combine') without polluting the @Edge@'s
 -- public type with a per-edge @w@ parameter.
+-- | Which execution paths an edge serves.
+--
+-- A 'Live' edge is an ordinary transition: forward stepping
+-- ('delta' \/ 'step' \/ 'stepEither') may take it, and replay
+-- ('applyEvent' \/ 'applyEventStreamingEither') may invert against it.
+--
+-- A 'ReplayOnly' edge is never taken by forward stepping — no new
+-- command can fire it. It exists so events emitted under a retired
+-- rule keep an inverting edge: when a guard is tightened, the removed
+-- region (@old-guard ∧ ¬new-guard@) can be retained as a replay-only
+-- twin of the live edge, keeping every stored event replayable while
+-- the tightened rule governs all new traffic. Its 'update' defines how
+-- those historical events fold /today/.
+--
+-- Inversion is two-phase: candidates are sought among 'Live' edges
+-- first, and only when no live edge matches are 'ReplayOnly' edges
+-- tried; ambiguity is judged within the phase that produced
+-- candidates. An event attributable under the current rules therefore
+-- always attributes there — only unattributable history falls through
+-- to the replay-only arms.
+data EdgeMode = Live | ReplayOnly
+  deriving stock (Eq, Ord, Show, Bounded, Enum)
+
+-- | 'Live' is the identity; 'ReplayOnly' absorbs. This is the
+-- combination rule for composed edges: a composite edge may fire
+-- forward only when every component may.
+instance Semigroup EdgeMode where
+  Live <> m = m
+  ReplayOnly <> _ = ReplayOnly
+
+instance Monoid EdgeMode where
+  mempty = Live
+
 data Edge phi rs ci co s where
   Edge ::
     { guard :: phi,
       update :: Update rs w ci,
       output :: [OutTerm rs ci co],
-      target :: s
+      target :: s,
+      mode :: EdgeMode
     } ->
     Edge phi rs ci co s
 
@@ -903,7 +938,8 @@ setSlotN (IS i) !v regs = case regs of
      in RCons p x rest'
 
 -- | Single-step transition. Returns 'Just (s', regs')' iff exactly one
--- outgoing edge has a satisfied guard.
+-- outgoing 'Live' edge has a satisfied guard. 'ReplayOnly' edges are
+-- never candidates: they serve inversion only.
 delta ::
   (BoolAlg phi (RegFile rs, ci)) =>
   SymTransducer phi rs s ci co ->
@@ -914,6 +950,7 @@ delta ::
 delta t s regs ci =
   case [ (target e, applyEdgeUpdate e regs ci)
        | e <- edgesOut t s,
+         mode e == Live,
          models (guard e) (regs, ci)
        ] of
     [single] -> Just single
@@ -937,6 +974,7 @@ omega ::
 omega t s regs ci =
   case [ [evalOut o regs ci | o <- output e]
        | e <- edgesOut t s,
+         mode e == Live,
          models (guard e) (regs, ci)
        ] of
     [evaluatedOuts] -> evaluatedOuts
@@ -1020,6 +1058,7 @@ stepEither t (s, regs) ci =
       let matched =
             [ (i, e)
             | (i, e) <- indexed,
+              mode e == Live,
               models (guard e) (regs, ci)
             ]
        in case matched of
@@ -1075,14 +1114,21 @@ applyEvent ::
   co ->
   Maybe (s, RegFile rs)
 applyEvent t s regs co =
-  case [ (target e, applyEdgeUpdate e regs ci)
-       | e <- edgesOut t s,
-         o : _ <- [output e],
-         Just ci <- [solveOutput o regs co],
-         models (guard e) (regs, ci)
-       ] of
+  case candidates Live of
     [single] -> Just single
+    [] -> case candidates ReplayOnly of
+      [single] -> Just single
+      _ -> Nothing
     _ -> Nothing
+  where
+    candidates phase =
+      [ (target e, applyEdgeUpdate e regs ci)
+      | e <- edgesOut t s,
+        mode e == phase,
+        o : _ <- [output e],
+        Just ci <- [solveOutput o regs co],
+        models (guard e) (regs, ci)
+      ]
 
 -- | Streaming-replay state wrapper. Used by 'applyEventStreamingEither'
 -- and its 'applyEventStreaming' compatibility wrapper.
@@ -1220,9 +1266,19 @@ applyEventStreamingEither t (Settled s) regs co =
           ]
   where
     indexed = zip [0 ..] (edgesOut t s)
-    matched =
+    -- Two-phase attribution: an event attributable under the current
+    -- ('Live') rules attributes there; only unattributable history
+    -- falls through to the 'ReplayOnly' arms. Ambiguity is judged
+    -- within the phase that produced candidates, so a live edge and
+    -- its replay-only twin can never be mutually ambiguous — even
+    -- when their guards overlap, the live edge deterministically wins.
+    matched = case matchedIn Live of
+      [] -> matchedIn ReplayOnly
+      liveMatches -> liveMatches
+    matchedIn phase =
       [ (i, e, ci)
       | (i, e) <- indexed,
+        mode e == phase,
         o : _ <- [output e],
         Just ci <- [solveOutput o regs co],
         models (guard e) (regs, ci)
@@ -2214,6 +2270,10 @@ inversionAmbiguityWarnings t =
     (i, e1) <- indexedEdges,
     (j, e2) <- indexedEdges,
     i < j,
+    -- Cross-mode pairs are resolved by replay's two-phase attribution
+    -- (live candidates win outright; see 'applyEventStreamingEither'),
+    -- so only same-mode pairs can be runtime-ambiguous.
+    mode e1 == mode e2,
     not (isBot (guard e1) || isBot (guard e2)),
     Just wireName <- [headWireName e1],
     Just otherWireName <- [headWireName e2],
@@ -2270,6 +2330,10 @@ checkTransitionDeterminism t =
     (i, e1) <- ies,
     (j, e2) <- ies,
     i < j,
+    -- Only 'Live' edges compete in forward dispatch; a guard overlap
+    -- involving a 'ReplayOnly' edge cannot cause forward ambiguity.
+    mode e1 == Live,
+    mode e2 == Live,
     not (isBot (guard e1 `conj` guard e2))
   ]
 
@@ -2301,6 +2365,8 @@ checkTransitionDeterminismPure t =
     (i, e1) <- ies,
     (j, e2) <- ies,
     i < j,
+    mode e1 == Live,
+    mode e2 == Live,
     provablyOverlap (guard e1) (guard e2)
   ]
 
@@ -2677,6 +2743,8 @@ determinismWarnings t =
     (i, e1) <- ies,
     (j, e2) <- ies,
     i < j,
+    mode e1 == Live,
+    mode e2 == Live,
     provablyOverlap (guard e1) (guard e2)
   ]
 

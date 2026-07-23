@@ -409,7 +409,8 @@ identityTransducer =
             { guard = PInCtor identityInCtor,
               update = UKeep,
               output = [identityOutTerm],
-              target = IdVertex
+              target = IdVertex,
+              mode = Live
             }
         ],
       initial = IdVertex,
@@ -692,12 +693,13 @@ firstSym t =
     firstEdge ::
       Edge (HsPred rs ci) rs ci co s ->
       Edge (HsPred rs (ci, c)) rs (ci, c) (co, c) s
-    firstEdge Edge {guard = g, update = u, output = mo, target = tgt} =
+    firstEdge Edge {guard = g, update = u, output = mo, target = tgt, mode = m} =
       Edge
         { guard = contraPred fst g,
           update = contraUpdate fst u,
           output = fmap firstOutTerm mo,
-          target = tgt
+          target = tgt,
+          mode = m
         }
 
     -- EP-53: 'OutFields' is now indexed by a single input field schema,
@@ -847,7 +849,8 @@ arrTransducer f =
             { guard = PInCtor identityInCtor,
               update = UKeep,
               output = [arrOut],
-              target = IdVertex
+              target = IdVertex,
+              mode = Live
             }
         ],
       initial = IdVertex,
@@ -1062,34 +1065,37 @@ mapOutTermCo g (OPack ic wc fields) =
 -- ** Edge ---------------------------------------------------------------
 
 rewriteEdge :: (ci' -> ci) -> Edge (HsPred rs ci) rs ci co s -> Edge (HsPred rs ci') rs ci' co s
-rewriteEdge f Edge {guard = g, update = u, output = mo, target = tgt} =
+rewriteEdge f Edge {guard = g, update = u, output = mo, target = tgt, mode = m} =
   Edge
     { guard = contraPred f g,
       update = contraUpdate f u,
       output = fmap (contraOutTerm f) mo,
-      target = tgt
+      target = tgt,
+      mode = m
     }
 
 rewriteEdgeMaybe ::
   (ci' -> Maybe ci) ->
   Edge (HsPred rs ci) rs ci co s ->
   Edge (HsPred rs ci') rs ci' co s
-rewriteEdgeMaybe f Edge {guard = g, update = u, output = mo, target = tgt} =
+rewriteEdgeMaybe f Edge {guard = g, update = u, output = mo, target = tgt, mode = m} =
   Edge
     { guard = contraMaybePred f g,
       update = contraMaybeUpdate f u,
       output = fmap (contraMaybeOutTerm f) mo,
-      target = tgt
+      target = tgt,
+      mode = m
     }
 
 rewriteEdgeOut ::
   (co -> co') ->
   Edge (HsPred rs ci) rs ci co s ->
   Edge (HsPred rs ci) rs ci co' s
-rewriteEdgeOut g Edge {guard = guardP, update = u, output = mo, target = tgt} =
+rewriteEdgeOut g Edge {guard = guardP, update = u, output = mo, target = tgt, mode = m} =
   Edge
     { guard = guardP,
       update = u,
       output = fmap (mapOutTermCo g) mo,
-      target = tgt
+      target = tgt,
+      mode = m
     }

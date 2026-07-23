@@ -38,6 +38,7 @@ import Keiki.CompositionFeedback1Spec (toggleAgg, togglePolicy)
 import Keiki.CompositionSpec (alertSource)
 import Keiki.Core
   ( Edge (..),
+    EdgeMode (..),
     HsPred (..),
     InCtor (..),
     OutFields (..),
@@ -681,7 +682,8 @@ mkToy src tgt isSrc isFinalAt =
                 { guard = PInCtor inCtorTick,
                   update = UKeep,
                   output = [pack inCtorTick wireTick OFNil],
-                  target = tgt
+                  target = tgt,
+                  mode = Live
                 }
             ]
           else [],
@@ -811,7 +813,8 @@ multiEvt =
                     pack inCtorGo wireMB OFNil,
                     pack inCtorGo wireMC OFNil
                   ],
-                target = MS1
+                target = MS1,
+                mode = Live
               }
           ]
         MS1 ->
@@ -822,7 +825,8 @@ multiEvt =
                   [ pack inCtorGo wireMA OFNil,
                     pack inCtorGo wireMB OFNil
                   ],
-                target = MS2
+                target = MS2,
+                mode = Live
               }
           ]
         MS2 -> [],

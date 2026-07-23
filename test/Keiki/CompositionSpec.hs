@@ -143,7 +143,8 @@ alertEdges = \case
                     )
                 )
             ],
-          target = AlertEmitted
+          target = AlertEmitted,
+          mode = Live
         }
     ]
   AlertEmitted -> []

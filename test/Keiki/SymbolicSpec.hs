@@ -68,8 +68,8 @@ byteWrapFixture =
   SymTransducer
     { edgesOut = \case
         False ->
-          [ Edge byteWrapGuard UKeep [] True,
-            Edge byteHighGuard UKeep [] True
+          [ Edge byteWrapGuard UKeep [] True Live,
+            Edge byteHighGuard UKeep [] True Live
           ]
         True -> [],
       initial = False,
@@ -104,8 +104,8 @@ timePrecisionFixture =
   SymTransducer
     { edgesOut = \case
         False ->
-          [ Edge timeAfterGuard UKeep [] True,
-            Edge timeBeforeGuard UKeep [] True
+          [ Edge timeAfterGuard UKeep [] True Live,
+            Edge timeBeforeGuard UKeep [] True Live
           ]
         True -> [],
       initial = False,
@@ -137,13 +137,15 @@ amountFixture =
               { guard = PEq (proj amountIdx) (lit (0 :: Word64)),
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               },
             Edge
               { guard = PEq (lit (5 :: Word64)) (lit (6 :: Word64)),
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],
@@ -177,13 +179,15 @@ twoReadEdgeFixture =
               { guard = PEq (proj amountIdx) (lit (0 :: Word64)),
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               },
             Edge
               { guard = PEq (proj amountIdx) (lit (1 :: Word64)),
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],
@@ -739,13 +743,15 @@ synth2Mutex =
               { guard = SymPred (PInCtor inCtorTinyFoo),
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               },
             Edge
               { guard = SymPred (PInCtor inCtorTinyBar),
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],
@@ -765,13 +771,15 @@ synth2Overlap =
               { guard = SymPred PTop,
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               },
             Edge
               { guard = SymPred PTop,
                 update = UKeep,
                 output = [],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],

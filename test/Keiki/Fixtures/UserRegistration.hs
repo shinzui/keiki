@@ -430,7 +430,8 @@ userRegASTEdges = \case
                 wireConfirmationEmailSent
                 (OFCons (inpStart #email) OFNil)
             ],
-          target = RequiresConfirmation
+          target = RequiresConfirmation,
+          mode = Live
         }
     ]
   RequiresConfirmation ->
@@ -459,7 +460,8 @@ userRegASTEdges = \case
                     )
                 )
             ],
-          target = Confirmed
+          target = Confirmed,
+          mode = Live
         },
       -- Resend: rotate the code (code arrives in the command).
       Edge
@@ -483,7 +485,8 @@ userRegASTEdges = \case
                     )
                 )
             ],
-          target = RequiresConfirmation
+          target = RequiresConfirmation,
+          mode = Live
         },
       -- GDPR before confirmation emits the deletion event so replay observes
       -- the state and register change.
@@ -502,7 +505,8 @@ userRegASTEdges = \case
                     (OFCons (inpGdpr #at) OFNil)
                 )
             ],
-          target = Deleted
+          target = Deleted,
+          mode = Live
         }
     ]
   Confirmed ->
@@ -521,7 +525,8 @@ userRegASTEdges = \case
                     (OFCons (inpGdpr #at) OFNil)
                 )
             ],
-          target = Deleted
+          target = Deleted,
+          mode = Live
         }
     ]
   Deleted -> []

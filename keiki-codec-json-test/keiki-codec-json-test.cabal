@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               keiki-codec-json-test
-version:            0.2.0.0
+version:            0.2.0.1
 synopsis:
   Property-test toolkit for keiki-codec-json downstream consumers.
 
@@ -69,7 +69,7 @@ library
     , base                  ^>=4.21
     , bytestring            ^>=0.12
     , hspec                 ^>=2.11
-    , keiki                 ^>=0.2
+    , keiki                 ^>=0.3
     , keiki-codec-json      ^>=0.2
     , QuickCheck            ^>=2.15
     , quickcheck-instances  ^>=0.3
@@ -86,7 +86,7 @@ test-suite keiki-codec-json-test-test
     , base                   ^>=4.21
     , bytestring             ^>=0.12
     , hspec                  ^>=2.11
-    , keiki                  ^>=0.2
+    , keiki                  ^>=0.3
     , keiki-codec-json       ^>=0.2
     , keiki-codec-json-test  ^>=0.2
     , QuickCheck             ^>=2.15

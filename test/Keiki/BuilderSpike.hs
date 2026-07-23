@@ -16,6 +16,7 @@ import Keiki.Builder ((*:), (.=))
 import Keiki.Builder qualified as B
 import Keiki.Core
   ( Edge (..),
+    EdgeMode (..),
     HsPred,
     Index,
     OutFields (..),
@@ -130,7 +131,8 @@ coffeeASTEdges = \case
                 wireBrewed
                 (OFCons (inpInsert #amount) OFNil)
             ],
-          target = Brewing
+          target = Brewing,
+          mode = Live
         }
     ]
   Brewing ->
@@ -138,7 +140,8 @@ coffeeASTEdges = \case
         { guard = isContinue,
           update = UKeep,
           output = [],
-          target = Idle
+          target = Idle,
+          mode = Live
         }
     ]
 

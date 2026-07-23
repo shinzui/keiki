@@ -73,7 +73,8 @@ synthetic =
               { guard = matchInCtor inCtorTrue,
                 update = UKeep,
                 output = [pack inCtorTrue wcStringTrue OFNil],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],

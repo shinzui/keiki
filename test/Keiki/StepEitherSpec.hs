@@ -18,12 +18,12 @@ fixture =
   SymTransducer
     { edgesOut = \case
         V0 ->
-          [ Edge {guard = PTop, update = UKeep, output = [], target = VEnd},
-            Edge {guard = PTop, update = UKeep, output = [], target = V3}
+          [ Edge {guard = PTop, update = UKeep, output = [], target = VEnd, mode = Live},
+            Edge {guard = PTop, update = UKeep, output = [], target = V3, mode = Live}
           ]
-        V1 -> [Edge {guard = PBot, update = UKeep, output = [], target = VEnd}]
+        V1 -> [Edge {guard = PBot, update = UKeep, output = [], target = VEnd, mode = Live}]
         V2 -> []
-        V3 -> [Edge {guard = PTop, update = UKeep, output = [], target = VEnd}]
+        V3 -> [Edge {guard = PTop, update = UKeep, output = [], target = VEnd, mode = Live}]
         VEnd -> [],
       initial = V0,
       initialRegs = RNil,

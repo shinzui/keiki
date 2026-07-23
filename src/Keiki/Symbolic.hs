@@ -648,11 +648,16 @@ isSingleValuedSym t = all vertexSV [minBound .. maxBound]
     vertexSV s =
       let es = edgesOut t s
           ies = zip [(0 :: Int) ..] es
+          -- Only 'Live' edges compete in forward dispatch; guard
+          -- overlap with or between 'ReplayOnly' edges cannot cause
+          -- forward ambiguity.
           pairs =
             [ (e1, e2)
             | (i, e1) <- ies,
               (j, e2) <- ies,
-              i < j
+              i < j,
+              mode e1 == Live,
+              mode e2 == Live
             ]
        in all (\(e1, e2) -> isBot (guard e1 `conj` guard e2)) pairs
 
@@ -679,7 +684,8 @@ withSymPred t =
         { guard = SymPred (guard e),
           update = u,
           output = output e,
-          target = target e
+          target = target e,
+          mode = mode e
         }
 
 -- * Solver-backed validation diagnostics (EP-56) ---------------------------

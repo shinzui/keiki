@@ -56,8 +56,8 @@ overlapT =
   SymTransducer
     { edgesOut = \case
         Start ->
-          [ Edge {guard = PTop, update = UKeep, output = [], target = Mid},
-            Edge {guard = PTop, update = UKeep, output = [], target = Mid}
+          [ Edge {guard = PTop, update = UKeep, output = [], target = Mid, mode = Live},
+            Edge {guard = PTop, update = UKeep, output = [], target = Mid, mode = Live}
           ]
         _ -> [],
       initial = Start,
@@ -70,8 +70,8 @@ deadT :: SymTransducer (HsPred '[] Cmd) '[] V Cmd ()
 deadT =
   SymTransducer
     { edgesOut = \case
-        Start -> [Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [], target = Mid}]
-        Orphan -> [Edge {guard = PTop, update = UKeep, output = [], target = Start}]
+        Start -> [Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [], target = Mid, mode = Live}]
+        Orphan -> [Edge {guard = PTop, update = UKeep, output = [], target = Start, mode = Live}]
         _ -> [],
       initial = Start,
       initialRegs = RNil,
@@ -83,7 +83,7 @@ botT :: SymTransducer (HsPred '[] Cmd) '[] V Cmd ()
 botT =
   SymTransducer
     { edgesOut = \case
-        Start -> [Edge {guard = PBot, update = UKeep, output = [], target = Mid}]
+        Start -> [Edge {guard = PBot, update = UKeep, output = [], target = Mid, mode = Live}]
         _ -> [],
       initial = Start,
       initialRegs = RNil,
@@ -98,8 +98,8 @@ cleanT =
   SymTransducer
     { edgesOut = \case
         Start ->
-          [ Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [pack inCtorFoo wireFooed oNil], target = Mid},
-            Edge {guard = matchInCtor inCtorBar, update = UKeep, output = [pack inCtorBar wireBared oNil], target = Mid}
+          [ Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [pack inCtorFoo wireFooed oNil], target = Mid, mode = Live},
+            Edge {guard = matchInCtor inCtorBar, update = UKeep, output = [pack inCtorBar wireBared oNil], target = Mid, mode = Live}
           ]
         _ -> [],
       initial = Start,
@@ -116,8 +116,8 @@ symOverlapT =
   SymTransducer
     { edgesOut = \case
         Start ->
-          [ Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [], target = Mid},
-            Edge {guard = PTop, update = UKeep, output = [], target = Mid}
+          [ Edge {guard = matchInCtor inCtorFoo, update = UKeep, output = [], target = Mid, mode = Live},
+            Edge {guard = PTop, update = UKeep, output = [], target = Mid, mode = Live}
           ]
         _ -> [],
       initial = Start,
@@ -143,7 +143,8 @@ opaqueT =
                     (TLit True),
                 update = UKeep,
                 output = [pack inCtorFoo wireFooed oNil],
-                target = Mid
+                target = Mid,
+                mode = Live
               }
           ]
         _ -> [],
@@ -201,7 +202,8 @@ hiddenT =
                           (OFCons (TInpCtorField inCtorBegin (#b :: Index '[ '("a", Int), '("b", Int), '("c", Int)] Int)) OFNil)
                       )
                   ],
-                target = True
+                target = True,
+                mode = Live
               }
           ]
         True -> [],
@@ -226,8 +228,8 @@ overlapFixture leftGuard rightGuard =
   SymTransducer
     { edgesOut = \case
         Start ->
-          [ Edge leftGuard UKeep [] Start,
-            Edge rightGuard UKeep [] Start
+          [ Edge leftGuard UKeep [] Start Live,
+            Edge rightGuard UKeep [] Start Live
           ]
         _ -> [],
       initial = Start,
@@ -301,7 +303,8 @@ disjointWord8T =
               )
               UKeep
               []
-              Start,
+              Start
+              Live,
             Edge
               ( PAnd
                   (PInCtor inCtorFoo)
@@ -310,6 +313,7 @@ disjointWord8T =
               UKeep
               []
               Start
+              Live
           ]
         _ -> [],
       initial = Start,
@@ -332,12 +336,14 @@ boolLiteralWitnessT =
               (PAnd (PInCtor inCtorFoo) (PEq (proj boolOverlapIdx) (TLit True)))
               UKeep
               []
-              Start,
+              Start
+              Live,
             Edge
               (PAnd (PInCtor inCtorFoo) (PEq (TLit True) (proj boolOverlapIdx)))
               UKeep
               []
               Start
+              Live
           ]
         _ -> [],
       initial = Start,

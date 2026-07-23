@@ -166,7 +166,8 @@ userRegV0Edges = \case
                 wireConfirmationEmailSentV0
                 (OFCons (inpStart #email) OFNil)
             ],
-          target = RequiresConfirmation
+          target = RequiresConfirmation,
+          mode = Live
         }
     ]
   RequiresConfirmation ->
@@ -195,7 +196,8 @@ userRegV0Edges = \case
                     (OFCons (inpConfirm #at) OFNil)
                 )
             ],
-          target = Confirmed
+          target = Confirmed,
+          mode = Live
         },
       Edge
         { guard = isResend,
@@ -218,7 +220,8 @@ userRegV0Edges = \case
                     )
                 )
             ],
-          target = RequiresConfirmation
+          target = RequiresConfirmation,
+          mode = Live
         },
       Edge
         { guard = isGdpr,
@@ -227,7 +230,8 @@ userRegV0Edges = \case
               (#deletedAt :: IndexN "deletedAt" UserRegRegs UTCTime)
               (inpGdpr #at),
           output = [],
-          target = Deleted
+          target = Deleted,
+          mode = Live
         }
     ]
   Confirmed ->
@@ -246,7 +250,8 @@ userRegV0Edges = \case
                     (OFCons (inpGdpr #at) OFNil)
                 )
             ],
-          target = Deleted
+          target = Deleted,
+          mode = Live
         }
     ]
   Deleted -> []

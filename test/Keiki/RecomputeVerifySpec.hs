@@ -31,6 +31,7 @@ import Keiki.Builder ((.=))
 import Keiki.Builder qualified as B
 import Keiki.Core
   ( Edge (..),
+    EdgeMode (..),
     HiddenInputWarning (..),
     HsPred (..),
     Index,
@@ -133,7 +134,8 @@ badCart =
             { guard = PInCtor inCtorAdd,
               update = UKeep,
               output = [badOut],
-              target = CartOpen
+              target = CartOpen,
+              mode = Live
             }
         ],
       initial = CartOpen,

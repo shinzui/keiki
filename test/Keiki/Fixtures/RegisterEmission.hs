@@ -102,7 +102,8 @@ registerEmission =
               { guard = matchInCtor inCtorOpen,
                 update = USet (#owner :: IndexN "owner" RegisterEmissionRegs Text) (TInpCtorField inCtorOpen (#owner :: Index '[ '("owner", Text)] Text)),
                 output = [pack inCtorOpen wireOpened (TInpCtorField inCtorOpen (#owner :: Index '[ '("owner", Text)] Text) *: oNil)],
-                target = Active
+                target = Active,
+                mode = Live
               }
           ]
         Active ->
@@ -118,7 +119,8 @@ registerEmission =
                           *: oNil
                       )
                   ],
-                target = Active
+                target = Active,
+                mode = Live
               },
             Edge
               { guard = matchInCtor inCtorClose,
@@ -127,7 +129,8 @@ registerEmission =
                   [ pack inCtorClose wireClosed (TReg (#owner :: Index RegisterEmissionRegs Text) *: oNil),
                     pack inCtorClose wireArchived (TReg (#owner :: Index RegisterEmissionRegs Text) *: oNil)
                   ],
-                target = Finished
+                target = Finished,
+                mode = Live
               }
           ]
         Finished -> [],

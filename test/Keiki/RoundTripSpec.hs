@@ -364,7 +364,8 @@ stateChangingEpsilon =
               { guard = PTop,
                 update = UKeep,
                 output = [],
-                target = EpsilonDone
+                target = EpsilonDone,
+                mode = Live
               }
           ]
         EpsilonDone -> []
