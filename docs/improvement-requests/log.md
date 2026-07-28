@@ -4,3 +4,6 @@
 * **Addition**: IR-1 requests typed symbolic field projections over mapped consumer-owned
   values, filed from Keiro (master plan 25 / research note 14 Experiment C) so the Keiki-side
   prerequisite for checked nested guards is recorded before any DSL syntax work begins.
+* **Status change**: IR-1 `proposed` → `planned`. Validated against the codebase and accepted;
+  implementation specified by ExecPlan 79
+  (`docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`).

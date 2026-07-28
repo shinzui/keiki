@@ -6,15 +6,23 @@ description: >-
   out of a mapped consumer-owned value without an opaque TApp escape hatch.
 timestamp: 2026-07-28T11:23:50Z
 requestId: IR-1
-status: proposed
+status: planned
 origin: mori://shinzui/keiro
+plan: docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md
 ---
 
 # Improvement Request: Support Typed Symbolic Field Projections over Mapped Consumer-Owned Values
 
 ## Status
 
-**Proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl` (Keiro's
+**Planned.** Accepted on 2026-07-28 after validation against the codebase; implementation is
+specified by ExecPlan 79
+(`docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`),
+which resolves the three soundness decisions the request left open (structural base
+restriction via `ProjBase`, owner-`TypeRep`-qualified memo keys, and derived-term treatment
+in the inversion machinery) in its Decision Log.
+
+**Originally proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl` (Keiro's
 improvement request IR-1, `docs/improvement-requests/support-structural-consumer-owned-types-in-keiro-dsl.md`
 in the `shinzui/keiro` repository, coordinated by Keiro's master plan 25). That work deliberately
 requires **no Keiki change**: mapped consumer values are whole values — copied wholesale into
