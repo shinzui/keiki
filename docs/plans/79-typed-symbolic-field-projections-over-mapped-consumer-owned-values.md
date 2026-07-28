@@ -98,8 +98,8 @@ This section must always reflect the actual current state of the work.
 - [x] (2026-07-28T13:06:23Z) M2: z3-backed tests — same projection shares, distinct projections do not, adversarial string segments cannot collide, and concrete/symbolic agreement holds in the required direction
 - [x] (2026-07-28T13:06:23Z) M3: unconditional `ProjectionResultUnsupported`, `ProjectionOrderingUnsupported`, and `ProjectionOutsideGuard` validation warnings
 - [x] (2026-07-28T13:06:23Z) M3: hidden-input / `PInCtor` discipline tests; forward-vs-replay equality test over a projection-guarded transducer
-- [ ] M4: Haddocks with the projection-instance laws and provenance division; exported law harness (`fieldWitnessAgrees`) plus negative test proving a wrong instance fails
-- [ ] M4: documentation and ADR pass — projection design note plus updates to ADR-0003 and ADR-0004 (IR already points here; status advances to `released` in M5)
+- [x] (2026-07-28T13:13:36Z) M4: Haddocks with the projection-instance laws and provenance division; exported law harness (`fieldWitnessAgrees`) plus negative test proving a wrong instance fails
+- [x] (2026-07-28T13:13:36Z) M4: documentation and ADR pass — projection design note plus updates to ADR-0003 and ADR-0004 (IR already points here; status advances to `released` in M5)
 - [ ] M5: changelog entry, version bump to 0.4.0.0, Hackage/upstream-tag re-check, release and tag per `docs/research/release-procedure.md`
 - [ ] Final: ADR distillation pass and Outcomes & Retrospective
 - [x] (2026-07-28) Planning audit: checked the proposal against all five `Term`-handling modules, relevant ADRs, the IR, Mori-located SBV source, Hackage, and upstream tags; revised the unsound or unimplementable parts below
@@ -391,6 +391,15 @@ Strong rewrites, stable/literal/computed composition behavior, multi-event pendi
 rejection, z3 sharing/non-sharing (including adversarial labels and `Int`/`Integer`), both
 directions of the generated concrete comparisons, guards-only validation, hidden-input and
 `PInCtor` discipline, and forward/replay state equality.
+
+Milestone 4 outcome (2026-07-28): public Haddocks now state totality, nominal identity,
+instance coherence, schema-provenance ownership, duplicate-tag precision loss, and the
+one-way symbolic simulation. The exported `fieldWitnessAgrees` harness has passing and
+mutation-style expected-failure properties. The new field-projection design note records the
+structured cache key, `symSatExt` limitation, validation placement, replay treatment, and
+composition policy; ADR-0003 and ADR-0004 retain the corresponding conservative-proof and
+checked-boundary decisions. `cabal haddock` completes and `cabal test all` remains green with
+559 Keiki examples plus the workspace's codec and Jitsurei suites.
 
 
 ## Context and Orientation
@@ -1341,3 +1350,6 @@ downstream matches and must be named in the 0.4.0.0 changelog.
   `constrainFieldProjection` signature after GHC proved its class/name constraints redundant.
   The abstract witness remains the instance-provenance gate; the binding helper now advertises
   only the dictionaries it actually consumes.
+- 2026-07-28: Completed Milestone 4. Expanded public Haddocks, added the self-contained
+  field-projection research note and input-projection cross-link, and updated ADR-0003 and
+  ADR-0004 with the one-way over-approximation and preserve/fold/lower composition decisions.

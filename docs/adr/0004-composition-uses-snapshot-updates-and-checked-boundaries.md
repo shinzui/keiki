@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
-- **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`
+- **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`
 
 ## Context
 
@@ -27,6 +27,15 @@ poisoned boundary provenance before returning a composite. `compose`
 remains the unchecked construction primitive. `feedback1` is explicitly
 a two-copy cascade, not shared-state feedback.
 
+When a typed field projection crosses a mapped composition boundary,
+composition preserves it if the mapped owner is still a direct register
+or input read, folds it if the owner is a literal, and otherwise lowers
+the getter to an opaque unary application. Raw `compose` remains
+forward-correct under that lowering, but symbolic precision is lost.
+`composeChecked` rejects that boundary with a structured
+`NonStructuralProjectionBoundary` warning, including pending-write cases
+in multi-event chains.
+
 ## Consequences
 
 - Intra-edge updates cannot intentionally depend on a sibling write;
@@ -36,6 +45,9 @@ a two-copy cascade, not shared-state feedback.
   homomorphism.
 - Mapped categorical boundaries and slot overlap fail loudly rather than
   silently producing a dead pipeline.
+- Typed projections retain nominal symbolic identity only across
+  structural boundaries; computed and pending-write owners require an
+  explicit unchecked, forward-only choice.
 - `Category`, `Choice`, `Strong`, and `Arrow` claims are documented per
   forward and replay observations; some fragments remain partial or
   forward-only rather than unqualified lawful instances.

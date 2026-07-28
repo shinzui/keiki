@@ -650,3 +650,13 @@ combine step is gone.
 
 The EP-1 plan's Surprises & Discoveries and Decision Log record the
 deviation and the date.
+
+
+## Related field projections
+
+`TInpCtorField` projects a scalar that is already present as one slot in an
+input constructor schema. A later, distinct capability projects a scalar from
+inside a consumer-owned value that occupies one register or input slot. Its
+nominal identity, symbolic over-approximation, validation boundary, and
+composition behavior are specified in
+[`field-projection-design.md`](field-projection-design.md).

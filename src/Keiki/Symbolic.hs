@@ -24,8 +24,9 @@
 --     solver-visible).
 --   * 'SymEnv' carrying the shared symbolic input-constructor tag and
 --     (since EP-42 of MasterPlan 12) an 'IORef' memo cache that shares
---     one SBV variable per register slot / input field across repeated
---     reads, so @proj #x .== proj #x@ is valid, not merely satisfiable.
+--     one SBV variable per register slot, input field, or nominal typed field
+--     projection across repeated reads, so @proj #x .== proj #x@ and repeated
+--     projected reads are valid, not merely satisfiable.
 --   * 'translateTermSym' / 'translatePred' walking 'Term' / 'HsPred'
 --     into SBV expressions.
 --   * 'discoverSym' — runtime dispatch from 'Typeable' to 'Sym'
@@ -440,17 +441,23 @@ mkSymEnv = do
 --   * 'TInpCtorField' allocates
 --     @"inp/<icName>/<slotName>"@ — the 'InCtor''s name plus the
 --     field's slot label.
+--   * 'TFieldProj' uses a structured cache key containing the base position,
+--     nominal projection tag, owner type, and result type. Its actual SBV
+--     label is an internal @"proj/<ordinal>"@, so arbitrary schema strings
+--     cannot collide with or violate SBV's label syntax.
 --   * 'TApp1' / 'TApp2' keep their anonymous names; their values are
 --     not extracted as part of the witness.
 --
--- Note on repeated reads (EP-42): 'TReg' and 'TInpCtorField' reads are
--- memoized through the env's 'seVarCache'. The first read of a given
--- slot\/field allocates one 'SBV.free' variable and caches it under its
--- deterministic name; every later read of the same name returns the
--- cached variable. So two reads of the same slot (e.g.
+-- Note on repeated reads (EP-42): 'TReg', 'TInpCtorField', and
+-- 'TFieldProj' reads are memoized through the env's 'seVarCache'. The first
+-- read of a given structural key allocates one 'SBV.free' variable and caches
+-- it; every later read of the same key returns the cached variable. So two
+-- reads of the same slot (e.g.
 -- @proj #x .== proj #x@) share /one/ SBV variable: the solver knows
 -- they are equal, @x \/= x@ is unsat, and 'symSatExt''s by-name witness
--- extraction is correct for repeated reads. The 'TApp1' \/ 'TApp2'
+-- extraction is correct for ordinary repeated reads. Projection variables
+-- are deliberately not extracted: the solver knows the scalar result but not
+-- how to construct its consumer-owned base value. The 'TApp1' \/ 'TApp2'
 -- escape hatches stay per-occurrence fresh (their opaque functions
 -- have no 'Eq', so two applications cannot be recognized as equal);
 -- their values are not part of the extracted witness.
@@ -501,9 +508,12 @@ projectionVarKey _ base =
     (SomeTypeRep (typeRep @(FieldResult projection)))
 
 -- | Bind one memoized projection variable to the concrete getter result for
--- a known owner. This supplies the concrete-to-symbolic simulation used by
--- agreement properties; it is not an inverse for 'symSatExt', and projection
--- variables are not extracted into consumer-owned values.
+-- a known owner. Pass @fieldWitnessGet witness owner@ as the concrete result.
+-- This supplies the concrete-to-symbolic simulation used by agreement
+-- properties: every concrete evaluation has a matching symbolic valuation.
+-- The converse is intentionally not claimed. This function is not an inverse
+-- for 'symSatExt', and projection variables are not extracted into or checked
+-- for joint realizability as consumer-owned values.
 constrainFieldProjection ::
   forall projection rs ci ifs.
   ( Typeable projection,

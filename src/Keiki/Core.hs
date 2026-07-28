@@ -323,15 +323,22 @@ data NumOp = OpAdd | OpSub | OpMul
   deriving stock (Eq, Show)
 
 -- | One nominal, solver-visible projection from a consumer-owned value.
--- Define one fresh tag type and one coherent instance per logical field.
--- The tag's 'Typeable' identity, rather than 'FieldName' or
--- 'fieldShapeId', is used by the symbolic layer to decide variable sharing.
+-- Define one fresh tag type and one coherent instance per logical field, and
+-- reuse that canonical tag at every occurrence of the field. The tag's
+-- 'Typeable' identity, rather than 'FieldName' or 'fieldShapeId', is used by
+-- the symbolic layer to decide variable sharing. Two different tags for the
+-- same logical field are sound but imprecise: the solver treats them as
+-- independent values.
 --
 -- 'projectFieldValue' must be total for every well-formed 'FieldOwner'.
 -- 'FieldName' and 'fieldShapeId' must truthfully describe that getter.
--- Keiki checks the term-level laws; a binding generator such as Keiro remains
--- responsible for proving that a generated instance agrees with its schema
--- and codec provenance.
+-- Normal Haskell instance coherence supplies one getter per tag; defining
+-- incoherent instances is outside Keiki's supported contract. Keiki checks
+-- concrete term behavior and supplies 'fieldWitnessAgrees'; a binding
+-- generator such as Keiro remains responsible for proving that a generated
+-- instance agrees with its schema and codec provenance. A dishonest instance
+-- can therefore misname a field, but cannot make one coherent tag mean two
+-- different getters.
 class FieldProjection projection where
   type FieldName projection :: Symbol
   type FieldOwner projection :: Type
@@ -340,16 +347,19 @@ class FieldProjection projection where
   projectFieldValue ::
     Proxy projection -> FieldOwner projection -> FieldResult projection
 
--- | Abstract nominal token for a 'FieldProjection' instance. Construct one
--- with 'fieldWitness'. Its nominal role prevents changing the projection tag
--- with 'coerce'.
+-- | Abstract nominal token for a coherent 'FieldProjection' instance.
+-- Construct one with 'fieldWitness'. Its nominal role prevents changing the
+-- projection tag with 'coerce', and the tag's 'TypeRep' supplies symbolic
+-- cache identity independently of caller-controlled diagnostic strings.
 type role FieldWitness nominal
 
 data FieldWitness projection = FieldWitness
 
 -- | Construct the abstract witness for a projection tag. Normal Haskell
 -- instance coherence supplies one getter per tag; generators should therefore
--- reuse one canonical tag for every occurrence of the same logical field.
+-- reuse one canonical tag for every occurrence of the same logical field and
+-- test it against the schema-derived reference getter with
+-- 'fieldWitnessAgrees'. Duplicate tags remain sound, but lose proof precision.
 fieldWitness ::
   ( FieldProjection projection,
     KnownSymbol (FieldName projection),
@@ -423,10 +433,14 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
     Term rs ci ifs r ->
     Term rs ci ifs r ->
     Term rs ci ifs r
-  -- | A single-hop, solver-visible field projection. Only the projected
-  -- result needs symbolic support; the consumer-owned base value does not.
-  -- Default validation permits this node in guards and rejects it in updates
-  -- or outputs. Concrete evaluation remains total in every position.
+  -- | A single-hop, solver-visible field projection. The coherent nominal tag
+  -- identifies the logical getter; only the projected result needs symbolic
+  -- support, while the consumer-owned base value does not. Concrete
+  -- evaluation applies the total getter. Symbolic translation creates a free
+  -- variable for the typed path, so agreement is intentionally one-way: a
+  -- concrete owner can constrain that variable to its getter result, but a
+  -- solver model cannot reconstruct the owner. Default validation permits
+  -- this node in guards and rejects it in updates or outputs.
   TFieldProj ::
     ( FieldProjection projection,
       KnownSymbol (FieldName projection),
@@ -835,8 +849,11 @@ inpCtor :: InCtor ci ifs -> Index ifs r -> Term rs ci ifs r
 inpCtor = TInpCtorField
 
 -- | Project one field from a consumer-owned value stored in a register slot.
--- The nominal witness makes repeated reads of this exact typed path share one
--- symbolic variable without requiring the owner type itself to be symbolic.
+-- The total getter comes from the witness's coherent nominal instance.
+-- Repeated reads of this exact typed path share one symbolic variable without
+-- requiring the owner type itself to be symbolic. That symbolic value is an
+-- over-approximation: concrete owners can be bound to it, but solver models do
+-- not reconstruct owners.
 regProj ::
   ( FieldProjection projection,
     KnownSymbol (FieldName projection),
@@ -850,8 +867,10 @@ regProj ::
 regProj witness ix = TFieldProj witness (PBReg ix)
 
 -- | Project one field from a consumer-owned value carried by the matched
--- input constructor. Pair this term with the corresponding 'matchInCtor'
--- guard, just as for 'inpCtor'.
+-- input constructor. The getter and one-way symbolic agreement laws are the
+-- same as for 'regProj'. Pair this term with the corresponding 'matchInCtor'
+-- guard, just as for 'inpCtor'; validation treats the projected read as a read
+-- of the whole underlying input field.
 inpProj ::
   ( FieldProjection projection,
     KnownSymbol (FieldName projection),

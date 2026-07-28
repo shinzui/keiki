@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
-- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`
+- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`
 
 ## Context
 
@@ -26,6 +26,16 @@ an explicit fixed-width type. The fast pure validator proves overlaps
 only inside its documented structural fragment and stays silent when it
 cannot prove one; the z3-backed check is the exact gate.
 
+A typed field projection over a consumer-owned value is modeled as a
+free scalar with structural, nominal identity. Soundness is the one-way
+concrete-to-symbolic simulation: for every concrete owner, constrain the
+scalar to the total getter result and symbolic predicate evaluation must
+agree with concrete evaluation. Keiki does not claim the converse. A
+model containing free projection values need not correspond to any
+constructible owner, and `symSatExt` does not reconstruct such owners.
+This over-approximation may conservatively reject a valid proof gate; it
+must not manufacture an unsatisfiability proof.
+
 ## Consequences
 
 - A solver timeout or unsupported theory can produce a conservative CI
@@ -36,3 +46,6 @@ cannot prove one; the z3-backed check is the exact gate.
   execution.
 - The pure validator has no false-positive overlap warnings in its
   supported fragment, but it can miss unsupported predicate shapes.
+- Projection-backed satisfiability witnesses are scalar abstractions,
+  not reconstructed consumer-owned values. Callers that need a concrete
+  owner must provide it and bind its getter result explicitly.
