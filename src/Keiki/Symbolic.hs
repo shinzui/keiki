@@ -60,6 +60,7 @@ module Keiki.Symbolic
     mkSymEnv,
     translateTermSym,
     translatePred,
+    constrainFieldProjection,
 
     -- * Symbolic predicate wrapper
     SymPred (..),
@@ -106,8 +107,12 @@ import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Keiki.Core
+import Keiki.Internal.SymbolicTypes
+  ( SymbolicType (..),
+    discoverSymbolicType,
+  )
 import System.IO.Unsafe (unsafePerformIO)
-import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
+import Type.Reflection (SomeTypeRep (..), eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 -- * Symbolic representation -------------------------------------------------
 
@@ -235,19 +240,19 @@ data SymDict r where
 -- SBV terms; a miss falls back to a fresh 'SBool' (loses precision but
 -- stays sound).
 discoverSym :: forall r. (Typeable r) => Maybe (SymDict r)
-discoverSym
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Bool) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Text) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @UTCTime) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64) = Just SymDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32) = Just SymDict
-  | otherwise = Nothing
+discoverSym = case discoverSymbolicType @r of
+  Just SymbolicBool -> Just SymDict
+  Just SymbolicInt -> Just SymDict
+  Just SymbolicInteger -> Just SymDict
+  Just SymbolicText -> Just SymDict
+  Just SymbolicUTCTime -> Just SymDict
+  Just SymbolicWord64 -> Just SymDict
+  Just SymbolicWord32 -> Just SymDict
+  Just SymbolicWord16 -> Just SymDict
+  Just SymbolicWord8 -> Just SymDict
+  Just SymbolicInt64 -> Just SymDict
+  Just SymbolicInt32 -> Just SymDict
+  Nothing -> Nothing
 
 -- | Reify both a 'Sym' instance for @r@ and evidence that its
 -- 'SymRep' is symbolically orderable (an 'SBV.OrdSymbolic' instance on
@@ -268,17 +273,19 @@ data SymOrdDict r where
 -- translator fall back to a fresh opaque 'SBool', exactly as 'goEq'
 -- does for non-'Sym' operands — sound, just imprecise.
 discoverSymOrd :: forall r. (Typeable r) => Maybe (SymOrdDict r)
-discoverSymOrd
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32) = Just SymOrdDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @UTCTime) = Just SymOrdDict
-  | otherwise = Nothing
+discoverSymOrd = case discoverSymbolicType @r of
+  Just SymbolicInt -> Just SymOrdDict
+  Just SymbolicInteger -> Just SymOrdDict
+  Just SymbolicUTCTime -> Just SymOrdDict
+  Just SymbolicWord64 -> Just SymOrdDict
+  Just SymbolicWord32 -> Just SymOrdDict
+  Just SymbolicWord16 -> Just SymOrdDict
+  Just SymbolicWord8 -> Just SymOrdDict
+  Just SymbolicInt64 -> Just SymOrdDict
+  Just SymbolicInt32 -> Just SymOrdDict
+  Just SymbolicBool -> Nothing
+  Just SymbolicText -> Nothing
+  Nothing -> Nothing
 
 -- | Reify both a 'Sym' instance for @r@ and evidence that its 'SymRep'
 -- is symbolically /numeric/ (a 'Num' instance on @'SBV.SBV' ('SymRep'
@@ -302,16 +309,19 @@ data SymNumDict r where
 -- fallback is only reachable for a numeric type intentionally left out
 -- of the registry.)
 discoverSymNum :: forall r. (Typeable r) => Maybe (SymNumDict r)
-discoverSymNum
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word32) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word16) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int64) = Just SymNumDict
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int32) = Just SymNumDict
-  | otherwise = Nothing
+discoverSymNum = case discoverSymbolicType @r of
+  Just SymbolicInt -> Just SymNumDict
+  Just SymbolicInteger -> Just SymNumDict
+  Just SymbolicWord64 -> Just SymNumDict
+  Just SymbolicWord32 -> Just SymNumDict
+  Just SymbolicWord16 -> Just SymNumDict
+  Just SymbolicWord8 -> Just SymNumDict
+  Just SymbolicInt64 -> Just SymNumDict
+  Just SymbolicInt32 -> Just SymNumDict
+  Just SymbolicBool -> Nothing
+  Just SymbolicText -> Nothing
+  Just SymbolicUTCTime -> Nothing
+  Nothing -> Nothing
 
 -- | Lift a concrete value to an SBV literal of its 'SymRep'.
 symLit :: forall a. (Sym a) => a -> SBV.SBV (SymRep a)
@@ -337,17 +347,33 @@ symFree = SBV.free
 --   * 'seInputArm' — an independent discriminator for 'PLeftArm' and
 --     'PRightArm'. It is separate from constructor names so both facts can
 --     be asserted by the same guard.
---   * 'seVarCache' — a per-translation memo cache (EP-42) keyed by the
---     deterministic variable name ('TReg' allocates @"reg/\<slot\>"@,
---     'TInpCtorField' allocates @"inp/\<ctor\>/\<field\>"@). The first
---     read of a name allocates one 'SBV.free' variable and stores it;
---     every later read of the same name returns the cached variable.
+--   * 'seVarCache' — a per-translation memo cache (EP-42) keyed by a
+--     structured 'SymVarKey'. Ordinary register and input reads preserve their
+--     historical labels; field projections use base position and nominal
+--     'TypeRep' identity, never caller-controlled diagnostic strings alone.
+--     The first read allocates one 'SBV.free' variable and stores it; every
+--     later read of the same key returns the cached variable.
 --     This makes the solver see two reads of @#x@ as the /same/ value,
 --     so @proj #x .== proj #x@ is valid (not merely satisfiable). The
 --     'TApp1' \/ 'TApp2' escape hatches are deliberately /not/ cached:
 --     they wrap opaque Haskell functions with no 'Eq', so two
 --     applications cannot be recognized as equal and each stays a fresh
 --     per-occurrence variable.
+data ProjectionBaseKey
+  = ProjectionReg String Int
+  | ProjectionInp String String Int
+  deriving stock (Eq, Ord, Show)
+
+data SymVarKey
+  = RegVar String
+  | InpVar String String
+  | ProjectionVar
+      ProjectionBaseKey
+      SomeTypeRep
+      SomeTypeRep
+      SomeTypeRep
+  deriving stock (Eq, Ord, Show)
+
 data SymEnv = SymEnv
   { -- | The shared symbolic input constructor tag. 'PInCtor' atoms
     --     assert @seInputCtor .== literal (icName ic)@; the solver
@@ -363,7 +389,11 @@ data SymEnv = SymEnv
     --     falls back to 'symDefault' for them). Scoped to one
     --     'translatePred' walk (one 'mkSymEnv'), so variables are shared
     --     /within/ a query but never leak across independent queries.
-    seVarCache :: IORef (Map String SomeSBV)
+    seVarCache :: IORef (Map SymVarKey SomeSBV),
+    -- | Next internal projection label. Projection labels are intentionally
+    --     generated by Keiki so arbitrary schema names never reach SBV's
+    --     restricted label namespace.
+    seProjectionOrdinal :: IORef Int
   }
 
 -- | An SBV variable of some representation type, packed so the memo
@@ -384,7 +414,8 @@ mkSymEnv = do
   ctor <- SBV.free "inputCtor"
   arm <- SBV.free "inputArm"
   cache <- liftIO (newIORef Map.empty)
-  pure (SymEnv ctor arm cache)
+  projectionOrdinal <- liftIO (newIORef 0)
+  pure (SymEnv ctor arm cache projectionOrdinal)
 
 -- * Translation -------------------------------------------------------------
 
@@ -431,9 +462,9 @@ translateTermSym ::
   SBV.Symbolic (SBV.SBV (SymRep r))
 translateTermSym _env (TLit r) = pure (symLit r)
 translateTermSym env (TReg ix) =
-  memoFree env ("reg/" <> indexName ix)
+  memoFree env (RegVar (indexName ix))
 translateTermSym env (TInpCtorField ic ix) =
-  memoFree env ("inp/" <> icName ic <> "/" <> indexName ix)
+  memoFree env (InpVar (icName ic) (indexName ix))
 translateTermSym _env (TApp1 _f _t) = SBV.free "app1"
 translateTermSym _env (TApp2 _f _a _b) = SBV.free "app2"
 translateTermSym env (TArith op a b) = case discoverSymNum @r of
@@ -446,6 +477,47 @@ translateTermSym env (TArith op a b) = case discoverSymNum @r of
           OpSub -> (-)
           OpMul -> (*)
     pure (apply sa sb)
+translateTermSym env (TFieldProj (witness :: FieldWitness projection) base) =
+  memoFree env (projectionVarKey witness base)
+
+projectionVarKey ::
+  forall projection rs ci ifs.
+  ( Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection ->
+  ProjBase rs ci ifs (FieldOwner projection) ->
+  SymVarKey
+projectionVarKey _ base =
+  ProjectionVar
+    ( case base of
+        PBReg ix -> ProjectionReg (indexName ix) (indexPosition ix)
+        PBInp ic ix ->
+          ProjectionInp (icName ic) (indexName ix) (indexPosition ix)
+    )
+    (SomeTypeRep (typeRep @projection))
+    (SomeTypeRep (typeRep @(FieldOwner projection)))
+    (SomeTypeRep (typeRep @(FieldResult projection)))
+
+-- | Bind one memoized projection variable to the concrete getter result for
+-- a known owner. This supplies the concrete-to-symbolic simulation used by
+-- agreement properties; it is not an inverse for 'symSatExt', and projection
+-- variables are not extracted into consumer-owned values.
+constrainFieldProjection ::
+  forall projection rs ci ifs.
+  ( Typeable projection,
+    Typeable (FieldOwner projection),
+    Sym (FieldResult projection)
+  ) =>
+  SymEnv ->
+  FieldWitness projection ->
+  ProjBase rs ci ifs (FieldOwner projection) ->
+  FieldResult projection ->
+  SBV.Symbolic ()
+constrainFieldProjection env witness base concrete = do
+  symbolic <- memoFree env (projectionVarKey witness base)
+  SBV.constrain (symbolic SBV..== symLit concrete)
 
 -- | Memoized symbolic-variable allocator (EP-42). Looks @name@ up in
 -- the env's 'seVarCache'. On a hit, recover the cached SBV variable —
@@ -457,19 +529,27 @@ translateTermSym env (TArith op a b) = case discoverSymNum @r of
 memoFree ::
   forall a.
   (SBV.SymVal a) =>
-  SymEnv -> String -> SBV.Symbolic (SBV.SBV a)
-memoFree env name = do
+  SymEnv -> SymVarKey -> SBV.Symbolic (SBV.SBV a)
+memoFree env key = do
   m <- liftIO (readIORef (seVarCache env))
-  case Map.lookup name m of
+  case Map.lookup key m of
     Just (SomeSBV (v :: SBV.SBV b)) ->
       case eqTypeRep (typeRep @a) (typeRep @b) of
         Just HRefl -> pure v
         Nothing ->
           -- Unreachable: a name maps to exactly one representation type.
-          error ("memoFree: type mismatch for cached variable " <> name)
+          error ("memoFree: type mismatch for cached variable " <> show key)
     Nothing -> do
-      v <- SBV.free name
-      liftIO (modifyIORef' (seVarCache env) (Map.insert name (SomeSBV v)))
+      label <- case key of
+        RegVar name -> pure ("reg/" <> name)
+        InpVar ctorName fieldName ->
+          pure ("inp/" <> ctorName <> "/" <> fieldName)
+        ProjectionVar {} -> liftIO $ do
+          ordinal <- readIORef (seProjectionOrdinal env)
+          modifyIORef' (seProjectionOrdinal env) (+ 1)
+          pure ("proj/" <> show ordinal)
+      v <- SBV.free label
+      liftIO (modifyIORef' (seVarCache env) (Map.insert key (SomeSBV v)))
       pure v
 
 -- | Recover the slot name an 'Index' points at by walking to the

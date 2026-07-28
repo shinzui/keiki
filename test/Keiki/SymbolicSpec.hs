@@ -10,6 +10,7 @@ import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
+import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Symbolic
 import Test.Hspec
 
@@ -448,6 +449,25 @@ spec = do
 
     it "x == x stays satisfiable: symIsBot (PEq #amount #amount) is False (sanity)" $
       symIsBot pEq `shouldBe` False
+
+    it "a repeated typed field projection is one symbolic variable" $
+      symIsBot
+        ( FieldProj.docHashW
+            `regProj` FieldProj.docIx
+            ./= FieldProj.docHashW
+            `regProj` FieldProj.docIx ::
+            HsPred FieldProj.DocRegs ()
+        )
+        `shouldBe` True
+
+    it "different typed fields of one mapped owner remain independent" $
+      symIsBot
+        ( PAnd
+            (FieldProj.docHashW `regProj` FieldProj.docIx .== TLit "hash")
+            (FieldProj.docTitleW `regProj` FieldProj.docIx .== TLit "title") ::
+            HsPred FieldProj.DocRegs ()
+        )
+        `shouldBe` False
 
     it "two edges PEq #amount 0 / PEq #amount 1 are single-valued" $
       -- The single-valuedness conjunction is #amount == 0 ∧ #amount == 1,

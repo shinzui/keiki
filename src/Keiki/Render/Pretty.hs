@@ -30,6 +30,7 @@ import Keiki.Core
     NumOp (..),
     Term (..),
     Update (..),
+    fieldProjectionPath,
   )
 import Keiki.Internal.Slots (indexNName)
 
@@ -66,6 +67,8 @@ prettyTerm (TArith op a b) =
     numOpSym OpAdd = T.pack "+"
     numOpSym OpSub = T.pack "-"
     numOpSym OpMul = T.pack "*"
+prettyTerm (TFieldProj witness base) =
+  T.pack (fieldProjectionPath witness base)
 
 -- | Render an 'HsPred' guard as domain-readable 'Text'. Boolean
 -- structure renders with @&& || !@ and parentheses; @PInCtor@ renders

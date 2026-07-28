@@ -107,8 +107,10 @@ module Keiki.Composition
 where
 
 import Data.List (isInfixOf, isSuffixOf, nub)
+import Data.Proxy (Proxy (..))
 import Data.Set qualified as Set
 import Data.Type.Equality ((:~:) (Refl))
+import Data.Typeable (Typeable)
 import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
@@ -262,6 +264,10 @@ weakenLTerm (TApp2 f a b) =
     f
     (weakenLTerm @rs1 @rs2 a)
     (weakenLTerm @rs1 @rs2 b)
+weakenLTerm (TFieldProj witness base) =
+  TFieldProj witness $ case base of
+    PBReg ix -> PBReg (weakenL @rs1 @rs2 ix)
+    PBInp ic ix -> PBInp ic ix
 
 -- | Walk an 'HsPred' and weaken every term inside it.
 weakenLPred ::
@@ -335,6 +341,10 @@ weakenRTerm (TApp2 f a b) =
     f
     (weakenRTerm @rs1 @rs2 a)
     (weakenRTerm @rs1 @rs2 b)
+weakenRTerm (TFieldProj witness base) =
+  TFieldProj witness $ case base of
+    PBReg ix -> PBReg (weakenR @rs1 ix)
+    PBInp ic ix -> PBInp ic ix
 
 -- | Walk an 'HsPred' on a tail-side register file and lift every term
 -- inside via 'weakenRTerm'.
@@ -469,6 +479,9 @@ termHasCtorMismatch expected (TArith _ a b) =
   termHasCtorMismatch expected a || termHasCtorMismatch expected b
 termHasCtorMismatch expected (TApp2 _ a b) =
   termHasCtorMismatch expected a || termHasCtorMismatch expected b
+termHasCtorMismatch _ (TFieldProj _ (PBReg _)) = False
+termHasCtorMismatch expected (TFieldProj _ (PBInp ic _)) =
+  icName ic /= expected
 
 outCtorName :: OutTerm rs ci co -> String
 outCtorName (OPack _ wc _) = wcName wc
@@ -489,6 +502,28 @@ substTerm ::
 substTerm (TLit r) _o1 = TLit r
 substTerm (TReg ix2) _o1 = TReg (weakenR @rs1 ix2)
 substTerm (TInpCtorField ic2 ix2) o1 =
+  substInputField @rs1 @rs2 ic2 ix2 o1
+substTerm (TFieldProj witness (PBReg ix2)) _o1 =
+  TFieldProj witness (PBReg (weakenR @rs1 ix2))
+substTerm (TFieldProj witness (PBInp ic2 ix2)) o1 =
+  projectThroughTerm witness (substInputField @rs1 @rs2 ic2 ix2 o1)
+substTerm (TApp1 f t) o1 = TApp1 f (substTerm @rs1 @rs2 t o1)
+substTerm (TArith op a b) o1 =
+  TArith op (substTerm @rs1 @rs2 a o1) (substTerm @rs1 @rs2 b o1)
+substTerm (TApp2 f a b) o1 =
+  TApp2
+    f
+    (substTerm @rs1 @rs2 a o1)
+    (substTerm @rs1 @rs2 b o1)
+
+substInputField ::
+  forall rs1 rs2 ci1 mid ifs2 ifsR r.
+  (WeakenR rs1) =>
+  InCtor mid ifs2 ->
+  Index ifs2 r ->
+  OutTerm rs1 ci1 mid ->
+  Term (Append rs1 rs2) ci1 ifsR r
+substInputField ic2 ix2 o1 =
   case o1 of
     OPack _ic1 wc1 of1
       | icName ic2 == wcName wc1 ->
@@ -524,14 +559,43 @@ substTerm (TInpCtorField ic2 ix2) o1 =
                    \ its mismatched guard leaf should be unsatisfiable before\
                    \ the value is demanded."
             )
-substTerm (TApp1 f t) o1 = TApp1 f (substTerm @rs1 @rs2 t o1)
-substTerm (TArith op a b) o1 =
-  TArith op (substTerm @rs1 @rs2 a o1) (substTerm @rs1 @rs2 b o1)
-substTerm (TApp2 f a b) o1 =
-  TApp2
-    f
-    (substTerm @rs1 @rs2 a o1)
-    (substTerm @rs1 @rs2 b o1)
+
+projectThroughTerm ::
+  ( FieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection ->
+  Term rs ci ifs (FieldOwner projection) ->
+  Term rs ci ifs (FieldResult projection)
+projectThroughTerm witness = fst . projectThroughTermWithStatus witness
+
+data ProjectionTransformStatus
+  = ProjectionPreserved
+  | ProjectionFolded
+  | ProjectionLowered
+  deriving stock (Eq, Show)
+
+projectThroughTermWithStatus ::
+  ( FieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection ->
+  Term rs ci ifs (FieldOwner projection) ->
+  (Term rs ci ifs (FieldResult projection), ProjectionTransformStatus)
+projectThroughTermWithStatus witness (TReg ix) =
+  (TFieldProj witness (PBReg ix), ProjectionPreserved)
+projectThroughTermWithStatus witness (TInpCtorField ic ix) =
+  (TFieldProj witness (PBInp ic ix), ProjectionPreserved)
+projectThroughTermWithStatus witness (TLit owner) =
+  (TLit (fieldWitnessGet witness owner), ProjectionFolded)
+projectThroughTermWithStatus witness ownerTerm =
+  (TApp1 (fieldWitnessGet witness) ownerTerm, ProjectionLowered)
 
 -- | Existentially-coerce a 'Term''s result type /and/ input field
 -- schema. Unsound in general; justified here by the structural-
@@ -754,6 +818,10 @@ liftLTermAlt (TArith op a b) =
   TArith op (liftLTermAlt @rs @ci1 @ci2 a) (liftLTermAlt @rs @ci1 @ci2 b)
 liftLTermAlt (TApp2 f a b) =
   TApp2 f (liftLTermAlt @rs @ci1 @ci2 a) (liftLTermAlt @rs @ci1 @ci2 b)
+liftLTermAlt (TFieldProj witness base) =
+  TFieldProj witness $ case base of
+    PBReg ix -> PBReg ix
+    PBInp ic ix -> PBInp (leftInCtor ic) ix
 
 -- | Lift a 'Term' from the right side's input alphabet to
 -- @Either ci1 ci2@. Symmetric to 'liftLTermAlt'.
@@ -768,6 +836,10 @@ liftRTermAlt (TArith op a b) =
   TArith op (liftRTermAlt @rs @ci1 @ci2 a) (liftRTermAlt @rs @ci1 @ci2 b)
 liftRTermAlt (TApp2 f a b) =
   TApp2 f (liftRTermAlt @rs @ci1 @ci2 a) (liftRTermAlt @rs @ci1 @ci2 b)
+liftRTermAlt (TFieldProj witness base) =
+  TFieldProj witness $ case base of
+    PBReg ix -> PBReg ix
+    PBInp ic ix -> PBInp (rightInCtor ic) ix
 
 -- | Lift an 'HsPred' from the left side's input alphabet to
 -- @Either ci1 ci2@. Walks the AST and recurses through every
@@ -1039,6 +1111,10 @@ applyEnvTerm env (TArith op a b) =
   TArith op (applyEnvTerm env a) (applyEnvTerm env b)
 applyEnvTerm env (TApp2 f a b) =
   TApp2 f (applyEnvTerm env a) (applyEnvTerm env b)
+applyEnvTerm env original@(TFieldProj witness (PBReg ix)) =
+  maybe original (projectThroughTerm witness) (lookupPending ix env)
+applyEnvTerm _ (TFieldProj witness (PBInp ic ix)) =
+  TFieldProj witness (PBInp ic ix)
 
 applyEnvPred ::
   [PendingWrite rs ci] ->
@@ -1138,6 +1214,13 @@ data ComposeAlignmentWarning s1 s2
       { cawName :: String,
         cawSide :: String
       }
+  | NonStructuralProjectionBoundary
+      { cawProjectionT1Edge :: EdgeRef s1,
+        cawProjectionT2Edge :: EdgeRef s2,
+        cawProjectionPath :: String,
+        cawProjectionShape :: String,
+        cawProjectionReason :: String
+      }
   deriving stock (Eq, Show)
 
 data EmittedName s = EmittedName
@@ -1173,6 +1256,9 @@ termExpectedReads (TInpCtorField ic ix) = [(icName ic, indexInt ix)]
 termExpectedReads (TApp1 _ term) = termExpectedReads term
 termExpectedReads (TApp2 _ a b) = termExpectedReads a ++ termExpectedReads b
 termExpectedReads (TArith _ a b) = termExpectedReads a ++ termExpectedReads b
+termExpectedReads (TFieldProj _ (PBReg _)) = []
+termExpectedReads (TFieldProj _ (PBInp ic ix)) =
+  [(icName ic, indexPosition ix)]
 
 predCtorAtoms :: HsPred rs ci -> [String]
 predCtorAtoms PTop = []
@@ -1232,13 +1318,119 @@ isPoisonedBoundaryName name =
     || "#rmapped" `isInfixOf` name
     || "_first" `isSuffixOf` name
 
+upstreamProjectionWarnings ::
+  forall rs1 rs2 ci1 mid s1 s2.
+  (WeakenR rs1) =>
+  EdgeRef s1 ->
+  EdgeRef s2 ->
+  OutTerm rs1 ci1 mid ->
+  HsPred rs2 mid ->
+  [ComposeAlignmentWarning s1 s2]
+upstreamProjectionWarnings edge1Ref edge2Ref midOutput = goPred
+  where
+    goPred PTop = []
+    goPred PBot = []
+    goPred (PAnd a b) = goPred a ++ goPred b
+    goPred (POr a b) = goPred a ++ goPred b
+    goPred (PNot predicate) = goPred predicate
+    goPred (PEq a b) = goTerm a ++ goTerm b
+    goPred (PInCtor _) = []
+    goPred PLeftArm = []
+    goPred PRightArm = []
+    goPred (PCmp _ a b) = goTerm a ++ goTerm b
+
+    goTerm :: forall ifs r. Term rs2 mid ifs r -> [ComposeAlignmentWarning s1 s2]
+    goTerm (TLit _) = []
+    goTerm (TReg _) = []
+    goTerm (TInpCtorField _ _) = []
+    goTerm (TApp1 _ term) = goTerm term
+    goTerm (TApp2 _ a b) = goTerm a ++ goTerm b
+    goTerm (TArith _ a b) = goTerm a ++ goTerm b
+    goTerm (TFieldProj _ (PBReg _)) = []
+    goTerm
+      (TFieldProj (witness :: FieldWitness projection) base@(PBInp ic ix))
+        | icName ic /= outCtorName midOutput = []
+        | otherwise =
+            let ownerTerm ::
+                  Term
+                    (Append rs1 rs2)
+                    ci1
+                    ifs
+                    (FieldOwner projection)
+                ownerTerm = substInputField @rs1 @rs2 ic ix midOutput
+             in case snd (projectThroughTermWithStatus witness ownerTerm) of
+                  ProjectionLowered ->
+                    [ NonStructuralProjectionBoundary
+                        { cawProjectionT1Edge = edge1Ref,
+                          cawProjectionT2Edge = edge2Ref,
+                          cawProjectionPath = fieldProjectionPath witness base,
+                          cawProjectionShape = fieldShapeId (Proxy @projection),
+                          cawProjectionReason = "upstream computed output"
+                        }
+                    ]
+                  ProjectionPreserved -> []
+                  ProjectionFolded -> []
+
+pendingProjectionWarnings ::
+  forall rs ci s1 s2.
+  EdgeRef s1 ->
+  EdgeRef s2 ->
+  [PendingWrite rs ci] ->
+  HsPred rs ci ->
+  [ComposeAlignmentWarning s1 s2]
+pendingProjectionWarnings edge1Ref edge2Ref env = goPred
+  where
+    goPred PTop = []
+    goPred PBot = []
+    goPred (PAnd a b) = goPred a ++ goPred b
+    goPred (POr a b) = goPred a ++ goPred b
+    goPred (PNot predicate) = goPred predicate
+    goPred (PEq a b) = goTerm a ++ goTerm b
+    goPred (PInCtor _) = []
+    goPred PLeftArm = []
+    goPred PRightArm = []
+    goPred (PCmp _ a b) = goTerm a ++ goTerm b
+
+    goTerm :: forall ifs r. Term rs ci ifs r -> [ComposeAlignmentWarning s1 s2]
+    goTerm (TLit _) = []
+    goTerm (TReg _) = []
+    goTerm (TInpCtorField _ _) = []
+    goTerm (TApp1 _ term) = goTerm term
+    goTerm (TApp2 _ a b) = goTerm a ++ goTerm b
+    goTerm (TArith _ a b) = goTerm a ++ goTerm b
+    goTerm (TFieldProj _ (PBInp _ _)) = []
+    goTerm
+      (TFieldProj (witness :: FieldWitness projection) base@(PBReg ix)) =
+        case lookupPending ix env of
+          Nothing -> []
+          Just ownerTerm ->
+            case snd (projectThroughTermWithStatus witness ownerTerm) of
+              ProjectionLowered ->
+                [ NonStructuralProjectionBoundary
+                    { cawProjectionT1Edge = edge1Ref,
+                      cawProjectionT2Edge = edge2Ref,
+                      cawProjectionPath = fieldProjectionPath witness base,
+                      cawProjectionShape = fieldShapeId (Proxy @projection),
+                      cawProjectionReason = "pending write"
+                    }
+                ]
+              ProjectionPreserved -> []
+              ProjectionFolded -> []
+
 -- | Check constructor-name and field-position alignment before building a
 -- composite. Reachable vertex pairs are expanded from the two initial
 -- vertices; multi-event outputs advance the downstream machine one symbol
 -- at a time, matching 'compose''s path expansion conservatively.
 checkComposeAlignment ::
   forall rs1 rs2 s1 s2 ci1 mid co.
-  (Bounded s1, Enum s1, Ord s1, Bounded s2, Enum s2, Ord s2) =>
+  ( WeakenR rs1,
+    Bounded s1,
+    Enum s1,
+    Ord s1,
+    Bounded s2,
+    Enum s2,
+    Ord s2
+  ) =>
   SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 mid ->
   SymTransducer (HsPred rs2 mid) rs2 s2 mid co ->
   [ComposeAlignmentWarning s1 s2]
@@ -1269,7 +1461,7 @@ checkComposeAlignment t1 t2 = nub (concatMap warningsAt reachablePairs)
       ]
 
     warningsAt (v1, v2) =
-      unconsumed ++ unmatched ++ arity ++ poison
+      unconsumed ++ unmatched ++ arity ++ poison ++ projection
       where
         t1Edges = zip [0 ..] (edgesOut t1 v1)
         t2Edges = zip [0 ..] (edgesOut t2 v2)
@@ -1313,6 +1505,50 @@ checkComposeAlignment t1 t2 = nub (concatMap warningsAt reachablePairs)
                 ++ [(name, "downstream input") | name <- expectedNames],
             isPoisonedBoundaryName name
           ]
+
+        projection = concatMap projectionForEdge t1Edges
+
+        projectionForEdge (edgeIx, edge1) =
+          let edge1Ref = EdgeRef v1 edgeIx
+           in case output edge1 of
+                [] -> []
+                [midOutput] ->
+                  concat
+                    [ upstreamProjectionWarnings
+                        edge1Ref
+                        (EdgeRef v2 edge2Ix)
+                        midOutput
+                        (guard edge2)
+                    | (edge2Ix, edge2) <- t2Edges
+                    ]
+                midOutputs ->
+                  projectionPathWarnings edge1Ref midOutputs [] v2
+
+        projectionPathWarnings _ [] _ _ = []
+        projectionPathWarnings edge1Ref (midOutput : rest) env vertex =
+          concat
+            [ case edge2 of
+                Edge {update = edge2Update} ->
+                  let edge2Ref = EdgeRef vertex edge2Ix
+                      substitutedGuard = substPred @rs1 @rs2 (guard edge2) midOutput
+                      upstreamWarnings =
+                        upstreamProjectionWarnings
+                          edge1Ref
+                          edge2Ref
+                          midOutput
+                          (guard edge2)
+                      pendingWarnings =
+                        pendingProjectionWarnings edge1Ref edge2Ref env substitutedGuard
+                      stepUpdate =
+                        applyEnvUpdate
+                          env
+                          (substUpdate @rs1 @rs2 edge2Update midOutput)
+                      nextEnv = pendingWrites stepUpdate ++ env
+                   in upstreamWarnings
+                        ++ pendingWarnings
+                        ++ projectionPathWarnings edge1Ref rest nextEnv (target edge2)
+            | (edge2Ix, edge2) <- zip [0 ..] (edgesOut t2 vertex)
+            ]
 
 -- | Checked entry point for validated aggregate pipelines. The unchecked
 -- 'compose' primitive remains available for internal/experimental use.

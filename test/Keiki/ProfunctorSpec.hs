@@ -12,6 +12,7 @@ import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import GHC.Generics (Generic)
 import Keiki.Core
+import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
 import Keiki.LawHelpers (emittedLog, runScript)
@@ -37,6 +38,9 @@ data RouterCmd
 router :: RouterCmd -> Maybe EmailCmd
 router (ToEmail c) = Just c
 router OtherCmd = Nothing
+
+newtype WrappedDocCmd = WrappedDocCmd {unwrapDocCmd :: FieldProj.DocCmd}
+  deriving stock (Eq, Show)
 
 -- | A representative input we will fire through transducers.
 sampleEmailCmd :: EmailCmd
@@ -128,6 +132,12 @@ spec = do
     it "preserves isSingleValuedSym" $ do
       isSingleValuedSym (withSymPred (lmapCi unwrapCmd emailDelivery))
         `shouldBe` True
+
+    it "rehomes an input-based field projection without changing evaluation" $ do
+      let mapped = lmapCi unwrapDocCmd FieldProj.inputProjectionTransducer
+          doc = FieldProj.DocInfo "new-hash" "title" []
+      omega mapped (initial mapped) (initialRegs mapped) (WrappedDocCmd (FieldProj.NewDoc doc))
+        `shouldBe` [FieldProj.DocAccepted doc]
 
   describe "rmapCo" $ do
     it "post-composes the output through the supplied function" $ do

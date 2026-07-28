@@ -767,6 +767,10 @@ firstSym t =
         goTerm (TApp1 h a) = TApp1 h (goTerm a)
         goTerm (TApp2 h a b) = TApp2 h (goTerm a) (goTerm b)
         goTerm (TArith op a b) = TArith op (goTerm a) (goTerm b)
+        goTerm (TFieldProj witness base) =
+          TFieldProj witness $ case base of
+            PBReg ix -> PBReg ix
+            PBInp _ ix -> PBInp cic (SIdx ix)
 
 -- | Standard 'Data.Profunctor.Strong.Strong' instance. Threads an
 -- unrelated value through a transducer.
@@ -957,6 +961,10 @@ contraTerm f = go
     go (TApp1 h a) = TApp1 h (go a)
     go (TApp2 h a b) = TApp2 h (go a) (go b)
     go (TArith op a b) = TArith op (go a) (go b)
+    go (TFieldProj witness base) =
+      TFieldProj witness $ case base of
+        PBReg ix -> PBReg ix
+        PBInp ic ix -> PBInp (contraInCtor f ic) ix
 
 contraMaybeTerm :: forall ci ci' rs ifs r. (ci' -> Maybe ci) -> Term rs ci ifs r -> Term rs ci' ifs r
 contraMaybeTerm f = go
@@ -968,6 +976,10 @@ contraMaybeTerm f = go
     go (TApp1 h a) = TApp1 h (go a)
     go (TApp2 h a b) = TApp2 h (go a) (go b)
     go (TArith op a b) = TArith op (go a) (go b)
+    go (TFieldProj witness base) =
+      TFieldProj witness $ case base of
+        PBReg ix -> PBReg ix
+        PBInp ic ix -> PBInp (contraMaybeInCtor f ic) ix
 
 -- ** HsPred -------------------------------------------------------------
 

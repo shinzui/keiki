@@ -90,14 +90,14 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: add the nominal `FieldProjection` class, abstract `FieldWitness`, `ProjBase`, `TFieldProj`, and smart constructors `fieldWitness`/`regProj`/`inpProj` to `src/Keiki/Core.hs`
-- [ ] M1: extend every total `Term` walker in `src/Keiki/Core.hs`, `src/Keiki/Render/Pretty.hs`, `src/Keiki/Composition.hs`, and `src/Keiki/Profunctor.hs`; preserve or explicitly lower projections during composition
-- [ ] M1: export the new Core names and add evaluation, dotted-path, opacity, profunctor, and checked/raw composition tests
-- [ ] M2: add the cycle-free curated-type classifier in `src/Keiki/Internal/SymbolicTypes.hs` and make `discoverSym`/`discoverSymOrd`/`discoverSymNum` delegate to it
-- [ ] M2: translate `TFieldProj` through a structured memo key containing the base path and projection-tag/owner/result `TypeRep`s; keep all caller strings diagnostic-only and add the concrete-projection constraint helper
-- [ ] M2: z3-backed tests — same projection shares, distinct projections do not, adversarial string segments cannot collide, and concrete/symbolic agreement holds in the required direction
-- [ ] M3: unconditional `ProjectionResultUnsupported`, `ProjectionOrderingUnsupported`, and `ProjectionOutsideGuard` validation warnings
-- [ ] M3: hidden-input / `PInCtor` discipline tests; forward-vs-replay equality test over a projection-guarded transducer
+- [x] (2026-07-28T13:06:23Z) M1: add the nominal `FieldProjection` class, abstract `FieldWitness`, `ProjBase`, `TFieldProj`, and smart constructors `fieldWitness`/`regProj`/`inpProj` to `src/Keiki/Core.hs`
+- [x] (2026-07-28T13:06:23Z) M1: extend every total `Term` walker in `src/Keiki/Core.hs`, `src/Keiki/Render/Pretty.hs`, `src/Keiki/Composition.hs`, and `src/Keiki/Profunctor.hs`; preserve or explicitly lower projections during composition
+- [x] (2026-07-28T13:06:23Z) M1: export the new Core names and add evaluation, dotted-path, opacity, profunctor, and checked/raw composition tests
+- [x] (2026-07-28T13:06:23Z) M2: add the cycle-free curated-type classifier in `src/Keiki/Internal/SymbolicTypes.hs` and make `discoverSym`/`discoverSymOrd`/`discoverSymNum` delegate to it
+- [x] (2026-07-28T13:06:23Z) M2: translate `TFieldProj` through a structured memo key containing the base path and projection-tag/owner/result `TypeRep`s; keep all caller strings diagnostic-only and add the concrete-projection constraint helper
+- [x] (2026-07-28T13:06:23Z) M2: z3-backed tests — same projection shares, distinct projections do not, adversarial string segments cannot collide, and concrete/symbolic agreement holds in the required direction
+- [x] (2026-07-28T13:06:23Z) M3: unconditional `ProjectionResultUnsupported`, `ProjectionOrderingUnsupported`, and `ProjectionOutsideGuard` validation warnings
+- [x] (2026-07-28T13:06:23Z) M3: hidden-input / `PInCtor` discipline tests; forward-vs-replay equality test over a projection-guarded transducer
 - [ ] M4: Haddocks with the projection-instance laws and provenance division; exported law harness (`fieldWitnessAgrees`) plus negative test proving a wrong instance fails
 - [ ] M4: documentation and ADR pass — projection design note plus updates to ADR-0003 and ADR-0004 (IR already points here; status advances to `released` in M5)
 - [ ] M5: changelog entry, version bump to 0.4.0.0, Hackage/upstream-tag re-check, release and tag per `docs/research/release-procedure.md`
@@ -188,6 +188,19 @@ implementation. Provide concise evidence.
   GHC-39191/GHC-06206 without `TypeFamilies`, then passed with it; the temporary source was
   removed. Milestone 1 therefore adds the pragma explicitly and requires generators to emit it
   in instance-owning modules.
+- Observation: the abstract witness already proves that callers passed through
+  `fieldWitness`, so `constrainFieldProjection` does not need to repeat
+  `FieldProjection` or `KnownSymbol (FieldName projection)` constraints. GHC 9.12 reports
+  both as redundant because the constraint helper uses only the witness, the structural base,
+  the projection/owner `TypeRep`s, and the result's `Sym` dictionary.
+  Evidence: `cabal build` emitted `-Wredundant-constraints` for the first implementation;
+  removing only those two constraints restored a warning-free build without changing the
+  helper body or public behavior.
+- Observation: the structured projection key prevents SBV label failures as well as cache
+  aliasing. A test projection whose slot, field, and shape diagnostics contain `/`, `|`, and
+  `\\` proves successfully because only Keiki's generated `proj/<ordinal>` label reaches SBV.
+  Evidence: the `FieldProjSpec` adversarial-label example passes alongside SBV's documented
+  `registerLabel` rejection of `|`, `\\`, and duplicate labels.
 
 
 ## Decision Log
@@ -339,6 +352,15 @@ Record every decision made while working on the plan.
   preservation, and explicit checked-composition loss. The nominal `FieldProjection` design
   satisfies those independently; Keiro's graph is only one source of lawful instances.
   Date: 2026-07-28
+- Decision: Keep `constrainFieldProjection`'s exported constraints minimal: `Typeable` for the
+  nominal tag and owner plus `Sym` for the result. Do not retain redundant
+  `FieldProjection`/`KnownSymbol` constraints merely to mirror `fieldWitness`'s constructor
+  signature.
+  Rationale: external code cannot fabricate `FieldWitness`, so instance provenance is already
+  established at witness construction. The helper binds a result variable and never calls the
+  getter or renders a field name; adding unused constraints creates warnings and falsely
+  suggests those dictionaries participate in symbolic identity.
+  Date: 2026-07-28
 
 
 ## Outcomes & Retrospective
@@ -360,6 +382,15 @@ The resulting GO does not depend on Mori's domain design: the nominal tag/instan
 consumer-neutral and removes string identity from the trusted proof boundary. Scalar promotion
 remains the sound default for explicit decision state, but it is not a substitute for every
 solver-visible field read.
+
+Milestones 1–3 outcome (2026-07-28): the public term/witness API, all total walkers,
+structured symbolic cache, cycle-free type registry, validation warnings, and exact
+composition-boundary diagnostics are implemented. The Keiki suite passes 559 examples. New
+tests prove register/input evaluation, dotted paths, opacity discrimination, profunctor and
+Strong rewrites, stable/literal/computed composition behavior, multi-event pending-write
+rejection, z3 sharing/non-sharing (including adversarial labels and `Int`/`Integer`), both
+directions of the generated concrete comparisons, guards-only validation, hidden-input and
+`PInCtor` discipline, and forward/replay state equality.
 
 
 ## Context and Orientation
@@ -871,9 +902,7 @@ Export a narrow lower-level helper from `Keiki.Symbolic` for the agreement harne
 
 ```haskell
 constrainFieldProjection ::
-  ( FieldProjection projection,
-    KnownSymbol (FieldName projection),
-    Typeable projection,
+  ( Typeable projection,
     Typeable (FieldOwner projection),
     Sym (FieldResult projection)
   ) =>
@@ -1308,3 +1337,7 @@ downstream matches and must be named in the 0.4.0.0 changelog.
   leaves only the unavoidable totality and schema-provenance laws of the projection instance.
   Recorded explicitly that Mori/Keiro are motivating consumers and conformance probes, not
   sources of Keiki API semantics.
+- 2026-07-28: Implemented Milestones 1–3 and refined the documented
+  `constrainFieldProjection` signature after GHC proved its class/name constraints redundant.
+  The abstract witness remains the instance-provenance gate; the binding helper now advertises
+  only the dictionaries it actually consumes.

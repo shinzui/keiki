@@ -3,6 +3,7 @@
 -- Same reasoning for any future helpers that re-export the constraint
 -- as a typed witness.
 {-# LANGUAGE TypeAbstractions #-}
+{-# LANGUAGE TypeFamilies #-}
 -- Validation diagnostics intentionally expose constructor-specific record
 -- selectors. Changing them to total fields would break the public diagnostic
 -- API, so keep the partiality explicit and silence the definition-site warning.
@@ -59,6 +60,10 @@ module Keiki.Core
     -- * Term language
     Term (..),
     NumOp (..),
+    FieldProjection (..),
+    FieldWitness,
+    fieldWitness,
+    ProjBase (..),
 
     -- * Input-side structural constructor (v2)
     InCtor (..),
@@ -106,6 +111,8 @@ module Keiki.Core
     matchInCtor,
     proj,
     inpCtor,
+    regProj,
+    inpProj,
     lit,
     tadd,
     tsub,
@@ -186,6 +193,10 @@ module Keiki.Core
     hiddenInputReasons,
     detectMissingInCtorFields,
     MissingInCtorFields (..),
+    fieldProjectionPath,
+    fieldWitnessAgrees,
+    fieldWitnessGet,
+    indexPosition,
   )
 where
 
@@ -205,6 +216,11 @@ import Keiki.Internal.Slots
     HasIndexN (..),
     IndexN (..),
     Names,
+  )
+import Keiki.Internal.SymbolicTypes
+  ( discoverSymbolicType,
+    symbolicTypeSupportsEquality,
+    symbolicTypeSupportsOrdering,
   )
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
 
@@ -306,6 +322,61 @@ instance
 data NumOp = OpAdd | OpSub | OpMul
   deriving stock (Eq, Show)
 
+-- | One nominal, solver-visible projection from a consumer-owned value.
+-- Define one fresh tag type and one coherent instance per logical field.
+-- The tag's 'Typeable' identity, rather than 'FieldName' or
+-- 'fieldShapeId', is used by the symbolic layer to decide variable sharing.
+--
+-- 'projectFieldValue' must be total for every well-formed 'FieldOwner'.
+-- 'FieldName' and 'fieldShapeId' must truthfully describe that getter.
+-- Keiki checks the term-level laws; a binding generator such as Keiro remains
+-- responsible for proving that a generated instance agrees with its schema
+-- and codec provenance.
+class FieldProjection projection where
+  type FieldName projection :: Symbol
+  type FieldOwner projection :: Type
+  type FieldResult projection :: Type
+  fieldShapeId :: Proxy projection -> String
+  projectFieldValue ::
+    Proxy projection -> FieldOwner projection -> FieldResult projection
+
+-- | Abstract nominal token for a 'FieldProjection' instance. Construct one
+-- with 'fieldWitness'. Its nominal role prevents changing the projection tag
+-- with 'coerce'.
+type role FieldWitness nominal
+
+data FieldWitness projection = FieldWitness
+
+-- | Construct the abstract witness for a projection tag. Normal Haskell
+-- instance coherence supplies one getter per tag; generators should therefore
+-- reuse one canonical tag for every occurrence of the same logical field.
+fieldWitness ::
+  ( FieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection
+fieldWitness = FieldWitness
+
+-- | Eliminate a 'FieldWitness' using its coherent projection instance.
+fieldWitnessGet ::
+  forall projection.
+  (FieldProjection projection) =>
+  FieldWitness projection ->
+  FieldOwner projection ->
+  FieldResult projection
+fieldWitnessGet _ = projectFieldValue (Proxy @projection)
+
+-- | Where a structural field projection may read its owner value. Restricting
+-- the base to a register slot or one input-constructor field gives the
+-- symbolic layer a stable, typed path identity. Arbitrary computed bases are
+-- deliberately not representable here.
+data ProjBase (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) owner where
+  PBReg :: Index rs owner -> ProjBase rs ci ifs owner
+  PBInp :: InCtor ci ifs -> Index ifs owner -> ProjBase rs ci ifs owner
+
 -- | A pure expression over the register file and the input symbol,
 -- yielding a value of type @r@.
 --
@@ -352,6 +423,20 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
     Term rs ci ifs r ->
     Term rs ci ifs r ->
     Term rs ci ifs r
+  -- | A single-hop, solver-visible field projection. Only the projected
+  -- result needs symbolic support; the consumer-owned base value does not.
+  -- Default validation permits this node in guards and rejects it in updates
+  -- or outputs. Concrete evaluation remains total in every position.
+  TFieldProj ::
+    ( FieldProjection projection,
+      KnownSymbol (FieldName projection),
+      Typeable projection,
+      Typeable (FieldOwner projection),
+      Typeable (FieldResult projection)
+    ) =>
+    FieldWitness projection ->
+    ProjBase rs ci ifs (FieldOwner projection) ->
+    Term rs ci ifs (FieldResult projection)
 
 -- | Per-constructor input projection. An 'InCtor' value names one
 -- constructor of the input symbol type @ci@ and pins the round-trip
@@ -749,6 +834,37 @@ proj = TReg
 inpCtor :: InCtor ci ifs -> Index ifs r -> Term rs ci ifs r
 inpCtor = TInpCtorField
 
+-- | Project one field from a consumer-owned value stored in a register slot.
+-- The nominal witness makes repeated reads of this exact typed path share one
+-- symbolic variable without requiring the owner type itself to be symbolic.
+regProj ::
+  ( FieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection ->
+  Index rs (FieldOwner projection) ->
+  Term rs ci ifs (FieldResult projection)
+regProj witness ix = TFieldProj witness (PBReg ix)
+
+-- | Project one field from a consumer-owned value carried by the matched
+-- input constructor. Pair this term with the corresponding 'matchInCtor'
+-- guard, just as for 'inpCtor'.
+inpProj ::
+  ( FieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection ->
+  InCtor ci ifs ->
+  Index ifs (FieldOwner projection) ->
+  Term rs ci ifs (FieldResult projection)
+inpProj witness ic ix = TFieldProj witness (PBInp ic ix)
+
 -- | A constant 'Term'.
 lit :: r -> Term rs ci ifs r
 lit = TLit
@@ -860,6 +976,16 @@ evalTerm (TApp1 f t) regs ci = f (evalTerm t regs ci)
 evalTerm (TApp2 f a b) regs ci = f (evalTerm a regs ci) (evalTerm b regs ci)
 evalTerm (TArith op a b) regs ci =
   applyNumOp op (evalTerm a regs ci) (evalTerm b regs ci)
+evalTerm (TFieldProj witness base) regs ci =
+  fieldWitnessGet witness $ case base of
+    PBReg ix -> regs ! ix
+    PBInp ic ix -> case icMatch ic ci of
+      Just rf -> rf ! ix
+      Nothing ->
+        error
+          ( "evalTerm: TFieldProj input guard violation: "
+              ++ icName ic
+          )
 
 -- | Interpret a 'NumOp' tag as the corresponding numeric operation.
 -- The 'Num' evidence is supplied by matching the 'TArith' constructor.
@@ -1478,6 +1604,7 @@ recomputeDerivedFields (OFCons t rest) (v, vs) regs ci =
     recomputeOne term@(TApp1 _ _) _observed = evalTerm term regs ci
     recomputeOne term@(TApp2 _ _ _) _observed = evalTerm term regs ci
     recomputeOne term@(TArith _ _ _) _observed = evalTerm term regs ci
+    recomputeOne term@TFieldProj {} _observed = evalTerm term regs ci
     recomputeOne _ observed = observed
 
 -- | Walk an 'OutFields' HList in lockstep with an observed-fields
@@ -1528,6 +1655,7 @@ gatherInpEntries (OFCons t rest) (v, fs) ic = do
     stepOne (TApp1 _ _) _val _ = Just []
     stepOne (TApp2 _ _ _) _val _ = Just []
     stepOne (TArith _ _ _) _val _ = Just []
+    stepOne TFieldProj {} _val _ = Just []
 
 -- | A diagnostic produced by 'checkHiddenInputs'.
 data HiddenInputWarning = HiddenInputWarning
@@ -1717,6 +1845,8 @@ termReadsInput (TInpCtorField _ _) = True
 termReadsInput (TApp1 _ t) = termReadsInput t
 termReadsInput (TApp2 _ a b) = termReadsInput a || termReadsInput b
 termReadsInput (TArith _ a b) = termReadsInput a || termReadsInput b
+termReadsInput (TFieldProj _ (PBReg _)) = False
+termReadsInput (TFieldProj _ (PBInp _ _)) = True
 
 -- | Do the 'OutFields' contain a 'TInpCtorField' read anywhere?
 outFieldsHaveInpCtorField :: OutFields rs ci ifs fs -> Bool
@@ -1731,6 +1861,8 @@ outFieldsHaveInpCtorField (OFCons t rest) =
     termHasInpCtorField (TApp1 _ t') = termHasInpCtorField t'
     termHasInpCtorField (TApp2 _ a b) = termHasInpCtorField a || termHasInpCtorField b
     termHasInpCtorField (TArith _ a b) = termHasInpCtorField a || termHasInpCtorField b
+    termHasInpCtorField (TFieldProj _ (PBReg _)) = False
+    termHasInpCtorField (TFieldProj _ (PBInp _ _)) = True
 
 -- | The result of 'detectMissingInCtorFields': the offending 'InCtor'
 -- name plus the names of slots its 'OutFields' walk does not visit.
@@ -1781,6 +1913,45 @@ detectMissingInCtorFields ic@InCtor {} fields =
 -- 'KnownSlotNames' instance carried by the data constructor).
 slotNamesOf :: forall ci ifs. InCtor ci ifs -> [String]
 slotNamesOf InCtor {} = slotNames @ifs
+
+-- | Zero-based position of an 'Index' in its slot list. Symbolic projection
+-- identity includes the position as well as the diagnostic name, so manually
+-- constructed duplicate-labelled schemas cannot accidentally share a value.
+indexPosition :: Index xs a -> Int
+indexPosition ZIdx = 0
+indexPosition (SIdx ix) = 1 + indexPosition ix
+
+indexNameOf :: Index xs a -> String
+indexNameOf (ZIdx @name) = symbolVal (Proxy @name)
+indexNameOf (SIdx ix) = indexNameOf ix
+
+-- | Render the stable base and field name of a projection as a dotted path.
+-- This string is diagnostic only; symbolic variable identity is structural.
+fieldProjectionPath ::
+  forall projection rs ci ifs.
+  (FieldProjection projection, KnownSymbol (FieldName projection)) =>
+  FieldWitness projection ->
+  ProjBase rs ci ifs (FieldOwner projection) ->
+  String
+fieldProjectionPath _ base =
+  basePath <> "." <> symbolVal (Proxy @(FieldName projection))
+  where
+    basePath = case base of
+      PBReg ix -> indexNameOf ix
+      PBInp ic ix -> icName ic <> "." <> indexNameOf ix
+
+-- | Check a projection instance's getter against a reference getter on one
+-- owner value. Generators can QuickCheck this helper over their own owner
+-- generators and mutation-test an intentionally wrong instance.
+fieldWitnessAgrees ::
+  forall projection.
+  (FieldProjection projection, Eq (FieldResult projection)) =>
+  FieldWitness projection ->
+  (FieldOwner projection -> FieldResult projection) ->
+  FieldOwner projection ->
+  Bool
+fieldWitnessAgrees witness reference owner =
+  fieldWitnessGet witness owner == reference owner
 
 -- * Build-time validation umbrella (EP-56) --------------------------------
 
@@ -1870,6 +2041,35 @@ data TransducerValidationWarning s
     --       options. Advisory, not a soundness error: opt in via 'warnOpaqueGuards'.
     OpaqueGuard
       { tvwEdge :: EdgeRef s,
+        tvwDetail :: String
+      }
+  | -- | A field projection's result type is outside the curated symbolic
+    --       equality registry. Translating such a guard would otherwise fall
+    --       back to an opaque Boolean and silently lose the promised proof.
+    ProjectionResultUnsupported
+      { tvwEdge :: EdgeRef s,
+        tvwProjectionPath :: String,
+        tvwProjectionShape :: String,
+        tvwProjectionResultType :: String,
+        tvwDetail :: String
+      }
+  | -- | A field projection occurs under an ordering comparison, but its
+    --       result type has no curated symbolic ordering dictionary.
+    ProjectionOrderingUnsupported
+      { tvwEdge :: EdgeRef s,
+        tvwProjectionPath :: String,
+        tvwProjectionShape :: String,
+        tvwProjectionResultType :: String,
+        tvwDetail :: String
+      }
+  | -- | A field projection occurs in an update or output. Projections are a
+    --       guard-only structural feature; raw evaluation remains total, but
+    --       default validation rejects this placement.
+    ProjectionOutsideGuard
+      { tvwEdge :: EdgeRef s,
+        tvwProjectionPath :: String,
+        tvwProjectionShape :: String,
+        tvwProjectionLocation :: String,
         tvwDetail :: String
       }
   deriving stock (Eq, Show)
@@ -1964,7 +2164,8 @@ validateTransducer opts t =
           | w <- checkDeadEdges defaultDeadEdgeOptions t
           ]
         else [],
-      if warnOpaqueGuards opts then opaqueGuardWarnings t else []
+      if warnOpaqueGuards opts then opaqueGuardWarnings t else [],
+      projectionValidationWarnings t
     ]
 
 -- | Structured form of the hidden-input check, additive over
@@ -2032,6 +2233,7 @@ termHasOpaqueApp (TInpCtorField _ _) = False
 termHasOpaqueApp (TApp1 _ _) = True
 termHasOpaqueApp (TApp2 _ _ _) = True
 termHasOpaqueApp (TArith _ a b) = termHasOpaqueApp a || termHasOpaqueApp b
+termHasOpaqueApp TFieldProj {} = False
 
 -- | Does the guard predicate branch on an opaque term anywhere? The symbolic
 -- analyses cannot see through such a guard (it becomes a free SBV variable),
@@ -2069,6 +2271,145 @@ opaqueGuardWarnings t =
     predHasOpaqueTerm (guard e)
   ]
 
+-- ** Field-projection diagnostics
+
+data ProjectionInfo = ProjectionInfo
+  { projectionInfoPath :: String,
+    projectionInfoShape :: String,
+    projectionInfoResultType :: String,
+    projectionInfoSupportsEquality :: Bool,
+    projectionInfoSupportsOrdering :: Bool
+  }
+
+termProjectionInfos :: Term rs ci ifs r -> [ProjectionInfo]
+termProjectionInfos (TLit _) = []
+termProjectionInfos (TReg _) = []
+termProjectionInfos (TInpCtorField _ _) = []
+termProjectionInfos (TApp1 _ term) = termProjectionInfos term
+termProjectionInfos (TApp2 _ a b) =
+  termProjectionInfos a ++ termProjectionInfos b
+termProjectionInfos (TArith _ a b) =
+  termProjectionInfos a ++ termProjectionInfos b
+termProjectionInfos
+  (TFieldProj (witness :: FieldWitness projection) base) =
+    [ ProjectionInfo
+        { projectionInfoPath = fieldProjectionPath witness base,
+          projectionInfoShape = fieldShapeId (Proxy @projection),
+          projectionInfoResultType = show (typeRep @(FieldResult projection)),
+          projectionInfoSupportsEquality =
+            maybe
+              False
+              symbolicTypeSupportsEquality
+              (discoverSymbolicType @(FieldResult projection)),
+          projectionInfoSupportsOrdering =
+            maybe
+              False
+              symbolicTypeSupportsOrdering
+              (discoverSymbolicType @(FieldResult projection))
+        }
+    ]
+
+updateProjectionInfos :: Update rs w ci -> [ProjectionInfo]
+updateProjectionInfos UKeep = []
+updateProjectionInfos (USet _ term) = termProjectionInfos term
+updateProjectionInfos (UCombine a b) =
+  updateProjectionInfos a ++ updateProjectionInfos b
+
+outFieldsProjectionInfos :: OutFields rs ci ifs fs -> [ProjectionInfo]
+outFieldsProjectionInfos OFNil = []
+outFieldsProjectionInfos (OFCons term rest) =
+  termProjectionInfos term ++ outFieldsProjectionInfos rest
+
+outTermProjectionInfos :: OutTerm rs ci co -> [ProjectionInfo]
+outTermProjectionInfos (OPack _ _ fields) = outFieldsProjectionInfos fields
+
+projectionValidationWarnings ::
+  (Bounded s, Enum s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  [TransducerValidationWarning s]
+projectionValidationWarnings transducer =
+  concat
+    [ warningsForEdge (EdgeRef source edgeNumber) edge
+    | source <- [minBound .. maxBound],
+      (edgeNumber, edge) <- zip [(0 :: Int) ..] (edgesOut transducer source)
+    ]
+  where
+    warningsForEdge edgeRef Edge {guard = edgeGuard, update = edgeUpdate, output = edgeOutput} =
+      guardWarnings edgeRef edgeGuard
+        ++ outsideWarnings edgeRef "update" (updateProjectionInfos edgeUpdate)
+        ++ outsideWarnings
+          edgeRef
+          "output"
+          (concatMap outTermProjectionInfos edgeOutput)
+
+    guardWarnings _ PTop = []
+    guardWarnings _ PBot = []
+    guardWarnings edgeRef (PAnd a b) =
+      guardWarnings edgeRef a ++ guardWarnings edgeRef b
+    guardWarnings edgeRef (POr a b) =
+      guardWarnings edgeRef a ++ guardWarnings edgeRef b
+    guardWarnings edgeRef (PNot predicate) = guardWarnings edgeRef predicate
+    guardWarnings edgeRef (PEq a b) =
+      concatMap (equalityWarnings edgeRef) (termProjectionInfos a ++ termProjectionInfos b)
+    guardWarnings _ (PInCtor _) = []
+    guardWarnings _ PLeftArm = []
+    guardWarnings _ PRightArm = []
+    guardWarnings edgeRef (PCmp _ a b) =
+      concatMap
+        (\info -> equalityWarnings edgeRef info ++ orderingWarnings edgeRef info)
+        (termProjectionInfos a ++ termProjectionInfos b)
+
+    equalityWarnings edgeRef info
+      | projectionInfoSupportsEquality info = []
+      | otherwise =
+          [ ProjectionResultUnsupported
+              { tvwEdge = edgeRef,
+                tvwProjectionPath = projectionInfoPath info,
+                tvwProjectionShape = projectionInfoShape info,
+                tvwProjectionResultType = projectionInfoResultType info,
+                tvwDetail =
+                  "projection "
+                    <> projectionInfoPath info
+                    <> " has result type "
+                    <> projectionInfoResultType info
+                    <> " outside Keiki's symbolic equality registry"
+              }
+          ]
+
+    orderingWarnings edgeRef info
+      | projectionInfoSupportsOrdering info = []
+      | otherwise =
+          [ ProjectionOrderingUnsupported
+              { tvwEdge = edgeRef,
+                tvwProjectionPath = projectionInfoPath info,
+                tvwProjectionShape = projectionInfoShape info,
+                tvwProjectionResultType = projectionInfoResultType info,
+                tvwDetail =
+                  "projection "
+                    <> projectionInfoPath info
+                    <> " has result type "
+                    <> projectionInfoResultType info
+                    <> " without symbolic ordering support"
+              }
+          ]
+
+    outsideWarnings edgeRef location =
+      map
+        ( \info ->
+            ProjectionOutsideGuard
+              { tvwEdge = edgeRef,
+                tvwProjectionPath = projectionInfoPath info,
+                tvwProjectionShape = projectionInfoShape info,
+                tvwProjectionLocation = location,
+                tvwDetail =
+                  "projection "
+                    <> projectionInfoPath info
+                    <> " appears in an edge "
+                    <> location
+                    <> "; field projections are supported only in guards"
+              }
+        )
+
 -- ** Guarded input-read diagnostics
 
 termInCtorNames :: Term rs ci ifs r -> [String]
@@ -2078,6 +2419,8 @@ termInCtorNames (TInpCtorField ic _) = [icName ic]
 termInCtorNames (TApp1 _ t) = termInCtorNames t
 termInCtorNames (TApp2 _ a b) = termInCtorNames a ++ termInCtorNames b
 termInCtorNames (TArith _ a b) = termInCtorNames a ++ termInCtorNames b
+termInCtorNames (TFieldProj _ (PBReg _)) = []
+termInCtorNames (TFieldProj _ (PBInp ic _)) = [icName ic]
 
 predInCtorReadNames :: HsPred rs ci -> [String]
 predInCtorReadNames PTop = []

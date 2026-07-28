@@ -29,6 +29,7 @@ import Data.Profunctor (Strong (..))
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
 import Keiki.Core
+import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Fixtures.CounterPipeline
 import Keiki.Fixtures.EmailDelivery
 import Keiki.LawHelpers (emittedLog, runScript)
@@ -86,6 +87,23 @@ spec = do
         SomeSymIdentity -> pure ()
         SomeSymTransducer _ ->
           expectationFailure "first' Cat.id should preserve the identity sentinel"
+
+    it "rehomes an input-based field projection into the combined constructor" $ do
+      let lifted =
+            first' (someSymTransducer FieldProj.inputProjectionTransducer) ::
+              SomeSymTransducer
+                (FieldProj.DocCmd, RequestId)
+                (FieldProj.DocEvent, RequestId)
+          doc = FieldProj.DocInfo "new-hash" "title" []
+          requestId = RequestId 7
+      case lifted of
+        SomeSymTransducer transducer ->
+          omega
+            transducer
+            (initial transducer)
+            (initialRegs transducer)
+            (FieldProj.NewDoc doc, requestId)
+            `shouldBe` [(FieldProj.DocAccepted doc, requestId)]
 
   describe "second'" $ do
     it "threads an unrelated RequestId through emailDelivery on the second slot" $ do

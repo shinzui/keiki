@@ -4,6 +4,7 @@ import Data.List (isInfixOf)
 import Data.Proxy (Proxy (..))
 import Data.Word (Word8)
 import Keiki.Core
+import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Symbolic (checkDeadEdgesSym, checkTransitionDeterminismSym)
 import Test.Hspec
 
@@ -406,6 +407,149 @@ spec = do
 
     it "the audit is silent under defaultValidationOptions (backward compat)" $
       validateTransducer defaultValidationOptions opaqueT `shouldBe` []
+
+  describe "typed field projection validation" $ do
+    let validOutput =
+          [ pack
+              FieldProj.newDocCtor
+              FieldProj.docAcceptedWire
+              (OFCons (TInpCtorField FieldProj.newDocCtor #doc) OFNil)
+          ]
+        projectionWarnings fixture =
+          validateTransducer defaultValidationOptions fixture
+
+    it "accepts supported Text equality and stays out of OpaqueGuard" $ do
+      let warnings =
+            validateTransducer
+              defaultValidationOptions {warnOpaqueGuards = True}
+              FieldProj.docProjectionTransducer
+      warnings `shouldBe` []
+
+    it "rejects a projection result outside the symbolic registry" $ do
+      let fixture =
+            FieldProj.docProjectionTransducer
+              { edgesOut = \FieldProj.DocState ->
+                  [ Edge
+                      { guard =
+                          PAnd
+                            (matchInCtor FieldProj.newDocCtor)
+                            ( regProj FieldProj.docNumbersW FieldProj.docIx
+                                .== inpProj FieldProj.docNumbersW FieldProj.newDocCtor #doc
+                            ),
+                        update = UKeep,
+                        output = validOutput,
+                        target = FieldProj.DocState,
+                        mode = Live
+                      }
+                  ]
+              }
+          isUnsupported ProjectionResultUnsupported {} = True
+          isUnsupported _ = False
+      projectionWarnings fixture `shouldSatisfy` any isUnsupported
+
+    it "rejects ordering over a Text projection while equality remains supported" $ do
+      let fixture =
+            FieldProj.docProjectionTransducer
+              { edgesOut = \FieldProj.DocState ->
+                  [ Edge
+                      { guard =
+                          PAnd
+                            (matchInCtor FieldProj.newDocCtor)
+                            ( PCmp
+                                CmpLt
+                                (regProj FieldProj.docHashW FieldProj.docIx)
+                                (TLit "z")
+                            ),
+                        update = UKeep,
+                        output = validOutput,
+                        target = FieldProj.DocState,
+                        mode = Live
+                      }
+                  ]
+              }
+          isOrdering ProjectionOrderingUnsupported {} = True
+          isOrdering _ = False
+          isResult ProjectionResultUnsupported {} = True
+          isResult _ = False
+          warnings = projectionWarnings fixture
+      warnings `shouldSatisfy` any isOrdering
+      warnings `shouldSatisfy` (not . any isResult)
+
+    it "rejects a projection in an update" $ do
+      let fixture =
+            FieldProj.docProjectionTransducer
+              { edgesOut = \FieldProj.DocState ->
+                  [ Edge
+                      { guard = matchInCtor FieldProj.newDocCtor,
+                        update =
+                          USet
+                            FieldProj.docN
+                            (regProj FieldProj.docIdentityW FieldProj.docIx),
+                        output = validOutput,
+                        target = FieldProj.DocState,
+                        mode = Live
+                      }
+                  ]
+              }
+          isUpdate ProjectionOutsideGuard {tvwProjectionLocation = "update"} = True
+          isUpdate _ = False
+      projectionWarnings fixture `shouldSatisfy` any isUpdate
+
+    it "rejects an output projection and still reports its owner field hidden" $ do
+      let projectedWire =
+            WireCtor
+              { wcName = "ProjectedHash",
+                wcMatch = \case
+                  FieldProj.DocAccepted doc -> Just (FieldProj.diHash doc, ()),
+                wcBuild = \(hash, ()) ->
+                  FieldProj.DocAccepted (FieldProj.DocInfo hash "" [])
+              }
+          fixture =
+            FieldProj.docProjectionTransducer
+              { edgesOut = \FieldProj.DocState ->
+                  [ Edge
+                      { guard = matchInCtor FieldProj.newDocCtor,
+                        update = UKeep,
+                        output =
+                          [ pack
+                              FieldProj.newDocCtor
+                              projectedWire
+                              ( OFCons
+                                  (inpProj FieldProj.docHashW FieldProj.newDocCtor #doc)
+                                  OFNil
+                              )
+                          ],
+                        target = FieldProj.DocState,
+                        mode = Live
+                      }
+                  ]
+              }
+          isOutput ProjectionOutsideGuard {tvwProjectionLocation = "output"} = True
+          isOutput _ = False
+          isHiddenDoc HiddenInput {tvwMissingSlots = missing} = "doc" `elem` missing
+          isHiddenDoc _ = False
+          warnings = projectionWarnings fixture
+      warnings `shouldSatisfy` any isOutput
+      warnings `shouldSatisfy` any isHiddenDoc
+
+    it "requires PInCtor before an input-based projection read" $ do
+      let fixture =
+            FieldProj.docProjectionTransducer
+              { edgesOut = \FieldProj.DocState ->
+                  [ Edge
+                      { guard =
+                          inpProj FieldProj.docHashW FieldProj.newDocCtor #doc
+                            .== TLit "hash",
+                        update = UKeep,
+                        output = validOutput,
+                        target = FieldProj.DocState,
+                        mode = Live
+                      }
+                  ]
+              }
+          isUnguarded UnguardedInputRead {} = True
+          isUnguarded _ = False
+      projectionWarnings fixture `shouldSatisfy` any isUnguarded
 
   describe "checkTransitionDeterminismSym (z3-backed)" $ do
     it "mutually-exclusive PInCtor guards yield no determinism warning" $

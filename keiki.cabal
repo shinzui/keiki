@@ -80,6 +80,7 @@ library
     Keiki.Shape
     Keiki.Symbolic
 
+  other-modules:   Keiki.Internal.SymbolicTypes
   hs-source-dirs:  src
   build-depends:
     , base               ^>=4.21
@@ -119,6 +120,7 @@ test-suite keiki-test
     Keiki.CoreHiddenInputsGSMSpec
     Keiki.CoreInFlightSpec
     Keiki.CoreSpec
+    Keiki.FieldProjSpec
     Keiki.Fixtures.BrokenTailCoverage
     Keiki.Fixtures.ComposeStateful
     Keiki.Fixtures.CounterPipeline

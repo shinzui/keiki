@@ -8,8 +8,14 @@
 module Keiki.CompositionMultiEventSpec (spec) where
 
 import Data.Proxy (Proxy (..))
-import Keiki.Composition (Composite (..), compose)
+import Keiki.Composition
+  ( ComposeAlignmentWarning (..),
+    Composite (..),
+    compose,
+    composeChecked,
+  )
 import Keiki.Core
+import Keiki.FieldProjSpec qualified as FieldProj
 import Test.Hspec
 
 -- * t1 ---------------------------------------------------------------------
@@ -71,7 +77,7 @@ wcMidB =
 
 -- | t1's transducer: a single vertex Q with a self-loop edge that
 -- emits two mid-symbols ([MidA n, MidB n]) from one T1Trigger input.
-data Q = Q deriving (Eq, Show, Bounded, Enum)
+data Q = Q deriving (Eq, Ord, Show, Bounded, Enum)
 
 t1 :: SymTransducer (HsPred '[] T1Cmd) '[] Q T1Cmd Mid
 t1 =
@@ -137,7 +143,7 @@ wcEchoB =
     }
 
 -- | t2's vertex (single).
-data Z = Z deriving (Eq, Show, Bounded, Enum)
+data Z = Z deriving (Eq, Ord, Show, Bounded, Enum)
 
 -- | t2's transducer: two edges from Z, one per mid-symbol.
 --   Z on MidA → Z / [EchoA payload]
@@ -188,6 +194,119 @@ t2 =
       isFinal = const True
     }
 
+data PendingSourceCmd = PendingSourceCmd FieldProj.DocInfo
+  deriving stock (Eq, Show)
+
+pendingSourceCtor :: InCtor PendingSourceCmd '[ '("doc", FieldProj.DocInfo)]
+pendingSourceCtor =
+  InCtor
+    { icName = "PendingSourceCmd",
+      icMatch = \(PendingSourceCmd doc) -> Just (RCons (Proxy @"doc") doc RNil),
+      icBuild = \(RCons _ doc RNil) -> PendingSourceCmd doc
+    }
+
+data PendingMid
+  = PendingLoad FieldProj.DocInfo
+  | PendingCheck
+  deriving stock (Eq, Show)
+
+pendingLoadCtor :: InCtor PendingMid '[ '("doc", FieldProj.DocInfo)]
+pendingLoadCtor =
+  InCtor
+    { icName = "PendingLoad",
+      icMatch = \case
+        PendingLoad doc -> Just (RCons (Proxy @"doc") doc RNil)
+        PendingCheck -> Nothing,
+      icBuild = \(RCons _ doc RNil) -> PendingLoad doc
+    }
+
+pendingCheckCtor :: InCtor PendingMid '[]
+pendingCheckCtor =
+  InCtor
+    { icName = "PendingCheck",
+      icMatch = \case PendingCheck -> Just RNil; PendingLoad _ -> Nothing,
+      icBuild = \RNil -> PendingCheck
+    }
+
+pendingLoadWire :: WireCtor PendingMid (FieldProj.DocInfo, ())
+pendingLoadWire =
+  WireCtor
+    { wcName = "PendingLoad",
+      wcMatch = \case PendingLoad doc -> Just (doc, ()); PendingCheck -> Nothing,
+      wcBuild = \(doc, ()) -> PendingLoad doc
+    }
+
+pendingCheckWire :: WireCtor PendingMid ()
+pendingCheckWire =
+  WireCtor
+    { wcName = "PendingCheck",
+      wcMatch = \case PendingCheck -> Just (); PendingLoad _ -> Nothing,
+      wcBuild = \() -> PendingCheck
+    }
+
+pendingSource ::
+  SymTransducer (HsPred '[] PendingSourceCmd) '[] Q PendingSourceCmd PendingMid
+pendingSource =
+  SymTransducer
+    { edgesOut = \Q ->
+        [ Edge
+            { guard = matchInCtor pendingSourceCtor,
+              update = UKeep,
+              output =
+                [ pack
+                    pendingSourceCtor
+                    pendingLoadWire
+                    (OFCons (TInpCtorField pendingSourceCtor #doc) OFNil),
+                  pack pendingSourceCtor pendingCheckWire OFNil
+                ],
+              target = Q,
+              mode = Live
+            }
+        ],
+      initial = Q,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
+pendingSink ::
+  SymTransducer
+    (HsPred FieldProj.DocRegs PendingMid)
+    FieldProj.DocRegs
+    Z
+    PendingMid
+    ()
+pendingSink =
+  SymTransducer
+    { edgesOut = \Z ->
+        [ Edge
+            { guard = matchInCtor pendingLoadCtor,
+              update =
+                USet
+                  FieldProj.docN
+                  (TApp1 id (TInpCtorField pendingLoadCtor #doc)),
+              output = [],
+              target = Z,
+              mode = Live
+            },
+          Edge
+            { guard =
+                PAnd
+                  (matchInCtor pendingCheckCtor)
+                  ( regProj FieldProj.docHashW FieldProj.docIx
+                      .== TLit "pending-match"
+                  ),
+              update = UKeep,
+              output = [],
+              target = Z,
+              mode = Live
+            }
+        ],
+      initial = Z,
+      initialRegs =
+        RCons (Proxy @"doc") FieldProj.initialDocInfo RNil,
+      isFinal = const True
+    }
+
 -- * Specs ------------------------------------------------------------------
 
 spec :: Spec
@@ -221,3 +340,29 @@ spec = do
             ( "expected Just (Composite Q Z, _), got "
                 <> show (fmap (\(s, _) -> s) other)
             )
+
+  describe "projection through a multi-event pending write" $ do
+    let matchingDoc = FieldProj.DocInfo "pending-match" "title" []
+
+    it "raw composition preserves forward behavior and makes the loss auditable" $ do
+      let pipeline = compose pendingSource pendingSink
+      opaqueGuardWarnings pipeline `shouldSatisfy` (not . null)
+      case stepEither
+        pipeline
+        (initial pipeline, initialRegs pipeline)
+        (PendingSourceCmd matchingDoc) of
+        Left failure -> expectationFailure ("pending-write pipeline failed: " <> show failure)
+        Right _ -> pure ()
+
+    it "composeChecked rejects the computed pending-write projection" $
+      case composeChecked pendingSource pendingSink of
+        Right _ -> expectationFailure "computed pending write passed composeChecked"
+        Left warnings ->
+          warnings
+            `shouldSatisfy` any
+              ( \case
+                  NonStructuralProjectionBoundary
+                    { cawProjectionReason = "pending write"
+                    } -> True
+                  _ -> False
+              )

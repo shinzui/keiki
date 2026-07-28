@@ -14,7 +14,10 @@ import Keiki.Core
     RegFile (..),
     Term (..),
     Update (..),
+    inpProj,
+    regProj,
   )
+import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Internal.Slots (IndexN (..))
 import Keiki.Render.Pretty (prettyPred, prettyTerm, prettyUpdate)
 import Test.Hspec
@@ -84,6 +87,16 @@ spec = do
     it "renders TArith mul as (a * b)" $
       prettyTerm (TArith OpMul (TReg balanceIx) (TReg limitIx) :: Term Regs Cmd '[] Int)
         `shouldBe` T.pack "(balance * limit)"
+    it "renders a register field projection as a dotted path" $
+      prettyTerm
+        (regProj FieldProj.docHashW FieldProj.docIx :: Term FieldProj.DocRegs FieldProj.DocCmd '[] T.Text)
+        `shouldBe` T.pack "doc.contentHash"
+    it "renders an input field projection as ctor.owner.field" $
+      prettyTerm
+        ( inpProj FieldProj.docHashW FieldProj.newDocCtor #doc ::
+            Term '[] FieldProj.DocCmd FieldProj.NewDocFields T.Text
+        )
+        `shouldBe` T.pack "NewDoc.doc.contentHash"
 
   describe "prettyPred" $ do
     it "renders PTop / PBot" $ do

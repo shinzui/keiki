@@ -3,6 +3,7 @@ module Keiki.CompositionAlignmentSpec (spec) where
 import Data.Proxy (Proxy (..))
 import Keiki.Composition
 import Keiki.Core
+import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Fixtures.ComposeStateful
 import Keiki.Fixtures.CounterPipeline
 import Keiki.Profunctor (rmapCo)
@@ -74,6 +75,99 @@ arityStageB =
       isFinal = const True
     }
 
+data ProjectionSourceCmd = ProjectionSourceCmd FieldProj.DocInfo
+  deriving stock (Eq, Show)
+
+type ProjectionSourceFields = '[ '("doc", FieldProj.DocInfo)]
+
+projectionSourceCtor :: InCtor ProjectionSourceCmd ProjectionSourceFields
+projectionSourceCtor =
+  InCtor
+    { icName = "ProjectionSourceCmd",
+      icMatch = \(ProjectionSourceCmd doc) ->
+        Just (RCons (Proxy @"doc") doc RNil),
+      icBuild = \(RCons _ doc RNil) -> ProjectionSourceCmd doc
+    }
+
+data ProjectionMid = ProjectionMid FieldProj.DocInfo
+  deriving stock (Eq, Show)
+
+projectionMidCtor :: InCtor ProjectionMid '[ '("doc", FieldProj.DocInfo)]
+projectionMidCtor =
+  InCtor
+    { icName = "ProjectionMid",
+      icMatch = \(ProjectionMid doc) -> Just (RCons (Proxy @"doc") doc RNil),
+      icBuild = \(RCons _ doc RNil) -> ProjectionMid doc
+    }
+
+projectionMidWire :: WireCtor ProjectionMid (FieldProj.DocInfo, ())
+projectionMidWire =
+  WireCtor
+    { wcName = "ProjectionMid",
+      wcMatch = \(ProjectionMid doc) -> Just (doc, ()),
+      wcBuild = \(doc, ()) -> ProjectionMid doc
+    }
+
+data ProjectionVertex = ProjectionVertex
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+projectionSource ::
+  Term '[] ProjectionSourceCmd ProjectionSourceFields FieldProj.DocInfo ->
+  SymTransducer
+    (HsPred '[] ProjectionSourceCmd)
+    '[]
+    ProjectionVertex
+    ProjectionSourceCmd
+    ProjectionMid
+projectionSource ownerTerm =
+  SymTransducer
+    { edgesOut = \ProjectionVertex ->
+        [ Edge
+            { guard = matchInCtor projectionSourceCtor,
+              update = UKeep,
+              output =
+                [ pack
+                    projectionSourceCtor
+                    projectionMidWire
+                    (OFCons ownerTerm OFNil)
+                ],
+              target = ProjectionVertex,
+              mode = Live
+            }
+        ],
+      initial = ProjectionVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
+projectionSink ::
+  SymTransducer
+    (HsPred '[] ProjectionMid)
+    '[]
+    ProjectionVertex
+    ProjectionMid
+    ()
+projectionSink =
+  SymTransducer
+    { edgesOut = \ProjectionVertex ->
+        [ Edge
+            { guard =
+                PAnd
+                  (matchInCtor projectionMidCtor)
+                  ( inpProj FieldProj.docHashW projectionMidCtor #doc
+                      .== TLit "match"
+                  ),
+              update = UKeep,
+              output = [],
+              target = ProjectionVertex,
+              mode = Live
+            }
+        ],
+      initial = ProjectionVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
 spec :: Spec
 spec = do
   describe "checkComposeAlignment" $ do
@@ -118,3 +212,47 @@ spec = do
 
     it "walks every symbol in a multi-event source chain" $
       checkComposeAlignment pairSource twoPhaseSink `shouldBe` []
+
+  describe "typed field projection composition" $ do
+    let matchingDoc = FieldProj.DocInfo "match" "title" []
+        inputTerm = TInpCtorField projectionSourceCtor #doc
+        passThrough = projectionSource inputTerm
+        literalOwner = projectionSource (TLit matchingDoc)
+        computedOwner = projectionSource (TApp1 id inputTerm)
+
+    it "preserves a stable input-field owner through checked composition" $ do
+      checkComposeAlignment passThrough projectionSink `shouldBe` []
+      case composeChecked passThrough projectionSink of
+        Left warnings -> expectationFailure ("stable projection warned: " <> show warnings)
+        Right pipeline -> opaqueGuardWarnings pipeline `shouldBe` []
+
+    it "constant-folds a literal owner without introducing opacity" $ do
+      let pipeline = compose literalOwner projectionSink
+      opaqueGuardWarnings pipeline `shouldBe` []
+      case stepEither
+        pipeline
+        (initial pipeline, initialRegs pipeline)
+        (ProjectionSourceCmd (FieldProj.DocInfo "ignored" "" [])) of
+        Left failure -> expectationFailure ("literal-folded pipeline failed: " <> show failure)
+        Right _ -> pure ()
+
+    it "keeps raw composition forward-correct but rejects a computed owner at the checked boundary" $ do
+      let pipeline = compose computedOwner projectionSink
+      opaqueGuardWarnings pipeline `shouldSatisfy` (not . null)
+      case stepEither
+        pipeline
+        (initial pipeline, initialRegs pipeline)
+        (ProjectionSourceCmd matchingDoc) of
+        Left failure -> expectationFailure ("raw projected pipeline failed: " <> show failure)
+        Right _ -> pure ()
+      case composeChecked computedOwner projectionSink of
+        Right _ -> expectationFailure "computed owner passed composeChecked"
+        Left warnings ->
+          warnings
+            `shouldSatisfy` any
+              ( \case
+                  NonStructuralProjectionBoundary
+                    { cawProjectionReason = "upstream computed output"
+                    } -> True
+                  _ -> False
+              )
