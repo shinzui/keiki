@@ -6,7 +6,7 @@ description: >-
   out of a mapped consumer-owned value without an opaque TApp escape hatch.
 timestamp: 2026-07-28T11:23:50Z
 requestId: IR-1
-status: planned
+status: released
 origin: mori://shinzui/keiro
 plan: docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md
 ---
@@ -15,12 +15,16 @@ plan: docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-
 
 ## Status
 
-**Planned.** Accepted on 2026-07-28 after validation against the codebase; implementation is
-specified by ExecPlan 79
-(`docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`),
-which resolves the three soundness decisions the request left open (structural base
-restriction via `ProjBase`, owner-`TypeRep`-qualified memo keys, and derived-term treatment
-in the inversion machinery) in its Decision Log.
+**Released.** Implemented by ExecPlan 79 and published on 2026-07-28 as
+[`keiki-0.4.0.0`](https://hackage.haskell.org/package/keiki-0.4.0.0), with the coordinated
+`keiki-codec-json-0.4.0.0` and `keiki-codec-json-test-0.4.0.0` releases. The implementation
+uses a structural `ProjBase`, nominal projection-tag/owner/result memo identity, and
+derived-term treatment in the inversion machinery. Keiro's current `<0.4` bounds
+intentionally exclude this PVP-major release until its adoption plan raises them.
+
+**Previously planned.** Accepted on 2026-07-28 after validation against the codebase;
+implementation was specified by ExecPlan 79
+(`docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`).
 
 **Originally proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl` (Keiro's
 improvement request IR-1, `docs/improvement-requests/support-structural-consumer-owned-types-in-keiro-dsl.md`

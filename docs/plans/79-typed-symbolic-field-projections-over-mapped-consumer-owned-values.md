@@ -100,8 +100,8 @@ This section must always reflect the actual current state of the work.
 - [x] (2026-07-28T13:06:23Z) M3: hidden-input / `PInCtor` discipline tests; forward-vs-replay equality test over a projection-guarded transducer
 - [x] (2026-07-28T13:13:36Z) M4: Haddocks with the projection-instance laws and provenance division; exported law harness (`fieldWitnessAgrees`) plus negative test proving a wrong instance fails
 - [x] (2026-07-28T13:13:36Z) M4: documentation and ADR pass — projection design note plus updates to ADR-0003 and ADR-0004 (IR already points here; status advances to `released` in M5)
-- [ ] M5: changelog entry, version bump to 0.4.0.0, Hackage/upstream-tag re-check, release and tag per `docs/research/release-procedure.md`
-- [ ] Final: ADR distillation pass and Outcomes & Retrospective
+- [x] (2026-07-28T13:29:45Z) M5: re-verified Hackage/upstream at 0.3.1.0, bumped and documented the coordinated 0.4.0.0 release, passed the complete release matrix, published all three packages and their Haddocks, and cut `v0.4.0.0`
+- [x] (2026-07-28T13:29:45Z) Final: audited the completed Decision Log and discoveries; ADR-0003/0004 and the field-projection research note already contain every durable decision, and Outcomes & Retrospective now records the shipped result
 - [x] (2026-07-28) Planning audit: checked the proposal against all five `Term`-handling modules, relevant ADRs, the IR, Mori-located SBV source, Hackage, and upstream tags; revised the unsound or unimplementable parts below
 
 
@@ -201,6 +201,13 @@ implementation. Provide concise evidence.
   `\\` proves successfully because only Keiki's generated `proj/<ordinal>` label reaches SBV.
   Evidence: the `FieldProjSpec` adversarial-label example passes alongside SBV's documented
   `registerLabel` rejection of `|`, `\\`, and duplicate labels.
+
+- Observation: the release-time compatibility baseline had not advanced. Hackage still
+  preferred `keiki-0.3.1.0`, the upstream repository still ended at `v0.3.1.0`, and Mori's
+  reverse-dependency report still showed Keiro packages capped below 0.4. The planned
+  0.4.0.0 PVP-major release therefore remained correct without a compatibility workaround.
+  Evidence: the Milestone 5 rerun of Hackage `preferred.json`, upstream tags, and
+  `mori registry dependents shinzui/keiki --packages` immediately preceded the version bump.
 
 
 ## Decision Log
@@ -400,6 +407,21 @@ structured cache key, `symSatExt` limitation, validation placement, replay treat
 composition policy; ADR-0003 and ADR-0004 retain the corresponding conservative-proof and
 checked-boundary decisions. `cabal haddock` completes and `cabal test all` remains green with
 559 Keiki examples plus the workspace's codec and Jitsurei suites.
+
+Milestone 5 and final outcome (2026-07-28): the authoritative baseline was still 0.3.1.0,
+so the exported-constructor break shipped as the planned PVP major `0.4.0.0`. `nix fmt`,
+`cabal build all`, `cabal test all`, all three `cabal check` runs, `nix flake check`, source
+distributions, and clean-room builds/tests of the extracted tarballs passed. The three
+packages and their Haddocks are published on Hackage, and the repository carries the
+annotated `v0.4.0.0` tag. Candidate and published pages were visually checked for rendered
+descriptions, changelogs, dependency bounds, module lists, and documentation status. No
+additional ADR was needed after the final distillation pass: ADR-0003 records the
+conservative symbolic simulation and ADR-0004 records the checked composition boundary,
+while the research note owns the API-specific trust boundary and model-extraction limit.
+The original purpose is met: consumers can express solver-visible scalar reads from mapped
+owners without granting Keiki wire-schema authority or silently weakening checked
+composition. Keiro must deliberately raise its existing `<0.4` bounds in its later adoption
+plan before it can select this release.
 
 
 ## Context and Orientation
@@ -1353,3 +1375,9 @@ downstream matches and must be named in the 0.4.0.0 changelog.
 - 2026-07-28: Completed Milestone 4. Expanded public Haddocks, added the self-contained
   field-projection research note and input-projection cross-link, and updated ADR-0003 and
   ADR-0004 with the one-way over-approximation and preserve/fold/lower composition decisions.
+- 2026-07-28: Completed Milestone 5 and the final distillation pass. Re-verified the
+  authoritative 0.3.1.0 baseline, released the coordinated 0.4.0.0 packages and Haddocks to
+  Hackage after the full release and clean-room matrices passed, advanced IR-1 to `released`,
+  recorded the Keiro `<0.4` adoption handoff, and cut the annotated `v0.4.0.0` tag. The final
+  ADR audit found no durable decision beyond the material already distilled into ADR-0003,
+  ADR-0004, and `docs/research/field-projection-design.md`.
