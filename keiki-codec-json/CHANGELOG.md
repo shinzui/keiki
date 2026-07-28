@@ -9,6 +9,15 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.4.0.0] — 2026-07-28
+
+### Changed
+
+- Co-released with `keiki-0.4.0.0`; internal `keiki` and
+  `keiki-codec-json` dependency bounds now target the new `^>=0.4` PVP major
+  range introduced by Keiki's typed field-projection API.
+
+
 ## [0.3.1.0] — 2026-07-23
 
 ### Changed
