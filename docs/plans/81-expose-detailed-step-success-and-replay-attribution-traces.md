@@ -75,9 +75,21 @@ active parent initiative.
   inspection showed `applyEventStreamingEither`, `replayEvents`, and `applyEventsEither` seeding
   `DiscardTrace`; `reconstituteEither` delegates to that strict compatibility path; and only
   `applyEventsDetailedEither` plus its `reconstituteDetailedEither` wrapper seed `CollectTrace`.
-- [ ] Milestone 3: add example and property coverage for edge identity, trace laws, exact erasure,
-  live-first selection, epsilon observability, and unchanged failures; add detailed benchmark rows
-  and compare compatibility performance with the Milestone 0 baseline.
+- [x] (2026-07-31T21:28:15Z) Milestone 3: added exact detailed/compatibility failure pairs for
+  no inversion, ambiguity, queue mismatch, and truncation; live-first and replay-only twin
+  attribution examples; a 1,024-event compatibility/detailed regression; and generated P3 trace
+  laws in all permanent round-trip fixtures. The focused structured suite passed 18 examples, the
+  replay-only suite passed 22, InFlight passed 13, and RoundTrip passed 36 examples including 100
+  generated P3 cases for each of four fixtures. Added six strict detailed benchmark rows. The
+  final attribution-only command against `/tmp/keiki-ep81-before.csv` wrote
+  `/tmp/keiki-ep81-after.csv` and passed all 12 rows with the 20% gate. Builder compatibility
+  timing changes were +14% (`stepEither`), +13% (32 events), and +14% (1,024 events); AST changes
+  were +8%, +9%, and +15%. Compatibility allocation deltas were +40 B, -144 B, and +65,387 B for
+  builder and +40 B, -144 B, and +65,366 B for AST. The identical long-log residual is one 64 KiB
+  measurement block plus small scalar variance, while static inspection proves the nullary branch
+  cannot construct pending records, attribution records, or trace list cells. Detailed allocation
+  above same-run compatibility was 0 B/7,593 B/245,479 B for builder and 0 B/7,593 B/245,494 B for
+  AST; detailed timing ratios were 0.95x/0.99x/1.04x and 1.04x/1.05x/1.04x respectively.
 - [ ] Milestone 4: update Haddocks, user/foundation documentation, ADR-0002, the changelog, and
   improvement-request and benchmark documentation.
 - [ ] Milestone 5: pass focused, benchmark, full-project, Haddock, Nix, OKF, and diff gates.
@@ -86,6 +98,14 @@ active parent initiative.
 
 
 ## Surprises & Discoveries
+
+- The first generic replay worker compiled without inlining preserved O(1) retained trace state
+  but added 171,914 B to the builder's 1,024-event compatibility row and slowed it by 33%. Marking
+  the shared worker and its two trace transitions `INLINE` let GHC specialize the known nullary
+  `DiscardTrace` branch: a repeat passed all six compatibility rows and reduced the long-row delta
+  to one 64 KiB allocation block. A continuation-return experiment produced the same allocation
+  and noisier timing, so it was discarded. Evidence: `/tmp/keiki-ep81-inline.csv` passed all six
+  rows; the retained final `/tmp/keiki-ep81-after.csv` passed all 12 attribution rows.
 
 - Cabal 3.16 splits `--test-options` on spaces after the shell has processed the outer quoting. A
   focused Hspec match containing spaces must preserve embedded quotes, for example
@@ -177,6 +197,14 @@ active parent initiative.
   Rationale: forward stepping creates at most one short-lived detailed record per accepted
   command, whereas discarded replay traces accumulate with log length. The extra forward worker
   would add complexity to avoid a small, likely optimized constant cost.
+  Date: 2026-07-31
+
+- Decision: Inline the shared replay worker and trace-state transitions, while retaining the
+  explicit `DiscardTrace`/`CollectTrace` branches and one source fold.
+  Rationale: GHC 9.12.4 otherwise retained generic trace-policy plumbing in compatibility replay.
+  Inlining preserved the single semantic authority and allowed the nullary branch to specialize,
+  eliminating the measured timing regression and most of the allocation delta without adding a
+  second evaluator. A continuation-return variant did not improve allocation and was reverted.
   Date: 2026-07-31
 
 - Decision: Reuse and extend `jitsurei:keiki-bench`; do not create a new executable or change the

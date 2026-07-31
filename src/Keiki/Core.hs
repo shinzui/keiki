@@ -1581,6 +1581,7 @@ applyEventWithTrace _ eventIndex traceState (InFlight s queue) regs co = case qu
             advanceTraceAtTail eventIndex rest traceState
           )
   _ -> Left (ReplayQueueMismatch s co queue)
+{-# INLINE applyEventWithTrace #-}
 
 advanceTraceAtHead ::
   Int ->
@@ -1605,6 +1606,7 @@ advanceTraceAtHead eventIndex source edgeNumber edge eventCount evaluatedTail (C
    in case evaluatedTail of
         [] -> CollectTrace Nothing (completeAttribution (eventIndex + 1) pending : reverseTrace)
         _ -> CollectTrace (Just pending) reverseTrace
+{-# INLINE advanceTraceAtHead #-}
 
 advanceTraceAtTail ::
   Int ->
@@ -1617,6 +1619,7 @@ advanceTraceAtTail eventIndex remaining (CollectTrace pending reverseTrace) =
     ([], Just attribution) ->
       CollectTrace Nothing (completeAttribution (eventIndex + 1) attribution : reverseTrace)
     _ -> CollectTrace pending reverseTrace
+{-# INLINE advanceTraceAtTail #-}
 
 completeAttribution :: Int -> PendingAttribution s -> ReplayAttribution s
 completeAttribution end pending =
@@ -1673,6 +1676,7 @@ replayEventsWithTrace t = go 0
               }
         Right (nextWrapper, nextRegs, nextTraceState) ->
           go (eventIndex + 1) nextTraceState (nextWrapper, nextRegs) rest
+{-# INLINE replayEventsWithTrace #-}
 
 -- | Compatibility wrapper around 'reconstituteEither'. Prefer the
 -- structured 'Either' variant for new code. This function reconstitutes

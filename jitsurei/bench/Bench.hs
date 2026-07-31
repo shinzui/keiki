@@ -13,19 +13,28 @@
 -- builder-form counterparts so each row prints a relative ratio.
 module Main (main) where
 
+import Data.List qualified as List
 import Data.Text qualified as T
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Jitsurei.OrderCart qualified as OC
 import Jitsurei.UserRegistration qualified as UR
 import Keiki.Core
-  ( HsPred,
+  ( EdgeMode (..),
+    EdgeRef (..),
+    HsPred,
+    ReplayAttribution (..),
+    ReplayEventSpan (..),
+    ReplaySuccess (..),
+    StepSuccess (..),
     SymTransducer (initial, initialRegs),
     applyEvent,
+    applyEventsDetailedEither,
     applyEventsEither,
     delta,
     omega,
     reconstitute,
     step,
+    stepDetailedEither,
     stepEither,
   )
 import Test.Tasty.Bench
@@ -261,6 +270,75 @@ compatibilityProbes form tr =
       bench "applyEventsEither-1024" $ nf (urApplyEventsEitherCompatDigest tr) urLongLog
     ]
 
+modeDigest :: EdgeMode -> Int
+modeDigest Live = 1
+modeDigest ReplayOnly = 2
+
+{-# NOINLINE urStepDetailedDigest #-}
+urStepDetailedDigest ::
+  SymTransducer
+    (HsPred UR.UserRegRegs UR.UserCmd)
+    UR.UserRegRegs
+    UR.Vertex
+    UR.UserCmd
+    UR.UserEvent ->
+  UR.UserCmd ->
+  Int
+urStepDetailedDigest tr command =
+  case stepDetailedEither tr (initial tr, initialRegs tr) command of
+    Left _ -> -1
+    Right success ->
+      edgeIndex (stepSuccessEdge success)
+        + modeDigest (stepSuccessMode success)
+        + length (stepSuccessOutputs success)
+
+{-# NOINLINE urApplyEventsDetailedDigest #-}
+urApplyEventsDetailedDigest ::
+  SymTransducer
+    (HsPred UR.UserRegRegs UR.UserCmd)
+    UR.UserRegRegs
+    UR.Vertex
+    UR.UserCmd
+    UR.UserEvent ->
+  [UR.UserEvent] ->
+  Int
+urApplyEventsDetailedDigest tr events =
+  case applyEventsDetailedEither tr (initial tr, initialRegs tr) events of
+    Left _ -> -1
+    Right success -> List.foldl' attributionDigest 1 (replaySuccessTrace success)
+  where
+    attributionDigest checksum attribution =
+      let span' = replayAttributionSpan attribution
+       in checksum
+            + edgeIndex (replayAttributionEdge attribution)
+            + modeDigest (replayAttributionMode attribution)
+            + replaySpanStart span'
+            + replaySpanEnd span'
+            + replayAttributionEventCount attribution
+
+detailedProbes ::
+  String ->
+  SymTransducer
+    (HsPred UR.UserRegRegs UR.UserCmd)
+    UR.UserRegRegs
+    UR.Vertex
+    UR.UserCmd
+    UR.UserEvent ->
+  Benchmark
+detailedProbes form tr =
+  bgroup
+    form
+    [ bcompare (awkPath ["All", "attribution", "compat", form, "stepEither"]) $
+        bench "stepDetailedEither" $
+          nf (urStepDetailedDigest tr) urCmd,
+      bcompare (awkPath ["All", "attribution", "compat", form, "applyEventsEither-32"]) $
+        bench "applyEventsDetailedEither-32" $
+          nf (urApplyEventsDetailedDigest tr) urLog,
+      bcompare (awkPath ["All", "attribution", "compat", form, "applyEventsEither-1024"]) $
+        bench "applyEventsDetailedEither-1024" $
+          nf (urApplyEventsDetailedDigest tr) urLongLog
+    ]
+
 -- * Head-to-head group ------------------------------------------------------
 
 -- | Build an AWK pattern that matches a unique benchmark by its full
@@ -338,6 +416,11 @@ main =
             "compat"
             [ compatibilityProbes "builder" UR.userReg,
               compatibilityProbes "ast" UR.userRegAST
+            ],
+          bgroup
+            "detailed"
+            [ detailedProbes "builder" UR.userReg,
+              detailedProbes "ast" UR.userRegAST
             ]
         ],
       bgroup "head-to-head" headToHead
