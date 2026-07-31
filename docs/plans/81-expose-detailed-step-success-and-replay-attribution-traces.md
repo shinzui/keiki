@@ -4,6 +4,7 @@ slug: expose-detailed-step-success-and-replay-attribution-traces
 title: "Expose detailed step success and replay attribution traces"
 kind: exec-plan
 created_at: 2026-07-31T20:29:39Z
+intention: intention_01kywzfvmae5na5c26gybz51q7
 ---
 
 # Expose detailed step success and replay attribution traces
@@ -52,8 +53,15 @@ active parent initiative.
 
 ## Progress
 
-- [ ] Milestone 0: extend the existing tasty-bench suite with compatibility probes and capture the
-  pre-refactor timing/allocation baseline.
+- [x] (2026-07-31T21:01:36Z) Milestone 0: extended the existing tasty-bench suite with six stable
+  compatibility probes and captured `/tmp/keiki-ep81-before.csv` before changing Core. GHC 9.12.4
+  built commit `a52a5faa0228059be40d0f099d886dbe205ea8d0` plus the benchmark/plan worktree edits; all 30
+  benchmark rows passed. The CSV header is `Name,Mean (ps),2*Stdev (ps),Allocated,Copied,Peak
+  Memory`. Builder `stepEither`, 32-event replay, and 1,024-event replay measured 185,646 ps/1,702
+  B, 16,777,453 ps/83,305 B, and 574,189,453 ps/2,821,008 B. AST counterparts measured 170,003
+  ps/1,686 B, 16,097,210 ps/82,809 B, and 558,171,093 ps/2,804,675 B. The capture command was
+  `cabal bench jitsurei:keiki-bench --benchmark-options='--csv /tmp/keiki-ep81-before.csv +RTS -T
+  -RTS'`; `git diff -- src/Keiki/Core.hs` was empty afterward.
 - [ ] Milestone 1: add the public detailed-forward result and make `stepEither` erase it.
 - [ ] Milestone 2: factor replay through one internal kernel with allocation-free no-trace and
   trace-collecting modes, then add strict detailed replay entry points.

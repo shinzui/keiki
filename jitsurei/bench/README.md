@@ -28,6 +28,10 @@ All
   OrderCart
     builder         { delta, omega, step, applyEvent, reconstitute }
     ast             { delta, omega, step, applyEvent, reconstitute }
+  attribution
+    compat
+      builder       { stepEither, applyEventsEither-32, applyEventsEither-1024 }
+      ast           { stepEither, applyEventsEither-32, applyEventsEither-1024 }
   head-to-head
     UserReg/ast vs builder/step
     UserReg/ast vs builder/reconstitute
@@ -47,6 +51,12 @@ canonical first edge of each log. The replay logs (`urLog`,
 `ocLog`) are length 32 each; UserRegistration loops `Resend` 28
 times to inflate the trajectory, OrderCart adds 27 `ItemAdded`
 events on the happy path.
+
+The `attribution/compat` rows are the pre-change compatibility probes for
+ExecPlan 81. They reduce successful `stepEither` and `applyEventsEither`
+results to strict scalar values, measure both builder and AST forms, and replay
+UserRegistration logs of 32 and 1,024 events. Keep their complete benchmark
+paths stable when comparing a post-change run with the captured CSV.
 
 ## Capture and diff a baseline
 
