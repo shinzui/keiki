@@ -163,6 +163,30 @@ This is a conceptual correspondence, not a promise of a
 forward direction and structured, `InFlight`-aware Core functions for
 replay; the earlier lossy Decider façade was removed.
 
+The detailed operations make the same derivation proof-relevant. A forward
+`StepSuccess` records the exact construction-local outgoing edge selected by
+δ/ω. A strict `ReplaySuccess` records how the observed event word was factored
+into completed edge output words. For example, if one edge emits two events
+and the next emits one, the replay trace contains two half-open spans,
+`[0,2)` and `[2,3)`, rather than three apparent transitions. The tail of a
+multi-event output verifies the edge selected by its head; it does not select a
+new edge.
+
+This evidence matters because equality of target state, emitted values, or
+post-state observations is not edge identity. Guarded siblings can agree on
+all three. `EdgeRef` names the actual local declaration by source and outgoing
+index, while replay also records whether live-first inversion selected a
+`Live` edge or fell through to `ReplayOnly`. The reference is not stable under
+edge reordering and is not a persisted domain identifier.
+
+The factorization sees only observed events. An epsilon-output edge can be
+reported by detailed forward stepping, but it cannot appear in replay evidence:
+an event log contains no symbol that distinguishes zero, one, or several silent
+steps. Empty replay therefore has an empty trace; a non-empty successful replay
+partitions the whole observed word with positive spans. Erasing this evidence
+is exactly the existing forward or replay result. Compatibility hydration uses
+the same evaluator without collecting the O(number of completed edges) trace.
+
 ## Why this matters
 
 In the standard decider pattern (covered in `02`), you write `decide`

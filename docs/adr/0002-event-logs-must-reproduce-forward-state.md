@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
-- **Plan(s):** `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`; `docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md`; `docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md`
+- **Plan(s):** `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`; `docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md`; `docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md`; `docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`
 
 ## Context
 
@@ -36,6 +36,26 @@ The primary replay API is structured and `InFlight`-aware:
 `reconstituteEither`. The `Maybe` variants are compatibility wrappers.
 The lossy `Keiki.Decider` façade is not part of the release API.
 
+`stepDetailedEither`, `applyEventsDetailedEither`, and
+`reconstituteDetailedEither` are proof-relevant views of those same
+executions. Erasing a detailed success yields the corresponding compatibility
+success, and failures are identical. Forward evidence records the exact local
+outgoing edge selected by the evaluator. A successful strict replay trace is
+an ordered factorization of the complete observed log into completed,
+non-empty edge output words: half-open spans partition the event positions and
+their sources and targets form a path to the returned state. Multi-event tails
+complete the attribution selected by their head; they are not separate
+transitions. Live-first inversion records the phase that actually selected the
+edge.
+
+`EdgeRef` remains local to one concrete transducer construction and changes
+with outgoing declaration order. It is diagnostic evidence, not a persisted
+semantic identifier. Epsilon-output edges remain unobservable during replay
+because they consume no log position, though detailed forward stepping can
+identify them. Compatibility replay uses the same evaluator with a nullary
+discard policy and O(1) auxiliary trace state; only detailed replay retains
+O(k) entries for k completed edges.
+
 ## Consequences
 
 - Persisted models must emit an event for every state change. Pure,
@@ -49,3 +69,7 @@ The lossy `Keiki.Decider` façade is not part of the release API.
   `defaultValidationOptions` rather than construct options positionally.
 - The round-trip property suite is permanent regression evidence for
   the decision.
+- Callers that need conformance evidence can distinguish guarded siblings and
+  live/replay-only selection without duplicating Keiki's guards or inverter.
+- Detailed replay has an explicit O(number of completed edges) metadata cost;
+  compatibility hydration does not construct and erase that trace.

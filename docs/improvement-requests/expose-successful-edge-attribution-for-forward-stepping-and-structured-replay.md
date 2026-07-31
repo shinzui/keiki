@@ -44,9 +44,12 @@ reviews:
 
 ## Status
 
-**Planned.** Accepted after technical validation; implementation is specified by ExecPlan 81
-(`docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`). Keiro must not
-infer a selected transition from its target or emitted values while this capability is absent.
+**Planned.** The implementation and repository validation are in progress under ExecPlan 81
+(`docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`). The detailed Core
+API, permanent laws, and performance evidence exist in the working release line, but the request
+remains planned until Hackage and a matching public upstream tag expose them. Keiro must not select
+a dependency bound from an unreleased checkout or infer a transition from targets or emitted
+values.
 
 
 ## Context

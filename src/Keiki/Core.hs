@@ -1162,10 +1162,15 @@ step t (s, regs) ci = case delta t s regs ci of
   Just (s', regs') -> Just (s', regs', omega t s regs ci)
 
 -- | A locator for one outgoing edge: the vertex it leaves from and its
--- zero-based position in @'edgesOut' t source@. This is the canonical
--- edge-identity vocabulary shared with build-time diagnostics (EP-56).
+-- zero-based position in @'edgesOut' t source@. It is local to one concrete
+-- transducer construction, changes when outgoing declaration order changes,
+-- and must not be persisted as a stable application identifier. This is the
+-- canonical local edge-identity vocabulary shared with build-time diagnostics
+-- (EP-56).
 data EdgeRef s = EdgeRef
-  { edgeSource :: s,
+  { -- | Vertex from which the edge is declared.
+    edgeSource :: s,
+    -- | Zero-based position in @'edgesOut' t edgeSource@.
     edgeIndex :: Int
   }
   deriving stock (Eq, Show)
@@ -1176,10 +1181,16 @@ data EdgeRef s = EdgeRef
 -- declaration order changes. Forward stepping considers only 'Live' edges,
 -- so 'stepSuccessMode' is always 'Live'.
 data StepSuccess (rs :: [Slot]) s co = StepSuccess
-  { stepSuccessEdge :: EdgeRef s,
+  { -- | Exact construction-local edge selected by the evaluator.
+    stepSuccessEdge :: EdgeRef s,
+    -- | Selected mode; forward success always reports 'Live'.
     stepSuccessMode :: EdgeMode,
+    -- | Declared target state of the selected edge.
     stepSuccessState :: s,
+    -- | Register file after applying the selected edge update.
     stepSuccessRegs :: RegFile rs,
+    -- | Evaluated output word in declaration order, including @[]@ for an
+    -- accepted epsilon-output edge.
     stepSuccessOutputs :: [co]
   }
 
@@ -1392,7 +1403,9 @@ data ReplayFailure s co = ReplayFailure
 -- | A zero-based, half-open event interval @[start,end)@. The start is
 -- included and the end is excluded, so its length is @end - start@.
 data ReplayEventSpan = ReplayEventSpan
-  { replaySpanStart :: !Int,
+  { -- | Inclusive zero-based event index.
+    replaySpanStart :: !Int,
+    -- | Exclusive zero-based event index.
     replaySpanEnd :: !Int
   }
   deriving stock (Eq, Show)
@@ -1401,11 +1414,17 @@ data ReplayEventSpan = ReplayEventSpan
 -- replay. The local 'EdgeRef', selected 'EdgeMode', state transition, and
 -- event span all describe the same concrete edge application.
 data ReplayAttribution s = ReplayAttribution
-  { replayAttributionEdge :: !(EdgeRef s),
+  { -- | Exact construction-local edge selected by replay inversion.
+    replayAttributionEdge :: !(EdgeRef s),
+    -- | Actual live-first phase that selected the edge.
     replayAttributionMode :: !EdgeMode,
+    -- | Settled state before the edge consumed its head event.
     replayAttributionSource :: !s,
+    -- | Declared target reached after the complete output word.
     replayAttributionTarget :: !s,
+    -- | Half-open interval of observed events consumed by this edge.
     replayAttributionSpan :: !ReplayEventSpan,
+    -- | Declared output-word length; equals the span length and is positive.
     replayAttributionEventCount :: !Int
   }
   deriving stock (Eq, Show)
@@ -1414,8 +1433,11 @@ data ReplayAttribution s = ReplayAttribution
 -- The register file deliberately prevents deriving whole-value 'Eq' or
 -- 'Show'; callers can inspect the slots relevant to their aggregate.
 data ReplaySuccess (rs :: [Slot]) s = ReplaySuccess
-  { replaySuccessState :: !s,
+  { -- | Final settled state after the complete input log.
+    replaySuccessState :: !s,
+    -- | Final register file after the complete input log.
     replaySuccessRegs :: RegFile rs,
+    -- | Ordered completed-edge factorization of the observed event log.
     replaySuccessTrace :: [ReplayAttribution s]
   }
 
@@ -1698,7 +1720,8 @@ reconstitute t events =
 
 -- | Reconstitute @(state, registers)@ from the transducer's initial
 -- state, returning the exact event index, wrapper state, and structured
--- reason when replay fails.
+-- reason when replay fails. This compatibility operation runs the shared
+-- evaluator in 'DiscardTrace' mode and retains O(1) auxiliary trace state.
 reconstituteEither ::
   (BoolAlg phi (RegFile rs, ci), Eq co) =>
   SymTransducer phi rs s ci co ->
@@ -1709,7 +1732,8 @@ reconstituteEither t = applyEventsEither t (initial t, initialRegs t)
 -- | Detailed 'reconstituteEither' from the transducer's initial seed. On
 -- success the returned trace factors the complete observed event list into
 -- ordered completed-edge spans; failures are exactly those of compatibility
--- replay and expose no partial trace.
+-- replay and expose no partial trace. Erasing the trace and projecting the
+-- state/register file is exactly 'reconstituteEither'.
 reconstituteDetailedEither ::
   (BoolAlg phi (RegFile rs, ci), Eq co) =>
   SymTransducer phi rs s ci co ->
@@ -1756,7 +1780,9 @@ applyEvents t seed events =
 
 -- | Replay a complete chunk from a caller-supplied settled state. Unlike
 -- 'replayEvents', this strict facade rejects a chunk that ends while a
--- multi-event output chain still has pending events.
+-- multi-event output chain still has pending events. It uses the shared
+-- evaluator's nullary 'DiscardTrace' policy, so compatibility callers retain
+-- O(1) auxiliary trace state and never build detailed entries.
 applyEventsEither ::
   (BoolAlg phi (RegFile rs, ci), Eq co) =>
   SymTransducer phi rs s ci co ->
@@ -1785,6 +1811,10 @@ applyEventsEither t (s0, regs0) events =
 -- epsilon-output edges are unobservable and never appear. Compatibility
 -- 'applyEventsEither' uses the same worker with a nullary discard policy and
 -- therefore does not allocate this O(k) trace for @k@ completed edges.
+-- Inversion remains live-first: matching 'Live' edges win, and 'ReplayOnly'
+-- edges are considered only when the live phase has no match. On any failure,
+-- the returned 'Left' is exactly the compatibility failure and exposes no
+-- partial trace. Erasing a success trace yields exactly 'applyEventsEither'.
 applyEventsDetailedEither ::
   (BoolAlg phi (RegFile rs, ci), Eq co) =>
   SymTransducer phi rs s ci co ->

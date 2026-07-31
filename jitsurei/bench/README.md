@@ -30,8 +30,8 @@ All
     ast             { delta, omega, step, applyEvent, reconstitute }
   attribution
     compat
-      builder       { stepEither, applyEventsEither-32, applyEventsEither-1024 }
-      ast           { stepEither, applyEventsEither-32, applyEventsEither-1024 }
+      builder       { stepEither, applyEventsEither-{32,1024,4096,16384} }
+      ast           { stepEither, applyEventsEither-{32,1024,4096,16384} }
     detailed
       builder       { stepDetailedEither, applyEventsDetailedEither-32, applyEventsDetailedEither-1024 }
       ast           { stepDetailedEither, applyEventsDetailedEither-32, applyEventsDetailedEither-1024 }
@@ -42,8 +42,8 @@ All
     OrderCart/ast vs builder/reconstitute
 ```
 
-There are 20 original operation rows, 12 attribution rows, and 4 head-to-head
-rows: 36 leaf benchmarks in total.
+There are 20 original operation rows, 16 attribution rows, and 4 head-to-head
+rows: 40 leaf benchmarks in total.
 The two head-to-head operations (`step`, `reconstitute`) are the
 ones with the most signal: `step` exposes the per-transition cost
 where `Keiki.Builder`'s `Prelude.lookup` over the `(vertex, edges)`
@@ -59,8 +59,10 @@ events on the happy path.
 The `attribution/compat` rows are the pre-change compatibility probes for
 ExecPlan 81. They reduce successful `stepEither` and `applyEventsEither`
 results to strict scalar values, measure both builder and AST forms, and replay
-UserRegistration logs of 32 and 1,024 events. Keep their complete benchmark
-paths stable when comparing a post-change run with the captured CSV.
+UserRegistration logs of 32, 1,024, 4,096, and 16,384 events. The two largest
+rows distinguish a constant RTS allocation-block difference from overhead that
+grows with event count. Keep their complete benchmark paths stable when
+comparing matched pre- and post-change CSV files.
 
 The adjacent `attribution/detailed` rows measure the explicit cost of asking
 for edge evidence. The forward digest consumes the selected edge index, mode,
@@ -129,12 +131,14 @@ Each row gains "X B allocated, Y B copied, Z MB peak memory"
 columns.
 
 For a compatibility regression check, compare the before/after `Allocated`
-values at both 32 and 1,024 events. A positive delta that grows with log length
-requires inspection of the Core call graph: compatibility replay must seed the
-nullary `DiscardTrace` policy and must never construct pending attribution,
-public attribution records, or trace list cells. Detailed replay is expected
-to show an O(number of completed edges) allocation increase; that is the
-documented cost of the trace.
+values at 32, 1,024, 4,096, and 16,384 events. A positive delta that grows with
+log length requires inspection of the Core call graph; a fixed difference of
+one allocator block across the larger sizes is measurement granularity rather
+than a per-event slope. Compatibility replay must seed the nullary
+`DiscardTrace` policy and must never construct pending attribution, public
+attribution records, or trace list cells. Detailed replay is expected to show
+an O(number of completed edges) allocation increase; that is the documented
+cost of the trace.
 
 ## What's *not* measured
 

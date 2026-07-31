@@ -30,12 +30,14 @@ report different `EdgeRef`s; live-first replay reports the live edge rather than
 twin; and a two-event edge followed by a one-event edge reports spans `[0,2)` and `[2,3)` while
 returning the same final state as `applyEventsEither`.
 
-Existing replay callers do not pay to build a trace they discard. The common private replay fold
-has a no-trace mode with O(1) auxiliary state and a collecting mode with O(number of completed
-edges) trace storage. `replayEvents`, `applyEventsEither`, and `reconstituteEither` use the former;
-only callers that opt into detailed replay use the latter. Forward `stepEither` keeps the simpler
-record-erasure implementation because its one short-lived success record is constant-size and not
-an asymptotic cost.
+Existing replay callers do not pay to build or thread a trace they discard. One private event
+kernel owns inversion, guard verification, update application, output-tail evaluation, queue
+comparison, and step failures. A compatibility loop gives that kernel pair-shaped success
+continuations and has no trace type in its state or result. A detailed loop gives the same kernel
+collecting continuations and retains O(number of completed edges) trace storage. `replayEvents`,
+`applyEventsEither`, and `reconstituteEither` use the former; only callers that opt into detailed
+replay use the latter. Forward `stepEither` keeps the simpler record-erasure implementation because
+its one short-lived success record is constant-size and not an asymptotic cost.
 
 The existing `jitsurei:keiki-bench` tasty-bench suite supplies before/after performance evidence.
 Before changing Core, it gains compatibility rows for `stepEither` and strict replay over both the
@@ -43,6 +45,10 @@ existing 32-event log and a 1,024-event log, and captures a CSV baseline with al
 After implementation, the same rows are compared against that file and new opt-in detailed rows
 measure the real trace cost by strictly consuming a metadata checksum. The benchmark complements,
 but does not replace, the semantic laws and the static no-trace call-graph gate.
+
+Before deciding whether to specialize the discard policy further, the compatibility benchmark also
+uses 4,096- and 16,384-event logs against a matched pre-refactor worktree. These larger scales
+distinguish a one-time runtime-system allocation block from a positive per-event allocation slope.
 
 This is one ExecPlan rather than a MasterPlan. The work has one implementation authority in
 `src/Keiki/Core.hs`, one public API surface, and one release. Splitting forward and replay detail
@@ -90,8 +96,23 @@ active parent initiative.
   cannot construct pending records, attribution records, or trace list cells. Detailed allocation
   above same-run compatibility was 0 B/7,593 B/245,479 B for builder and 0 B/7,593 B/245,494 B for
   AST; detailed timing ratios were 0.95x/0.99x/1.04x and 1.04x/1.05x/1.04x respectively.
-- [ ] Milestone 4: update Haddocks, user/foundation documentation, ADR-0002, the changelog, and
-  improvement-request and benchmark documentation.
+- [x] (2026-07-31T21:51:27Z) Supplemental compatibility scale gate: added permanent 4,096- and
+  16,384-event rows and compared the current implementation twice with commit `2b3bf6a` in a
+  detached worktree under GHC 9.12.4. All eight rows passed. The repeat's builder allocation
+  deltas at 32/1,024/4,096/16,384 events were -144/+65,384/+262,042/+1,081,321 B; AST deltas were
+  -144/+65,413/+261,997/+1,081,075 B. The three larger rows are approximately 64/64/66 extra
+  B/event, proving a positive compatibility allocation slope rather than a one-time 64 KiB
+  measurement block. Repeat timing changes were builder +1.4%/+2.0%/+4.0%/+6.9% and AST
+  +0.9%/+2.0%/+1.2%/+11.6%. Evidence is in `/tmp/keiki-ep81-scale-before.csv`,
+  `/tmp/keiki-ep81-scale-after.csv`, and `/tmp/keiki-ep81-scale-after-repeat.csv`.
+- [ ] Milestone 3b: replace runtime `DiscardTrace` threading with a pair-shaped compatibility
+  specialization around the single event kernel, then rerun focused laws and the four-size matched
+  allocation gate until compatibility has no positive per-event delta.
+- [x] (2026-07-31T21:57:58Z) Milestone 4: drafted field-level Haddocks, user/foundation guidance,
+  the ADR-0002 refinement, Unreleased changelog entries, IR lifecycle notes, and benchmark operating
+  documentation. `cabal haddock keiki` completed successfully; its warnings are the existing
+  project-wide link and `Keiki.Symbolic.SymEnv` coverage warnings. These records remain on
+  `feat/detailed-attribution-traces` while Milestone 3b is unresolved.
 - [ ] Milestone 5: pass focused, benchmark, full-project, Haddock, Nix, OKF, and diff gates.
 - [ ] Milestone 6: reconcile release authority, publish the additive release through the repository
   release workflow, and record the final tag/version evidence.
@@ -103,9 +124,13 @@ active parent initiative.
   but added 171,914 B to the builder's 1,024-event compatibility row and slowed it by 33%. Marking
   the shared worker and its two trace transitions `INLINE` let GHC specialize the known nullary
   `DiscardTrace` branch: a repeat passed all six compatibility rows and reduced the long-row delta
-  to one 64 KiB allocation block. A continuation-return experiment produced the same allocation
-  and noisier timing, so it was discarded. Evidence: `/tmp/keiki-ep81-inline.csv` passed all six
-  rows; the retained final `/tmp/keiki-ep81-after.csv` passed all 12 attribution rows.
+  to one 64 KiB allocation block at 1,024 events. A continuation-return experiment produced the
+  same allocation and noisier timing, so it was discarded. The later 4,096- and 16,384-event scale
+  gate showed that interpreting the residual as a one-time allocator block was wrong: the delta
+  grew to approximately 256 KiB and 1.03 MiB, or about 64--66 B/event. Evidence:
+  `/tmp/keiki-ep81-inline.csv` passed all six original rows; the retained final
+  `/tmp/keiki-ep81-after.csv` passed all 12 original attribution rows; and the matched scale CSVs
+  are recorded in Progress.
 
 - Cabal 3.16 splits `--test-options` on spaces after the shell has processed the outer quoting. A
   focused Hspec match containing spaces must preserve embedded quotes, for example
@@ -207,6 +232,16 @@ active parent initiative.
   second evaluator. A continuation-return variant did not improve allocation and was reverted.
   Date: 2026-07-31
 
+- Decision: Treat the larger-scale compatibility allocation slope as a release blocker and
+  specialize the discard result shape before publication, while retaining one event-level
+  inversion/update/queue/failure authority.
+  Rationale: matched 1,024-, 4,096-, and 16,384-event rows repeatedly allocate approximately
+  64--66 additional bytes per event through compatibility replay. The nullary trace state prevents
+  attribution-record construction but does not recover the old pair-shaped result and fold. A
+  specialized compatibility result path is therefore required even though timing remains below
+  the provisional 20% threshold.
+  Date: 2026-07-31
+
 - Decision: Reuse and extend `jitsurei:keiki-bench`; do not create a new executable or change the
   existing tasty-bench dependency bound.
   Rationale: the checked-in harness already covers builder and AST transducers, has baseline and
@@ -276,10 +311,22 @@ active parent initiative.
   but the release workflow must recompute the version after refreshing both authorities.
   Date: 2026-07-31
 
+- Decision: Preserve the incomplete attribution work on `feat/detailed-attribution-traces`, remove
+  Plan 81's implementation commits from `master`, release the unrelated accumulated changes, and
+  resume the performance decision from the feature branch afterward.
+  Rationale: the confirmed compatibility allocation slope blocks this feature's acceptance but
+  should not block unrelated, already releasable work. A named branch plus ordinary revert commits
+  preserves all source, tests, documentation, and benchmark evidence without rewriting history.
+  Date: 2026-07-31
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Interim outcome: the requested attribution semantics, laws, documentation, and benchmark evidence
+exist on `feat/detailed-attribution-traces`, but the implementation is not release-ready because
+compatibility replay allocates approximately 64--66 additional bytes per event. The feature is
+deliberately deferred from the intervening release. Work resumes at Milestone 3b after that release;
+the IR remains `planned` and no Plan 81 API has been published.
 
 
 ## Context and Orientation
@@ -516,6 +563,12 @@ completed edges is a blocking sign that compatibility replay is allocating trace
 The detailed rows are expected to allocate O(k) trace storage and may be noticeably slower; record
 their ratios as the measured cost of opting into attribution, not as a pass/fail threshold.
 
+Before accepting an apparent single-block compatibility delta, add compatibility-only 4,096- and
+16,384-event rows and compare them with the same rows applied to pre-refactor commit `2b3bf6a` in a
+detached worktree. If the byte delta divided by event count remains positive across the three
+larger sizes, treat it as a release-blocking slope and specialize the discard result path before
+rerunning the matched scale gate.
+
 Extend `test/Keiki/RoundTrip.hs` with a third permanent property in `roundTripSpec` and
 `roundTripSpecUnchecked`. Generate the existing command scripts, obtain the complete forward event
 log, and call both detailed and compatibility replay. Compare the final state and
@@ -679,6 +732,20 @@ both timing and allocation columns at 32 and 1,024 events. Repeat any row report
 slower before concluding that it regressed. A repeatable event-count-proportional allocation delta
 blocks completion until its source is understood and shown not to be discarded attribution.
 
+For the supplementary scale gate, use a detached worktree at commit `2b3bf6a`, apply the same
+4,096- and 16,384-event fixture rows there, and capture only the compatibility replay leaves:
+
+```bash
+cabal bench jitsurei:keiki-bench \
+  --benchmark-options='-p /applyEventsEither/ --csv /tmp/keiki-ep81-scale-before.csv +RTS -T -RTS'
+
+cabal bench jitsurei:keiki-bench \
+  --benchmark-options='-p /applyEventsEither/ --baseline /tmp/keiki-ep81-scale-before.csv --csv /tmp/keiki-ep81-scale-after.csv +RTS -T -RTS'
+```
+
+The first command runs in the pre-refactor worktree and the second in the current repository. Run
+the second command twice. Compare exact `Allocated` columns rather than rounded console units.
+
 Format and run the complete implementation gates:
 
 ```bash
@@ -776,9 +843,9 @@ Core refactor and matching rows after it, plus opt-in detailed rows whose strict
 consume all attribution metadata. The post-change run uses the same GHC, optimization/alignment
 settings, fixture values, and benchmark names as the baseline. No compatibility row has an
 unexplained repeatable slowdown above 20%. More importantly, the before/after compatibility
-allocation delta from 32 to 1,024 events has no positive slope attributable to pending records,
-attribution records, or trace list cells. Detailed replay's timing ratio and O(k) allocation are
-recorded as an explicit opt-in cost, not treated as a compatibility failure.
+allocation deltas at 32, 1,024, 4,096, and 16,384 events have no positive event-count-proportional
+slope. Detailed replay's timing ratio and O(k) allocation are recorded as an explicit opt-in cost,
+not treated as a compatibility failure.
 
 Haddocks and user/foundation documentation state all local-identity, half-open-span, partition,
 path, live-first, multi-event completion, epsilon-observability, and erasure laws. ADR-0002 carries
@@ -924,3 +991,12 @@ Revision note (2026-07-31): Integrated the existing `jitsurei:keiki-bench` tasty
 The plan now captures compatibility timing and allocation evidence before the Core refactor, uses
 32- and 1,024-event logs to detect a trace-sized allocation slope, strictly consumes detailed trace
 metadata, and records opt-in detailed cost separately from compatibility regression gates.
+
+Revision note (2026-07-31): Expanded the compatibility allocation gate to 4,096 and 16,384 events
+after the 1,024-event delta could be mistaken for one runtime-system allocation block. Matched
+pre-refactor measurements prove approximately 64--66 extra allocated bytes per event, so discard
+result specialization is now an explicit pre-release blocker.
+
+Revision note (2026-07-31): Recorded the decision to preserve Plan 81 on
+`feat/detailed-attribution-traces`, release unrelated work from `master` without the attribution
+changes, and resume the specialized-discard investigation from this branch afterward.
