@@ -220,8 +220,10 @@ import Keiki.Internal.Slots
 import Keiki.Internal.SymbolicTypes
   ( discoverSymbolicType,
     symbolicTypeSupportsEquality,
+    symbolicTypeSupportsNumeric,
     symbolicTypeSupportsOrdering,
   )
+import Numeric.Natural (Natural)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 -- | A register slot is a label paired with the type of its value.
@@ -2049,13 +2051,12 @@ data TransducerValidationWarning s
       { tvwEdge :: EdgeRef s,
         tvwDetail :: String
       }
-  | -- | An edge whose guard contains an opaque 'TApp' term. The symbolic
-    --       single-valuedness and dead-edge analyses translate such a term to an
-    --       unconstrained free variable ('Keiki.Symbolic.translateTermSym' emits
-    --       @SBV.free "app1"@), so they cannot see through the guard and silently
-    --       under-verify it. Most often this is a collection-content condition
-    --       (membership, "all resolved", size) lifted through a closure because the
-    --       structural predicate language has no node for it; see the user guide and
+  | -- | An edge whose guard contains a term the symbolic translator must make
+    --       opaque. This includes 'TApp' closures and 'TArith' at a carrier outside
+    --       the symbolic numeric registry (for example 'Natural'). The solver uses
+    --       a fresh domain-valid variable for such a term, so the result remains
+    --       sound but loses precision. Most opaque guards are collection-content
+    --       conditions lifted through a closure; see the user guide and
     --       @docs\/plans\/60-first-class-collection-registers-design-gated.md@ for the
     --       options. Advisory, not a soundness error: opt in via 'warnOpaqueGuards'.
     OpaqueGuard
@@ -2103,9 +2104,9 @@ data ValidationOptions = ValidationOptions
     -- | run the (structural) dead-edge check
     checkReachability :: Bool,
     -- | run the opaque-guard audit (opt-in; default off). Flags edges whose
-    --     guard branches on an opaque 'TApp' term the symbolic analyses cannot
-    --     see through. Off by default so 'defaultValidationOptions' keeps its
-    --     meaning for existing consumers.
+    --     guard branches on a 'TApp' term or unsupported symbolic 'TArith'
+    --     carrier the analyses cannot see through. Off by default so
+    --     'defaultValidationOptions' keeps its meaning for existing consumers.
     warnOpaqueGuards :: Bool,
     -- | require the first emitted event to recover every command field used
     --     by replay
@@ -2242,17 +2243,27 @@ headRecoverabilityWarnings t =
 
 -- ** Opaque-guard diagnostics
 
--- | Does the term contain an opaque 'TApp1'\/'TApp2' anywhere? Mirrors the
--- structural recursion of 'termReadsInput'; 'TArith' is transparent, so it
--- recurses into its operands rather than counting as opaque.
-termHasOpaqueApp :: Term rs ci ifs r -> Bool
-termHasOpaqueApp (TLit _) = False
-termHasOpaqueApp (TReg _) = False
-termHasOpaqueApp (TInpCtorField _ _) = False
-termHasOpaqueApp (TApp1 _ _) = True
-termHasOpaqueApp (TApp2 _ _ _) = True
-termHasOpaqueApp (TArith _ a b) = termHasOpaqueApp a || termHasOpaqueApp b
-termHasOpaqueApp TFieldProj {} = False
+-- | Does the term contain a node that becomes an opaque symbolic variable?
+-- 'TApp1'\/'TApp2' are always opaque. 'TArith' is structural only when its
+-- carrier belongs to the symbolic numeric registry; otherwise the translator
+-- deliberately falls back to a fresh domain-valid value.
+termHasOpaqueFallback :: forall rs ci ifs r. Term rs ci ifs r -> Bool
+termHasOpaqueFallback (TLit _) = False
+termHasOpaqueFallback (TReg _) = False
+termHasOpaqueFallback (TInpCtorField _ _) = False
+termHasOpaqueFallback (TApp1 _ _) = True
+termHasOpaqueFallback (TApp2 _ _ _) = True
+termHasOpaqueFallback (TArith _ a b) =
+  not carrierSupportsNumeric
+    || termHasOpaqueFallback a
+    || termHasOpaqueFallback b
+  where
+    carrierSupportsNumeric =
+      maybe
+        False
+        symbolicTypeSupportsNumeric
+        (discoverSymbolicType @r)
+termHasOpaqueFallback TFieldProj {} = False
 
 -- | Does the guard predicate branch on an opaque term anywhere? The symbolic
 -- analyses cannot see through such a guard (it becomes a free SBV variable),
@@ -2263,15 +2274,15 @@ predHasOpaqueTerm PBot = False
 predHasOpaqueTerm (PAnd p q) = predHasOpaqueTerm p || predHasOpaqueTerm q
 predHasOpaqueTerm (POr p q) = predHasOpaqueTerm p || predHasOpaqueTerm q
 predHasOpaqueTerm (PNot p) = predHasOpaqueTerm p
-predHasOpaqueTerm (PEq a b) = termHasOpaqueApp a || termHasOpaqueApp b
+predHasOpaqueTerm (PEq a b) = termHasOpaqueFallback a || termHasOpaqueFallback b
 predHasOpaqueTerm (PInCtor _) = False
 predHasOpaqueTerm PLeftArm = False
 predHasOpaqueTerm PRightArm = False
-predHasOpaqueTerm (PCmp _ a b) = termHasOpaqueApp a || termHasOpaqueApp b
+predHasOpaqueTerm (PCmp _ a b) = termHasOpaqueFallback a || termHasOpaqueFallback b
 
 -- | The opt-in opaque-guard audit (run by 'validateTransducer' only when
 -- 'warnOpaqueGuards' is set). For every edge whose guard contains an opaque
--- 'TApp' term, emit an 'OpaqueGuard' warning locating the edge by its typed
+-- term fallback, emit an 'OpaqueGuard' warning locating the edge by its typed
 -- 'EdgeRef'. Specialised to the 'HsPred' carrier because it walks the predicate
 -- AST, exactly as 'validateTransducer' is.
 opaqueGuardWarnings ::
@@ -2282,8 +2293,8 @@ opaqueGuardWarnings t =
   [ OpaqueGuard
       { tvwEdge = EdgeRef {edgeSource = s, edgeIndex = n},
         tvwDetail =
-          "guard contains an opaque TApp term the symbolic analyses cannot "
-            ++ "see through; its single-valuedness was not verified"
+          "guard contains a term the symbolic analyses translate opaquely; "
+            ++ "its single-valuedness was not verified"
       }
   | s <- [minBound .. maxBound],
     (n, e) <- zip [(0 :: Int) ..] (edgesOut t s),
@@ -3004,6 +3015,8 @@ discoverIntegralDomain :: forall r. (Typeable r) => Maybe (IntegralDomain r)
 discoverIntegralDomain
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) =
       Just (IntegralDomain id Nothing Nothing)
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Natural) =
+      Just (IntegralDomain toInteger (Just 0) Nothing)
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int) =
       Just (boundedIntegralDomain @Int)
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word8) =

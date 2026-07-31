@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
-- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`
+- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`
 
 ## Context
 
@@ -26,6 +26,14 @@ an explicit fixed-width type. The fast pure validator proves overlaps
 only inside its documented structural fragment and stays silent when it
 cannot prove one; the z3-backed check is the exact gate.
 
+`Natural` uses an unbounded SMT integer constrained to be non-negative for
+every allocated symbolic variable. Equality and ordering are structural.
+Generic `TArith` remains opaque because its type-wide operation set includes
+subtraction, and Haskell `Natural` subtraction throws `Underflow` when the
+mathematical result is negative whereas SMT integer subtraction returns that
+negative integer. The opaque-guard audit reports this fallback. The fast pure
+validator separately models `Natural` as the exact interval `[0, infinity)`.
+
 A typed field projection over a consumer-owned value is modeled as a
 free scalar with structural, nominal identity. Soundness is the one-way
 concrete-to-symbolic simulation: for every concrete owner, constrain the
@@ -44,6 +52,9 @@ must not manufacture an unsatisfiability proof.
   satisfiable”; callers needing that claim must request a witness.
 - Fixed-width overflow and sub-second time guards agree with concrete
   execution.
+- `Natural` equality, ordering, witnesses, and pure interval overlaps respect
+  the non-negative domain; generic `Natural` arithmetic may conservatively
+  lose symbolic precision and is visible through `warnOpaqueGuards`.
 - The pure validator has no false-positive overlap warnings in its
   supported fragment, but it can miss unsupported predicate shapes.
 - Projection-backed satisfiability witnesses are scalar abstractions,

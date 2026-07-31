@@ -187,7 +187,9 @@ proj (#appRequestedAmount :: …) .<= proj (#appCreditScore :: …) .* lit 1000
 ```
 
 That `.*` is structural `TArith` *inside a guard*. It replays via `evalTerm` and is visible to
-the SMT solver — arithmetic belongs in guards and updates freely. Only outputs are restricted.
+the SMT solver because its carrier belongs to the symbolic numeric registry. `Natural` is a
+deliberate exception: its generic `TArith` is opaque because subtraction is partial. Arithmetic
+still belongs in guards and updates freely at runtime; the registry controls proof precision.
 
 ---
 
@@ -317,7 +319,8 @@ hatch.
 **(a) Numeric or date bounds belong in an ordering guard, not a function.** A bound like
 "amount ≤ 1000" or "before this deadline" is a structural `PCmp` comparison over a curated
 ordered type — and `UTCTime` (the standard timestamp) *is* curated, so the solver understands
-its ordering. No escape hatch is needed; a bare or computed bound is structural. See
+its ordering. No escape hatch is needed for a bare bound; a computed bound is structural when
+its carrier belongs to the symbolic numeric registry. See
 `docs/guide/why-smt.md` §5 (the curated types and "no escape needed" note) and
 `docs/guide/symbolic-ci.md`.
 
@@ -328,9 +331,12 @@ proves they never co-fire. See `docs/guide/deriving-lifecycle-transitions.md`, w
 split-into-disjoint-edges pattern in full.
 
 **(c) A computed operand (a weighted sum, a derived cap) is structural arithmetic** —
-`tadd`/`tsub`/`tmul`, written `.+`/`.-`/`.*` — which has been solver-visible since the EP-43
-work. In a *guard or update* it round-trips and the solver reads it; only in an *output* does
-arithmetic block inversion (§7.3). See `docs/guide/user-guide.md` §3.4.
+`tadd`/`tsub`/`tmul`, written `.+`/`.-`/`.*` — which has been solver-visible for carriers in
+the symbolic numeric registry since EP-43. `Natural` is deliberately outside that registry,
+so its arithmetic remains opaque to the solver. In a *guard or update* arithmetic evaluates
+forward with normal Haskell semantics; proof precision follows the registry. In an *output*,
+replay recomputes and verifies the derived arithmetic (§7.3). See
+`docs/guide/user-guide.md` §3.4.
 
 **(d) Collection membership is the on-roadmap structural collection-content guards, not a
 higher-arity `TApp`.** Membership and bounded-quantifier guards (`PMember` / `PAll`) are the

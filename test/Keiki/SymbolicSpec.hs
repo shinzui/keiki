@@ -117,7 +117,8 @@ timePrecisionFixture =
 
 -- | Natural uses an unbounded SMT integer with a non-negative domain
 -- constraint. It supports equality and ordering, but intentionally not the
--- generic arithmetic registry because Haskell subtraction saturates at zero.
+-- generic arithmetic registry because Haskell subtraction throws Underflow
+-- when its mathematical result would be negative.
 type NaturalRegs = '[ '("count", Natural)]
 
 naturalIdx :: Index NaturalRegs Natural

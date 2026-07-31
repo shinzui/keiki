@@ -6,6 +6,7 @@ import Data.Word (Word8)
 import Keiki.Core
 import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Symbolic (checkDeadEdgesSym, checkTransitionDeterminismSym)
+import Numeric.Natural (Natural)
 import Test.Hspec
 
 -- A tiny two-constructor command for guards.
@@ -154,6 +155,37 @@ opaqueT =
       isFinal = (== Mid)
     }
 
+-- Natural equality and ordering are symbolic, but generic TArith is opaque
+-- because its type-wide registry would also expose partial subtraction.
+type NaturalRegs = '[ '("n", Natural)]
+
+naturalIdx :: Index NaturalRegs Natural
+naturalIdx = ZIdx
+
+naturalArithmeticOpaqueT ::
+  SymTransducer (HsPred NaturalRegs Cmd) NaturalRegs V Cmd ()
+naturalArithmeticOpaqueT =
+  SymTransducer
+    { edgesOut = \case
+        Start ->
+          [ Edge
+              { guard =
+                  PCmp
+                    CmpGt
+                    (tadd (proj naturalIdx) (TLit 1))
+                    (TLit 0),
+                update = UKeep,
+                output = [],
+                target = Start,
+                mode = Live
+              }
+          ]
+        _ -> [],
+      initial = Start,
+      initialRegs = RCons (Proxy @"n") 0 RNil,
+      isFinal = const False
+    }
+
 -- A 3-slot input constructor, mirroring CoreHiddenInputsGSMSpec, used to build
 -- a hidden-input edge (its output recovers only slots a, b — never c).
 data MultiInput = Begin Int Int Int
@@ -279,6 +311,50 @@ unknownOpaqueT =
     )
     (fooWith (PCmp CmpGt (proj xIdx) (TLit 5)))
 
+intArithmeticStructuralT ::
+  SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
+intArithmeticStructuralT =
+  SymTransducer
+    { edgesOut = \case
+        Start ->
+          [ Edge
+              (PCmp CmpGt (tadd (proj xIdx) (TLit 1)) (TLit 0))
+              UKeep
+              []
+              Start
+              Live
+          ]
+        _ -> [],
+      initial = Start,
+      initialRegs = RCons (Proxy @"x") 0 RNil,
+      isFinal = const False
+    }
+
+naturalInteriorOverlapT ::
+  SymTransducer (HsPred NaturalRegs Cmd) NaturalRegs V Cmd ()
+naturalInteriorOverlapT =
+  SymTransducer
+    { edgesOut = \case
+        Start ->
+          [ Edge
+              (PCmp CmpGt (proj naturalIdx) (TLit 1))
+              UKeep
+              []
+              Start
+              Live,
+            Edge
+              (PCmp CmpLt (proj naturalIdx) (TLit 3))
+              UKeep
+              []
+              Start
+              Live
+          ]
+        _ -> [],
+      initial = Start,
+      initialRegs = RCons (Proxy @"n") 0 RNil,
+      isFinal = const False
+    }
+
 differentCtorT ::
   SymTransducer (HsPred OverlapRegs Cmd) OverlapRegs V Cmd ()
 differentCtorT =
@@ -399,6 +475,16 @@ spec = do
 
     it "an opaque collection-style guard is flagged when the audit is on" $
       validateTransducer optsOn opaqueT `shouldSatisfy` any isOpaqueStart
+
+    it "unsupported Natural arithmetic is flagged when the audit is on" $
+      validateTransducer optsOn naturalArithmeticOpaqueT
+        `shouldSatisfy` any isOpaqueStart
+
+    it "supported Int arithmetic remains structural" $ do
+      let isOpaque (OpaqueGuard {}) = True
+          isOpaque _ = False
+      validateTransducer optsOn intArithmeticStructuralT
+        `shouldSatisfy` (not . any isOpaque)
 
     it "a fully structural transducer is never flagged, even with the audit on" $ do
       let isOpaque (OpaqueGuard {}) = True
@@ -589,6 +675,12 @@ spec = do
     it "uses a mentioned non-integral literal as a concrete witness" $
       checkTransitionDeterminismPure boolLiteralWitnessT
         `shouldSatisfy` (not . null)
+
+    it "finds an interior overlap in Natural's zero-bounded domain" $ do
+      let purePairs = map warningPair (checkTransitionDeterminismPure naturalInteriorOverlapT)
+          symbolicPairs = map warningPair (checkTransitionDeterminismSym naturalInteriorOverlapT)
+      purePairs `shouldBe` [(Start, 0, 1)]
+      purePairs `shouldSatisfy` all (`elem` symbolicPairs)
 
     it "does not guess through POr or an opaque TApp term" $ do
       checkTransitionDeterminismPure unknownOrT `shouldBe` []

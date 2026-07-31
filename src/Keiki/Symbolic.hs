@@ -18,7 +18,7 @@
 -- Milestones implemented in this revision (through M5 of EP-2):
 --
 --   * The 'Sym' typeclass and instances for 'Bool', 'Int', 'Integer',
---     'Text', 'UTCTime', and the fixed-width integers 'Word8' \/
+--     'Natural', 'Text', 'UTCTime', and the fixed-width integers 'Word8' \/
 --     'Word16' \/ 'Word32' \/ 'Word64' \/ 'Int32' \/ 'Int64' (the
 --     last group added by EP-41 so money and count registers are
 --     solver-visible).
@@ -159,8 +159,9 @@ instance Sym Integer where
 -- | Arbitrary-precision non-negative integers. The representation stays an
 -- unbounded SMT integer, while every allocated variable is constrained to the
 -- actual 'Natural' domain. Numeric arithmetic is deliberately not registered:
--- Haskell 'Natural' subtraction saturates at zero and must not be modeled as
--- ordinary integer subtraction.
+-- Haskell 'Natural' subtraction throws @Underflow@ when its mathematical result
+-- would be negative, while ordinary SMT integer subtraction returns that negative
+-- integer. Treating the operations as identical would not preserve concrete behavior.
 instance Sym Natural where
   type SymRep Natural = Integer
   toSym = fromIntegral
@@ -323,8 +324,9 @@ data SymNumDict r where
 -- whose 'SymRep' is the SBV-'Num' 'Integer' ('Int', 'Integer', and the
 -- fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32' \/ 'Word64' \/
 -- 'Int32' \/ 'Int64'); 'Nothing' otherwise. 'Natural' is omitted because
--- its saturating subtraction is not ordinary integer subtraction. 'Bool',
--- 'Text', and 'UTCTime' are also omitted. A 'Nothing'
+-- its subtraction is partial and throws @Underflow@ for a negative result,
+-- unlike ordinary SMT integer subtraction. 'Bool', 'Text', and 'UTCTime' are
+-- also omitted. A 'Nothing'
 -- makes the 'TArith' translator fall back to a fresh opaque variable,
 -- exactly as 'goEq' \/ 'goCmp' fall back for non-'Sym' operands —
 -- sound, just imprecise. (The 'Num' constraint on the 'TArith'

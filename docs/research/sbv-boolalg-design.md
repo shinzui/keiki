@@ -329,11 +329,14 @@ For each `Term rs ci r`:
   to `discoverSymOrd`'s `SymOrdDict`.
 
 The `TApp1`/`TApp2` escape hatches remain opaque (there is no curated
-whitelist for them — that was always out of scope). Structural
-arithmetic via `TArith` is the supported, solver-visible way to write
-`+`/`-`/`*` over numeric operands; reach for `TApp` only for genuinely
-opaque Haskell (and accept the precision loss). The fallback for an
-unsupported operand stays "fresh free variable, lose precision."
+whitelist for them — that was always out of scope). For types in the
+numeric registry, structural arithmetic via `TArith` is the supported,
+solver-visible way to write `+`/`-`/`*` over numeric operands; reach for
+`TApp` only for genuinely opaque Haskell (and accept the precision loss).
+`Natural` is deliberately outside that registry because its partial
+subtraction cannot be represented faithfully by SMT integer subtraction.
+The fallback for an unsupported operand stays "fresh free variable, lose
+precision" and is reported when `warnOpaqueGuards` is enabled.
 
 ### HsPred translation rules
 

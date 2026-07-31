@@ -732,7 +732,7 @@ The other exports:
 | `symSatExt p` | Is there a satisfying assignment, returning a concrete `(RegFile rs, ci)` witness. Since EP-44 this also backs `sat` on `SymPred`. Needs `ExtractRegFile rs` / `KnownInCtors ci`. |
 | `withSymPred t` | Re-tag a transducer's edge guards from `HsPred` to `SymPred` |
 | `isSingleValuedSym t` | All-pairs `isBot (g1 \`conj\` g2)` over each vertex's edges |
-| `Sym a` typeclass | Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, `Int32`/`Int64` |
+| `Sym a` typeclass | Curated equality set: `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, `Int32`/`Int64`. `Natural` equality and ordering are structural; its generic arithmetic is opaque. |
 
 ---
 
@@ -871,8 +871,9 @@ through one such fix.
 ### Opaque guards and collections
 
 keiki's structural predicate language (`PEq`/`PCmp`/`PInCtor` over
-`TReg`/`TInpCtorField`/`TLit`/`TArith`) is what the symbolic
-analyses read. When you need a condition it has no node for —
+`TReg`/`TInpCtorField`/`TLit`, plus `TArith` for carriers in the
+symbolic numeric registry) is what the symbolic analyses read. When
+you need a condition it has no node for —
 most often a **collection-content** test like "is this id in the
 list?", "are all items resolved?", or "is the set non-empty?" —
 you reach for an opaque closure (`TApp1`/`TApp2`, e.g.
@@ -904,8 +905,10 @@ Three things to know:
    -- ⇒ [ OpaqueGuard { tvwEdge = EdgeRef { edgeSource = …, edgeIndex = … }, tvwDetail = … }, … ]
    ```
 
-   Each `OpaqueGuard` names an edge whose single-valuedness the
-   solver could not verify. The check is **off** under
+   Each `OpaqueGuard` names an edge whose single-valuedness the solver
+   could not verify. It covers both opaque `TApp` closures and `TArith`
+   carriers outside the symbolic numeric registry, notably `Natural`.
+   The check is **off** under
    `defaultValidationOptions` (so it never changes an existing
    `== []` assertion); turn it on when you want to know which guards
    the solver actually saw.
@@ -1074,8 +1077,8 @@ this guide and in the haddocks.
 | **SBV** | "SMT-Based Verification" — Levent Erkok's Haskell library that compiles symbolic-value Haskell to SMT-LIB and dispatches to a back-end solver. |
 | **SMT solver** | A decision procedure for satisfiability modulo theories (linear arithmetic, strings, equality, etc.). z3 is the default. |
 | **z3** | Microsoft Research's SMT solver. Required at runtime for `Keiki.Symbolic`'s analyses. Install with `brew install z3` or `apt install z3`. |
-| **`Sym a`** | Typeclass for types that have an SBV representation. Curated set: `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, and `Int32`/`Int64`. |
-| **`SymRep a`** | The SBV-side representation of `a`. Fixed-width integers use exact bit vectors; `UTCTime` uses lossless picoseconds; platform `Int` is modeled as unbounded `Integer`. |
+| **`Sym a`** | Typeclass for types that have an SBV representation. Curated equality set: `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, and `Int32`/`Int64`. `Natural` is also orderable, but deliberately absent from generic arithmetic. |
+| **`SymRep a`** | The SBV-side representation of `a`. Fixed-width integers use exact bit vectors; `UTCTime` uses lossless picoseconds; platform `Int` and non-negative `Natural` use unbounded `Integer`, with every allocated `Natural` variable constrained to be at least zero. |
 | **`sat` / `Sat phi a`** | Witness extraction: `sat :: phi -> Maybe a`, the sole method of the `Sat` subclass of `BoolAlg`. On `SymPred` it returns the real `symSatExt` witness (since EP-44); the old crashing placeholder is gone. |
 | **`symIsBot`** | Symbolic emptiness check. `True` only for a definite solver `Unsatisfiable`; `Unknown`, `ProofError`, and other inconclusive results conservatively return `False`. |
 | **`symSatExt`** | Symbolic sat with concrete witness reconstruction. Requires `ExtractRegFile rs` and `KnownInCtors ci` evidence. Backs `sat` on `SymPred`. |

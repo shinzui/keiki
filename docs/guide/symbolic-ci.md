@@ -190,10 +190,10 @@ triggers it.
 conservatively: `isBot` returns `False`, so
 `isSingleValuedSym` returns `False`. A spurious `False` will fail
 your CI check; the surrounding error will name the edges. Most
-real-world predicates over the curated `Sym` set
-(`Bool`/`Int`/`Integer`/`Text`/`UTCTime` and the fixed-width integers
-`Word8`/`Word16`/`Word32`/`Word64`/`Int32`/`Int64`) are inside z3's
-decidable fragment.
+real-world equality and ordering predicates over the curated `Sym` set
+(`Bool`/`Int`/`Integer`/`Natural`/`Text`/`UTCTime` and the fixed-width
+integers `Word8`/`Word16`/`Word32`/`Word64`/`Int32`/`Int64`) are inside
+z3's decidable fragment.
 
 ---
 
@@ -250,17 +250,19 @@ The check is a hard CI gate. Skip it for:
   `True`). Either drop the escape hatch or accept a property test
   in its place. Note: a bare threshold (`amount >= 1000`) needs no
   escape — use the structural ordering guard (`PCmp` via `requireGe`
-  etc.); and a *computed* operand (a weighted sum, a derived cap)
-  needs no escape either since EP-43 — write it with the structural
-  arithmetic terms `tadd`/`tsub`/`tmul`. Only genuinely opaque
-  Haskell (or fractional `Double`/SReal arithmetic, out of scope)
-  still needs `TApp`.
+  etc.). For carriers in the symbolic numeric registry, a *computed*
+  operand (a weighted sum, a derived cap) needs no escape either since
+  EP-43: write it with `tadd`/`tsub`/`tmul`. `Natural` arithmetic is a
+  deliberate exception because subtraction can throw `Underflow`; its
+  `TArith` becomes a domain-valid opaque value and is reported by
+  `warnOpaqueGuards = True`. Genuinely opaque Haskell and fractional
+  `Double`/SReal arithmetic remain outside structural translation.
 - Local prototype aggregates that haven't stabilised yet. The
   check is a good signal at PR time but a bad signal during early
   drafting — false positives slow you down. Add it once the
   aggregate has shape.
 - Aggregates whose register file uses types outside the curated
-  `Sym` set (`Bool`, `Int`, `Integer`, `Text`, `UTCTime`, and the
+  `Sym` set (`Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, and the
   fixed-width integers `Word8`/`Word16`/`Word32`/`Word64`/`Int32`/
   `Int64`). The translator falls back to fresh variables for other
   types; same precision loss. Either add a `Sym` instance for the

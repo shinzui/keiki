@@ -75,8 +75,9 @@ type StockRegs =
 
 `onHand` rises on `ReceiveStock` and falls on `FulfillOrder`. The lifecycle
 fact is the *vertex*: `NeedsReorder` ⇄ `Stocked`. We use `Int` so the guard
-is solver-visible (any curated type works — `Int`, `Integer`, the
-fixed-width ints, `UTCTime`, `Text`, `Bool`; see `why-smt.md` §5).
+is solver-visible (curated equality/ordering types include `Int`, `Integer`,
+`Natural`, the fixed-width ints, `UTCTime`, `Text`, and `Bool`; see
+`why-smt.md` §5 for the operations each type supports).
 
 The three sections that follow are three ways to wire the flip. They are
 ordered worst to best for this shape.
@@ -280,11 +281,12 @@ The flip guard has to read the threshold. Two homes:
   (`QualifyCheck`/`RequalifyCheck` carry `minVolume`/`minSides`).
 
 Either keeps the guard solver-visible as long as the comparison is a
-structural `PCmp` over curated types. A *derived* threshold (a cap computed
-from another register) is also fine when written with structural arithmetic
-(`tadd`/`tsub`/`tmul`, i.e. `.+`/`.-`/`.*`); only genuinely opaque Haskell or
-fractional (`Double`/SReal) arithmetic falls back to a `TApp` escape and
-loses precision (`why-smt.md` §5).
+structural `PCmp` over curated types. For carriers in the symbolic numeric
+registry, a *derived* threshold (a cap computed from another register) is
+also visible when written with `tadd`/`tsub`/`tmul` (`.+`/`.-`/`.*`).
+`Natural` arithmetic is deliberately opaque because subtraction can throw
+`Underflow`; genuinely opaque Haskell and fractional (`Double`/SReal)
+arithmetic also lose proof precision (`why-smt.md` §5).
 
 ---
 

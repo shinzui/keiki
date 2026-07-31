@@ -20,8 +20,13 @@ and this project adheres to the
 ### Changed
 
 - `Natural` is deliberately absent from the symbolic arithmetic registry.
-  Haskell subtraction on `Natural` saturates at zero, so ordinary SMT integer
-  subtraction would not preserve concrete semantics.
+  Haskell subtraction on `Natural` throws `Underflow` when its mathematical
+  result would be negative, whereas ordinary SMT integer subtraction returns
+  that negative value.
+- The opt-in opaque-guard audit now reports `TArith` whose carrier is absent
+  from the symbolic numeric registry, including `Natural` arithmetic.
+- The fast pure overlap validator treats `Natural` as the exact integral
+  interval `[0, infinity)`, so it can find non-literal interior witnesses.
 
 
 ## [0.4.0.0] — 2026-07-28

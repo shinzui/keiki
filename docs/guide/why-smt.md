@@ -134,10 +134,10 @@ your Haskell guards to SMT formulas is mechanical: SBV maps `PEq`,
 authored with the operators `.==`/`.&&`/`.>=`/… — see
 `docs/guide/user-guide.md` §3.4 — or the builder's
 `requireLt`/`requireLe`/`requireGt`/`requireGe`), and
-equalities/orderings over `Int`/`Integer`/`Bool`/`Text`/`UTCTime` and
-the fixed-width integers (`Word8`/`Word16`/`Word32`/`Word64`/`Int32`/
-`Int64` — keiki's money convention is `Word64` minor units), into the
-solver's language.
+equalities/orderings over `Int`/`Integer`/`Natural`/`Bool`/`Text`/
+`UTCTime` and the fixed-width integers (`Word8`/`Word16`/`Word32`/
+`Word64`/`Int32`/`Int64` — keiki's money convention is `Word64` minor
+units), into the solver's language.
 
 The result, when it's `True`, is closer to a proof than to a passed
 test. Every input that could fire two edges has been searched for and
@@ -151,24 +151,28 @@ procedure.
 Places where the assurance weakens (and one, since EP-42, where it no
 longer does):
 
-- **Curated types only.** The translation has built-in support for
-  `Bool`, `Int`, `Integer`, `Text`, `UTCTime`, and the fixed-width
+- **Curated types only.** The translation has built-in equality support for
+  `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, and the fixed-width
   integers `Word8`/`Word16`/`Word32`/`Word64`/`Int32`/`Int64`. Slot or
   input types outside this set fall back to a fresh symbolic variable —
   the solver can't reason about their internals, and precision drops.
   You can add a `Sym` instance for a new type if it has a natural SBV
-  representation.
+  representation. `Natural` equality and ordering are structural, but its
+  generic arithmetic is deliberately opaque: subtraction can throw
+  `Underflow`, which ordinary SMT integer subtraction does not model.
 - **Escape hatches.** The predicate AST has `TApp1` / `TApp2`
   constructors that lift opaque Haskell functions. The solver can't see
   inside them, so it picks "some" value and the answer becomes an
   over-approximation: the gate may fail (`False`) when the truth is
   "they really are mutually exclusive." Never the reverse. (A bare
   threshold like `amount >= 1000` needs no escape — write it as
-  `requireGe #amount (lit 1000)`. A *computed* operand like a weighted
-  sum or a derived cap needs no escape either since EP-43 — write it
-  with the structural arithmetic terms `tadd`/`tsub`/`tmul` and the
-  solver reads it. Only genuinely opaque Haskell, or fractional
-  arithmetic — `Double`/SReal is out of scope — still needs `TApp`.)
+  `requireGe #amount (lit 1000)`. For carriers in the symbolic numeric
+  registry, a *computed* operand like a weighted sum or derived cap needs
+  no escape either since EP-43: write it with `tadd`/`tsub`/`tmul` and the
+  solver reads it. `Natural` is the deliberate exception; its `TArith`
+  becomes a domain-valid opaque value. `warnOpaqueGuards = True` reports
+  that precision loss. Genuinely opaque Haskell and fractional arithmetic
+  (`Double`/SReal) also remain outside structural translation.)
 - **Repeated reads of one register.** *Fixed in EP-42 of MasterPlan
   12.* The translator now memoizes register and input-field reads, so a
   predicate that reads the same slot twice (e.g. a self-mutex `g ∧ ¬g`
