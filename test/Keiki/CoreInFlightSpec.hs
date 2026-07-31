@@ -40,11 +40,9 @@ wcEchoed =
       wcBuild = \(n, ()) -> Echoed n
     }
 
--- | A minimal 2-vertex transducer with one length-2 edge followed by a
--- length-1 self-loop:
+-- | A minimal 2-vertex transducer with one length-2 edge:
 --
 --   False --[guard ci=Begin / output [Started n, Echoed n]]--> True
---   True  --[guard ci=Begin / output [Started n]]------------> True
 multi :: SymTransducer (HsPred '[] MultiInput) '[] Bool MultiInput MultiOutput
 multi =
   SymTransducer
@@ -67,20 +65,7 @@ multi =
                 mode = Live
               }
           ]
-        True ->
-          [ Edge
-              { guard = matchInCtor inCtorBegin,
-                update = UKeep,
-                output =
-                  [ pack
-                      inCtorBegin
-                      wcStarted
-                      (OFCons (TInpCtorField inCtorBegin (#payload :: Index '[ '("payload", Int)] Int)) OFNil)
-                  ],
-                target = True,
-                mode = Live
-              }
-          ],
+        True -> [],
       initial = False,
       initialRegs = RNil,
       isFinal = id
@@ -153,50 +138,6 @@ spec = do
         _ ->
           expectationFailure
             "chunked and streaming replay disagreed on the final state"
-
-  describe "applyEventsDetailedEither" $ do
-    it "returns an empty trace and unchanged settled seed for empty input" $
-      case applyEventsDetailedEither multi (False, RNil) [] of
-        Right success -> do
-          replaySuccessState success `shouldBe` False
-          replaySuccessTrace success `shouldBe` []
-        Left failure -> expectationFailure ("unexpected failure: " <> show failure)
-
-    it "attributes one two-event edge followed by one one-event edge" $
-      let events = [Started 42, Echoed 42, Started 7]
-       in case ( applyEventsDetailedEither multi (False, RNil) events,
-                 applyEventsEither multi (False, RNil) events
-               ) of
-            (Right detailed, Right (compatibilityState, _)) -> do
-              replaySuccessState detailed `shouldBe` compatibilityState
-              replaySuccessTrace detailed
-                `shouldBe` [ ReplayAttribution
-                               { replayAttributionEdge = EdgeRef False 0,
-                                 replayAttributionMode = Live,
-                                 replayAttributionSource = False,
-                                 replayAttributionTarget = True,
-                                 replayAttributionSpan = ReplayEventSpan 0 2,
-                                 replayAttributionEventCount = 2
-                               },
-                             ReplayAttribution
-                               { replayAttributionEdge = EdgeRef True 0,
-                                 replayAttributionMode = Live,
-                                 replayAttributionSource = True,
-                                 replayAttributionTarget = True,
-                                 replayAttributionSpan = ReplayEventSpan 2 3,
-                                 replayAttributionEventCount = 1
-                               }
-                           ]
-            (Left failure, _) -> expectationFailure ("detailed replay failed: " <> show failure)
-            (_, Left failure) -> expectationFailure ("compatibility replay failed: " <> show failure)
-
-    it "returns exactly the compatibility truncation failure" $
-      case ( applyEventsDetailedEither multi (False, RNil) [Started 42],
-             applyEventsEither multi (False, RNil) [Started 42]
-           ) of
-        (Left detailedFailure, Left compatibilityFailure) ->
-          detailedFailure `shouldBe` compatibilityFailure
-        _ -> expectationFailure "expected paired truncation failures"
   where
     show3 :: Maybe (Bool, x, [MultiOutput]) -> String
     show3 Nothing = "Nothing"

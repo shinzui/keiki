@@ -4,7 +4,6 @@ slug: expose-detailed-step-success-and-replay-attribution-traces
 title: "Expose detailed step success and replay attribution traces"
 kind: exec-plan
 created_at: 2026-07-31T20:29:39Z
-intention: intention_01kywzfvmae5na5c26gybz51q7
 ---
 
 # Expose detailed step success and replay attribution traces
@@ -53,43 +52,14 @@ active parent initiative.
 
 ## Progress
 
-- [x] (2026-07-31T21:01:36Z) Milestone 0: extended the existing tasty-bench suite with six stable
-  compatibility probes and captured `/tmp/keiki-ep81-before.csv` before changing Core. GHC 9.12.4
-  built commit `a52a5faa0228059be40d0f099d886dbe205ea8d0` plus the benchmark/plan worktree edits; all 30
-  benchmark rows passed. The CSV header is `Name,Mean (ps),2*Stdev (ps),Allocated,Copied,Peak
-  Memory`. Builder `stepEither`, 32-event replay, and 1,024-event replay measured 185,646 ps/1,702
-  B, 16,777,453 ps/83,305 B, and 574,189,453 ps/2,821,008 B. AST counterparts measured 170,003
-  ps/1,686 B, 16,097,210 ps/82,809 B, and 558,171,093 ps/2,804,675 B. The capture command was
-  `cabal bench jitsurei:keiki-bench --benchmark-options='--csv /tmp/keiki-ep81-before.csv +RTS -T
-  -RTS'`; `git diff -- src/Keiki/Core.hs` was empty afterward.
-- [x] (2026-07-31T21:04:30Z) Milestone 1: added public `StepSuccess` and
-  `stepDetailedEither`, made `stepEither` erase the detailed success, and added guarded-sibling,
-  epsilon, replay-only, failure-erasure, and result-erasure examples. The focused command
-  `cabal test keiki:keiki-test --test-options='--match Keiki.Core.stepEither'
-  --test-show-details=direct` passed 9 examples with 0 failures under GHC 9.12.4.
-- [x] (2026-07-31T21:08:45Z) Milestone 2: factored inversion, guard checking, update application,
-  tail construction, queue comparison, and failures through `applyEventWithTrace` and
-  `replayEventsWithTrace`; added the nullary `DiscardTrace`, collecting `CollectTrace`, public
-  span/attribution/success records, and both detailed strict entry points. The 13 InFlight, 13
-  structured-replay, and 22 replay-only focused examples passed with 0 failures. Static `rg`
-  inspection showed `applyEventStreamingEither`, `replayEvents`, and `applyEventsEither` seeding
-  `DiscardTrace`; `reconstituteEither` delegates to that strict compatibility path; and only
-  `applyEventsDetailedEither` plus its `reconstituteDetailedEither` wrapper seed `CollectTrace`.
-- [x] (2026-07-31T21:28:15Z) Milestone 3: added exact detailed/compatibility failure pairs for
-  no inversion, ambiguity, queue mismatch, and truncation; live-first and replay-only twin
-  attribution examples; a 1,024-event compatibility/detailed regression; and generated P3 trace
-  laws in all permanent round-trip fixtures. The focused structured suite passed 18 examples, the
-  replay-only suite passed 22, InFlight passed 13, and RoundTrip passed 36 examples including 100
-  generated P3 cases for each of four fixtures. Added six strict detailed benchmark rows. The
-  final attribution-only command against `/tmp/keiki-ep81-before.csv` wrote
-  `/tmp/keiki-ep81-after.csv` and passed all 12 rows with the 20% gate. Builder compatibility
-  timing changes were +14% (`stepEither`), +13% (32 events), and +14% (1,024 events); AST changes
-  were +8%, +9%, and +15%. Compatibility allocation deltas were +40 B, -144 B, and +65,387 B for
-  builder and +40 B, -144 B, and +65,366 B for AST. The identical long-log residual is one 64 KiB
-  measurement block plus small scalar variance, while static inspection proves the nullary branch
-  cannot construct pending records, attribution records, or trace list cells. Detailed allocation
-  above same-run compatibility was 0 B/7,593 B/245,479 B for builder and 0 B/7,593 B/245,494 B for
-  AST; detailed timing ratios were 0.95x/0.99x/1.04x and 1.04x/1.05x/1.04x respectively.
+- [ ] Milestone 0: extend the existing tasty-bench suite with compatibility probes and capture the
+  pre-refactor timing/allocation baseline.
+- [ ] Milestone 1: add the public detailed-forward result and make `stepEither` erase it.
+- [ ] Milestone 2: factor replay through one internal kernel with allocation-free no-trace and
+  trace-collecting modes, then add strict detailed replay entry points.
+- [ ] Milestone 3: add example and property coverage for edge identity, trace laws, exact erasure,
+  live-first selection, epsilon observability, and unchanged failures; add detailed benchmark rows
+  and compare compatibility performance with the Milestone 0 baseline.
 - [ ] Milestone 4: update Haddocks, user/foundation documentation, ADR-0002, the changelog, and
   improvement-request and benchmark documentation.
 - [ ] Milestone 5: pass focused, benchmark, full-project, Haddock, Nix, OKF, and diff gates.
@@ -98,19 +68,6 @@ active parent initiative.
 
 
 ## Surprises & Discoveries
-
-- The first generic replay worker compiled without inlining preserved O(1) retained trace state
-  but added 171,914 B to the builder's 1,024-event compatibility row and slowed it by 33%. Marking
-  the shared worker and its two trace transitions `INLINE` let GHC specialize the known nullary
-  `DiscardTrace` branch: a repeat passed all six compatibility rows and reduced the long-row delta
-  to one 64 KiB allocation block. A continuation-return experiment produced the same allocation
-  and noisier timing, so it was discarded. Evidence: `/tmp/keiki-ep81-inline.csv` passed all six
-  rows; the retained final `/tmp/keiki-ep81-after.csv` passed all 12 attribution rows.
-
-- Cabal 3.16 splits `--test-options` on spaces after the shell has processed the outer quoting. A
-  focused Hspec match containing spaces must preserve embedded quotes, for example
-  `--test-options='--match "Keiki.Core structured replay"'`; the plan's original form passed
-  `structured` as an unexpected standalone argument. The corrected command passed 13 examples.
 
 - The package registry and Git release authorities are temporarily out of sync. On 2026-07-31,
   Hackage's `preferred.json` lists `0.6.0.0`, but `git ls-remote --tags origin` exposes tags only
@@ -197,14 +154,6 @@ active parent initiative.
   Rationale: forward stepping creates at most one short-lived detailed record per accepted
   command, whereas discarded replay traces accumulate with log length. The extra forward worker
   would add complexity to avoid a small, likely optimized constant cost.
-  Date: 2026-07-31
-
-- Decision: Inline the shared replay worker and trace-state transitions, while retaining the
-  explicit `DiscardTrace`/`CollectTrace` branches and one source fold.
-  Rationale: GHC 9.12.4 otherwise retained generic trace-policy plumbing in compatibility replay.
-  Inlining preserved the single semantic authority and allowed the nullary branch to specialize,
-  eliminating the measured timing regression and most of the allocation delta without adding a
-  second evaluator. A continuation-return variant did not improve allocation and was reverted.
   Date: 2026-07-31
 
 - Decision: Reuse and extend `jitsurei:keiki-bench`; do not create a new executable or change the

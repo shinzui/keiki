@@ -20,18 +20,12 @@ import Data.Text qualified as Text
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Keiki.Core
-  ( Edge (..),
-    EdgeRef (..),
-    HsPred,
+  ( HsPred,
     RegFile,
-    ReplayAttribution (..),
-    ReplayEventSpan (..),
     ReplayFailure,
-    ReplaySuccess (..),
     SymTransducer (..),
     applyEventsEither,
     defaultValidationOptions,
-    reconstituteDetailedEither,
     reconstituteEither,
     step,
     validateTransducer,
@@ -104,8 +98,6 @@ roundTripSpec (RoundTripFixture name transducer genCommand observe tamperCases) 
       wholeLogProperty transducer genCommand observe
     it "P2: chunked replay agrees at every command boundary" $
       chunkedProperty transducer genCommand observe
-    it "P3: detailed replay attributes a complete contiguous edge path" $
-      attributionProperty transducer genCommand observe
     mapM_ (tamperSpec transducer genCommand observe) tamperCases
 
 -- | Run the replay laws without forcing validation. This is reserved for a
@@ -119,8 +111,6 @@ roundTripSpecUnchecked (RoundTripFixture name transducer genCommand observe tamp
       wholeLogProperty transducer genCommand observe
     it "P2: chunked replay agrees at every command boundary" $
       chunkedProperty transducer genCommand observe
-    it "P3: detailed replay attributes a complete contiguous edge path" $
-      attributionProperty transducer genCommand observe
     mapM_ (tamperSpec transducer genCommand observe) tamperCases
 
 teethSpec :: RoundTripFixture -> Spec
@@ -190,115 +180,6 @@ chunkedProperty transducer genCommand observe =
                     <> ", got "
                     <> renderState actualState (observe actualState actualRegs)
                 )
-
-attributionProperty ::
-  (Eq s, Show s, Show ci, Eq co, Show co) =>
-  SymTransducer (HsPred rs ci) rs s ci co ->
-  (s -> RegFile rs -> Gen ci) ->
-  (s -> RegFile rs -> Text) ->
-  Property
-attributionProperty transducer genCommand observe =
-  forAllCommands transducer genCommand $ \commands ->
-    let run = forwardRun transducer observe commands
-        compatibility = reconstituteEither transducer run.frEvents
-        detailed = reconstituteDetailedEither transducer run.frEvents
-        context =
-          renderRun run
-            <> "\ncompatibility replay: "
-            <> renderReplay observe compatibility
-            <> "\ndetailed replay: "
-            <> renderDetailedReplay observe detailed
-     in counterexample context case (compatibility, detailed) of
-          (Left _, _) -> property False
-          (_, Left _) -> property False
-          (Right (compatibilityState, compatibilityRegs), Right success) ->
-            case validateDetailedTrace transducer observe run.frEvents success of
-              Left message -> counterexample message (property False)
-              Right () ->
-                ( compatibilityState,
-                  observe compatibilityState compatibilityRegs,
-                  replaySuccessState success,
-                  observe (replaySuccessState success) (replaySuccessRegs success)
-                )
-                  === ( run.frFinalState,
-                        run.frFinalObservation,
-                        run.frFinalState,
-                        run.frFinalObservation
-                      )
-
-validateDetailedTrace ::
-  (Eq s, Show s) =>
-  SymTransducer phi rs s ci co ->
-  (s -> RegFile rs -> Text) ->
-  [co] ->
-  ReplaySuccess rs s ->
-  Either String ()
-validateDetailedTrace transducer observe events success =
-  case events of
-    [] -> do
-      require (null trace) "empty event log produced a non-empty attribution trace"
-      require
-        ( replaySuccessState success == transducer.initial
-            && observe (replaySuccessState success) (replaySuccessRegs success)
-              == observe transducer.initial transducer.initialRegs
-        )
-        "empty event log changed the replay seed"
-    _ -> case trace of
-      [] -> Left "non-empty event log produced an empty attribution trace"
-      firstAttribution : remainingAttributions -> do
-        let finalAttribution = foldl (\_ current -> current) firstAttribution remainingAttributions
-        require
-          (replaySpanStart (replayAttributionSpan firstAttribution) == 0)
-          "first attribution span did not start at zero"
-        require
-          (replaySpanEnd (replayAttributionSpan finalAttribution) == length events)
-          "last attribution span did not end at the event-log length"
-        mapM_ checkAttribution trace
-        mapM_ checkAdjacent (zip trace (drop 1 trace))
-        require
-          (replayAttributionTarget finalAttribution == replaySuccessState success)
-          "last attribution target did not equal the replay result state"
-  where
-    trace = replaySuccessTrace success
-
-    checkAttribution attribution = do
-      let span' = replayAttributionSpan attribution
-          count = replayAttributionEventCount attribution
-          source = replayAttributionSource attribution
-          ref = replayAttributionEdge attribution
-      require (count > 0) ("non-positive attribution event count: " <> show attribution)
-      require
-        (replaySpanEnd span' - replaySpanStart span' == count)
-        ("span length disagreed with event count: " <> show attribution)
-      require
-        (edgeSource ref == source)
-        ("edge reference source disagreed with attribution source: " <> show attribution)
-      require (edgeIndex ref >= 0) ("negative edge reference index: " <> show attribution)
-      case drop (edgeIndex ref) (edgesOut transducer source) of
-        [] -> Left ("edge reference did not resolve: " <> show ref)
-        edge : _ -> do
-          require
-            (mode edge == replayAttributionMode attribution)
-            ("resolved edge mode disagreed with attribution: " <> show attribution)
-          require
-            (target edge == replayAttributionTarget attribution)
-            ("resolved edge target disagreed with attribution: " <> show attribution)
-          require
-            (length (output edge) == count)
-            ("resolved edge output length disagreed with attribution: " <> show attribution)
-
-    checkAdjacent (left, right) = do
-      require
-        ( replaySpanEnd (replayAttributionSpan left)
-            == replaySpanStart (replayAttributionSpan right)
-        )
-        ("attribution spans had a gap or overlap: " <> show (left, right))
-      require
-        (replayAttributionTarget left == replayAttributionSource right)
-        ("attribution entries did not form a state path: " <> show (left, right))
-
-    require True _ = Right ()
-    require False message = Left message
 
 tamperSpec ::
   (Eq s, Show s, Show ci, Eq co, Show co) =>
@@ -428,22 +309,6 @@ renderReplay :: (Show s, Show co) => (s -> RegFile rs -> Text) -> Either (Replay
 renderReplay observe = \case
   Left failure -> "Left " <> show failure
   Right (state, regs) -> "Right (" <> renderState state (observe state regs) <> ")"
-
-renderDetailedReplay ::
-  (Show s, Show co) =>
-  (s -> RegFile rs -> Text) ->
-  Either (ReplayFailure s co) (ReplaySuccess rs s) ->
-  String
-renderDetailedReplay observe = \case
-  Left failure -> "Left " <> show failure
-  Right success ->
-    "Right ("
-      <> renderState
-        (replaySuccessState success)
-        (observe (replaySuccessState success) (replaySuccessRegs success))
-      <> ", trace="
-      <> show (replaySuccessTrace success)
-      <> ")"
 
 renderChunkResult :: (Show s) => Either String (s, RegFile rs) -> String
 renderChunkResult = \case

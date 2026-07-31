@@ -28,13 +28,6 @@ All
   OrderCart
     builder         { delta, omega, step, applyEvent, reconstitute }
     ast             { delta, omega, step, applyEvent, reconstitute }
-  attribution
-    compat
-      builder       { stepEither, applyEventsEither-32, applyEventsEither-1024 }
-      ast           { stepEither, applyEventsEither-32, applyEventsEither-1024 }
-    detailed
-      builder       { stepDetailedEither, applyEventsDetailedEither-32, applyEventsDetailedEither-1024 }
-      ast           { stepDetailedEither, applyEventsDetailedEither-32, applyEventsDetailedEither-1024 }
   head-to-head
     UserReg/ast vs builder/step
     UserReg/ast vs builder/reconstitute
@@ -42,8 +35,7 @@ All
     OrderCart/ast vs builder/reconstitute
 ```
 
-There are 20 original operation rows, 12 attribution rows, and 4 head-to-head
-rows: 36 leaf benchmarks in total.
+20 leaf benches per per-aggregate group, plus 4 in head-to-head.
 The two head-to-head operations (`step`, `reconstitute`) are the
 ones with the most signal: `step` exposes the per-transition cost
 where `Keiki.Builder`'s `Prelude.lookup` over the `(vertex, edges)`
@@ -55,20 +47,6 @@ canonical first edge of each log. The replay logs (`urLog`,
 `ocLog`) are length 32 each; UserRegistration loops `Resend` 28
 times to inflate the trajectory, OrderCart adds 27 `ItemAdded`
 events on the happy path.
-
-The `attribution/compat` rows are the pre-change compatibility probes for
-ExecPlan 81. They reduce successful `stepEither` and `applyEventsEither`
-results to strict scalar values, measure both builder and AST forms, and replay
-UserRegistration logs of 32 and 1,024 events. Keep their complete benchmark
-paths stable when comparing a post-change run with the captured CSV.
-
-The adjacent `attribution/detailed` rows measure the explicit cost of asking
-for edge evidence. The forward digest consumes the selected edge index, mode,
-and output-list length. The replay digest uses a strict left fold over every
-attribution entry and consumes its edge index, mode, span endpoints, and event
-count. Because each benchmark reduces the result to an `Int` under `nf`, the
-measurement cannot stop after constructing an outer `Right` or leave the trace
-unevaluated.
 
 ## Capture and diff a baseline
 
@@ -88,21 +66,6 @@ cabal bench --benchmark-options "--baseline baseline.csv"
 Each row prints both the new measurement and a multiplicative ratio
 against the baseline.
 
-ExecPlan 81's matched allocation run uses a disposable pre-change CSV and
-keeps the compatibility paths unchanged:
-
-```sh
-cabal bench jitsurei:keiki-bench \
-  --benchmark-options='--csv /tmp/keiki-ep81-before.csv +RTS -T -RTS'
-
-cabal bench jitsurei:keiki-bench \
-  --benchmark-options='-p /attribution/ --baseline /tmp/keiki-ep81-before.csv --csv /tmp/keiki-ep81-after.csv --fail-if-slower 20 +RTS -T -RTS'
-```
-
-The pattern on the second command avoids treating unrelated legacy benchmark
-noise as an attribution compatibility failure. The six `compat` names match
-the pre-change CSV; the six new `detailed` names have no historical baseline.
-
 ## Reading a `bcompare` row
 
 Within `head-to-head`, the comparison is AST-form vs builder-form
@@ -111,11 +74,6 @@ faster; greater than 1 means the builder form is faster. In the
 initial baseline, `step` ratios are ≈ 0.55 (AST is ~2× faster on the
 per-step path); `reconstitute` ratios are ≈ 0.90 (the gap nearly
 vanishes once per-step setup amortises over the 32-event log).
-
-Within `attribution/detailed`, each `bcompare` ratio is detailed operation vs
-its compatibility row in the same run. This is the opt-in cost of producing
-and strictly consuming attribution, not an erasure-law proof or pass/fail
-threshold.
 
 ## Memory
 
@@ -127,14 +85,6 @@ cabal bench --benchmark-options "+RTS -T -RTS"
 
 Each row gains "X B allocated, Y B copied, Z MB peak memory"
 columns.
-
-For a compatibility regression check, compare the before/after `Allocated`
-values at both 32 and 1,024 events. A positive delta that grows with log length
-requires inspection of the Core call graph: compatibility replay must seed the
-nullary `DiscardTrace` policy and must never construct pending attribution,
-public attribution records, or trace list cells. Detailed replay is expected
-to show an O(number of completed edges) allocation increase; that is the
-documented cost of the trace.
 
 ## What's *not* measured
 
