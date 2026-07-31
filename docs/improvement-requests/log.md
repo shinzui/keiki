@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-07-31
+* **Addition**: IR-2 requests structured successful edge attribution for forward stepping and
+  replay, including live/replay-only mode and completed multi-event input spans, so downstream
+  conformance can distinguish guarded siblings without duplicating Keiki semantics.
+
 ## 2026-07-28
 * **Addition**: IR-1 requests typed symbolic field projections over mapped consumer-owned
   values, filed from Keiro (master plan 25 / research note 14 Experiment C) so the Keiki-side
