@@ -142,6 +142,8 @@ module Keiki.Core
     -- * Pure-layer entry points (effects-boundary note)
     step,
     stepEither,
+    stepDetailedEither,
+    StepSuccess (..),
     StepFailure (..),
     EdgeRef (..),
     RejectedEdgeSummary (..),
@@ -1163,6 +1165,19 @@ data EdgeRef s = EdgeRef
   }
   deriving stock (Eq, Show)
 
+-- | Proof-relevant success information for one accepted forward command.
+-- The 'EdgeRef' identifies the exact outgoing edge selected in this concrete
+-- transducer construction; its zero-based index changes when outgoing edge
+-- declaration order changes. Forward stepping considers only 'Live' edges,
+-- so 'stepSuccessMode' is always 'Live'.
+data StepSuccess (rs :: [Slot]) s co = StepSuccess
+  { stepSuccessEdge :: EdgeRef s,
+    stepSuccessMode :: EdgeMode,
+    stepSuccessState :: s,
+    stepSuccessRegs :: RegFile rs,
+    stepSuccessOutputs :: [co]
+  }
+
 -- | Why one outgoing edge was rejected during a step: its locator, its
 -- declared target, and whether its guard matched (always 'False' here;
 -- the field keeps the shape uniform with 'MatchedEdgeSummary' and leaves
@@ -1199,17 +1214,37 @@ data StepFailure s
   | AmbiguousEdges s [MatchedEdgeSummary s]
   deriving stock (Eq, Show)
 
--- | Like 'step', but returns a precise 'StepFailure' explanation on the
--- 'Left' instead of collapsing every failure into 'Nothing'. On the
--- 'Right' it returns EXACTLY the triple 'step' returns. 'step' is left
--- unchanged; this is purely additive.
+-- | Like 'stepDetailedEither', but erases exact edge attribution from a
+-- success. Failures pass through unchanged; a successful 'StepSuccess' is
+-- projected to the historical @(state, registers, outputs)@ triple.
 stepEither ::
   (BoolAlg phi (RegFile rs, ci)) =>
   SymTransducer phi rs s ci co ->
   (s, RegFile rs) ->
   ci ->
   Either (StepFailure s) (s, RegFile rs, [co])
-stepEither t (s, regs) ci =
+stepEither t seed ci =
+  case stepDetailedEither t seed ci of
+    Left failure -> Left failure
+    Right success ->
+      Right
+        ( stepSuccessState success,
+          stepSuccessRegs success,
+          stepSuccessOutputs success
+        )
+
+-- | Execute one forward command and return the exact selected local edge,
+-- its execution mode, and the same post-state, register file, and ordered
+-- output word exposed by 'stepEither'. This function is the selection and
+-- evaluation authority for both entry points: erasing a success yields the
+-- exact historical 'stepEither' result, and failures are identical.
+stepDetailedEither ::
+  (BoolAlg phi (RegFile rs, ci)) =>
+  SymTransducer phi rs s ci co ->
+  (s, RegFile rs) ->
+  ci ->
+  Either (StepFailure s) (StepSuccess rs s co)
+stepDetailedEither t (s, regs) ci =
   case zip [0 ..] (edgesOut t s) of
     [] -> Left (NoOutgoingEdges s)
     indexed ->
@@ -1231,10 +1266,17 @@ stepEither t (s, regs) ci =
                       }
                   | (i, e) <- indexed
                   ]
-            [(_, e)] ->
+            [(i, e)] ->
               let !regs' = applyEdgeUpdate e regs ci
                   outs = [evalOut o regs ci | o <- output e]
-               in Right (target e, regs', outs)
+               in Right
+                    StepSuccess
+                      { stepSuccessEdge = EdgeRef {edgeSource = s, edgeIndex = i},
+                        stepSuccessMode = Live,
+                        stepSuccessState = target e,
+                        stepSuccessRegs = regs',
+                        stepSuccessOutputs = outs
+                      }
             _ ->
               Left $
                 AmbiguousEdges

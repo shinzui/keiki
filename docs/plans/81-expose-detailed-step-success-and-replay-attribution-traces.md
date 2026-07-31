@@ -62,7 +62,11 @@ active parent initiative.
   ps/1,686 B, 16,097,210 ps/82,809 B, and 558,171,093 ps/2,804,675 B. The capture command was
   `cabal bench jitsurei:keiki-bench --benchmark-options='--csv /tmp/keiki-ep81-before.csv +RTS -T
   -RTS'`; `git diff -- src/Keiki/Core.hs` was empty afterward.
-- [ ] Milestone 1: add the public detailed-forward result and make `stepEither` erase it.
+- [x] (2026-07-31T21:04:30Z) Milestone 1: added public `StepSuccess` and
+  `stepDetailedEither`, made `stepEither` erase the detailed success, and added guarded-sibling,
+  epsilon, replay-only, failure-erasure, and result-erasure examples. The focused command
+  `cabal test keiki:keiki-test --test-options='--match Keiki.Core.stepEither'
+  --test-show-details=direct` passed 9 examples with 0 failures under GHC 9.12.4.
 - [ ] Milestone 2: factor replay through one internal kernel with allocation-free no-trace and
   trace-collecting modes, then add strict detailed replay entry points.
 - [ ] Milestone 3: add example and property coverage for edge identity, trace laws, exact erasure,
