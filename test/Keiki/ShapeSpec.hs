@@ -24,6 +24,7 @@ import Keiki.Shape
     sha256Hex,
     stateShapeHash,
   )
+import Numeric.Natural (Natural)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Type.Reflection (someTypeRep)
 
@@ -81,6 +82,7 @@ type BuiltInSlots =
      '("int32", Int32),
      '("int64", Int64),
      '("integer", Integer),
+     '("natural", Natural),
      '("word", Word),
      '("word8", Word8),
      '("word16", Word16),
@@ -148,6 +150,10 @@ spec = do
     it "concatenates one slot in the documented R3 form" $
       regFileShapeCanonical (Proxy @('[ '("retryCount", Int)] :: [(Symbol, Type)]))
         `shouldBe` T.pack "retryCount:Int;regfile:0"
+
+    it "pins Natural independently of its base-library representation" $
+      regFileShapeCanonical (Proxy @('[ '("revision", Natural)] :: [(Symbol, Type)]))
+        `shouldBe` T.pack "revision:Natural;regfile:0"
 
     it "keeps GHC-internal module paths out of every built-in name" $ do
       let canonical = regFileShapeCanonical (Proxy @BuiltInSlots)

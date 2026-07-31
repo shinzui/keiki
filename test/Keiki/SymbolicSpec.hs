@@ -12,6 +12,7 @@ import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Symbolic
+import Numeric.Natural (Natural)
 import Test.Hspec
 
 -- | A two-constructor input symbol for the 'PInCtor' tests.
@@ -113,6 +114,14 @@ timePrecisionFixture =
       initialRegs = RCons (Proxy @"at") (posixSecondsToUTCTime 0) RNil,
       isFinal = (== True)
     }
+
+-- | Natural uses an unbounded SMT integer with a non-negative domain
+-- constraint. It supports equality and ordering, but intentionally not the
+-- generic arithmetic registry because Haskell subtraction saturates at zero.
+type NaturalRegs = '[ '("count", Natural)]
+
+naturalIdx :: Index NaturalRegs Natural
+naturalIdx = ZIdx
 
 -- | A two-edge transducer over a 'Word64' register. Both edges leave
 -- the @False@ vertex; the second edge carries a constant 'Word64'
@@ -325,6 +334,7 @@ spec = do
     it "discovers Sym Bool" $ symKnown (Proxy @Bool) `shouldBe` True
     it "discovers Sym Int" $ symKnown (Proxy @Int) `shouldBe` True
     it "discovers Sym Integer" $ symKnown (Proxy @Integer) `shouldBe` True
+    it "discovers Sym Natural" $ symKnown (Proxy @Natural) `shouldBe` True
     it "discovers Sym Text" $ symKnown (Proxy @Text) `shouldBe` True
     it "discovers Sym UTCTime" $ symKnown (Proxy @UTCTime) `shouldBe` True
     -- EP-41: fixed-width integers (money + counts).
@@ -385,6 +395,34 @@ spec = do
       evalPred timeBeforeGuard runtimeRegs AmtTick `shouldBe` True
       checkTransitionDeterminismSym timePrecisionFixture `shouldSatisfy` (not . null)
       isSingleValuedSym (withSymPred timePrecisionFixture) `shouldBe` False
+
+    it "constrains Natural register variables to non-negative values" $
+      symIsBot
+        (PCmp CmpLt (proj naturalIdx) (lit (0 :: Natural)) :: HsPred NaturalRegs AmtCmd)
+        `shouldBe` True
+
+    it "keeps Natural equality and ordering solver-visible" $ do
+      symIsBot
+        (PEq (lit (1 :: Natural)) (lit 2) :: HsPred '[] AmtCmd)
+        `shouldBe` True
+      symIsBot
+        (PCmp CmpGt (lit (1 :: Natural)) (lit 2) :: HsPred '[] AmtCmd)
+        `shouldBe` True
+
+    it "extracts a valid Natural witness and withholds generic arithmetic" $ do
+      case symSatExt
+        ( PAnd
+            (PInCtor inCtorAmtTick)
+            (PCmp CmpGe (proj naturalIdx) (lit (3 :: Natural))) ::
+            HsPred NaturalRegs AmtCmd
+        ) of
+        Nothing -> expectationFailure "expected a Natural witness"
+        Just (registers, command) -> do
+          registers ! naturalIdx `shouldSatisfy` (>= 3)
+          command `shouldBe` AmtTick
+      case discoverSymNum @Natural of
+        Nothing -> pure ()
+        Just _ -> expectationFailure "Natural must not use ordinary integer arithmetic"
 
   describe "ordering predicate PCmp (EP-41 M2)" $ do
     it "constant contradiction 5 >= 10 over Word64 is symIsBot" $

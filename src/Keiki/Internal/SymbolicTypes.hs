@@ -20,6 +20,7 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
+import Numeric.Natural (Natural)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 -- | Evidence that a type belongs to Keiki's closed symbolic registry.
@@ -27,6 +28,7 @@ data SymbolicType r where
   SymbolicBool :: SymbolicType Bool
   SymbolicInt :: SymbolicType Int
   SymbolicInteger :: SymbolicType Integer
+  SymbolicNatural :: SymbolicType Natural
   SymbolicText :: SymbolicType Text
   SymbolicUTCTime :: SymbolicType UTCTime
   SymbolicWord64 :: SymbolicType Word64
@@ -42,6 +44,7 @@ discoverSymbolicType
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Bool) = Just SymbolicBool
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int) = Just SymbolicInt
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = Just SymbolicInteger
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Natural) = Just SymbolicNatural
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Text) = Just SymbolicText
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @UTCTime) = Just SymbolicUTCTime
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Word64) = Just SymbolicWord64

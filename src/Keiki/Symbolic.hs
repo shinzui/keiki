@@ -112,6 +112,7 @@ import Keiki.Internal.SymbolicTypes
   ( SymbolicType (..),
     discoverSymbolicType,
   )
+import Numeric.Natural (Natural)
 import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection (SomeTypeRep (..), eqTypeRep, typeRep, type (:~~:) (HRefl))
 
@@ -137,6 +138,12 @@ class (SBV.SymVal (SymRep a), Typeable a) => Sym a where
   fromSym :: SymRep a -> a
   symDefault :: a
 
+  -- | Restrict a symbolic representation to values that denote a real @a@.
+  -- Most carriers use their whole SBV domain. Refined carriers such as
+  -- 'Natural' add constraints whenever Keiki allocates a symbolic variable.
+  constrainSymDomain :: SBV.SBV (SymRep a) -> SBV.Symbolic ()
+  constrainSymDomain _ = pure ()
+
 instance Sym Bool where
   type SymRep Bool = Bool
   toSym = id
@@ -148,6 +155,18 @@ instance Sym Integer where
   toSym = id
   fromSym = id
   symDefault = 0
+
+-- | Arbitrary-precision non-negative integers. The representation stays an
+-- unbounded SMT integer, while every allocated variable is constrained to the
+-- actual 'Natural' domain. Numeric arithmetic is deliberately not registered:
+-- Haskell 'Natural' subtraction saturates at zero and must not be modeled as
+-- ordinary integer subtraction.
+instance Sym Natural where
+  type SymRep Natural = Integer
+  toSym = fromIntegral
+  fromSym = fromInteger
+  symDefault = 0
+  constrainSymDomain value = SBV.constrain (value SBV..>= 0)
 
 -- | Encoded as 'Integer'. SBV does not provide an 'SInt'-of-arbitrary-
 -- size; using 'Integer' means machine-width 'Int' wraparound is not modeled.
@@ -234,7 +253,7 @@ data SymDict r where
 
 -- | Try to discover a 'Sym' instance for @r@ at runtime. Returns
 -- @Just SymDict@ for any of the curated supported types
--- ('Bool', 'Int', 'Integer', 'Text', 'UTCTime', and the fixed-width
+-- ('Bool', 'Int', 'Integer', 'Natural', 'Text', 'UTCTime', and the fixed-width
 -- integers 'Word8' \/ 'Word16' \/ 'Word32' \/ 'Word64' \/ 'Int32' \/
 -- 'Int64'); 'Nothing' otherwise. The translator uses this to route
 -- 'PEq' over arbitrary types: a 'Sym' hit translates to '(.==)' on
@@ -245,6 +264,7 @@ discoverSym = case discoverSymbolicType @r of
   Just SymbolicBool -> Just SymDict
   Just SymbolicInt -> Just SymDict
   Just SymbolicInteger -> Just SymDict
+  Just SymbolicNatural -> Just SymDict
   Just SymbolicText -> Just SymDict
   Just SymbolicUTCTime -> Just SymDict
   Just SymbolicWord64 -> Just SymDict
@@ -266,7 +286,7 @@ data SymOrdDict r where
 -- | Try to discover ordering evidence for @r@ at runtime, companion to
 -- 'discoverSym'. Returns @Just SymOrdDict@ for the numeric and time
 -- types whose 'SymRep' is an 'SBV.OrdSymbolic' 'Integer' ('Int',
--- 'Integer', the fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32'
+-- 'Integer', 'Natural', the fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32'
 -- \/ 'Word64' \/ 'Int32' \/ 'Int64', and 'UTCTime' encoded as epoch
 -- seconds); 'Nothing' otherwise. 'Bool' and 'Text' are deliberately
 -- omitted: ordering a 'Bool' guard is not meaningful, and 'SString'
@@ -277,6 +297,7 @@ discoverSymOrd :: forall r. (Typeable r) => Maybe (SymOrdDict r)
 discoverSymOrd = case discoverSymbolicType @r of
   Just SymbolicInt -> Just SymOrdDict
   Just SymbolicInteger -> Just SymOrdDict
+  Just SymbolicNatural -> Just SymOrdDict
   Just SymbolicUTCTime -> Just SymOrdDict
   Just SymbolicWord64 -> Just SymOrdDict
   Just SymbolicWord32 -> Just SymOrdDict
@@ -301,8 +322,9 @@ data SymNumDict r where
 -- 'discoverSymOrd'. Returns @Just SymNumDict@ for the numeric types
 -- whose 'SymRep' is the SBV-'Num' 'Integer' ('Int', 'Integer', and the
 -- fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32' \/ 'Word64' \/
--- 'Int32' \/ 'Int64'); 'Nothing' otherwise. 'Bool', 'Text', and
--- 'UTCTime' are omitted — not meaningfully arithmetic here. A 'Nothing'
+-- 'Int32' \/ 'Int64'); 'Nothing' otherwise. 'Natural' is omitted because
+-- its saturating subtraction is not ordinary integer subtraction. 'Bool',
+-- 'Text', and 'UTCTime' are also omitted. A 'Nothing'
 -- makes the 'TArith' translator fall back to a fresh opaque variable,
 -- exactly as 'goEq' \/ 'goCmp' fall back for non-'Sym' operands —
 -- sound, just imprecise. (The 'Num' constraint on the 'TArith'
@@ -322,6 +344,7 @@ discoverSymNum = case discoverSymbolicType @r of
   Just SymbolicBool -> Nothing
   Just SymbolicText -> Nothing
   Just SymbolicUTCTime -> Nothing
+  Just SymbolicNatural -> Nothing
   Nothing -> Nothing
 
 -- | Lift a concrete value to an SBV literal of its 'SymRep'.
@@ -330,7 +353,10 @@ symLit = SBV.literal . toSym
 
 -- | Allocate a fresh symbolic variable of the carrier's 'SymRep'.
 symFree :: forall a. (Sym a) => String -> SBV.Symbolic (SBV.SBV (SymRep a))
-symFree = SBV.free
+symFree label = do
+  value <- SBV.free label
+  constrainSymDomain @a value
+  pure value
 
 -- * Translation environment -------------------------------------------------
 
@@ -469,13 +495,13 @@ translateTermSym ::
   SBV.Symbolic (SBV.SBV (SymRep r))
 translateTermSym _env (TLit r) = pure (symLit r)
 translateTermSym env (TReg ix) =
-  memoFree env (RegVar (indexName ix))
+  memoFree @r env (RegVar (indexName ix))
 translateTermSym env (TInpCtorField ic ix) =
-  memoFree env (InpVar (icName ic) (indexName ix))
-translateTermSym _env (TApp1 _f _t) = SBV.free "app1"
-translateTermSym _env (TApp2 _f _a _b) = SBV.free "app2"
+  memoFree @r env (InpVar (icName ic) (indexName ix))
+translateTermSym _env (TApp1 _f _t) = symFree @r "app1"
+translateTermSym _env (TApp2 _f _a _b) = symFree @r "app2"
 translateTermSym env (TArith op a b) = case discoverSymNum @r of
-  Nothing -> SBV.free "arith" -- sound opaque fallback
+  Nothing -> symFree @r "arith" -- sound opaque fallback within the carrier domain
   Just SymNumDict -> do
     sa <- translateTermSym env a
     sb <- translateTermSym env b
@@ -485,7 +511,7 @@ translateTermSym env (TArith op a b) = case discoverSymNum @r of
           OpMul -> (*)
     pure (apply sa sb)
 translateTermSym env (TFieldProj (witness :: FieldWitness projection) base) =
-  memoFree env (projectionVarKey witness base)
+  memoFree @r env (projectionVarKey witness base)
 
 projectionVarKey ::
   forall projection rs ci ifs.
@@ -526,7 +552,7 @@ constrainFieldProjection ::
   FieldResult projection ->
   SBV.Symbolic ()
 constrainFieldProjection env witness base concrete = do
-  symbolic <- memoFree env (projectionVarKey witness base)
+  symbolic <- memoFree @(FieldResult projection) env (projectionVarKey witness base)
   SBV.constrain (symbolic SBV..== symLit concrete)
 
 -- | Memoized symbolic-variable allocator (EP-42). Looks @name@ up in
@@ -537,14 +563,14 @@ constrainFieldProjection env witness base concrete = do
 -- return it. This is what makes repeated reads of the same register or
 -- input field share a single solver variable.
 memoFree ::
-  forall a.
-  (SBV.SymVal a) =>
-  SymEnv -> SymVarKey -> SBV.Symbolic (SBV.SBV a)
+  forall r.
+  (Sym r) =>
+  SymEnv -> SymVarKey -> SBV.Symbolic (SBV.SBV (SymRep r))
 memoFree env key = do
   m <- liftIO (readIORef (seVarCache env))
   case Map.lookup key m of
     Just (SomeSBV (v :: SBV.SBV b)) ->
-      case eqTypeRep (typeRep @a) (typeRep @b) of
+      case eqTypeRep (typeRep @(SymRep r)) (typeRep @b) of
         Just HRefl -> pure v
         Nothing ->
           -- Unreachable: a name maps to exactly one representation type.
@@ -558,7 +584,7 @@ memoFree env key = do
           ordinal <- readIORef (seProjectionOrdinal env)
           modifyIORef' (seProjectionOrdinal env) (+ 1)
           pure ("proj/" <> show ordinal)
-      v <- SBV.free label
+      v <- symFree @r label
       liftIO (modifyIORef' (seVarCache env) (Map.insert key (SomeSBV v)))
       pure v
 
@@ -831,7 +857,7 @@ checkDeadEdgesSym t =
 --
 -- The instance constraints @KnownSymbol s@ and @Sym t@ make this
 -- automatic for any concrete slot list whose value types are in the
--- curated 'Sym' registry ('Bool', 'Int', 'Integer', 'Text',
+-- curated 'Sym' registry ('Bool', 'Int', 'Integer', 'Natural', 'Text',
 -- 'UTCTime'). User Registration's 'UserRegRegs' shape qualifies
 -- without further user code.
 class ExtractRegFile (rs :: [Slot]) where

@@ -22,7 +22,8 @@ import Keiki.Codec.JSON.Fixtures
   )
 import Keiki.Core (RegFile)
 import Keiki.Core qualified as Core
-import Test.Hspec (Spec, describe, it, shouldBe)
+import Numeric.Natural (Natural)
+import Test.Hspec (Spec, describe, expectationFailure, it, shouldBe)
 import Test.QuickCheck (Property, forAllShow, (===))
 
 -- | RegFile rs has no Show instance (the slot list is heterogeneous);
@@ -35,6 +36,7 @@ spec = do
   describe "ExemplarSlots" (codecProps @ExemplarSlots)
   describe "MaybeSlots" (codecProps @MaybeSlots)
   nestedMaybeSpec
+  naturalSpec
 
 codecProps ::
   forall rs.
@@ -125,3 +127,29 @@ assertNestedDecode rf expected =
   case regFileFromJSON @NestedMaybeSlots (regFileToJSON rf) of
     Left message -> error ("nested Maybe decode failed: " <> message)
     Right (Core.RCons _ actual Core.RNil) -> actual `shouldBe` expected
+
+type NaturalSlots = '[ '("revision", Natural)]
+
+naturalSpec :: Spec
+naturalSpec = describe "Natural wire semantics" $ do
+  it "round-trips zero and a positive revision as JSON numbers" $ do
+    assertNaturalDecode 0
+    assertNaturalDecode 42
+
+  it "rejects negative and fractional JSON numbers" $ do
+    assertNaturalRejected (Aeson.object ["revision" Aeson..= (-1 :: Int)])
+    assertNaturalRejected (Aeson.object ["revision" Aeson..= (1.5 :: Double)])
+
+assertNaturalDecode :: Natural -> IO ()
+assertNaturalDecode expected =
+  case regFileFromJSON @NaturalSlots (regFileToJSON naturalRegister) of
+    Left message -> error ("Natural decode failed: " <> message)
+    Right (Core.RCons _ actual Core.RNil) -> actual `shouldBe` expected
+  where
+    naturalRegister = Core.RCons (Proxy @"revision") expected Core.RNil
+
+assertNaturalRejected :: Aeson.Value -> IO ()
+assertNaturalRejected value =
+  case regFileFromJSON @NaturalSlots value of
+    Left _ -> pure ()
+    Right _ -> expectationFailure "expected an invalid Natural JSON value to be rejected"

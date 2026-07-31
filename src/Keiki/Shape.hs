@@ -63,6 +63,7 @@ import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Generics qualified as G
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Keiki.Core (Slot)
+import Numeric.Natural (Natural)
 import Type.Reflection
   ( SomeTypeRep (..),
     TypeRep,
@@ -123,6 +124,9 @@ instance CanonicalTypeName Int64 where
 
 instance CanonicalTypeName Integer where
   canonicalTypeName _ = T.pack "Integer"
+
+instance CanonicalTypeName Natural where
+  canonicalTypeName _ = T.pack "Natural"
 
 instance CanonicalTypeName Word where
   canonicalTypeName _ = T.pack "Word"

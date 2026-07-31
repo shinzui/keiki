@@ -8,6 +8,21 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `Natural` now has a pinned `CanonicalTypeName` and belongs to the curated
+  symbolic equality/ordering registry. Its unbounded integer representation is
+  constrained non-negative whenever Keiki allocates a symbolic variable.
+- `Sym.constrainSymDomain` lets refined scalar instances state the validity
+  invariant for their solver representation. `symFree`, structural register
+  and input reads, field projections, and opaque term fallbacks all apply it.
+
+### Changed
+
+- `Natural` is deliberately absent from the symbolic arithmetic registry.
+  Haskell subtraction on `Natural` saturates at zero, so ordinary SMT integer
+  subtraction would not preserve concrete semantics.
+
 
 ## [0.4.0.0] — 2026-07-28
 
