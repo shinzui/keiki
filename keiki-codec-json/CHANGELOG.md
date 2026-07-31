@@ -9,6 +9,16 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.5.0.0] — 2026-07-31
+
+### Added
+
+- `Natural` registers are supported on the wire alongside `keiki`'s new
+  `Natural` symbolic domain. A `Natural` slot round-trips as a JSON number,
+  and decoding rejects negative and fractional numbers rather than truncating
+  them. The property suite pins both directions.
+
+
 ## [0.4.0.0] — 2026-07-28
 
 ### Changed

@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.5.0.0] — 2026-07-31
+
 ### Added
 
 - `Natural` now has a pinned `CanonicalTypeName` and belongs to the curated
@@ -27,6 +30,12 @@ and this project adheres to the
   from the symbolic numeric registry, including `Natural` arithmetic.
 - The fast pure overlap validator treats `Natural` as the exact integral
   interval `[0, infinity)`, so it can find non-literal interior witnesses.
+- The `OpaqueGuard` warning detail no longer names `TApp` specifically, since
+  the audit now covers unsupported `TArith` carriers too. Consumers asserting
+  on the exact message text will need to update.
+- PVP major bump: the `Sym` class definition gained `constrainSymDomain`. The
+  method has a default, so existing hand-written instances continue to compile
+  unchanged.
 
 
 ## [0.4.0.0] — 2026-07-28
