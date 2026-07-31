@@ -10,6 +10,10 @@
 * **Status change**: IR-2 `proposed` → `planned`. Accepted after technical validation;
   implementation is specified by ExecPlan 81
   (`docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`).
+* **Implementation progress**: IR-2's additive detailed step/replay API, exact erasure examples,
+  generated trace laws, documentation, and matched compatibility/detailed allocation benchmarks
+  are implemented locally. Status remains `planned` until the release is public on Hackage and a
+  matching annotated upstream tag resolves to that source.
 
 ## 2026-07-28
 * **Addition**: IR-1 requests typed symbolic field projections over mapped consumer-owned

@@ -30,12 +30,14 @@ report different `EdgeRef`s; live-first replay reports the live edge rather than
 twin; and a two-event edge followed by a one-event edge reports spans `[0,2)` and `[2,3)` while
 returning the same final state as `applyEventsEither`.
 
-Existing replay callers do not pay to build a trace they discard. The common private replay fold
-has a no-trace mode with O(1) auxiliary state and a collecting mode with O(number of completed
-edges) trace storage. `replayEvents`, `applyEventsEither`, and `reconstituteEither` use the former;
-only callers that opt into detailed replay use the latter. Forward `stepEither` keeps the simpler
-record-erasure implementation because its one short-lived success record is constant-size and not
-an asymptotic cost.
+Existing replay callers do not pay to build or thread a trace they discard. One private event
+kernel owns inversion, guard verification, update application, output-tail evaluation, queue
+comparison, and step failures. A compatibility loop gives that kernel pair-shaped success
+continuations and has no trace type in its state or result. A detailed loop gives the same kernel
+collecting continuations and retains O(number of completed edges) trace storage. `replayEvents`,
+`applyEventsEither`, and `reconstituteEither` use the former; only callers that opt into detailed
+replay use the latter. Forward `stepEither` keeps the simpler record-erasure implementation because
+its one short-lived success record is constant-size and not an asymptotic cost.
 
 The existing `jitsurei:keiki-bench` tasty-bench suite supplies before/after performance evidence.
 Before changing Core, it gains compatibility rows for `stepEither` and strict replay over both the
@@ -43,6 +45,10 @@ existing 32-event log and a 1,024-event log, and captures a CSV baseline with al
 After implementation, the same rows are compared against that file and new opt-in detailed rows
 measure the real trace cost by strictly consuming a metadata checksum. The benchmark complements,
 but does not replace, the semantic laws and the static no-trace call-graph gate.
+
+The compatibility benchmark also uses 4,096- and 16,384-event logs against a matched pre-refactor
+worktree. These larger scales exposed the original generic result's positive per-event allocation
+slope and then verified that the pair-shaped specialization removed it.
 
 This is one ExecPlan rather than a MasterPlan. The work has one implementation authority in
 `src/Keiki/Core.hs`, one public API surface, and one release. Splitting forward and replay detail
@@ -90,9 +96,38 @@ active parent initiative.
   cannot construct pending records, attribution records, or trace list cells. Detailed allocation
   above same-run compatibility was 0 B/7,593 B/245,479 B for builder and 0 B/7,593 B/245,494 B for
   AST; detailed timing ratios were 0.95x/0.99x/1.04x and 1.04x/1.05x/1.04x respectively.
-- [ ] Milestone 4: update Haddocks, user/foundation documentation, ADR-0002, the changelog, and
-  improvement-request and benchmark documentation.
-- [ ] Milestone 5: pass focused, benchmark, full-project, Haddock, Nix, OKF, and diff gates.
+- [x] (2026-07-31T21:51:27Z) Supplemental compatibility scale gate: added permanent 4,096- and
+  16,384-event rows and compared the current implementation twice with commit `2b3bf6a` in a
+  detached worktree under GHC 9.12.4. All eight rows passed. The repeat's builder allocation
+  deltas at 32/1,024/4,096/16,384 events were -144/+65,384/+262,042/+1,081,321 B; AST deltas were
+  -144/+65,413/+261,997/+1,081,075 B. The three larger rows are approximately 64/64/66 extra
+  B/event, proving a positive compatibility allocation slope rather than a one-time 64 KiB
+  measurement block. Repeat timing changes were builder +1.4%/+2.0%/+4.0%/+6.9% and AST
+  +0.9%/+2.0%/+1.2%/+11.6%. Evidence is in `/tmp/keiki-ep81-scale-before.csv`,
+  `/tmp/keiki-ep81-scale-after.csv`, and `/tmp/keiki-ep81-scale-after-repeat.csv`.
+- [x] (2026-07-31T22:31:04Z) Milestone 3b: replaced runtime `DiscardTrace` threading with a
+  pair-shaped compatibility fold and kept one continuation-shaped event kernel as the sole
+  inversion/update/queue/step-failure authority. All four focused suites passed. The complete
+  40-row benchmark passed, with detailed replay at 1.00--1.02x compatibility time. Against the
+  matched pre-refactor scale CSV, builder allocation deltas at 32/1,024/4,096/16,384 events were
+  0/-12/+37/+99 B and AST deltas were 0/0/-22/-79 B. The former 64--66 B/event slope is gone;
+  evidence is in `/tmp/keiki-ep81-scale-3b.csv` and `/tmp/keiki-ep81-3b.csv`.
+- [x] (2026-07-31T21:57:58Z) Milestone 4: drafted field-level Haddocks, user/foundation guidance,
+  the ADR-0002 refinement, Unreleased changelog entries, IR lifecycle notes, and benchmark operating
+  documentation. `cabal haddock keiki` completed successfully; its warnings are the existing
+  project-wide link and `Keiki.Symbolic.SymEnv` coverage warnings. These records remain on
+  `feat/detailed-attribution-traces` while Milestone 3b is unresolved.
+- [x] (2026-07-31T22:14:19Z) Released the unrelated `v0.6.0.0` work without Plan 81. Validated the
+  exact tagged commit `c8f2c343ce03f42e10de77d684769f15ad30feda` through formatting, repository
+  and clean-room source-distribution builds/tests, package checks, and Nix gates; advanced
+  public `master` only to that commit; published the existing annotated tag and GitHub release; and
+  resumed this branch at `1b5256f`.
+- [x] (2026-07-31T22:37:15Z) Milestone 5: `nix fmt`, `cabal build keiki`, all four focused suites,
+  the 40-row benchmark, `cabal test all`, `cabal haddock keiki`, and `nix flake check` passed under
+  GHC 9.12.4. Full-suite counts were Keiki 586, Jitsurei 122, codec 104, and codec-test 13 examples,
+  all with zero failures. Haddock retained only the existing project-wide link and coverage
+  warnings. Profile/log-enforced OKF validation reported `OK: 2 concepts`; strict validation still
+  reports only IR-1's pre-existing missing recommended `reviews` field. Diff whitespace is clean.
 - [ ] Milestone 6: reconcile release authority, publish the additive release through the repository
   release workflow, and record the final tag/version evidence.
 
@@ -103,20 +138,29 @@ active parent initiative.
   but added 171,914 B to the builder's 1,024-event compatibility row and slowed it by 33%. Marking
   the shared worker and its two trace transitions `INLINE` let GHC specialize the known nullary
   `DiscardTrace` branch: a repeat passed all six compatibility rows and reduced the long-row delta
-  to one 64 KiB allocation block. A continuation-return experiment produced the same allocation
-  and noisier timing, so it was discarded. Evidence: `/tmp/keiki-ep81-inline.csv` passed all six
-  rows; the retained final `/tmp/keiki-ep81-after.csv` passed all 12 attribution rows.
+  to one 64 KiB allocation block at 1,024 events. A continuation-return experiment produced the
+  same allocation and noisier timing, so it was discarded. The later 4,096- and 16,384-event scale
+  gate showed that interpreting the residual as a one-time allocator block was wrong: the delta
+  grew to approximately 256 KiB and 1.03 MiB, or about 64--66 B/event. Evidence:
+  `/tmp/keiki-ep81-inline.csv` passed all six original rows; the retained final
+  `/tmp/keiki-ep81-after.csv` passed all 12 original attribution rows; and the matched scale CSVs
+  are recorded in Progress.
+
+- Specializing only the result shape was sufficient. An inlined continuation-shaped event kernel
+  lets compatibility replay construct the historical pair while detailed replay constructs its
+  trace-bearing result. Separate list folds share that kernel and the failure-index constructor.
+  The exact four-size allocation deltas collapsed from approximately 64--66 B/event to values
+  between -79 B and +99 B for the whole run, with no event-count-proportional slope.
 
 - Cabal 3.16 splits `--test-options` on spaces after the shell has processed the outer quoting. A
   focused Hspec match containing spaces must preserve embedded quotes, for example
   `--test-options='--match "Keiki.Core structured replay"'`; the plan's original form passed
   `structured` as an unexpected standalone argument. The corrected command passed 13 examples.
 
-- The package registry and Git release authorities are temporarily out of sync. On 2026-07-31,
-  Hackage's `preferred.json` lists `0.6.0.0`, but `git ls-remote --tags origin` exposes tags only
-  through `v0.5.0.0`. A local annotated `v0.6.0.0` tag points to
-  `c8f2c343ce03f42e10de77d684769f15ad30feda` but is not public. Release work must not treat that
-  local tag as authoritative.
+- The package registry and Git release authorities were temporarily out of sync. Hackage already
+  listed `0.6.0.0`, while public Git exposed tags only through `v0.5.0.0`. After validating the
+  exact local annotated tag, public `master`, `v0.6.0.0`, and the GitHub release were published at
+  `c8f2c343ce03f42e10de77d684769f15ad30feda`; the authorities now agree without exposing Plan 81.
 
 - `RegFile rs` intentionally has no whole-value `Eq` or `Show` instance. Exact compatibility tests
   must compare state, outputs, and fixture-specific per-slot observations rather than compare a
@@ -207,6 +251,26 @@ active parent initiative.
   second evaluator. A continuation-return variant did not improve allocation and was reverted.
   Date: 2026-07-31
 
+- Decision: Treat the larger-scale compatibility allocation slope as a release blocker and
+  specialize the discard result shape before publication, while retaining one event-level
+  inversion/update/queue/failure authority.
+  Rationale: matched 1,024-, 4,096-, and 16,384-event rows repeatedly allocate approximately
+  64--66 additional bytes per event through compatibility replay. The nullary trace state prevents
+  attribution-record construction but does not recover the old pair-shaped result and fold. A
+  specialized compatibility result path is therefore required even though timing remains below
+  the provisional 20% threshold.
+  Date: 2026-07-31
+
+- Decision: Replace the runtime trace-policy sum with one inlined, continuation-shaped event
+  kernel plus two result-specific list folds. Compatibility success continuations construct only
+  `(InFlight, RegFile)`; detailed continuations alone update `ReplayTraceState`. Both folds use the
+  same helper to attach event indices to step failures.
+  Rationale: this is the smallest design that restores the pre-feature pair-shaped hot path while
+  retaining one authority for inversion, live-first selection, guards, updates, evaluated tails,
+  queue comparison, and step failures. The matched four-size gate removed the former 64--66
+  B/event allocation slope, while all erasure and exact-failure laws stayed green.
+  Date: 2026-07-31
+
 - Decision: Reuse and extend `jitsurei:keiki-bench`; do not create a new executable or change the
   existing tasty-bench dependency bound.
   Rationale: the checked-in harness already covers builder and AST transducers, has baseline and
@@ -238,8 +302,8 @@ active parent initiative.
   detailed/compatibility ratio.
   Rationale: tasty-bench itself describes its statistics as indicative and comparative; timing can
   be noisy, while same-build allocation deltas and the 32-versus-1,024 slope are stronger evidence
-  for accidental trace construction. The nullary discard state and call graph remain the hard
-  architectural guarantee.
+  for accidental trace construction. The pair-shaped compatibility fold, detailed-only trace
+  state, and shared event-kernel call graph remain the hard architectural guarantee.
   Date: 2026-07-31
 
 - Decision: Keep detailed replay strict and settled-to-settled. Do not add a public streaming trace
@@ -276,10 +340,23 @@ active parent initiative.
   but the release workflow must recompute the version after refreshing both authorities.
   Date: 2026-07-31
 
+- Decision: Preserve the incomplete attribution work on `feat/detailed-attribution-traces`, remove
+  Plan 81's implementation commits from `master`, release the unrelated accumulated changes, and
+  resume the performance decision from the feature branch afterward.
+  Rationale: the confirmed compatibility allocation slope blocks this feature's acceptance but
+  should not block unrelated, already releasable work. A named branch plus ordinary revert commits
+  preserves all source, tests, documentation, and benchmark evidence without rewriting history.
+  Date: 2026-07-31
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Interim outcome: the requested attribution semantics, laws, documentation, and benchmark evidence
+exist on `feat/detailed-attribution-traces`. Milestone 3b removed the approximately 64--66
+additional bytes per event from compatibility replay while preserving one semantic event kernel;
+the performance blocker is cleared. The feature remains deliberately absent from published
+`v0.6.0.0`; all Milestone 5 repository gates are green, so only the separately authorized additive
+release remains. The IR remains `planned` and no Plan 81 API has been published.
 
 
 ## Context and Orientation
@@ -422,7 +499,7 @@ an accepted epsilon-output case and a replay-only-only case. At the end of this 
 step tests compile and show that `stepEither` and `stepDetailedEither` cannot disagree without the
 single detailed implementation being wrong.
 
-### Milestone 2 — completed replay attribution with one replay fold
+### Milestone 2 — completed replay attribution with one event kernel
 
 In `src/Keiki/Core.hs`, add and export `ReplayEventSpan`, `ReplayAttribution`, and `ReplaySuccess`
 near the replay failure types. Spans are zero-based and half-open. `ReplayAttribution` repeats its
@@ -439,35 +516,35 @@ evaluated queue is consumed and appends one public attribution only when the las
 the wrapper `Settled`. Do not create a record for an edge whose output word is empty because replay
 never selects such an edge.
 
-Factor the event application and list fold so they remain the only authorities for inversion,
-guard checking, update application, evaluated-tail construction, queue equality, failure index,
-and failure wrapper. Parameterize only trace accumulation through a private state with two
-constructors. `DiscardTrace` contains no pending record and no list. `CollectTrace` contains the
-optional pending record and a strict reverse trace accumulator. Pattern-match on that state at the
-point where an attribution would start or complete; the discard branch must return the same
-nullary constructor without constructing attribution metadata.
+Factor event application into one inlined continuation-shaped kernel. It remains the sole authority
+for inversion, live-first selection, guard checking, update application, evaluated-tail
+construction, queue equality, and step failures. A head-success continuation receives the selected
+source, edge index, edge, evaluated tail, next wrapper, and registers. A tail-success continuation
+receives the remaining queue, next wrapper, and registers. The continuations choose only the result
+shape; they must not repeat semantic decisions.
 
-`applyEventStreamingEither`, `replayEvents`, `applyEventsEither`, and `reconstituteEither` call the
-shared internal machinery in `DiscardTrace` mode and return their current public shapes directly.
-They do not call `applyEventsDetailedEither`. `applyEventsDetailedEither` uses `CollectTrace`,
-rejects a final `InFlight` with the existing `ReplayLogTruncated` value, reverses the completed
-trace once at successful settlement, and returns `ReplaySuccess`. `reconstituteDetailedEither`
-supplies the initial seed and uses the same collecting path. The `Maybe` wrappers continue to
-delegate to the same compatibility `Either` functions.
+`applyEventStreamingEither`, `replayEvents`, `applyEventsEither`, and `reconstituteEither` supply
+compatibility continuations that construct the historical `(InFlight, RegFile)` pair. Their list
+fold has no trace type in its accumulator or result and never calls `applyEventsDetailedEither`.
+`applyEventsDetailedEither` uses a separate collecting fold whose private `ReplayTraceState` holds
+the optional pending record and a strict reverse trace accumulator. It rejects a final `InFlight`
+with the existing `ReplayLogTruncated` value, reverses the completed trace once at successful
+settlement, and returns `ReplaySuccess`. `reconstituteDetailedEither` supplies the initial seed and
+uses that collecting path. The `Maybe` wrappers continue to delegate to the compatibility `Either`
+functions.
 
-This design preserves a single semantic worker but two operational result policies. The
-compatibility policy has O(1) auxiliary state with respect to event/edge count; the detailed policy
-has O(k) retained trace storage for `k` completed edges, which is the explicit price of requesting
-the trace. A single mode branch per replay advance is acceptable. Do not retain a dormant empty
-list or a `Maybe PendingAttribution` in `DiscardTrace`, and do not build then discard entries.
+This design preserves one semantic event worker but two operational list folds. Compatibility has
+O(1) auxiliary state with respect to event/edge count; detailed replay has O(k) retained trace
+storage for `k` completed edges, which is the explicit price of requesting the trace. Share a small
+helper that attaches the current event index and wrapper to a kernel step failure so the folds
+cannot drift in failure classification. Do not build and then erase a trace entry.
 
-The private cursor must also handle `replayEvents` starting from an arbitrary public `InFlight`
-whose original selection metadata is unavailable. In discard mode, pending attribution is absent
-and tail comparison proceeds exactly as today. Do not expose an incomplete or fabricated trace for
-that case. At the end of this milestone, all pre-existing replay tests pass and new fixed examples
-show one attribution per completed edge. Inspect the Core diff before leaving the milestone and
-confirm every compatibility function seeds `DiscardTrace`, while only the two detailed functions
-seed `CollectTrace`.
+`replayEvents` must still accept an arbitrary public `InFlight` whose original selection metadata
+is unavailable; its pair fold simply continues tail comparison exactly as today. Detailed strict
+replay starts from a settled seed, so it never fabricates prior attribution. At the end of this
+milestone, all pre-existing replay tests pass and new fixed examples show one attribution per
+completed edge. Inspect the Core diff and confirm compatibility uses only the pair fold, detailed
+entry points alone carry `ReplayTraceState`, and both paths instantiate the same event kernel.
 
 ### Milestone 3 — executable laws and adversarial examples
 
@@ -492,8 +569,8 @@ and reason.
 Add a compatibility-path regression that replays a long synthetic list successfully through
 `applyEventsEither` and `reconstituteEither`, then the same list through the detailed operation.
 The behavioral assertions remain exact, but the operational guarantee is enforced primarily by
-the private state shape and call graph: the compatibility calls must select the nullary
-`DiscardTrace` branch, and only the detailed call may construct `CollectTrace` and public entries.
+the private state shape and call graph: compatibility calls must use the pair-shaped fold, and only
+the detailed call may construct `ReplayTraceState` and public entries.
 Do not add a timing threshold to Hspec; wall-clock thresholds are noisy and would not prove the
 O(1) auxiliary-memory property.
 
@@ -515,6 +592,12 @@ Compute the before/after allocation delta for 32 and 1,024 events. A delta whose
 completed edges is a blocking sign that compatibility replay is allocating trace-related data.
 The detailed rows are expected to allocate O(k) trace storage and may be noticeably slower; record
 their ratios as the measured cost of opting into attribution, not as a pass/fail threshold.
+
+Before accepting an apparent single-block compatibility delta, add compatibility-only 4,096- and
+16,384-event rows and compare them with the same rows applied to pre-refactor commit `2b3bf6a` in a
+detached worktree. If the byte delta divided by event count remains positive across the three
+larger sizes, treat it as a release-blocking slope and specialize the discard result path before
+rerunning the matched scale gate.
 
 Extend `test/Keiki/RoundTrip.hs` with a third permanent property in `roundTripSpec` and
 `roundTripSpecUnchecked`. Generate the existing command scripts, obtain the complete forward event
@@ -656,13 +739,14 @@ failure, and generated trace-law examples.
 After focused replay tests, inspect the performance-sensitive call graph:
 
 ```bash
-rg -n "DiscardTrace|CollectTrace|applyEventsDetailedEither|applyEventsEither|reconstituteEither|replayEvents" \
+rg -n "ReplayTraceState|applyEventKernel|applyEventsDetailedEither|applyEventsEither|reconstituteEither|replayEvents" \
   src/Keiki/Core.hs
 ```
 
-The output must show every compatibility list replay seeded with `DiscardTrace`, only detailed
-entry points seeded with `CollectTrace`, and no compatibility call routed through a public detailed
-operation. This static gate complements behavior tests; no flaky wall-clock threshold is used.
+The output must show compatibility replay using the pair-shaped `replayEvents` fold, detailed
+entry points alone using `ReplayTraceState`, and both paths calling `applyEventKernel`. No
+compatibility call may route through a public detailed operation. This static gate complements
+behavior tests; no flaky wall-clock threshold is used.
 
 Run the completed benchmark suite against the pre-refactor CSV and retain allocation data in the
 post-change CSV:
@@ -678,6 +762,20 @@ comparison; their `bcompare` ratios are the within-run evidence. For compatibili
 both timing and allocation columns at 32 and 1,024 events. Repeat any row reported more than 20%
 slower before concluding that it regressed. A repeatable event-count-proportional allocation delta
 blocks completion until its source is understood and shown not to be discarded attribution.
+
+For the supplementary scale gate, use a detached worktree at commit `2b3bf6a`, apply the same
+4,096- and 16,384-event fixture rows there, and capture only the compatibility replay leaves:
+
+```bash
+cabal bench jitsurei:keiki-bench \
+  --benchmark-options='-p /applyEventsEither/ --csv /tmp/keiki-ep81-scale-before.csv +RTS -T -RTS'
+
+cabal bench jitsurei:keiki-bench \
+  --benchmark-options='-p /applyEventsEither/ --baseline /tmp/keiki-ep81-scale-before.csv --csv /tmp/keiki-ep81-scale-after.csv +RTS -T -RTS'
+```
+
+The first command runs in the pre-refactor worktree and the second in the current repository. Run
+the second command twice. Compare exact `Allocated` columns rather than rounded console units.
 
 Format and run the complete implementation gates:
 
@@ -763,22 +861,22 @@ same `ReplayFailure` index, pre-failure `InFlight` wrapper, and reason through d
 compatibility APIs. On any `Left`, no partial trace is exposed. Existing `replayEvents` behavior
 from an arbitrary mid-chain seed remains green.
 
-Compatibility replay retains O(1) auxiliary trace state regardless of log length: its call graph
-uses the nullary `DiscardTrace` policy and cannot construct `PendingAttribution`,
-`ReplayAttribution`, or a trace list. Detailed replay alone uses `CollectTrace` and retains O(k)
-entries for `k` completed edges. The two policies call the same inversion/update/queue/failure
-worker, so this performance separation does not create a second evaluator. Forward `stepEither`
-may erase one constant-size `StepSuccess`; no stronger allocation promise is made without
-measurement.
+Compatibility replay retains O(1) auxiliary state regardless of log length: its pair-shaped fold
+and success continuations cannot construct `ReplayTraceState`, `PendingAttribution`,
+`ReplayAttribution`, or a trace list. Detailed replay alone carries `ReplayTraceState` and retains
+O(k) entries for `k` completed edges. Both folds call the same inlined
+inversion/update/queue/step-failure kernel, so this result specialization does not create a second
+evaluator. Forward `stepEither` may erase one constant-size `StepSuccess`; no stronger allocation
+promise is made without measurement.
 
 The existing `jitsurei:keiki-bench` suite contains stable compatibility rows captured before the
 Core refactor and matching rows after it, plus opt-in detailed rows whose strict scalar digests
 consume all attribution metadata. The post-change run uses the same GHC, optimization/alignment
 settings, fixture values, and benchmark names as the baseline. No compatibility row has an
 unexplained repeatable slowdown above 20%. More importantly, the before/after compatibility
-allocation delta from 32 to 1,024 events has no positive slope attributable to pending records,
-attribution records, or trace list cells. Detailed replay's timing ratio and O(k) allocation are
-recorded as an explicit opt-in cost, not treated as a compatibility failure.
+allocation deltas at 32, 1,024, 4,096, and 16,384 events have no positive event-count-proportional
+slope. Detailed replay's timing ratio and O(k) allocation are recorded as an explicit opt-in cost,
+not treated as a compatibility failure.
 
 Haddocks and user/foundation documentation state all local-identity, half-open-span, partition,
 path, live-first, multi-event completion, epsilon-observability, and erasure laws. ADR-0002 carries
@@ -804,9 +902,9 @@ are disposable, untracked evidence; record the significant rows in Progress or O
 removing them. If a later run uses a different compiler or optimization setting, capture a new
 matched before/after pair rather than comparing unlike builds.
 
-If the replay refactor fails partway, keep compatibility functions delegating to the last compiling
-shared internal function in `DiscardTrace` mode and finish one call path at a time. Never restore a
-green build by routing compatibility through `CollectTrace` and erasing the result; that masks the
+If the replay refactor fails partway, keep compatibility functions on the pair-shaped fold around
+the last compiling shared event kernel and finish one call path at a time. Never restore a green
+build by routing compatibility through `ReplayTraceState` and erasing the result; that masks the
 performance invariant. A failed focused test requires only a code/test correction and rerun; no
 database or generated state needs cleanup. Cabal's
 `dist-newstyle` is disposable build output, but do not remove it unless a compiler cache problem is
@@ -889,21 +987,20 @@ record-field conventions; any change must be recorded in the Decision Log and pr
 Haddocks, tests, and this interface section. Do not add `Eq` or `Show` constraints to `RegFile` or
 the operations merely to make result records derivable.
 
-The private implementation introduces a trace policy shaped like the following; exact field names
-may follow local conventions, but the nullary discard constructor is a requirement:
+The private implementation introduces a cursor used only by detailed replay; exact field names may
+follow local conventions:
 
 ```haskell
 data ReplayTraceState s
-  = DiscardTrace
-  | CollectTrace
+  = ReplayTraceState
       !(Maybe (PendingAttribution s))
       ![ReplayAttribution s]
 ```
 
-`PendingAttribution` and the trace-aware replay cursor remain private. The `DiscardTrace` branch
-must not allocate either. The public `InFlight`, `ReplayFailure`, `ReplayStepFailure`,
-`StepFailure`, and existing operation signatures remain source-compatible. The public detailed
-span and attribution metadata are strict enough to avoid retaining event values or commands
+`PendingAttribution` and the trace-aware replay cursor remain private and must be unreachable from
+the pair-shaped compatibility fold. The public `InFlight`, `ReplayFailure`, `ReplayStepFailure`,
+`StepFailure`, and existing operation signatures remain source-compatible. The public detailed span
+and attribution metadata are strict enough to avoid retaining event values or commands
 accidentally; use strict `Int` and state fields consistently with existing failure records where
 appropriate.
 
@@ -914,13 +1011,31 @@ dependencies in `keiki.cabal`; no bound changes are needed. Mori identifies this
 `mori://shinzui/keiro/packages/keiro-dsl`.
 
 
-Revision note (2026-07-31): Revised the replay architecture after performance review. Compatibility
-replay now uses a nullary `DiscardTrace` policy with O(1) auxiliary state, detailed replay alone
-uses `CollectTrace`, and the plan explicitly rejects building then erasing a trace. Forward erasure
-remains simple because its possible cost is one constant-size success record rather than a
-log-length allocation.
+Revision note (2026-07-31): Recorded the initial replay architecture after performance review.
+Compatibility replay used a nullary `DiscardTrace` policy with O(1) auxiliary state, detailed
+replay alone used `CollectTrace`, and the plan rejected building then erasing a trace. Milestone 3b
+later superseded the runtime policy with a pair-shaped compatibility fold after scale benchmarks
+exposed residual per-event allocation. Forward erasure remains simple because its possible cost is
+one constant-size success record rather than a log-length allocation.
 
 Revision note (2026-07-31): Integrated the existing `jitsurei:keiki-bench` tasty-bench harness.
 The plan now captures compatibility timing and allocation evidence before the Core refactor, uses
 32- and 1,024-event logs to detect a trace-sized allocation slope, strictly consumes detailed trace
 metadata, and records opt-in detailed cost separately from compatibility regression gates.
+
+Revision note (2026-07-31): Expanded the compatibility allocation gate to 4,096 and 16,384 events
+after the 1,024-event delta could be mistaken for one runtime-system allocation block. Matched
+pre-refactor measurements prove approximately 64--66 extra allocated bytes per event, so discard
+result specialization is now an explicit pre-release blocker.
+
+Revision note (2026-07-31): Recorded the decision to preserve Plan 81 on
+`feat/detailed-attribution-traces`, release unrelated work from `master` without the attribution
+changes, and resume the specialized-discard investigation from this branch afterward.
+
+Revision note (2026-07-31): Recorded the completed intervening `v0.6.0.0` release, including exact
+tag validation, public Git/GitHub reconciliation, exclusion of Plan 81, and return to the feature
+branch at Milestone 3b.
+
+Revision note (2026-07-31): Completed Milestone 3b with a pair-shaped compatibility fold and one
+continuation-shaped event kernel. The matched four-size gate shows no event-count-proportional
+allocation delta, so the performance release blocker is cleared.

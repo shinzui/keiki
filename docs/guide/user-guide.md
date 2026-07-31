@@ -590,10 +590,13 @@ operations are in `Keiki.Core`:
 | `omega t s regs ci` | `[co]` | Events emitted by the unique firing edge (`[]` for ε) |
 | `step t (s, regs) ci` | `Maybe (s, RegFile rs, [co])` | `delta` and `omega` paired; the event list is `[]` for an ε-edge and length-2+ for a multi-event edge |
 | `stepEither t (s, regs) ci` | `Either (StepFailure s) (s, RegFile rs, [co])` | like `step`, but on rejection returns *why* instead of `Nothing` |
+| `stepDetailedEither t (s, regs) ci` | `Either (StepFailure s) (StepSuccess rs s co)` | Forward step plus the exact selected local `EdgeRef` and `Live` mode |
 | `applyEventStreamingEither t wrapper regs co` | `Either (ReplayStepFailure s co) (InFlight s co, RegFile rs)` | Replay one observed event with exact inversion/queue diagnostics |
 | `replayEvents t seed events` | `Either (ReplayFailure s co) (InFlight s co, RegFile rs)` | Replay from any streaming seed; a page may end `InFlight` |
 | `applyEventsEither t seed events` | `Either (ReplayFailure s co) (s, RegFile rs)` | Strict chunk replay; rejects a truncated multi-event chain |
+| `applyEventsDetailedEither t seed events` | `Either (ReplayFailure s co) (ReplaySuccess rs s)` | Strict chunk replay plus an ordered completed-edge attribution trace |
 | `reconstituteEither t events` | `Either (ReplayFailure s co) (s, RegFile rs)` | Strict full-log replay from the transducer's initial state |
+| `reconstituteDetailedEither t events` | `Either (ReplayFailure s co) (ReplaySuccess rs s)` | Detailed strict replay from the initial state |
 
 `delta`, `omega`, and `applyEvent` use **concrete predicate
 evaluation** (`evalPred`) — there is no solver in this path.
@@ -619,7 +622,42 @@ hide. It is the runtime witness of the same property `validateTransducer`'s
 (§8). Treat it as a defect, not an ordinary rejection. Keep `step` on hot
 paths where a bare accept/reject is enough.
 
-### 5.1 Structured replay failures
+### 5.1 Attributing successful edges
+
+Use `stepDetailedEither` when success must identify the declared edge that
+actually ran. Its `StepSuccess` contains the selected `EdgeRef`, `Live` mode,
+post-state, registers, and ordered outputs. Erasing the edge and mode gives the
+exact `stepEither` success; both operations return the same `StepFailure`.
+
+An `EdgeRef` is a source vertex plus a zero-based position in `edgesOut` for
+one concrete transducer construction. It is excellent diagnostic and runtime
+evidence, but it is not a durable semantic identifier: reordering outgoing
+edge declarations changes the index. Do not persist it as an application
+contract. Equal targets, outputs, or post-state observations also do not prove
+edge identity—distinct guarded siblings can share all three.
+
+`applyEventsDetailedEither` and `reconstituteDetailedEither` return a
+`ReplaySuccess` whose trace factors the observed event word by completed edge.
+Each `ReplayAttribution` records the exact local edge, the actual `Live` or
+`ReplayOnly` phase, source and target, a zero-based half-open span `[start,end)`,
+and its positive event count. Empty input returns an empty trace. For non-empty
+successful input, spans partition `[0,length events)` without gaps or overlap,
+counts equal span lengths and declared output-word lengths, adjacent entries
+form a source/target path, and the final target is the returned state.
+
+Replay remains live-first: a matching live edge wins over a replay-only twin.
+A multi-event edge contributes one entry only after its complete pending tail
+has matched; tail events are not separate transitions. Epsilon-output edges are
+observable through detailed forward stepping but cannot appear in a replay
+trace because they consume no stored event. A failed or truncated strict replay
+returns the exact existing `ReplayFailure` and no partial trace.
+
+Compatibility replay calls the same evaluator with a nullary no-trace policy
+and keeps O(1) auxiliary trace state. Detailed replay deliberately retains O(k)
+entries for k completed edges. Choose it when attribution is needed; existing
+hydration paths do not materialize and erase a trace.
+
+### 5.2 Structured replay failures
 
 The release API deliberately has no `Keiki.Decider` façade. Its
 defensive `evolve` policy could silently retain the old state after a
@@ -642,7 +680,7 @@ functions remain `Maybe` compatibility wrappers. Prefer the `Either`
 surface in new runtime code so a corrupt or incompatible log is never
 reported as an undifferentiated `Nothing`.
 
-### 5.2 The Acceptor façade
+### 5.3 The Acceptor façade
 
 `Keiki.Acceptor` projects a transducer onto a minimal
 `Acceptor a s` over either alphabet:

@@ -8,6 +8,20 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `StepSuccess` and `stepDetailedEither` expose the exact construction-local
+  `EdgeRef`, `Live` mode, post-state, registers, and ordered output word selected
+  by forward execution. `stepEither` preserves its signature and erases this
+  proof-relevant success without changing failures.
+- `ReplayEventSpan`, `ReplayAttribution`, `ReplaySuccess`,
+  `applyEventsDetailedEither`, and `reconstituteDetailedEither` expose an
+  ordered completed-edge factorization of a successful strict replay. Spans
+  are zero-based and half-open, multi-event tails complete one attribution,
+  live-first mode is reported exactly, and epsilon-output edges remain
+  unobservable in replay. Existing replay functions share the evaluator but
+  retain a nullary no-trace policy and O(1) auxiliary trace state.
+
 
 ## [0.6.0.0] — 2026-07-31
 

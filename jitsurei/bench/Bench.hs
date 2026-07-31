@@ -57,12 +57,10 @@ t s = UTCTime (fromGregorian 2026 5 1) (secondsToDiffTime s)
 
 -- * UserRegistration fixtures -----------------------------------------------
 
--- | A length-32 UserRegistration replay log. Walks PotentialCustomer
--- -> Registering -> RequiresConfirmation, then loops 'Resend' 28
--- times (each rotates the confirmation code), then completes via
--- AccountConfirmed -> Confirmed -> Deleted. Total: 4 + 28 = 32 events.
-urLog :: [UR.UserEvent]
-urLog =
+-- | Construct a valid UserRegistration replay log with the requested number
+-- of confirmation-code rotations. The total event count is @resends + 4@.
+urReplayLog :: Int -> [UR.UserEvent]
+urReplayLog resends =
   UR.RegistrationStarted (UR.RegistrationStartedData "alice@x" "C0000" (t 0))
     : UR.ConfirmationEmailSent (UR.ConfirmationEmailSentData "alice@x")
     : [ UR.ConfirmationResent
@@ -71,10 +69,16 @@ urLog =
               (T.pack ("C" <> pad4 i))
               (t (fromIntegral i))
           )
-      | i <- [1 .. 28 :: Int]
+      | i <- [1 .. resends]
       ]
-    ++ [ UR.AccountConfirmed (UR.AccountConfirmedData "alice@x" "C0028" (t 1000)),
-         UR.AccountDeleted (UR.AccountDeletedData "alice@x" (t 2000))
+    ++ [ UR.AccountConfirmed
+           ( UR.AccountConfirmedData
+               "alice@x"
+               (T.pack ("C" <> pad4 resends))
+               (t (fromIntegral resends + 1))
+           ),
+         UR.AccountDeleted
+           (UR.AccountDeletedData "alice@x" (t (fromIntegral resends + 2)))
        ]
   where
     pad4 :: Int -> String
@@ -84,31 +88,27 @@ urLog =
       | n < 1000 = "0" <> show n
       | otherwise = show n
 
+-- | A length-32 UserRegistration replay log. Walks PotentialCustomer
+-- -> Registering -> RequiresConfirmation, then loops 'Resend' 28
+-- times (each rotates the confirmation code), then completes via
+-- AccountConfirmed -> Confirmed -> Deleted. Total: 4 + 28 = 32 events.
+urLog :: [UR.UserEvent]
+urLog = urReplayLog 28
+
 -- | A length-1,024 UserRegistration replay log. This follows the
 -- same trajectory as 'urLog', with 1,020 confirmation-code rotations
 -- before confirmation and deletion.
 urLongLog :: [UR.UserEvent]
-urLongLog =
-  UR.RegistrationStarted (UR.RegistrationStartedData "alice@x" "C0000" (t 0))
-    : UR.ConfirmationEmailSent (UR.ConfirmationEmailSentData "alice@x")
-    : [ UR.ConfirmationResent
-          ( UR.ConfirmationResentData
-              "alice@x"
-              (T.pack ("C" <> pad4 i))
-              (t (fromIntegral i))
-          )
-      | i <- [1 .. 1020 :: Int]
-      ]
-    ++ [ UR.AccountConfirmed (UR.AccountConfirmedData "alice@x" "C1020" (t 2000)),
-         UR.AccountDeleted (UR.AccountDeletedData "alice@x" (t 3000))
-       ]
-  where
-    pad4 :: Int -> String
-    pad4 n
-      | n < 10 = "000" <> show n
-      | n < 100 = "00" <> show n
-      | n < 1000 = "0" <> show n
-      | otherwise = show n
+urLongLog = urReplayLog 1020
+
+-- | A length-4,096 replay log used to distinguish constant allocation-block
+-- noise from event-count-proportional compatibility overhead.
+urScaleLog4096 :: [UR.UserEvent]
+urScaleLog4096 = urReplayLog 4092
+
+-- | A length-16,384 replay log used for the same allocation-slope check.
+urScaleLog16384 :: [UR.UserEvent]
+urScaleLog16384 = urReplayLog 16380
 
 -- | A single command for the per-step UserRegistration benches:
 -- 'StartRegistration', the canonical first transition.
@@ -267,7 +267,9 @@ compatibilityProbes form tr =
     form
     [ bench "stepEither" $ nf (urStepEitherCompatDigest tr) urCmd,
       bench "applyEventsEither-32" $ nf (urApplyEventsEitherCompatDigest tr) urLog,
-      bench "applyEventsEither-1024" $ nf (urApplyEventsEitherCompatDigest tr) urLongLog
+      bench "applyEventsEither-1024" $ nf (urApplyEventsEitherCompatDigest tr) urLongLog,
+      bench "applyEventsEither-4096" $ nf (urApplyEventsEitherCompatDigest tr) urScaleLog4096,
+      bench "applyEventsEither-16384" $ nf (urApplyEventsEitherCompatDigest tr) urScaleLog16384
     ]
 
 modeDigest :: EdgeMode -> Int
