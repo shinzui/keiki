@@ -1,6 +1,7 @@
 module Keiki.OperatorsSpec (spec) where
 
 import Keiki.Core
+import Numeric.Natural (Natural)
 import Test.Hspec
 
 -- A trivial command type; the operators here never read it.
@@ -72,6 +73,9 @@ spec = do
       n (lit 2 .+ lit 3 .* lit 4) `shouldBe` 14
     it "arithmetic feeds a comparison without parens" $
       p (lit (10 :: Int) .<= lit 3 .* lit 4) `shouldBe` True
+    it "Natural subtraction is total monus" $ do
+      evalTerm (lit (2 :: Natural) .- lit 5) RNil NoCmd `shouldBe` 0
+      evalTerm (lit (7 :: Natural) .- lit 5) RNil NoCmd `shouldBe` 2
 
   describe "type synonyms" $
     it "Pred is interchangeable with HsPred" $

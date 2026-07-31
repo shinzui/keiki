@@ -155,8 +155,8 @@ opaqueT =
       isFinal = (== Mid)
     }
 
--- Natural equality and ordering are symbolic, but generic TArith is opaque
--- because its type-wide registry would also expose partial subtraction.
+-- Natural equality, ordering, and total arithmetic are symbolic. Subtraction
+-- is monus in both concrete and symbolic evaluation.
 type NaturalRegs = '[ '("n", Natural)]
 
 naturalIdx :: Index NaturalRegs Natural
@@ -476,9 +476,9 @@ spec = do
     it "an opaque collection-style guard is flagged when the audit is on" $
       validateTransducer optsOn opaqueT `shouldSatisfy` any isOpaqueStart
 
-    it "unsupported Natural arithmetic is flagged when the audit is on" $
+    it "total Natural arithmetic remains structural" $
       validateTransducer optsOn naturalArithmeticOpaqueT
-        `shouldSatisfy` any isOpaqueStart
+        `shouldSatisfy` (not . any isOpaqueStart)
 
     it "supported Int arithmetic remains structural" $ do
       let isOpaque (OpaqueGuard {}) = True

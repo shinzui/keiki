@@ -316,8 +316,10 @@ instance
 
 -- * Term language ----------------------------------------------------------
 
--- | A numeric operation carried by 'TArith'. @OpAdd@\/@OpSub@\/@OpMul@
--- are @+@\/@-@\/@*@ respectively. Kept as a single tag (rather than
+-- | A numeric operation carried by 'TArith'. @OpAdd@ and @OpMul@ are
+-- @+@ and @*@ respectively. @OpSub@ is ordinary subtraction except for
+-- 'Natural', where it is total monus: @a - b = max 0 (a - b)@. Kept as a
+-- single tag (rather than
 -- three 'Term' constructors) so each total 'Term' walker switches on
 -- one value; the three directions are recovered by the smart
 -- constructors 'tadd'\/'tsub'\/'tmul'.
@@ -428,7 +430,9 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
   --     guard over a /computed/ value — a weighted sum, a derived cap — is
   --     visible to the solver. The 'Num' constraint prevents constructing
   --     arithmetic at non-numeric operand types; 'Typeable' lets the SBV
-  --     translator dispatch on @r@. Build with 'tadd'\/'tsub'\/'tmul'.
+  --     translator dispatch on @r@. 'Natural' subtraction is total monus in
+  --     both evaluators rather than the partial 'Num' method. Build with
+  --     'tadd'\/'tsub'\/'tmul'.
   TArith ::
     (Num r, Typeable r) =>
     NumOp ->
@@ -894,7 +898,9 @@ lit = TLit
 -- build a 'TArith' over @+@\/@-@\/@*@. The operand type must be numeric
 -- ('Num') and 'Typeable'; the SBV translator reads them structurally
 -- (see 'Keiki.Symbolic.discoverSymNum'), unlike the opaque 'TApp'
--- escape hatches.
+-- escape hatches. For 'Natural', 'tsub' deliberately means total monus:
+-- @tsub a b@ evaluates to zero when @b > a@. It never calls the partial
+-- 'Natural' subtraction operation on an underflowing pair.
 tadd,
   tsub,
   tmul ::
@@ -1008,11 +1014,16 @@ evalTerm (TFieldProj witness base) regs ci =
               ++ icName ic
           )
 
--- | Interpret a 'NumOp' tag as the corresponding numeric operation.
--- The 'Num' evidence is supplied by matching the 'TArith' constructor.
-applyNumOp :: (Num r) => NumOp -> r -> r -> r
+-- | Interpret a 'NumOp' tag as the corresponding total operation. The 'Num'
+-- and 'Typeable' evidence is supplied by matching the 'TArith' constructor.
+-- 'Natural' subtraction is special-cased to monus before invoking @(-)@ so
+-- concrete evaluation cannot throw @Underflow@.
+applyNumOp :: forall r. (Num r, Typeable r) => NumOp -> r -> r -> r
 applyNumOp OpAdd = (+)
-applyNumOp OpSub = (-)
+applyNumOp OpSub =
+  case eqTypeRep (typeRep @r) (typeRep @Natural) of
+    Just HRefl -> \a b -> if a >= b then a - b else 0
+    Nothing -> (-)
 applyNumOp OpMul = (*)
 
 -- | Evaluate an 'OutTerm' against a register file and an input symbol.
@@ -2053,7 +2064,7 @@ data TransducerValidationWarning s
       }
   | -- | An edge whose guard contains a term the symbolic translator must make
     --       opaque. This includes 'TApp' closures and 'TArith' at a carrier outside
-    --       the symbolic numeric registry (for example 'Natural'). The solver uses
+    --       the symbolic numeric registry. The solver uses
     --       a fresh domain-valid variable for such a term, so the result remains
     --       sound but loses precision. Most opaque guards are collection-content
     --       conditions lifted through a closure; see the user guide and

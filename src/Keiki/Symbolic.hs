@@ -62,6 +62,9 @@ module Keiki.Symbolic
     translateTermSym,
     translatePred,
     constrainFieldProjection,
+    PredicateVerification (..),
+    predicateTranslationExact,
+    verifyPredicate,
 
     -- * Symbolic predicate wrapper
     SymPred (..),
@@ -323,10 +326,10 @@ data SymNumDict r where
 -- 'discoverSymOrd'. Returns @Just SymNumDict@ for the numeric types
 -- whose 'SymRep' is the SBV-'Num' 'Integer' ('Int', 'Integer', and the
 -- fixed-width integers 'Word8' \/ 'Word16' \/ 'Word32' \/ 'Word64' \/
--- 'Int32' \/ 'Int64'); 'Nothing' otherwise. 'Natural' is omitted because
--- its subtraction is partial and throws @Underflow@ for a negative result,
--- unlike ordinary SMT integer subtraction. 'Bool', 'Text', and 'UTCTime' are
--- also omitted. A 'Nothing'
+-- 'Int32' \/ 'Int64'), plus 'Natural'. Natural subtraction has the explicit
+-- total monus meaning shared with concrete 'evalTerm'; it is translated as
+-- @ite (a >= b) (a - b) 0@ rather than ordinary integer subtraction.
+-- 'Bool', 'Text', and 'UTCTime' are omitted. A 'Nothing'
 -- makes the 'TArith' translator fall back to a fresh opaque variable,
 -- exactly as 'goEq' \/ 'goCmp' fall back for non-'Sym' operands —
 -- sound, just imprecise. (The 'Num' constraint on the 'TArith'
@@ -337,6 +340,7 @@ discoverSymNum :: forall r. (Typeable r) => Maybe (SymNumDict r)
 discoverSymNum = case discoverSymbolicType @r of
   Just SymbolicInt -> Just SymNumDict
   Just SymbolicInteger -> Just SymNumDict
+  Just SymbolicNatural -> Just SymNumDict
   Just SymbolicWord64 -> Just SymNumDict
   Just SymbolicWord32 -> Just SymNumDict
   Just SymbolicWord16 -> Just SymNumDict
@@ -346,7 +350,6 @@ discoverSymNum = case discoverSymbolicType @r of
   Just SymbolicBool -> Nothing
   Just SymbolicText -> Nothing
   Just SymbolicUTCTime -> Nothing
-  Just SymbolicNatural -> Nothing
   Nothing -> Nothing
 
 -- | Lift a concrete value to an SBV literal of its 'SymRep'.
@@ -507,11 +510,15 @@ translateTermSym env (TArith op a b) = case discoverSymNum @r of
   Just SymNumDict -> do
     sa <- translateTermSym env a
     sb <- translateTermSym env b
-    let apply = case op of
-          OpAdd -> (+)
-          OpSub -> (-)
-          OpMul -> (*)
-    pure (apply sa sb)
+    case (discoverSymbolicType @r, op) of
+      (Just SymbolicNatural, OpSub) ->
+        pure (SBV.ite (sa SBV..>= sb) (sa - sb) 0)
+      _ -> do
+        let apply = case op of
+              OpAdd -> (+)
+              OpSub -> (-)
+              OpMul -> (*)
+        pure (apply sa sb)
 translateTermSym env (TFieldProj (witness :: FieldWitness projection) base) =
   memoFree @r env (projectionVarKey witness base)
 
@@ -658,6 +665,89 @@ translatePred env = go
               CmpGt -> (SBV..>)
               CmpGe -> (SBV..>=)
         pure (apply sa sb)
+
+-- | A conservative answer from 'verifyPredicate'. The two @Verified@
+-- constructors mean every predicate node translated structurally and the
+-- solver returned a definite result. Opaque Haskell applications, unsupported
+-- carrier dictionaries, solver timeouts or @Unknown@, and solver failures are
+-- represented explicitly and must not be treated as successful verification.
+data PredicateVerification
+  = VerifiedSatisfiable
+  | VerifiedUnsatisfiable
+  | UnverifiedOpaque
+  | UnverifiedSolverUnknown String
+  | UnverifiedSolverFailure String
+  deriving stock (Eq, Show)
+
+-- | Whether every node in a predicate has an exact structural symbolic
+-- translation. This is stricter than merely being accepted by 'translatePred',
+-- whose compatibility fallback intentionally replaces unsupported pieces with
+-- fresh variables.
+predicateTranslationExact :: forall rs ci. HsPred rs ci -> Bool
+predicateTranslationExact = goPred
+  where
+    goPred :: HsPred rs ci -> Bool
+    goPred PTop = True
+    goPred PBot = True
+    goPred (PAnd p q) = goPred p && goPred q
+    goPred (POr p q) = goPred p && goPred q
+    goPred (PNot p) = goPred p
+    goPred (PEq a b) = exactEquality a b
+    goPred (PInCtor _) = True
+    goPred PLeftArm = True
+    goPred PRightArm = True
+    goPred (PCmp _ a b) = exactOrdering a b
+
+    exactEquality ::
+      forall r ifs1 ifs2.
+      (Typeable r) =>
+      Term rs ci ifs1 r ->
+      Term rs ci ifs2 r ->
+      Bool
+    exactEquality a b = case discoverSym @r of
+      Nothing -> False
+      Just SymDict -> exactTerm a && exactTerm b
+
+    exactOrdering ::
+      forall r ifs1 ifs2.
+      (Typeable r) =>
+      Term rs ci ifs1 r ->
+      Term rs ci ifs2 r ->
+      Bool
+    exactOrdering a b = case discoverSymOrd @r of
+      Nothing -> False
+      Just SymOrdDict -> exactTerm a && exactTerm b
+
+    exactTerm :: forall ifs r. (Sym r) => Term rs ci ifs r -> Bool
+    exactTerm (TLit _) = True
+    exactTerm (TReg _) = True
+    exactTerm (TInpCtorField _ _) = True
+    exactTerm (TApp1 _ _) = False
+    exactTerm (TApp2 _ _ _) = False
+    exactTerm (TArith _ a b) = case discoverSymNum @r of
+      Nothing -> False
+      Just SymNumDict -> exactTerm a && exactTerm b
+    exactTerm TFieldProj {} = True
+
+-- | Translate and solve one predicate without collapsing uncertainty into a
+-- Boolean. Exact translations produce a verified satisfiable or unsatisfiable
+-- answer. Any opaque fallback is rejected before invoking the solver, and
+-- every non-definite solver result remains visibly unverified.
+verifyPredicate :: HsPred rs ci -> IO PredicateVerification
+verifyPredicate predicate
+  | not (predicateTranslationExact predicate) = pure UnverifiedOpaque
+  | otherwise = do
+      result <- SBV.sat $ do
+        env <- mkSymEnv
+        translatePred env predicate
+      pure $ case result of
+        SBV.SatResult status -> case status of
+          SBV.Satisfiable {} -> VerifiedSatisfiable
+          SBV.Unsatisfiable {} -> VerifiedUnsatisfiable
+          SBV.Unknown {} -> UnverifiedSolverUnknown "solver returned Unknown"
+          SBV.ProofError {} -> UnverifiedSolverFailure "solver returned ProofError"
+          SBV.DeltaSat {} -> UnverifiedSolverUnknown "solver returned DeltaSat"
+          SBV.SatExtField {} -> UnverifiedSolverUnknown "solver returned SatExtField"
 
 -- * Symbolic predicate wrapper ----------------------------------------------
 

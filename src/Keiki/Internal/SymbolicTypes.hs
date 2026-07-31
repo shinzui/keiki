@@ -69,6 +69,7 @@ symbolicTypeSupportsOrdering _ = True
 symbolicTypeSupportsNumeric :: SymbolicType r -> Bool
 symbolicTypeSupportsNumeric SymbolicInt = True
 symbolicTypeSupportsNumeric SymbolicInteger = True
+symbolicTypeSupportsNumeric SymbolicNatural = True
 symbolicTypeSupportsNumeric SymbolicWord64 = True
 symbolicTypeSupportsNumeric SymbolicWord32 = True
 symbolicTypeSupportsNumeric SymbolicWord16 = True

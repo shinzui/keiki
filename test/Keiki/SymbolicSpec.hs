@@ -410,7 +410,7 @@ spec = do
         (PCmp CmpGt (lit (1 :: Natural)) (lit 2) :: HsPred '[] AmtCmd)
         `shouldBe` True
 
-    it "extracts a valid Natural witness and withholds generic arithmetic" $ do
+    it "extracts a valid Natural witness and exposes total arithmetic" $ do
       case symSatExt
         ( PAnd
             (PInCtor inCtorAmtTick)
@@ -421,9 +421,23 @@ spec = do
         Just (registers, command) -> do
           registers ! naturalIdx `shouldSatisfy` (>= 3)
           command `shouldBe` AmtTick
-      case discoverSymNum @Natural of
-        Nothing -> pure ()
-        Just _ -> expectationFailure "Natural must not use ordinary integer arithmetic"
+      isJust (discoverSymNum @Natural) `shouldBe` True
+
+    it "gives Natural subtraction the same total monus meaning concretely and symbolically" $ do
+      let underflowing = tsub (lit (2 :: Natural)) (lit 5)
+          ordinary = tsub (lit (9 :: Natural)) (lit 4)
+      evalTerm underflowing RNil AmtTick `shouldBe` 0
+      evalTerm ordinary RNil AmtTick `shouldBe` 5
+      verifyPredicate (underflowing .== lit 0 :: HsPred '[] AmtCmd)
+        `shouldReturn` VerifiedSatisfiable
+      proveP (underflowing .== lit 0 :: HsPred '[] AmtCmd)
+        `shouldReturn` True
+
+    it "never upgrades opaque predicate terms to verified" $ do
+      let opaque =
+            PEq (TApp1 id (lit (1 :: Integer))) (lit 1) :: HsPred '[] AmtCmd
+      predicateTranslationExact opaque `shouldBe` False
+      verifyPredicate opaque `shouldReturn` UnverifiedOpaque
 
   describe "ordering predicate PCmp (EP-41 M2)" $ do
     it "constant contradiction 5 >= 10 over Word64 is symIsBot" $

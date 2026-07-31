@@ -9,6 +9,26 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.6.0.0] — 2026-07-31
+
+### Added
+
+- `verifyPredicate`, `predicateTranslationExact`, and
+  `PredicateVerification` expose whether a predicate received an exact
+  structural translation and a definite solver answer. Opaque fallbacks,
+  solver `Unknown`/timeouts, and solver failures remain explicitly unverified.
+
+### Changed
+
+- **Breaking semantic fix:** structural `Natural` addition and multiplication
+  are now solver-visible, and structural subtraction is total monus in both
+  concrete and symbolic evaluation: `a - b = max 0 (a - b)`. It never invokes
+  partial Haskell `Natural` subtraction on an underflowing pair; the symbolic
+  form is `ite (a >= b) (a - b) 0`.
+- `Natural` now belongs to the curated symbolic numeric registry, so
+  `OpaqueGuard` no longer reports structural `Natural` arithmetic.
+
+
 ## [0.5.0.0] — 2026-07-31
 
 ### Added
