@@ -4,6 +4,12 @@
 * **Addition**: IR-2 requests structured successful edge attribution for forward stepping and
   replay, including live/replay-only mode and completed multi-event input spans, so downstream
   conformance can distinguish guarded siblings without duplicating Keiki semantics.
+* **Refinement**: IR-2 was revalidated against Hackage Keiki 0.6.0.0 and the public upstream tag
+  set, recording their current skew and strengthening the request with contiguous replay-span
+  partition, state-path continuity, epsilon-observability, and exact erasure laws.
+* **Status change**: IR-2 `proposed` → `planned`. Accepted after technical validation;
+  implementation is specified by ExecPlan 81
+  (`docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`).
 
 ## 2026-07-28
 * **Addition**: IR-1 requests typed symbolic field projections over mapped consumer-owned
