@@ -1,5 +1,6 @@
 module Keiki.ReplayEitherSpec (spec) where
 
+import Data.Text qualified as T
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import Keiki.Core
 import Keiki.Fixtures.UserRegistration
@@ -24,6 +25,24 @@ canonicalLog =
     AccountConfirmed (AccountConfirmedData "alice@x" "K2P7" (t 200)),
     AccountDeleted (AccountDeletedData "alice@x" (t 300))
   ]
+
+longLog :: [UserEvent]
+longLog =
+  RegistrationStarted (RegistrationStartedData "alice@x" "C0000" (t 0))
+    : ConfirmationEmailSent (ConfirmationEmailSentData "alice@x")
+    : [ ConfirmationResent
+          (ConfirmationResentData "alice@x" (T.pack ("C" <> pad4 i)) (t (fromIntegral i)))
+      | i <- [1 .. 1020 :: Int]
+      ]
+    ++ [ AccountConfirmed (AccountConfirmedData "alice@x" "C1020" (t 2000)),
+         AccountDeleted (AccountDeletedData "alice@x" (t 3000))
+       ]
+  where
+    pad4 n
+      | n < 10 = "000" <> show n
+      | n < 100 = "00" <> show n
+      | n < 1000 = "0" <> show n
+      | otherwise = show n
 
 type Snapshot = (Email, ConfirmationCode, UTCTime, UTCTime, UTCTime)
 
@@ -134,6 +153,14 @@ singleStepSpec = describe "applyEventStreamingEither" $ do
       headEvent of
       Nothing -> pure ()
       Just _ -> expectationFailure "expected Nothing from compatibility wrapper"
+
+shouldReturnSameLeft :: (Eq failure, Show failure) => Either failure detailed -> Either failure compatibility -> Expectation
+shouldReturnSameLeft detailed compatibility =
+  case (detailed, compatibility) of
+    (Left detailedFailure, Left compatibilityFailure) ->
+      detailedFailure `shouldBe` compatibilityFailure
+    (Right _, _) -> expectationFailure "detailed replay unexpectedly succeeded"
+    (_, Right _) -> expectationFailure "compatibility replay unexpectedly succeeded"
 
 spec :: Spec
 spec = do
@@ -247,6 +274,45 @@ spec = do
       case applyEventsEither userReg (initial userReg, initialRegs userReg) corrupted of
         Left _ -> pure ()
         Right _ -> expectationFailure "applyEventsEither accepted corrupted log"
+
+  describe "detailed replay compatibility" $ do
+    it "preserves no-inversion failures exactly" $
+      let events = [AccountConfirmed (AccountConfirmedData "alice@x" "Z9F4" (t 0))]
+       in shouldReturnSameLeft
+            (reconstituteDetailedEither userReg events)
+            (reconstituteEither userReg events)
+
+    it "preserves ambiguous-inversion failures exactly" $
+      shouldReturnSameLeft
+        (applyEventsDetailedEither ambiguousUserReg (PotentialCustomer, initialRegs ambiguousUserReg) [headEvent])
+        (applyEventsEither ambiguousUserReg (PotentialCustomer, initialRegs ambiguousUserReg) [headEvent])
+
+    it "preserves queue-mismatch failures exactly" $
+      let observed = AccountDeleted (AccountDeletedData "alice@x" (t 999))
+          corrupted = headEvent : observed : drop 2 canonicalLog
+       in shouldReturnSameLeft
+            (reconstituteDetailedEither userReg corrupted)
+            (reconstituteEither userReg corrupted)
+
+    it "preserves truncation failures exactly" $
+      shouldReturnSameLeft
+        (reconstituteDetailedEither userReg [headEvent])
+        (reconstituteEither userReg [headEvent])
+
+    it "replays 1,024 events through compatibility and detailed paths" $
+      case ( applyEventsEither userReg (initial userReg, initialRegs userReg) longLog,
+             reconstituteEither userReg longLog,
+             reconstituteDetailedEither userReg longLog
+           ) of
+        (Right (applyState, _), Right (reconstituteState, _), Right detailed) -> do
+          (applyState, reconstituteState, replaySuccessState detailed)
+            `shouldBe` (Deleted, Deleted, Deleted)
+          length (replaySuccessTrace detailed) `shouldBe` 1023
+          replayAttributionSpan (last (replaySuccessTrace detailed))
+            `shouldBe` ReplayEventSpan 1023 1024
+        (Left failure, _, _) -> expectationFailure ("applyEventsEither failed: " <> show failure)
+        (_, Left failure, _) -> expectationFailure ("reconstituteEither failed: " <> show failure)
+        (_, _, Left failure) -> expectationFailure ("detailed replay failed: " <> show failure)
 
   describe "former Decider behavioral coverage" $ do
     it "replays the complete multi-event output of one forward step" $ do

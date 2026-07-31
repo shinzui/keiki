@@ -142,6 +142,8 @@ module Keiki.Core
     -- * Pure-layer entry points (effects-boundary note)
     step,
     stepEither,
+    stepDetailedEither,
+    StepSuccess (..),
     StepFailure (..),
     EdgeRef (..),
     RejectedEdgeSummary (..),
@@ -149,13 +151,18 @@ module Keiki.Core
     ReplayStepFailure (..),
     ReplayFailureReason (..),
     ReplayFailure (..),
+    ReplayEventSpan (..),
+    ReplayAttribution (..),
+    ReplaySuccess (..),
     reconstitute,
     reconstituteEither,
+    reconstituteDetailedEither,
     applyEvent,
     applyEventStreaming,
     applyEventStreamingEither,
     applyEvents,
     applyEventsEither,
+    applyEventsDetailedEither,
     replayEvents,
 
     -- * Streaming-replay state wrapper (EP-19 M3)
@@ -1163,6 +1170,19 @@ data EdgeRef s = EdgeRef
   }
   deriving stock (Eq, Show)
 
+-- | Proof-relevant success information for one accepted forward command.
+-- The 'EdgeRef' identifies the exact outgoing edge selected in this concrete
+-- transducer construction; its zero-based index changes when outgoing edge
+-- declaration order changes. Forward stepping considers only 'Live' edges,
+-- so 'stepSuccessMode' is always 'Live'.
+data StepSuccess (rs :: [Slot]) s co = StepSuccess
+  { stepSuccessEdge :: EdgeRef s,
+    stepSuccessMode :: EdgeMode,
+    stepSuccessState :: s,
+    stepSuccessRegs :: RegFile rs,
+    stepSuccessOutputs :: [co]
+  }
+
 -- | Why one outgoing edge was rejected during a step: its locator, its
 -- declared target, and whether its guard matched (always 'False' here;
 -- the field keeps the shape uniform with 'MatchedEdgeSummary' and leaves
@@ -1199,17 +1219,37 @@ data StepFailure s
   | AmbiguousEdges s [MatchedEdgeSummary s]
   deriving stock (Eq, Show)
 
--- | Like 'step', but returns a precise 'StepFailure' explanation on the
--- 'Left' instead of collapsing every failure into 'Nothing'. On the
--- 'Right' it returns EXACTLY the triple 'step' returns. 'step' is left
--- unchanged; this is purely additive.
+-- | Like 'stepDetailedEither', but erases exact edge attribution from a
+-- success. Failures pass through unchanged; a successful 'StepSuccess' is
+-- projected to the historical @(state, registers, outputs)@ triple.
 stepEither ::
   (BoolAlg phi (RegFile rs, ci)) =>
   SymTransducer phi rs s ci co ->
   (s, RegFile rs) ->
   ci ->
   Either (StepFailure s) (s, RegFile rs, [co])
-stepEither t (s, regs) ci =
+stepEither t seed ci =
+  case stepDetailedEither t seed ci of
+    Left failure -> Left failure
+    Right success ->
+      Right
+        ( stepSuccessState success,
+          stepSuccessRegs success,
+          stepSuccessOutputs success
+        )
+
+-- | Execute one forward command and return the exact selected local edge,
+-- its execution mode, and the same post-state, register file, and ordered
+-- output word exposed by 'stepEither'. This function is the selection and
+-- evaluation authority for both entry points: erasing a success yields the
+-- exact historical 'stepEither' result, and failures are identical.
+stepDetailedEither ::
+  (BoolAlg phi (RegFile rs, ci)) =>
+  SymTransducer phi rs s ci co ->
+  (s, RegFile rs) ->
+  ci ->
+  Either (StepFailure s) (StepSuccess rs s co)
+stepDetailedEither t (s, regs) ci =
   case zip [0 ..] (edgesOut t s) of
     [] -> Left (NoOutgoingEdges s)
     indexed ->
@@ -1231,10 +1271,17 @@ stepEither t (s, regs) ci =
                       }
                   | (i, e) <- indexed
                   ]
-            [(_, e)] ->
+            [(i, e)] ->
               let !regs' = applyEdgeUpdate e regs ci
                   outs = [evalOut o regs ci | o <- output e]
-               in Right (target e, regs', outs)
+               in Right
+                    StepSuccess
+                      { stepSuccessEdge = EdgeRef {edgeSource = s, edgeIndex = i},
+                        stepSuccessMode = Live,
+                        stepSuccessState = target e,
+                        stepSuccessRegs = regs',
+                        stepSuccessOutputs = outs
+                      }
             _ ->
               Left $
                 AmbiguousEdges
@@ -1342,6 +1389,57 @@ data ReplayFailure s co = ReplayFailure
   }
   deriving stock (Eq, Show)
 
+-- | A zero-based, half-open event interval @[start,end)@. The start is
+-- included and the end is excluded, so its length is @end - start@.
+data ReplayEventSpan = ReplayEventSpan
+  { replaySpanStart :: !Int,
+    replaySpanEnd :: !Int
+  }
+  deriving stock (Eq, Show)
+
+-- | Attribution for one completed, non-empty edge output word in a strict
+-- replay. The local 'EdgeRef', selected 'EdgeMode', state transition, and
+-- event span all describe the same concrete edge application.
+data ReplayAttribution s = ReplayAttribution
+  { replayAttributionEdge :: !(EdgeRef s),
+    replayAttributionMode :: !EdgeMode,
+    replayAttributionSource :: !s,
+    replayAttributionTarget :: !s,
+    replayAttributionSpan :: !ReplayEventSpan,
+    replayAttributionEventCount :: !Int
+  }
+  deriving stock (Eq, Show)
+
+-- | A settled strict-replay result plus its ordered completed-edge trace.
+-- The register file deliberately prevents deriving whole-value 'Eq' or
+-- 'Show'; callers can inspect the slots relevant to their aggregate.
+data ReplaySuccess (rs :: [Slot]) s = ReplaySuccess
+  { replaySuccessState :: !s,
+    replaySuccessRegs :: RegFile rs,
+    replaySuccessTrace :: [ReplayAttribution s]
+  }
+
+-- | Private metadata retained from the head event of a multi-event edge
+-- until its evaluated tail has been consumed.
+data PendingAttribution s = PendingAttribution
+  { pendingEdge :: !(EdgeRef s),
+    pendingMode :: !EdgeMode,
+    pendingSource :: !s,
+    pendingTarget :: !s,
+    pendingHeadIndex :: !Int,
+    pendingEventCount :: !Int
+  }
+
+-- | Operational policy for the shared replay evaluator. 'DiscardTrace' is
+-- intentionally nullary: compatibility replay cannot retain pending metadata
+-- or completed entries. 'CollectTrace' carries an optional in-flight edge and
+-- a strict reverse accumulator for opt-in detailed replay.
+data ReplayTraceState s
+  = DiscardTrace
+  | CollectTrace
+      !(Maybe (PendingAttribution s))
+      ![ReplayAttribution s]
+
 -- | Compatibility wrapper around 'applyEventStreamingEither'. Prefer the
 -- structured 'Either' variant for new code; this function preserves the
 -- historical @Maybe@ signature and semantics.
@@ -1392,7 +1490,29 @@ applyEventStreamingEither ::
   RegFile rs ->
   co ->
   Either (ReplayStepFailure s co) (InFlight s co, RegFile rs)
-applyEventStreamingEither t (Settled s) regs co =
+applyEventStreamingEither t wrapper regs co =
+  case applyEventWithTrace t 0 DiscardTrace wrapper regs co of
+    Left failure -> Left failure
+    Right (nextWrapper, nextRegs, DiscardTrace) -> Right (nextWrapper, nextRegs)
+    Right (_, _, CollectTrace _ _) ->
+      error "applyEventStreamingEither: discard replay collected a trace"
+
+-- | Apply one event through the single replay evaluator while updating only
+-- the selected trace policy. All public replay surfaces delegate to this
+-- worker for inversion, guard checks, updates, tail construction, equality
+-- checks, and structured failures.
+applyEventWithTrace ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  Int ->
+  ReplayTraceState s ->
+  InFlight s co ->
+  RegFile rs ->
+  co ->
+  Either
+    (ReplayStepFailure s co)
+    (InFlight s co, RegFile rs, ReplayTraceState s)
+applyEventWithTrace t eventIndex traceState (Settled s) regs co =
   case matched of
     [] ->
       Left $
@@ -1405,13 +1525,22 @@ applyEventStreamingEither t (Settled s) regs co =
               }
           | (i, e) <- indexed
           ]
-    [(_, e, ci)] ->
+    [(i, e, ci)] ->
       let regs' = applyEdgeUpdate e regs ci
           evaluatedTail = [evalOut o regs ci | o <- drop 1 (output e)]
           wrapped = case evaluatedTail of
             [] -> Settled (target e)
             xs -> InFlight (target e) xs
-       in Right (wrapped, regs')
+          traceState' =
+            advanceTraceAtHead
+              eventIndex
+              s
+              i
+              e
+              (length (output e))
+              evaluatedTail
+              traceState
+       in Right (wrapped, regs', traceState')
     _ ->
       Left $
         ReplayAmbiguousInversions
@@ -1441,16 +1570,71 @@ applyEventStreamingEither t (Settled s) regs co =
         Just ci <- [solveOutput o regs co],
         models (guard e) (regs, ci)
       ]
-applyEventStreamingEither _ (InFlight s queue) regs co = case queue of
+applyEventWithTrace _ eventIndex traceState (InFlight s queue) regs co = case queue of
   q1 : rest
     | q1 == co ->
         Right
           ( case rest of
               [] -> Settled s
               _ -> InFlight s rest,
-            regs
+            regs,
+            advanceTraceAtTail eventIndex rest traceState
           )
   _ -> Left (ReplayQueueMismatch s co queue)
+{-# INLINE applyEventWithTrace #-}
+
+advanceTraceAtHead ::
+  Int ->
+  s ->
+  Int ->
+  Edge phi rs ci co s ->
+  Int ->
+  [co] ->
+  ReplayTraceState s ->
+  ReplayTraceState s
+advanceTraceAtHead _ _ _ _ _ _ DiscardTrace = DiscardTrace
+advanceTraceAtHead eventIndex source edgeNumber edge eventCount evaluatedTail (CollectTrace _ reverseTrace) =
+  let pending =
+        PendingAttribution
+          { pendingEdge = EdgeRef {edgeSource = source, edgeIndex = edgeNumber},
+            pendingMode = mode edge,
+            pendingSource = source,
+            pendingTarget = target edge,
+            pendingHeadIndex = eventIndex,
+            pendingEventCount = eventCount
+          }
+   in case evaluatedTail of
+        [] -> CollectTrace Nothing (completeAttribution (eventIndex + 1) pending : reverseTrace)
+        _ -> CollectTrace (Just pending) reverseTrace
+{-# INLINE advanceTraceAtHead #-}
+
+advanceTraceAtTail ::
+  Int ->
+  [co] ->
+  ReplayTraceState s ->
+  ReplayTraceState s
+advanceTraceAtTail _ _ DiscardTrace = DiscardTrace
+advanceTraceAtTail eventIndex remaining (CollectTrace pending reverseTrace) =
+  case (remaining, pending) of
+    ([], Just attribution) ->
+      CollectTrace Nothing (completeAttribution (eventIndex + 1) attribution : reverseTrace)
+    _ -> CollectTrace pending reverseTrace
+{-# INLINE advanceTraceAtTail #-}
+
+completeAttribution :: Int -> PendingAttribution s -> ReplayAttribution s
+completeAttribution end pending =
+  ReplayAttribution
+    { replayAttributionEdge = pendingEdge pending,
+      replayAttributionMode = pendingMode pending,
+      replayAttributionSource = pendingSource pending,
+      replayAttributionTarget = pendingTarget pending,
+      replayAttributionSpan =
+        ReplayEventSpan
+          { replaySpanStart = pendingHeadIndex pending,
+            replaySpanEnd = end
+          },
+      replayAttributionEventCount = pendingEventCount pending
+    }
 
 -- | Strictly replay a list of observed events from an arbitrary wrapper
 -- state and register-file seed. A list that ends mid-chain succeeds with
@@ -1462,11 +1646,27 @@ replayEvents ::
   (InFlight s co, RegFile rs) ->
   [co] ->
   Either (ReplayFailure s co) (InFlight s co, RegFile rs)
-replayEvents t = go 0
+replayEvents t seed events =
+  case replayEventsWithTrace t DiscardTrace seed events of
+    Left failure -> Left failure
+    Right (wrapper, regs, DiscardTrace) -> Right (wrapper, regs)
+    Right (_, _, CollectTrace _ _) ->
+      error "replayEvents: discard replay collected a trace"
+
+replayEventsWithTrace ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  ReplayTraceState s ->
+  (InFlight s co, RegFile rs) ->
+  [co] ->
+  Either
+    (ReplayFailure s co)
+    (InFlight s co, RegFile rs, ReplayTraceState s)
+replayEventsWithTrace t = go 0
   where
-    go !_ seed [] = Right seed
-    go !eventIndex (wrapper, regs) (co : rest) =
-      case applyEventStreamingEither t wrapper regs co of
+    go !_ traceState (wrapper, regs) [] = Right (wrapper, regs, traceState)
+    go !eventIndex traceState (wrapper, regs) (co : rest) =
+      case applyEventWithTrace t eventIndex traceState wrapper regs co of
         Left stepFailure ->
           Left
             ReplayFailure
@@ -1474,7 +1674,9 @@ replayEvents t = go 0
                 replayFailedState = wrapper,
                 replayFailureReason = ReplayEventFailed stepFailure
               }
-        Right next -> go (eventIndex + 1) next rest
+        Right (nextWrapper, nextRegs, nextTraceState) ->
+          go (eventIndex + 1) nextTraceState (nextWrapper, nextRegs) rest
+{-# INLINE replayEventsWithTrace #-}
 
 -- | Compatibility wrapper around 'reconstituteEither'. Prefer the
 -- structured 'Either' variant for new code. This function reconstitutes
@@ -1503,6 +1705,18 @@ reconstituteEither ::
   [co] ->
   Either (ReplayFailure s co) (s, RegFile rs)
 reconstituteEither t = applyEventsEither t (initial t, initialRegs t)
+
+-- | Detailed 'reconstituteEither' from the transducer's initial seed. On
+-- success the returned trace factors the complete observed event list into
+-- ordered completed-edge spans; failures are exactly those of compatibility
+-- replay and expose no partial trace.
+reconstituteDetailedEither ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  [co] ->
+  Either (ReplayFailure s co) (ReplaySuccess rs s)
+reconstituteDetailedEither t =
+  applyEventsDetailedEither t (initial t, initialRegs t)
 
 -- | Compatibility wrapper around 'applyEventsEither'. Prefer the
 -- structured 'Either' variant for new code. This function replays a
@@ -1550,16 +1764,52 @@ applyEventsEither ::
   [co] ->
   Either (ReplayFailure s co) (s, RegFile rs)
 applyEventsEither t (s0, regs0) events =
-  case replayEvents t (Settled s0, regs0) events of
+  case replayEventsWithTrace t DiscardTrace (Settled s0, regs0) events of
     Left failure -> Left failure
-    Right (Settled s, regs) -> Right (s, regs)
-    Right (wrapper@(InFlight _ pending), _regs) ->
+    Right (Settled s, regs, DiscardTrace) -> Right (s, regs)
+    Right (wrapper@(InFlight _ pending), _regs, DiscardTrace) ->
       Left
         ReplayFailure
           { replayFailedIndex = length events,
             replayFailedState = wrapper,
             replayFailureReason = ReplayLogTruncated pending
           }
+    Right (_, _, CollectTrace _ _) ->
+      error "applyEventsEither: discard replay collected a trace"
+
+-- | Replay a complete chunk from a caller-supplied settled state and return
+-- its ordered completed-edge attribution. Empty input succeeds with an empty
+-- trace. For non-empty successful input, spans form a contiguous partition of
+-- @[0,length events)@ and adjacent source/target states form a path. A
+-- multi-event edge is appended only after its final tail event is consumed;
+-- epsilon-output edges are unobservable and never appear. Compatibility
+-- 'applyEventsEither' uses the same worker with a nullary discard policy and
+-- therefore does not allocate this O(k) trace for @k@ completed edges.
+applyEventsDetailedEither ::
+  (BoolAlg phi (RegFile rs, ci), Eq co) =>
+  SymTransducer phi rs s ci co ->
+  (s, RegFile rs) ->
+  [co] ->
+  Either (ReplayFailure s co) (ReplaySuccess rs s)
+applyEventsDetailedEither t (s0, regs0) events =
+  case replayEventsWithTrace t (CollectTrace Nothing []) (Settled s0, regs0) events of
+    Left failure -> Left failure
+    Right (Settled s, regs, CollectTrace _ reverseTrace) ->
+      Right
+        ReplaySuccess
+          { replaySuccessState = s,
+            replaySuccessRegs = regs,
+            replaySuccessTrace = reverse reverseTrace
+          }
+    Right (wrapper@(InFlight _ pending), _regs, CollectTrace _ _) ->
+      Left
+        ReplayFailure
+          { replayFailedIndex = length events,
+            replayFailedState = wrapper,
+            replayFailureReason = ReplayLogTruncated pending
+          }
+    Right (_, _, DiscardTrace) ->
+      error "applyEventsDetailedEither: detailed replay discarded its trace"
 
 -- * Build-time analyses ----------------------------------------------------
 

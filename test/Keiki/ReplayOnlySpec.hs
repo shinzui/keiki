@@ -258,21 +258,41 @@ spec = do
         (Left failure, _) -> expectationFailure ("machine A replay failed: " <> show failure)
         (_, Left failure) -> expectationFailure ("machine B replay failed: " <> show failure)
 
-    it "prefers the live edge when a sloppy twin's guard overlaps it" $
-      case reconstituteEither machineOverlap [ReservationConfirmed False] of
-        Right (v, regs) -> do
-          v `shouldBe` Confirmed
+    it "prefers and attributes the live edge when a sloppy twin overlaps it" $
+      case reconstituteDetailedEither machineOverlap [ReservationConfirmed False] of
+        Right success -> do
+          replaySuccessState success `shouldBe` Confirmed
           -- The live edge writes the event's own acuity (False); the
           -- sloppy twin would have written the constant True. Live wins.
-          regs ! #wasBlack `shouldBe` False
+          replaySuccessRegs success ! #wasBlack `shouldBe` False
+          replaySuccessTrace success
+            `shouldBe` [ ReplayAttribution
+                           { replayAttributionEdge = EdgeRef Held 0,
+                             replayAttributionMode = Live,
+                             replayAttributionSource = Held,
+                             replayAttributionTarget = Confirmed,
+                             replayAttributionSpan = ReplayEventSpan 0 1,
+                             replayAttributionEventCount = 1
+                           }
+                       ]
         Left failure ->
           expectationFailure ("expected live-phase attribution: " <> show failure)
 
-    it "falls through to the sloppy twin only for unattributable history" $
-      case reconstituteEither machineOverlap blackHistory of
-        Right (v, regs) -> do
-          v `shouldBe` Confirmed
-          regs ! #wasBlack `shouldBe` True
+    it "falls through to and attributes the sloppy twin for historical input" $
+      case reconstituteDetailedEither machineOverlap blackHistory of
+        Right success -> do
+          replaySuccessState success `shouldBe` Confirmed
+          replaySuccessRegs success ! #wasBlack `shouldBe` True
+          replaySuccessTrace success
+            `shouldBe` [ ReplayAttribution
+                           { replayAttributionEdge = EdgeRef Held 1,
+                             replayAttributionMode = ReplayOnly,
+                             replayAttributionSource = Held,
+                             replayAttributionTarget = Confirmed,
+                             replayAttributionSpan = ReplayEventSpan 0 1,
+                             replayAttributionEventCount = 1
+                           }
+                       ]
         Left failure -> expectationFailure ("twin fallthrough failed: " <> show failure)
 
     it "still reports ambiguity between two replay-only candidates" $
