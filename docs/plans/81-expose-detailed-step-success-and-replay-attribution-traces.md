@@ -67,8 +67,14 @@ active parent initiative.
   epsilon, replay-only, failure-erasure, and result-erasure examples. The focused command
   `cabal test keiki:keiki-test --test-options='--match Keiki.Core.stepEither'
   --test-show-details=direct` passed 9 examples with 0 failures under GHC 9.12.4.
-- [ ] Milestone 2: factor replay through one internal kernel with allocation-free no-trace and
-  trace-collecting modes, then add strict detailed replay entry points.
+- [x] (2026-07-31T21:08:45Z) Milestone 2: factored inversion, guard checking, update application,
+  tail construction, queue comparison, and failures through `applyEventWithTrace` and
+  `replayEventsWithTrace`; added the nullary `DiscardTrace`, collecting `CollectTrace`, public
+  span/attribution/success records, and both detailed strict entry points. The 13 InFlight, 13
+  structured-replay, and 22 replay-only focused examples passed with 0 failures. Static `rg`
+  inspection showed `applyEventStreamingEither`, `replayEvents`, and `applyEventsEither` seeding
+  `DiscardTrace`; `reconstituteEither` delegates to that strict compatibility path; and only
+  `applyEventsDetailedEither` plus its `reconstituteDetailedEither` wrapper seed `CollectTrace`.
 - [ ] Milestone 3: add example and property coverage for edge identity, trace laws, exact erasure,
   live-first selection, epsilon observability, and unchanged failures; add detailed benchmark rows
   and compare compatibility performance with the Milestone 0 baseline.
@@ -80,6 +86,11 @@ active parent initiative.
 
 
 ## Surprises & Discoveries
+
+- Cabal 3.16 splits `--test-options` on spaces after the shell has processed the outer quoting. A
+  focused Hspec match containing spaces must preserve embedded quotes, for example
+  `--test-options='--match "Keiki.Core structured replay"'`; the plan's original form passed
+  `structured` as an unexpected standalone argument. The corrected command passed 13 examples.
 
 - The package registry and Git release authorities are temporarily out of sync. On 2026-07-31,
   Hackage's `preferred.json` lists `0.6.0.0`, but `git ls-remote --tags origin` exposes tags only
