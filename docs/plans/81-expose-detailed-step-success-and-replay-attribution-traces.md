@@ -113,6 +113,11 @@ active parent initiative.
   documentation. `cabal haddock keiki` completed successfully; its warnings are the existing
   project-wide link and `Keiki.Symbolic.SymEnv` coverage warnings. These records remain on
   `feat/detailed-attribution-traces` while Milestone 3b is unresolved.
+- [x] (2026-07-31T22:14:19Z) Released the unrelated `v0.6.0.0` work without Plan 81. Validated the
+  exact tagged commit `c8f2c343ce03f42e10de77d684769f15ad30feda` through formatting, repository
+  and clean-room source-distribution builds/tests, package checks, and Nix gates; advanced
+  public `master` only to that commit; published the existing annotated tag and GitHub release; and
+  resumed this branch at `1b5256f`.
 - [ ] Milestone 5: pass focused, benchmark, full-project, Haddock, Nix, OKF, and diff gates.
 - [ ] Milestone 6: reconcile release authority, publish the additive release through the repository
   release workflow, and record the final tag/version evidence.
@@ -137,11 +142,10 @@ active parent initiative.
   `--test-options='--match "Keiki.Core structured replay"'`; the plan's original form passed
   `structured` as an unexpected standalone argument. The corrected command passed 13 examples.
 
-- The package registry and Git release authorities are temporarily out of sync. On 2026-07-31,
-  Hackage's `preferred.json` lists `0.6.0.0`, but `git ls-remote --tags origin` exposes tags only
-  through `v0.5.0.0`. A local annotated `v0.6.0.0` tag points to
-  `c8f2c343ce03f42e10de77d684769f15ad30feda` but is not public. Release work must not treat that
-  local tag as authoritative.
+- The package registry and Git release authorities were temporarily out of sync. Hackage already
+  listed `0.6.0.0`, while public Git exposed tags only through `v0.5.0.0`. After validating the
+  exact local annotated tag, public `master`, `v0.6.0.0`, and the GitHub release were published at
+  `c8f2c343ce03f42e10de77d684769f15ad30feda`; the authorities now agree without exposing Plan 81.
 
 - `RegFile rs` intentionally has no whole-value `Eq` or `Show` instance. Exact compatibility tests
   must compare state, outputs, and fixture-specific per-slot observations rather than compare a
@@ -325,8 +329,8 @@ active parent initiative.
 Interim outcome: the requested attribution semantics, laws, documentation, and benchmark evidence
 exist on `feat/detailed-attribution-traces`, but the implementation is not release-ready because
 compatibility replay allocates approximately 64--66 additional bytes per event. The feature is
-deliberately deferred from the intervening release. Work resumes at Milestone 3b after that release;
-the IR remains `planned` and no Plan 81 API has been published.
+deliberately absent from the published `v0.6.0.0` release. The release unblock is complete and work
+has resumed at Milestone 3b; the IR remains `planned` and no Plan 81 API has been published.
 
 
 ## Context and Orientation
@@ -1000,3 +1004,7 @@ result specialization is now an explicit pre-release blocker.
 Revision note (2026-07-31): Recorded the decision to preserve Plan 81 on
 `feat/detailed-attribution-traces`, release unrelated work from `master` without the attribution
 changes, and resume the specialized-discard investigation from this branch afterward.
+
+Revision note (2026-07-31): Recorded the completed intervening `v0.6.0.0` release, including exact
+tag validation, public Git/GitHub reconciliation, exclusion of Plan 81, and return to the feature
+branch at Milestone 3b.
