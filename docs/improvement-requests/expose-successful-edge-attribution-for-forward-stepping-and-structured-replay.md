@@ -197,13 +197,12 @@ The request is complete when all of the following are demonstrated in Keiki:
 ## Compatibility Baseline
 
 The validation audit verified on 2026-07-31 that Hackage preferred-version metadata lists Keiki
-`0.6.0.0`, whose published source still has the compact success surfaces described above. Release
-authority is temporarily split: the public upstream currently exposes tags only through
-`v0.5.0.0`, which dereferences to commit `3250780cffa1397cb320ebae69a326ee7554685f`; a local
-`v0.6.0.0` tag dereferences to `c8f2c343ce03f42e10de77d684769f15ad30feda` but is not yet visible
-upstream. The requested APIs are additive. Implementation must repeat both release-authority
-checks before choosing a version or declaring the request released, and must not treat a local-only
-tag as authoritative.
+`0.6.0.0`, whose published source still has the compact success surfaces described above. Public
+`master`, the annotated `v0.6.0.0` tag, its GitHub release, and Hackage now agree on commit
+`c8f2c343ce03f42e10de77d684769f15ad30feda`; the attribution implementation is deliberately absent
+from that release. The requested APIs are additive. Implementation must repeat both
+release-authority checks before choosing a later version or declaring the request released, and
+must not treat a local-only tag as authoritative.
 
 
 ## References

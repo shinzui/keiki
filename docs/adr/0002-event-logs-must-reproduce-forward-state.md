@@ -52,9 +52,10 @@ edge.
 with outgoing declaration order. It is diagnostic evidence, not a persisted
 semantic identifier. Epsilon-output edges remain unobservable during replay
 because they consume no log position, though detailed forward stepping can
-identify them. Compatibility replay uses the same evaluator with a nullary
-discard policy and O(1) auxiliary trace state; only detailed replay retains
-O(k) entries for k completed edges.
+identify them. Compatibility and detailed replay use one event kernel for
+inversion, updates, queue advancement, and failures. Compatibility supplies
+pair-shaped success continuations and retains O(1) auxiliary state; only the
+detailed fold carries pending metadata and O(k) entries for k completed edges.
 
 ## Consequences
 

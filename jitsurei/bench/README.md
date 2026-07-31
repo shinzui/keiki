@@ -134,11 +134,11 @@ For a compatibility regression check, compare the before/after `Allocated`
 values at 32, 1,024, 4,096, and 16,384 events. A positive delta that grows with
 log length requires inspection of the Core call graph; a fixed difference of
 one allocator block across the larger sizes is measurement granularity rather
-than a per-event slope. Compatibility replay must seed the nullary
-`DiscardTrace` policy and must never construct pending attribution, public
-attribution records, or trace list cells. Detailed replay is expected to show
-an O(number of completed edges) allocation increase; that is the documented
-cost of the trace.
+than a per-event slope. Compatibility replay must use the pair-shaped fold and
+success continuations around the shared event kernel; its state and result must
+not contain pending attribution, public attribution records, or trace list
+cells. Detailed replay is expected to show an O(number of completed edges)
+allocation increase; that is the documented cost of the trace.
 
 ## What's *not* measured
 
