@@ -4,9 +4,9 @@ title: Classify unconstrained symbolic field projections as inexact
 description: >-
   Stop reporting one-way field projections as exact symbolic translations when the solver can
   invent projected values that no concrete owner can produce.
-timestamp: 2026-08-01T00:14:56Z
+timestamp: 2026-08-01T03:52:03Z
 requestId: IR-3
-status: planned
+status: implemented
 origin: mori://shinzui/keiro
 plan: docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md
 reviews:
@@ -29,12 +29,14 @@ reviews:
 
 ## Status
 
-**Planned.** Accepted as a correctness repair for the released field-projection surface and
-specified by
-[ExecPlan 82](../plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md).
-This request is deliberately smaller than
-[IR-4](support-domain-constrained-symbolic-field-projections-with-reconstructible-witnesses.md):
-Keiki can stop claiming an exact proof before it has the richer domain contract.
+**Implemented.** ExecPlan 82 now classifies every projection created by the released one-way
+`fieldWitness` as inexact, preserves path-stable conservative emptiness proofs, and concretely
+rechecks every `symSatExt` candidate before returning it. The focused projection and verification
+suites, all repository tests and builds, native flake checks, and strict OKF validation pass. The
+change is recorded under Unreleased; publication is separate release work. This request remains
+deliberately smaller than
+[IR-4](support-domain-constrained-symbolic-field-projections-with-reconstructible-witnesses.md),
+which supplies the richer domain contract needed for selected projections to regain exactness.
 
 ## Context
 

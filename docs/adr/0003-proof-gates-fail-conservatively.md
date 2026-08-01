@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
-- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`
+- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`
 
 ## Context
 
@@ -44,6 +44,24 @@ constructible owner, and `symSatExt` does not reconstruct such owners.
 This over-approximation may conservatively reject a valid proof gate; it
 must not manufacture an unsatisfiability proof.
 
+Exact verification and compatibility emptiness therefore use different
+classifications. `verifyPredicate` reaches `VerifiedSatisfiable` or
+`VerifiedUnsatisfiable` only for a translation-exact predicate, meaning every
+satisfying symbolic valuation corresponds to concrete values under the
+documented carrier laws. A released one-way `fieldWitness` carries no exact
+domain evidence, so any predicate containing its `TFieldProj` is
+`UnverifiedOpaque`. By contrast, `symIsBot` may still prove that predicate
+empty: definite unsatisfiability over the larger free-scalar domain also
+proves the smaller concrete domain empty. Its `False` result means only “not
+proved empty.”
+
+`symSatExt` concretely evaluates every reconstructed candidate before
+returning it. A free projection value, opaque `TApp1`/`TApp2` assignment, or
+non-`Sym` equality fallback that cannot be realized by the reconstructed
+registers and input yields `Nothing`. A constructor-guard violation during
+that concrete check also yields `Nothing`. These outcomes mean “no concrete
+witness recovered,” never proof of unsatisfiability.
+
 ## Consequences
 
 - A solver timeout or unsupported theory can produce a conservative CI
@@ -60,3 +78,8 @@ must not manufacture an unsatisfiability proof.
 - Projection-backed satisfiability witnesses are scalar abstractions,
   not reconstructed consumer-owned values. Callers that need a concrete
   owner must provide it and bind its getter result explicitly.
+- Path identity and proof strength are separate: repeated projection reads
+  remain one shared symbolic variable even when the containing predicate is
+  not translation-exact.
+- Every `Just` returned by `symSatExt` satisfies concrete `models`; callers
+  needing proof of emptiness must continue to use `symIsBot`.

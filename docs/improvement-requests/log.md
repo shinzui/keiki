@@ -1,6 +1,10 @@
 # Bundle Update Log
 
 ## 2026-08-01
+* **Status change**: IR-3 `planned` -> `implemented`. ExecPlan 82 now makes released one-way field
+  projections unverified for exact satisfiability, retains path-stable one-sided emptiness proofs,
+  and concretely rechecks every `symSatExt` candidate. Focused and full tests, builds, native flake
+  checks, and strict OKF validation all pass; publication remains separate release work.
 * **Refinement**: IR-1 was revalidated while deriving the projection follow-ups; its stale Keiro
   `<0.4` adoption note now records the active `>=0.6 && <0.7` bounds and a model review.
 * **Refinement**: IR-1 now distinguishes path-stable concrete-to-symbolic agreement from exact

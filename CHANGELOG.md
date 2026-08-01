@@ -22,6 +22,23 @@ and this project adheres to the
   unobservable in replay. Existing replay functions share the evaluator but
   retain a nullary no-trace policy and O(1) auxiliary trace state.
 
+### Changed
+
+- **Semantic correctness fix:** `predicateTranslationExact` no longer treats a
+  one-way `fieldWitness` projection as exact merely because its result carrier
+  is solver-supported. Existing projection callers now receive
+  `UnverifiedOpaque` from `verifyPredicate`; path-stable repeated reads and the
+  conservative `symIsBot` emptiness proof remain available. The new
+  documented-internals query `fieldWitnessHasExactDomain` reports the private
+  evidence used by this classification and returns `False` for every released
+  `fieldWitness`.
+- `symSatExt` now concretely rechecks every reconstructed candidate, restoring
+  the unconditional guarantee that each returned pair satisfies `models`.
+  Unrealizable free projection assignments, opaque `TApp1`/`TApp2`
+  assignments, and non-`Sym` equality fallbacks now return `Nothing` instead
+  of a pair that fails concrete evaluation. `Nothing` remains “no concrete
+  witness recovered,” not proof of unsatisfiability.
+
 
 ## [0.6.0.0] — 2026-07-31
 

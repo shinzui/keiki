@@ -41,8 +41,10 @@ and prepares the witness representation for the exact-domain capability in
 - [x] (2026-08-01T03:46:54Z) Milestone 2: preserved and documented the one-sided guarantees of
       compatibility solving, transducer analysis, replay, validation, and projection identity;
       the focused projection and verification runs passed 38 and 10 examples respectively.
-- [ ] Milestone 3: update durable documentation and release notes, run all project gates, and
-      perform the ADR distillation pass.
+- [x] (2026-08-01T03:50:05Z) Drafted the Milestone 3 durable documentation, release notes, and
+      ADR-0003 distillation while leaving IR-3 planned until validation succeeds.
+- [x] (2026-08-01T03:52:03Z) Milestone 3: all project gates passed, IR-3 was marked implemented,
+      outcomes were recorded, and the ADR distillation pass completed in ADR-0003.
 
 
 ## Surprises & Discoveries
@@ -54,6 +56,15 @@ and prepares the witness representation for the exact-domain capability in
   unguarded input projection paired with the wrong constructor. The command ended with
   `38 examples, 3 failures`; all existing projection cases and the new ordinary extraction control
   passed.
+
+- Observation: Mori resolves Keiro's IR-1 concept URI but the local registry cannot yet resolve
+  the intended master-plan URI, and the released parser does not recognize a `research` artifact
+  kind.
+  Evidence: `mori path mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1` resolved to the
+  owning document; the master-plan lookup reported `artifact ... not found`, and the research URI
+  reported `unknown kind segment 'research'`. Durable prose therefore uses the intended master-plan
+  URI and identifies the research note with `mori://shinzui/keiro` plus its project-relative path,
+  explicitly noting that its artifact-level URI is pending.
 
 
 ## Decision Log
@@ -123,7 +134,30 @@ and prepares the witness representation for the exact-domain capability in
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Keiki now separates path-exact projection identity from translation-exact verification. Every
+`fieldWitness` created through the released API carries private unconstrained-domain evidence, so
+`predicateTranslationExact` rejects predicates containing its projection and `verifyPredicate`
+returns `UnverifiedOpaque`. The compatibility translator and `symIsBot` retain their sound
+one-sided over-approximation: repeated reads share one variable and definite UNSAT still proves
+concrete emptiness.
+
+`symSatExt` now forces concrete `models` evaluation for every reconstructed candidate and returns
+`Just` only when that check succeeds. Regressions cover an exhaustive two-owner projection, an
+unguarded input projection paired with the wrong constructor, opaque `TApp1`, the non-`Sym`
+equality fallback, and a positive ordinary-register extraction. This restores the unconditional
+returned-witness postcondition without turning reconstruction failure into an UNSAT claim.
+
+Validation completed with focused projection (`38 examples, 0 failures`) and verification
+(`10 examples, 0 failures`) runs. `cabal test all` passed the Keiki (`596` examples), JSON (`104`
+examples), JSON-test (`13` examples), and Jitsurei (`122` examples) suites with zero failures;
+`cabal build all` was up to date; `nix flake check` passed the native pre-commit and treefmt checks;
+and strict OKF validation reported `OK: 4 concepts`. No implementation work remains in this plan.
+Plan 83 remains the explicit follow-up for exact-domain constraints and owner reconstruction.
+
+The durable distinction between exact verification, over-approximate emptiness, and concrete
+witness recovery has been promoted to `docs/adr/0003-proof-gates-fail-conservatively.md`. The
+release migration is recorded in `CHANGELOG.md`, and IR-1 and IR-3 now describe the corrected
+contract.
 
 
 ## Context and Orientation
@@ -428,3 +462,8 @@ claimed by its Haddocks:
 ```haskell
 maybe True (models (SymPred predicate)) (symSatExt predicate)
 ```
+
+Revision note (2026-08-01): Updated the living sections throughout implementation with the failing
+baseline, implementation decisions, focused and full validation evidence, Mori URI-resolution
+findings, ADR distillation, and the completed outcome. The executable design itself remained
+unchanged.

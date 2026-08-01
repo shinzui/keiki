@@ -48,21 +48,23 @@ larger domain remains a sound emptiness proof, while SAT is not necessarily back
 owner and must not be reported as exact. IR-3 and IR-4 respectively specify the conservative
 classification repair and the explicit domain/reconstruction evidence needed to regain exactness.
 
-**Originally proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl` (Keiro's
-improvement request IR-1, `docs/improvement-requests/support-structural-consumer-owned-types-in-keiro-dsl.md`
-in the `shinzui/keiro` repository, coordinated by Keiro's master plan 25). That work deliberately
-requires **no Keiki change**: mapped consumer values are whole values — copied wholesale into
-events and registers — and every decision-relevant scalar is promoted to an explicit command or
-register field.
+**Originally proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl`
+under `mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1`, coordinated by the intended
+master-plan URI
+`mori://shinzui/keiro/masterplans/25-structural-consumer-type-ergonomics-and-soundness-preserving-adoption-for-keiro-dsl`.
+That work deliberately requires **no Keiki change**: mapped consumer values are whole values —
+copied wholesale into events and registers — and every decision-relevant scalar is promoted to an
+explicit command or register field.
 
 This request is the next ergonomic tier, filed now so it is not lost. It is the prerequisite
 Keiki capability for ever letting a Keiro specification write a checked guard such as
 `when register.doc.contentHash != command.contentHash` instead of promoting `contentHash` to a
-separate scalar. Keiro's research note
-(`docs/research/14-structural-consumer-type-tradeoffs.md` in `shinzui/keiro`, section 4 and
-Experiment C) fixes the sequencing rule this request honors: Keiki must have the first-class
-term, evaluator, symbolic translation, validator support, and tests **before** any DSL syntax
-claims the capability. Keiro will not expose surface syntax until this request is released.
+separate scalar. Keiro's research note (project `mori://shinzui/keiro`, project-relative path
+`docs/research/14-structural-consumer-type-tradeoffs.md`, artifact-level URI pending Mori research
+coverage), section 4 and Experiment C, fixes the sequencing rule this request honors: Keiki must
+have the first-class term, evaluator, symbolic translation, validator support, and tests **before**
+any DSL syntax claims the capability. Keiro will not expose surface syntax until this request is
+released.
 
 ## Context
 
@@ -86,7 +88,8 @@ value inside a guard is `TApp1 getContentHash`, which:
 - carries no field identity, so two reads of the same field are unrelated symbolic terms and
   diagnostics cannot name the path.
 
-The consequence is the promote-to-scalar discipline Keiro's IR-1 codifies. That discipline is
+The consequence is the promote-to-scalar discipline
+`mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1` codifies. That discipline is
 often good domain modeling and remains the sanctioned pattern, but for values with several
 decision-relevant fields it duplicates data into commands and registers purely to satisfy the
 symbolic layer.
@@ -131,7 +134,8 @@ The exact spelling belongs to Keiki; the required semantics are:
    discipline exactly as direct field reads are today.
 4. **Replay and inversion soundness — guards only.** In this request a projection may appear in
    guards. Using projections inside `OutFields` or register-write terms is out of scope: mapped
-   values continue to move as whole-value copies (Keiro IR-1's contract). For the hidden-input
+   values continue to move as whole-value copies (the contract in
+   `mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1`). For the hidden-input
    and head-recoverability analyses in `validateTransducer`, a projected read counts,
    conservatively, as a read of the whole underlying register slot or input field. Replay
    semantics are unchanged; `reconstitute` needs no new machinery.
@@ -145,7 +149,8 @@ The exact spelling belongs to Keiki; the required semantics are:
 **Provenance note.** A `FieldWitness` is just a getter plus identity; nothing in Keiki can prove
 it matches the wire schema of the consumer type. Truthfulness comes from generation: Keiro
 generates witnesses from the same resolved structural binding graph that generates its codecs
-(Keiro IR-1), and Keiro's generated conformance harness carries the mutation tests proving a
+(`mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1`), and Keiro's generated conformance
+harness carries the mutation tests proving a
 wrong witness fails. Keiki's obligation is to define the laws (totality, stable identity,
 evaluation/translation agreement) and provide the property-test harness for them — not to accept
 arbitrary hand-written witnesses as checked claims. Keiki documentation for the term must state
@@ -154,13 +159,16 @@ this division explicitly.
 ## Out of Scope
 
 - Collection membership, quantified guards, element update, or any solver-visible collection
-  semantics (Keiro research note, research-grade tier).
+  semantics (the research-grade tier in project `mori://shinzui/keiro`, project-relative path
+  `docs/research/14-structural-consumer-type-tradeoffs.md`; artifact-level URI pending).
 - Projections in outputs, register writes, or event construction — whole-value copies remain the
   only mapped-value writes.
 - Adding `Natural` (or other types) to the curated `Sym` registry — a separate, smaller request
   if adoption shows the need.
-- Lifecycle-aware uninitialized registers (the "absent until initialized" model from Keiro's
-  research note section 6) — a separate request.
+- Lifecycle-aware uninitialized registers (the "absent until initialized" model in section 6 of
+  project `mori://shinzui/keiro`, project-relative path
+  `docs/research/14-structural-consumer-type-tradeoffs.md`; artifact-level URI pending) — a
+  separate request.
 - Any `keiro-dsl` surface syntax, scaffolding, or codec work — Keiro-side, and gated on this
   request being released and tagged first.
 
@@ -188,17 +196,19 @@ The request is complete when all of the following are demonstrated in Keiki:
 
 ## Compatibility Baseline
 
-Keiro's IR-1 review verified on 2026-07-28 that `keiki` is released and tagged at `0.3.1.0`.
+The review of `mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1` verified on 2026-07-28
+that `keiki` is released and tagged at `0.3.1.0`.
 Implementation must repeat the Hackage and upstream-tag check before choosing bounds or
 declaring the capability released.
 
 ## References
 
-- Requesting project: `mori://shinzui/keiro` — improvement request IR-1
-  (`docs/improvement-requests/support-structural-consumer-owned-types-in-keiro-dsl.md`),
-  research note (`docs/research/14-structural-consumer-type-tradeoffs.md`, section 4 and
-  Experiment C), and master plan
-  (`docs/masterplans/25-structural-consumer-type-ergonomics-and-soundness-preserving-adoption-for-keiro-dsl.md`).
+- Requesting artifact:
+  `mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1`; related master plan:
+  `mori://shinzui/keiro/masterplans/25-structural-consumer-type-ergonomics-and-soundness-preserving-adoption-for-keiro-dsl`.
+  The related research note belongs to `mori://shinzui/keiro` at project-relative path
+  `docs/research/14-structural-consumer-type-tradeoffs.md`; its artifact-level URI is pending Mori
+  research coverage.
 - Keiki prior art this request extends: `src/Keiki/Core.hs` (`TInpCtorField`, `InCtor`,
   `TArith`, `predHasOpaqueTerm`, `validateTransducer`), `src/Keiki/Symbolic.hs` (`Sym`,
   `discoverSym`, `SymEnv` memo cache, `symIsBot`), `docs/research/tinpproj-design.md`, and
