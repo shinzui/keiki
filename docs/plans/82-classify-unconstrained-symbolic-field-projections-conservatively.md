@@ -34,17 +34,26 @@ and prepares the witness representation for the exact-domain capability in
 
 ## Progress
 
-- [ ] Milestone 1: add the finite-owner counterexample and make projection exactness depend on
-      witness evidence that defaults to unconstrained.
-- [ ] Milestone 2: preserve and document the one-sided guarantees of compatibility solving,
-      transducer analysis, replay, validation, and projection identity.
+- [x] (2026-08-01T03:43:23Z) Added the finite-owner counterexample, repeated-read classification
+      regression, ordinary extraction control, and unguarded input-projection extraction case.
+- [x] (2026-08-01T03:46:54Z) Milestone 1: made projection exactness depend on private witness
+      evidence that defaults to unconstrained and concretely rechecked extracted candidates.
+- [x] (2026-08-01T03:46:54Z) Milestone 2: preserved and documented the one-sided guarantees of
+      compatibility solving, transducer analysis, replay, validation, and projection identity;
+      the focused projection and verification runs passed 38 and 10 examples respectively.
 - [ ] Milestone 3: update durable documentation and release notes, run all project gates, and
       perform the ADR distillation pass.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Observation: The focused pre-fix projection run failed exactly three new examples while the
+  ordinary register extraction control passed.
+  Evidence: `predicateTranslationExact` returned `True` for both the exhaustive finite-owner
+  predicate and the repeated-projection contradiction, and `symSatExt` returned `Just` for an
+  unguarded input projection paired with the wrong constructor. The command ended with
+  `38 examples, 3 failures`; all existing projection cases and the new ordinary extraction control
+  passed.
 
 
 ## Decision Log
@@ -102,6 +111,13 @@ and prepares the witness representation for the exact-domain capability in
   returns `Nothing` where it previously returned a non-modeling pair. That is the intended
   restoration of the witness postcondition, but it is a caller-visible behavior change beyond the
   projection repair and must be documented as one.
+  Date: 2026-08-01
+
+- Decision: Catch `ErrorCall` around the forced concrete `models` recheck rather than catching all
+  exceptions.
+  Rationale: `evalTerm` reports constructor-guard violations with `error`, so `ErrorCall` covers the
+  planned degradation to `Nothing` and also keeps opaque pure error calls from escaping. Narrowing
+  the handler avoids swallowing asynchronous exceptions or unrelated solver/process failures.
   Date: 2026-08-01
 
 

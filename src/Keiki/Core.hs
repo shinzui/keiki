@@ -202,6 +202,7 @@ module Keiki.Core
     MissingInCtorFields (..),
     fieldProjectionPath,
     fieldWitnessAgrees,
+    fieldWitnessHasExactDomain,
     fieldWitnessGet,
     indexPosition,
   )
@@ -358,13 +359,17 @@ class FieldProjection projection where
   projectFieldValue ::
     Proxy projection -> FieldOwner projection -> FieldResult projection
 
--- | Abstract nominal token for a coherent 'FieldProjection' instance.
--- Construct one with 'fieldWitness'. Its nominal role prevents changing the
--- projection tag with 'coerce', and the tag's 'TypeRep' supplies symbolic
--- cache identity independently of caller-controlled diagnostic strings.
+-- | Abstract nominal token for a coherent 'FieldProjection' instance and its
+-- private symbolic-domain evidence. Construct one with 'fieldWitness'. Its
+-- nominal role prevents changing the projection tag with 'coerce', and the
+-- tag's 'TypeRep' supplies symbolic cache identity independently of
+-- caller-controlled diagnostic strings.
 type role FieldWitness nominal
 
-data FieldWitness projection = FieldWitness
+data FieldDomainEvidence
+  = FieldDomainUnconstrained
+
+data FieldWitness projection = FieldWitness FieldDomainEvidence
 
 -- | Construct the abstract witness for a projection tag. Normal Haskell
 -- instance coherence supplies one getter per tag; generators should therefore
@@ -379,7 +384,14 @@ fieldWitness ::
     Typeable (FieldResult projection)
   ) =>
   FieldWitness projection
-fieldWitness = FieldWitness
+fieldWitness = FieldWitness FieldDomainUnconstrained
+
+-- | Whether a witness carries evidence that the symbolic result domain is
+-- exactly the image of its concrete owner getter. The released 'fieldWitness'
+-- constructor records only a total one-way getter, so it always returns
+-- 'False'. This read-only query does not let callers claim exactness.
+fieldWitnessHasExactDomain :: FieldWitness projection -> Bool
+fieldWitnessHasExactDomain (FieldWitness FieldDomainUnconstrained) = False
 
 -- | Eliminate a 'FieldWitness' using its coherent projection instance.
 fieldWitnessGet ::
@@ -449,11 +461,14 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
   -- | A single-hop, solver-visible field projection. The coherent nominal tag
   -- identifies the logical getter; only the projected result needs symbolic
   -- support, while the consumer-owned base value does not. Concrete
-  -- evaluation applies the total getter. Symbolic translation creates a free
-  -- variable for the typed path, so agreement is intentionally one-way: a
-  -- concrete owner can constrain that variable to its getter result, but a
-  -- solver model cannot reconstruct the owner. Default validation permits
-  -- this node in guards and rejects it in updates or outputs.
+  -- evaluation applies the total getter. Symbolic translation is /path-exact/:
+  -- repeated reads of one typed path share a variable. The released witness is
+  -- nevertheless /over-approximate/: that free variable may take values no
+  -- concrete owner produces. It is therefore not /translation-exact/, meaning
+  -- a satisfying symbolic valuation need not correspond to concrete values.
+  -- A concrete owner can constrain the variable to its getter result, but a
+  -- solver model cannot reconstruct the owner. Default validation permits this
+  -- node in guards and rejects it in updates or outputs.
   TFieldProj ::
     ( FieldProjection projection,
       KnownSymbol (FieldName projection),

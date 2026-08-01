@@ -2,17 +2,24 @@
 
 module Keiki.FieldProjSpec where
 
+import Data.Maybe (isNothing)
 import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
 import Data.Text (Text)
 import Data.Text qualified as T
 import Keiki.Core
 import Keiki.Symbolic
-  ( SymEnv (..),
+  ( KnownInCtors (..),
+    PredicateVerification (..),
+    SomeInCtor (..),
+    SymEnv (..),
     constrainFieldProjection,
     mkSymEnv,
+    predicateTranslationExact,
     symIsBot,
+    symSatExt,
     translatePred,
+    verifyPredicate,
   )
 import Test.Hspec
 import Test.QuickCheck
@@ -235,6 +242,62 @@ numberIntW = fieldWitness @NumberAsInt
 numberIntegerW :: FieldWitness NumberAsInteger
 numberIntegerW = fieldWitness @NumberAsInteger
 
+data BoolKey
+
+instance FieldProjection BoolKey where
+  type FieldName BoolKey = "key"
+  type FieldOwner BoolKey = Bool
+  type FieldResult BoolKey = Text
+  fieldShapeId _ = "test.bool-key.v1"
+  projectFieldValue _ False = "disabled"
+  projectFieldValue _ True = "enabled"
+
+type BoolOwnerRegs = '[ '("owner", Bool)]
+
+boolKeyW :: FieldWitness BoolKey
+boolKeyW = fieldWitness @BoolKey
+
+boolOwnerIx :: Index BoolOwnerRegs Bool
+boolOwnerIx = #owner
+
+exhaustiveProjectionPredicate :: HsPred BoolOwnerRegs ()
+exhaustiveProjectionPredicate =
+  PAnd
+    (regProj boolKeyW boolOwnerIx ./= TLit "disabled")
+    (regProj boolKeyW boolOwnerIx ./= TLit "enabled")
+
+repeatedProjectionContradiction :: HsPred BoolOwnerRegs ()
+repeatedProjectionContradiction =
+  regProj boolKeyW boolOwnerIx ./= regProj boolKeyW boolOwnerIx
+
+data BoolProjectionCmd = WithOwner Bool | WithoutOwner
+  deriving stock (Eq, Show)
+
+type WithOwnerFields = '[ '("owner", Bool)]
+
+withOwnerCtor :: InCtor BoolProjectionCmd WithOwnerFields
+withOwnerCtor =
+  InCtor
+    { icName = "WithOwner",
+      icMatch = \case
+        WithOwner owner -> Just (RCons (Proxy @"owner") owner RNil)
+        WithoutOwner -> Nothing,
+      icBuild = \(RCons _ owner RNil) -> WithOwner owner
+    }
+
+withoutOwnerCtor :: InCtor BoolProjectionCmd '[]
+withoutOwnerCtor =
+  InCtor
+    { icName = "WithoutOwner",
+      icMatch = \case
+        WithoutOwner -> Just RNil
+        WithOwner _ -> Nothing,
+      icBuild = \RNil -> WithoutOwner
+    }
+
+instance KnownInCtors BoolProjectionCmd where
+  allInCtors = [SomeInCtor withOwnerCtor, SomeInCtor withoutOwnerCtor]
+
 proveConcreteAgreement ::
   HsPred rs ci ->
   (SymEnv -> SBV.Symbolic ()) ->
@@ -345,6 +408,45 @@ spec = do
                 HsPred '[ '("doc/|\\owner", DocInfo)] ()
             )
             `shouldBe` True
+
+  describe "projection verification" $ do
+    it "does not call a supported but unconstrained projection translation-exact" $ do
+      -- Before the conservative classifier, z3 could invent a third Text key
+      -- outside the getter's two-value image and verify that fabricated model.
+      evalPred
+        exhaustiveProjectionPredicate
+        (RCons (Proxy @"owner") False RNil)
+        ()
+        `shouldBe` False
+      evalPred
+        exhaustiveProjectionPredicate
+        (RCons (Proxy @"owner") True RNil)
+        ()
+        `shouldBe` False
+      fieldWitnessHasExactDomain boolKeyW `shouldBe` False
+      predicateTranslationExact exhaustiveProjectionPredicate `shouldBe` False
+      verifyPredicate exhaustiveProjectionPredicate `shouldReturn` UnverifiedOpaque
+      isNothing (symSatExt exhaustiveProjectionPredicate) `shouldBe` True
+
+    it "keeps one-sided emptiness proofs for repeated projection reads" $ do
+      predicateTranslationExact repeatedProjectionContradiction `shouldBe` False
+      verifyPredicate repeatedProjectionContradiction `shouldReturn` UnverifiedOpaque
+      symIsBot repeatedProjectionContradiction `shouldBe` True
+
+    it "keeps ordinary register witness extraction" $ do
+      let predicate = TReg boolOwnerIx .== TLit True :: HsPred BoolOwnerRegs ()
+      case symSatExt predicate of
+        Nothing -> expectationFailure "ordinary Bool register predicate lost its witness"
+        Just (registers, command) ->
+          evalPred predicate registers command `shouldBe` True
+
+    it "returns no witness instead of throwing on an unguarded input projection" $ do
+      let predicate =
+            PAnd
+              (inpProj boolKeyW withOwnerCtor #owner .== TLit "invented")
+              (PInCtor withoutOwnerCtor) ::
+              HsPred '[] BoolProjectionCmd
+      isNothing (symSatExt predicate) `shouldBe` True
 
   describe "concrete-to-symbolic agreement" $ do
     it "agrees for register projections in both truth directions" $

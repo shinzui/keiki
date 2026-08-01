@@ -93,6 +93,7 @@ module Keiki.Symbolic
   )
 where
 
+import Control.Exception (ErrorCall, evaluate, try)
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Fixed (Fixed (MkFixed))
@@ -480,7 +481,8 @@ mkSymEnv = do
 --     not extracted as part of the witness.
 --
 -- Note on repeated reads (EP-42): 'TReg', 'TInpCtorField', and
--- 'TFieldProj' reads are memoized through the env's 'seVarCache'. The first
+-- 'TFieldProj' reads are memoized through the env's 'seVarCache'. This is
+-- /path-exact/: the first
 -- read of a given structural key allocates one 'SBV.free' variable and caches
 -- it; every later read of the same key returns the cached variable. So two
 -- reads of the same slot (e.g.
@@ -488,7 +490,10 @@ mkSymEnv = do
 -- they are equal, @x \/= x@ is unsat, and 'symSatExt''s by-name witness
 -- extraction is correct for ordinary repeated reads. Projection variables
 -- are deliberately not extracted: the solver knows the scalar result but not
--- how to construct its consumer-owned base value. The 'TApp1' \/ 'TApp2'
+-- how to construct its consumer-owned base value. A released one-way
+-- projection remains /over-approximate/, because that scalar may be outside
+-- the getter's concrete image, and is therefore not /translation-exact/ (not
+-- every satisfying valuation corresponds to concrete owners). The 'TApp1' \/ 'TApp2'
 -- escape hatches stay per-occurrence fresh (their opaque functions
 -- have no 'Eq', so two applications cannot be recognized as equal);
 -- their values are not part of the extracted witness.
@@ -546,9 +551,10 @@ projectionVarKey _ base =
 -- a known owner. Pass @fieldWitnessGet witness owner@ as the concrete result.
 -- This supplies the concrete-to-symbolic simulation used by agreement
 -- properties: every concrete evaluation has a matching symbolic valuation.
--- The converse is intentionally not claimed. This function is not an inverse
--- for 'symSatExt', and projection variables are not extracted into or checked
--- for joint realizability as consumer-owned values.
+-- The converse is intentionally not claimed: this over-approximate binding is
+-- path-exact but not translation-exact. This function is not an inverse for
+-- 'symSatExt', and projection variables are not extracted into consumer-owned
+-- values.
 constrainFieldProjection ::
   forall projection rs ci ifs.
   ( Typeable projection,
@@ -679,9 +685,11 @@ data PredicateVerification
   | UnverifiedSolverFailure String
   deriving stock (Eq, Show)
 
--- | Whether every node in a predicate has an exact structural symbolic
--- translation. This is stricter than merely being accepted by 'translatePred',
--- whose compatibility fallback intentionally replaces unsupported pieces with
+-- | Whether every node in a predicate has a /translation-exact/ structural
+-- symbolic representation: every satisfying symbolic valuation corresponds to
+-- concrete values under the carrier laws documented by this module. This is
+-- stricter than merely being accepted by 'translatePred', whose compatibility
+-- fallback intentionally replaces unsupported or over-approximate pieces with
 -- fresh variables.
 predicateTranslationExact :: forall rs ci. HsPred rs ci -> Bool
 predicateTranslationExact = goPred
@@ -727,7 +735,7 @@ predicateTranslationExact = goPred
     exactTerm (TArith _ a b) = case discoverSymNum @r of
       Nothing -> False
       Just SymNumDict -> exactTerm a && exactTerm b
-    exactTerm TFieldProj {} = True
+    exactTerm (TFieldProj witness _) = fieldWitnessHasExactDomain witness
 
 -- | Translate and solve one predicate without collapsing uncertainty into a
 -- Boolean. Exact translations produce a verified satisfiable or unsatisfiable
@@ -1022,19 +1030,14 @@ instance KnownInCtors () where
 
 -- * symSatExt ---------------------------------------------------------------
 
--- | Symbolic satisfiability with full witness extraction. On a
--- satisfiable predicate, returns @Just (regs, cmd)@ where @regs@
--- and @cmd@ are concrete values reconstructed from the SBV model.
--- @models p (regs, cmd) == True@ holds for the returned witness,
--- modulo one known limitation:
---
---   * /Escape-hatch terms/ ('TApp1', 'TApp2', and 'PEq' over a
---     non-'Sym' operand type, the @neq@ fallback in 'goEq').
---     These translate to fresh anonymous SBV variables; their values
---     are not extracted, and two occurrences of the same opaque
---     application do not share a variable (opaque functions have no
---     'Eq'). The witness reflects only the slots and input-fields the
---     predicate references through 'TReg' and 'TInpCtorField'.
+-- | Symbolic satisfiability with full witness extraction. On a satisfiable
+-- translation, reconstructs a candidate @(regs, cmd)@ from the SBV model and
+-- returns it only when concrete 'models' evaluation confirms the predicate.
+-- Thus @models p (regs, cmd) == True@ holds unconditionally for every returned
+-- witness. Escape-hatch terms ('TApp1', 'TApp2', and 'PEq' over a non-'Sym'
+-- operand type) and over-approximate field projections can make the solver's
+-- assignment impossible for the reconstructed values; such a candidate is
+-- discarded.
 --
 -- /Repeated reads/ of the same register or input field are handled
 -- correctly: since EP-42 'translateTermSym' memoizes 'TReg' \/
@@ -1053,9 +1056,13 @@ instance KnownInCtors () where
 -- of the 'Keiki.Core.Sat' method 'sat' on 'SymPred' (via the
 -- @Sat (SymPred …)@ instance, which carries the 'ExtractRegFile' /
 -- 'KnownInCtors' evidence the witness-free 'BoolAlg' class cannot). A 'Nothing'
--- result means only that no model was found: the predicate may be unsatisfiable,
--- or the solver may have returned 'SBV.Unknown'. Callers must not treat
--- 'Nothing' as a proof of emptiness; 'symIsBot' returns 'True' only for that proof.
+-- result means only that no concrete witness was recovered: the predicate may
+-- be unsatisfiable, the solver may have returned 'SBV.Unknown', or a
+-- satisfiable over-approximate or opaque assignment may have failed the
+-- concrete recheck. An input-field read used without its constructor guard is
+-- also discarded if concrete evaluation raises its guard-violation error.
+-- Callers must not treat 'Nothing' as a proof of emptiness; 'symIsBot' returns
+-- 'True' only for that proof.
 {-# NOINLINE symSatExt #-}
 symSatExt ::
   forall rs ci.
@@ -1080,23 +1087,31 @@ symSatExt p = unsafePerformIO $ do
       SBV.constrain $
         SBV.sOr [seInputCtor env SBV..== SBV.literal n | n <- ctorNames]
     pure b
-  pure $
-    if SBV.modelExists res
-      then do
-        ctorTag <- SBV.getModelValue "inputCtor" res
-        let regReader :: forall r. (Sym r) => String -> r
-            regReader name = readModel res ("reg/" <> name)
-        let regs = extractRegFile @rs regReader
-        ci <-
-          pickCi @ci
-            ctorTag
-            ( \icN fieldName ->
-                readModel
-                  res
-                  ("inp/" <> icN <> "/" <> fieldName)
-            )
-        pure (regs, ci)
-      else Nothing
+  if SBV.modelExists res
+    then do
+      let candidate = do
+            ctorTag <- SBV.getModelValue "inputCtor" res
+            let regReader :: forall r. (Sym r) => String -> r
+                regReader name = readModel res ("reg/" <> name)
+            let regs = extractRegFile @rs regReader
+            ci <-
+              pickCi @ci
+                ctorTag
+                ( \icN fieldName ->
+                    readModel
+                      res
+                      ("inp/" <> icN <> "/" <> fieldName)
+                )
+            pure (regs, ci)
+      case candidate of
+        Nothing -> pure Nothing
+        Just witness -> do
+          checked <- try @ErrorCall (evaluate (models (SymPred p) witness))
+          pure $ case checked of
+            Right True -> Just witness
+            Right False -> Nothing
+            Left _ -> Nothing
+    else pure Nothing
 
 -- | Look up @name@ in @res@'s SBV model; on a hit return @fromSym@
 -- of the model value, on a miss return @symDefault@. Used by

@@ -18,6 +18,8 @@ import Test.Hspec
 -- | A two-constructor input symbol for the 'PInCtor' tests.
 data TinyCmd = TinyFoo Int | TinyBar Int deriving (Eq, Show)
 
+data OpaqueCarrier = OpaqueLeft | OpaqueRight deriving (Eq, Show)
+
 -- * Numeric-registry fixtures (EP-41 M1) ---------------------------------
 
 -- | A single-slot register file whose value type is the money/count
@@ -438,6 +440,48 @@ spec = do
             PEq (TApp1 id (lit (1 :: Integer))) (lit 1) :: HsPred '[] AmtCmd
       predicateTranslationExact opaque `shouldBe` False
       verifyPredicate opaque `shouldReturn` UnverifiedOpaque
+
+  describe "predicate verification classification" $ do
+    it "keeps unsupported projection results unverified" $ do
+      let unsupported =
+            FieldProj.docNumbersW `regProj` FieldProj.docIx .== TLit [] ::
+              HsPred FieldProj.DocRegs ()
+      predicateTranslationExact unsupported `shouldBe` False
+      verifyPredicate unsupported `shouldReturn` UnverifiedOpaque
+
+    it "keeps supported but unconstrained projection results unverified" $ do
+      predicateTranslationExact FieldProj.exhaustiveProjectionPredicate
+        `shouldBe` False
+      verifyPredicate FieldProj.exhaustiveProjectionPredicate
+        `shouldReturn` UnverifiedOpaque
+
+    it "keeps opaque applications unverified and rejects their fabricated witness" $ do
+      let opaque =
+            PEq (TApp1 (const False) (TLit ())) (TLit True) :: HsPred '[] ()
+      predicateTranslationExact opaque `shouldBe` False
+      verifyPredicate opaque `shouldReturn` UnverifiedOpaque
+      isNothing (symSatExt opaque) `shouldBe` True
+
+    it "rejects a fabricated non-Sym equality witness" $ do
+      let fallback =
+            PEq (TLit OpaqueLeft) (TLit OpaqueRight) :: HsPred '[] ()
+      predicateTranslationExact fallback `shouldBe` False
+      verifyPredicate fallback `shouldReturn` UnverifiedOpaque
+      isNothing (symSatExt fallback) `shouldBe` True
+
+    it "verifies ordinary exact scalars in both solver directions" $ do
+      let satisfiable = PEq (TLit True) (TLit True) :: HsPred '[] ()
+          unsatisfiable = PEq (TLit True) (TLit False) :: HsPred '[] ()
+      predicateTranslationExact satisfiable `shouldBe` True
+      predicateTranslationExact unsatisfiable `shouldBe` True
+      verifyPredicate satisfiable `shouldReturn` VerifiedSatisfiable
+      verifyPredicate unsatisfiable `shouldReturn` VerifiedUnsatisfiable
+
+    it "verifies supported structural arithmetic" $ do
+      let arithmetic =
+            PEq (tadd (TLit (2 :: Int)) (TLit 3)) (TLit 5) :: HsPred '[] ()
+      predicateTranslationExact arithmetic `shouldBe` True
+      verifyPredicate arithmetic `shouldReturn` VerifiedSatisfiable
 
   describe "ordering predicate PCmp (EP-41 M2)" $ do
     it "constant contradiction 5 >= 10 over Word64 is symIsBot" $
