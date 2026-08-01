@@ -1,6 +1,10 @@
 # Bundle Update Log
 
 ## 2026-08-01
+* **Status change**: IR-2 `planned` -> `implemented`. ExecPlan 81's detailed forward-success and
+  replay-attribution APIs, laws, documentation, and performance evidence are integrated into public
+  `master`. Hackage preferred metadata and public tags still stop at `0.6.0.0`, whose source lacks
+  those APIs, so IR-2 remains unreleased.
 * **Status change**: IR-3 `planned` -> `implemented`. ExecPlan 82 now makes released one-way field
   projections unverified for exact satisfiability, retains path-stable one-sided emptiness proofs,
   and concretely rechecks every `symSatExt` candidate. Focused and full tests, builds, native flake
@@ -39,8 +43,9 @@
   (`docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`).
 * **Implementation progress**: IR-2's additive detailed step/replay API, exact erasure examples,
   generated trace laws, documentation, and matched compatibility/detailed allocation benchmarks
-  are implemented locally. Status remains `planned` until the release is public on Hackage and a
-  matching annotated upstream tag resolves to that source.
+  were implemented locally. IR-2 remained `planned` at this update; the 2026-08-01 lifecycle audit
+  later advanced it to `implemented`, with `released` still gated on Hackage and a matching public
+  upstream tag.
 
 ## 2026-07-28
 * **Addition**: IR-1 requests typed symbolic field projections over mapped consumer-owned

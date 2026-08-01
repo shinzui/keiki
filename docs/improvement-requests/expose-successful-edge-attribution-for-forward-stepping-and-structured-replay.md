@@ -5,9 +5,9 @@ description: >-
   Add structured success APIs that identify the selected edge during forward stepping and each
   completed edge attribution during replay, without duplicating Keiki's evaluator or changing the
   existing compatibility entry points.
-timestamp: 2026-07-31T20:35:30Z
+timestamp: 2026-08-01T12:39:09Z
 requestId: IR-2
-status: planned
+status: implemented
 origin: mori://shinzui/keiro
 plan: docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md
 reviews:
@@ -38,18 +38,37 @@ reviews:
       and event-log round-trip foundations, live-first replay, and Keiro's finite-witness boundary;
       strengthened the request with trace-partition, path-continuity, epsilon-observability, and
       erasure laws, then confirmed ExecPlan 81 preserves those requirements.
+  - kind: model
+    reviewer: codex
+    reviewed_at: 2026-08-01T12:39:09Z
+    document_timestamp: 2026-08-01T12:39:09Z
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: gpt-5
+    effort: unspecified
+    context: >-
+      Audited every request status against its linked ExecPlan, current source and tests, Hackage
+      preferred-version metadata, and public upstream tags. Confirmed the detailed attribution API
+      is implemented on public master but absent from the latest authoritative release, so the
+      correct lifecycle is implemented rather than planned or released.
 ---
 
 # Improvement Request: Expose Successful Edge Attribution for Forward Stepping and Structured Replay
 
 ## Status
 
-**Planned.** The implementation and repository validation are in progress under ExecPlan 81
-(`docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`). The detailed Core
-API, permanent laws, and performance evidence exist in the working release line, but the request
-remains planned until Hackage and a matching public upstream tag expose them. Keiro must not select
-a dependency bound from an unreleased checkout or infer a transition from targets or emitted
-values.
+**Implemented.** ExecPlan 81 added the detailed Core API, permanent erasure and replay-trace laws,
+documentation, and matched compatibility/detailed performance evidence. The implementation is on
+public `master`, and its focused and full repository gates passed. Publication remains separate
+release work: Hackage and the matching public upstream tag still expose `0.6.0.0`, which does not
+contain these APIs. The request must not advance to `released`, and Keiro must not select a
+dependency bound from an unreleased checkout or infer a transition from targets or emitted values.
+
+**Previously planned.** The request was accepted and specified by
+[ExecPlan 81](../plans/81-expose-detailed-step-success-and-replay-attribution-traces.md). It moved to
+implemented after the attribution semantics, laws, documentation, performance gate, and repository
+validation were integrated into `master`.
 
 
 ## Context

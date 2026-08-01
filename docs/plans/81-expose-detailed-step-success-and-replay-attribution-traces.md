@@ -134,6 +134,9 @@ active parent initiative.
   passed 13/18/22/36 examples. The repeated scale benchmark stayed below the 20% timing threshold;
   builder allocation deltas at 32/1,024/4,096/16,384 events were 0/-11/0/+105 B and AST deltas were
   0/0/-49/-93 B. `nix flake check` passed on the merge.
+- [x] (2026-08-01T12:39:09Z) Audited improvement-request lifecycle metadata against the current
+  source, tests, Hackage preferred metadata, and public upstream tags. Advanced IR-2 from `planned`
+  to `implemented`; `released` remains gated on Milestone 6.
 - [ ] Milestone 6: reconcile release authority, publish the additive release through the repository
   release workflow, and record the final tag/version evidence.
 
@@ -362,7 +365,7 @@ are integrated into `master`. Milestone 3b removed the approximately 64--66 addi
 event from compatibility replay while preserving one semantic event kernel; the performance
 blocker is cleared. The feature remains deliberately absent from published `v0.6.0.0`; all
 Milestone 5 and post-merge gates are green, so only the separately authorized additive release
-remains. The IR remains `planned` and no Plan 81 API has been published.
+remains. The IR is `implemented`, and no Plan 81 API has been published in a versioned release.
 
 
 ## Context and Orientation
@@ -641,10 +644,10 @@ cross-cutting choice appears during implementation.
 
 Add an `Unreleased` changelog entry for the new API. Keep
 `docs/improvement-requests/expose-successful-edge-attribution-for-forward-stepping-and-structured-replay.md`
-at `planned` until publication. Update `docs/improvement-requests/log.md` for material lifecycle
-changes. At implementation completion but before release, record validation evidence in this
-living plan; after authoritative publication, change IR-2 to `released`, update its compatibility
-baseline, and log the status change.
+at `implemented` after implementation validation and until publication. Update
+`docs/improvement-requests/log.md` for material lifecycle changes. At implementation completion but
+before release, record validation evidence in this living plan; after authoritative publication,
+change IR-2 to `released`, update its compatibility baseline, and log the status change.
 
 Finish `jitsurei/bench/README.md` with the attribution group layout, strict-digest forcing rule,
 pre/post CSV commands, allocation-slope interpretation, and the distinction between compatibility
@@ -889,8 +892,8 @@ path, live-first, multi-event completion, epsilon-observability, and erasure law
 the durable contract. The full Cabal, Haddock, Nix, OKF, and diff gates pass as described above.
 
 The improvement request is fully complete only after Hackage exposes the new API and a matching
-public upstream tag resolves to the released source. Before then its lifecycle remains `planned`,
-not `released`.
+public upstream tag resolves to the released source. Before then its lifecycle remains
+`implemented`, not `released`.
 
 
 ## Idempotence and Recovery
