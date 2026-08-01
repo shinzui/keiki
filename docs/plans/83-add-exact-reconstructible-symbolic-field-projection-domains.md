@@ -87,6 +87,10 @@ exactness and model-extraction portions of
   unconstrained and inexact.
   Rationale: This preserves source compatibility and avoids a globally unique class on the owner
   type. Different logical fields of one owner may have distinct tags and distinct exact domains.
+  A coherent class also makes the evidence per-tag-unique: `SymEnv` emits each memoized key's
+  domain constraint once, so value-level evidence would let two call sites supply competing
+  domains for one key, with whichever occurrence translates first silently winning. Class
+  coherence removes that failure mode by construction.
   Date: 2026-08-01
 
 - Decision: Reconstruction is checked on every returned model with both domain membership and the
@@ -127,6 +131,51 @@ exactness and model-extraction portions of
   Rationale: IR-4 explicitly scopes exact nominal equality. A finite result domain does not by
   itself prove that Haskell ordering, arithmetic overflow, normalization, and the active `SymRep`
   operations agree. Those operations need a separate carrier-and-operation contract.
+  Date: 2026-08-01
+
+- Decision: `TextPattern` smart constructors reject literals, character sets, and ranges containing
+  code points above U+2FFFF.
+  Rationale: SMT-LIB strings range over code points U+0000 through U+2FFFF while Haskell `Char`
+  reaches U+10FFFF. Admitting the unrepresentable region would let the pure matcher and the SBV
+  constraint denote different sets — exactly the divergence this plan forbids, and in the
+  direction that can manufacture a false UNSAT. The whole-carrier exactness audit for `Text` must
+  record the same bound.
+  Date: 2026-08-01
+
+- Decision: An `exactFieldWitness` makes definite-UNSAT gates conditional on the declaration laws,
+  and both the adversarial fixtures and ADR-0003 must say so explicitly.
+  Rationale: Runtime model checks police only satisfiable models. A domain that omits a key some
+  real owner produces yields false UNSAT — a false `VerifiedUnsatisfiable`, falsely blessed
+  determinism disjointness, and false dead edges — and no solve-time check can observe it. Only
+  the owner-side declaration-law helpers can catch this direction, so it is a shifted trust
+  boundary rather than an implementation bug: `fieldWitness`-only predicates keep the
+  unconditional soundness guarantee, exact witnesses trade it for precision under the published
+  laws. This conditionality is inherent to the capability Keiro requested, not incidental.
+  Date: 2026-08-01
+
+- Decision: Input-constructor domination is judged logically, not by conjunction operand order.
+  Rationale: Every model satisfying the predicate also activates the matching `PInCtor` atom, so
+  `PAnd (projection atom) (PInCtor ...)` supports the same solver-side exactness verdict as the
+  guard-first spelling, and the detailed kernel's model checks always evaluate against a
+  constructor-consistent candidate. Concrete `evalPred` remains left-to-right and partial for
+  mismatched inputs; that pre-existing sharp edge stays owned by validation warnings and Plan 82's
+  exception-guarded `symSatExt` recheck, not by the exactness report.
+  Date: 2026-08-01
+
+- Decision: Milestones 3 and 4 form one indivisible release unit.
+  Rationale: After Milestone 3, an exact report lets `verifyPredicate` reach `VerifiedSatisfiable`
+  with domain constraints applied but with the model-membership, inverse, and round-trip contract
+  checks arriving only in Milestone 4. That intermediate state must never be published, tagged, or
+  used to mark IR-4 implemented.
+  Date: 2026-08-01
+
+- Decision: The deferred multi-view mechanism is recorded as finite-owner joint enumeration.
+  Rationale: For a finite owner domain the translator can emit
+  @⋁ owner (⋀ tag (var_tag == getter_tag owner))@, which represents the joint owner relation
+  exactly and would make two exact tags over one base — and direct-plus-projected reads — exact.
+  It requires declared owner-enumeration evidence and cannot cover infinite validated-text owners,
+  so it stays out of scope here, but naming it prevents the "explicit joint owner-domain relation"
+  deferred by IR-4 from being re-derived from scratch.
   Date: 2026-08-01
 
 
@@ -202,7 +251,10 @@ supported result type and a declarative full-string pattern language for `Text`.
 must be closed under only constructs that have equivalent pure and SBV interpretations: literals,
 explicit character sets or ranges, concatenation, alternation, and bounded repetition are enough
 for TypeID-shaped values. Smart constructors validate reversed ranges, empty character sets,
-negative bounds, and invalid repetition intervals before a witness can be constructed.
+negative bounds, invalid repetition intervals, and code points above U+2FFFF before a witness can
+be constructed: SMT-LIB strings range over U+0000 through U+2FFFF while Haskell `Char` reaches
+U+10FFFF, and admitting the unrepresentable region would let the pure matcher and the SBV
+constraint denote different sets.
 
 A TypeID-style fixture must encode the entire accepted lexical domain, not merely a prefix and
 length. Its fixed 26-character suffix uses the Crockford Base32 alphabet; the first encoded
@@ -259,7 +311,9 @@ to some result; reject it at construction instead of encoding an impossible witn
 
 Define `TextPattern` through validated smart constructors, not exported data constructors. Include
 literal text, an explicit code-point set or inclusive ranges, concatenation, alternation, and
-bounded repetition. State and test that matching covers the complete `Text` value. Provide one pure
+bounded repetition. State and test that matching covers the complete `Text` value. Reject code
+points above U+2FFFF in every constructor with a `DomainConstructionError`, and test the boundary
+at the last representable and first unrepresentable code point. Provide one pure
 interpreter and one internal SBV compiler derived from the same AST. If SBV cannot express one
 validated form exactly for the project version, the compiler returns a typed unsupported reason;
 translation then omits the constraint and reports an over-approximation. It must never emit a
@@ -271,7 +325,9 @@ strings only over small bounded alphabets; no probabilistic test is a substitute
 TypeID boundaries in Milestone 5. Extend `src/Keiki/Internal/SymbolicTypes.hs` with a read-only
 whole-carrier exactness classification and unit-test every registered `Sym` type. Audit `toSym` and
 `fromSym` round trips at minimum and retain separate operation-level caveats where they already
-exist.
+exist. The `Text` classification must record the U+2FFFF representability bound, and the `UTCTime`
+audit must include leap-second `DiffTime` values (days longer than 86400 seconds), where the
+picosecond encoding's injectivity and surjectivity are least obvious.
 
 Milestone 2 connects a domain and inverse to a nominal tag. In `src/Keiki/Core.hs`, introduce a
 coherent class shaped as follows, with final constraints adjusted only when compilation proves they
@@ -351,7 +407,11 @@ repetition of the same tag is allowed. Two exact tags, an exact and unconstraine
 owner read plus any projection at that base makes the predicate an over-approximation. Distinct
 bases do not conflict. Base identity includes constructor identity and slot position for inputs and
 slot position for registers, with diagnostic names carried only for display. Apply the shared
-input-constructor implication check before calling a `PBInp` projection exact.
+input-constructor implication check before calling a `PBInp` projection exact. Judge domination
+logically rather than by conjunction operand order: `PAnd (projection atom) (PInCtor ...)`
+supports the same exactness verdict as the guard-first spelling, because every satisfying model
+also activates the matching constructor atom; concrete evaluation order remains the province of
+validation warnings and Plan 82's exception-guarded `symSatExt` recheck.
 
 Extend `SymEnv` with a set of projection keys whose domain constraint has successfully been emitted.
 On the first read of an exact witness, allocate or reuse the memoized variable, compile the domain,
@@ -446,16 +506,25 @@ Add a validated text owner whose inverse parses only full matches. Exercise acce
 prefixes, suffix lengths, alphabet boundaries, overflow-leading characters, version nibble, variant
 bits, separators, empty strings, and trailing data for the TypeID-style pattern. Assert concrete
 membership equals solver membership for each boundary sample and that every satisfying model
-round-trips. Deliberately define test-only broken inverses for “rejects an admitted key” and
-“returns an owner with a different projected key”; both must yield a contract violation. Never
-expose these broken declarations from library code.
+round-trips. Deliberately define test-only broken declarations for three law violations: an
+inverse that rejects an admitted key, an inverse that returns an owner with a different projected
+key, and a domain that omits a key some real owner produces. The two broken inverses must yield a
+contract violation. The under-declared domain is the false-UNSAT direction: no solve-time check
+can observe it, so its fixture must instead prove that the owner-side declaration-law helper
+reports the violation, and the documentation must state that only those helpers police this
+direction. Never expose these broken declarations from library code.
 
 Update Haddocks in `src/Keiki/Core.hs`, `src/Keiki/ProjectionDomain.hs`, and
 `src/Keiki/Symbolic.hs`; the user guide or README section that introduces symbolic projections;
 both improvement requests; ADR-0003; and `CHANGELOG.md`. The documentation must distinguish
 path-exactness, domain-exactness, predicate-global relational exactness, one-sided UNSAT proofs,
-path-local projection models, and full `symSatExt` witnesses. Mark IR-4 implemented only after all
-validation passes. At completion, reread this plan's Decision Log, Surprises & Discoveries, and
+path-local projection models, and full `symSatExt` witnesses. ADR-0003 must additionally record
+the shifted trust boundary: for a predicate containing an `exactFieldWitness`, the definite-UNSAT
+gates — `VerifiedUnsatisfiable`, `symIsBot`, determinism blessing, and dead-edge proofs — are
+sound only conditional on the declaration laws, because an under-declared domain manufactures
+false UNSAT; `fieldWitness`-only predicates keep the unconditional guarantee, and generators such
+as Keiro must wire the declaration-law helpers into their generated conformance suites. Mark IR-4
+implemented only after all validation passes. At completion, reread this plan's Decision Log, Surprises & Discoveries, and
 Outcomes & Retrospective and promote all durable semantic decisions to ADR-0003 or a superseding
 ADR.
 
@@ -543,21 +612,26 @@ The text domain is accepted when the pure matcher and SBV constraint agree for e
 alphabets and for all TypeID-style boundary examples. Partial prefix checks, host-language regexes,
 or a parser that accepts a stricter or looser set than the symbolic constraint do not satisfy this
 plan. A solver model outside the concrete parser's language is a test failure, not an allowed
-approximation.
+approximation. Constructors must reject code points above U+2FFFF, with boundary coverage at the
+last representable and first unrepresentable code point.
 
 Predicate-global classification is accepted when repeated uses of one exact tag and base are exact;
 the same tag on distinct bases is exact; distinct exact tags on distinct bases are exact; two tags
 on one base are inexact; direct and projected reads of one base are inexact; an unguarded input
 projection is inexact; and a projection dominated by its matching constructor guard is exact.
 Boolean nesting, especially disjunction and negation, must be included so the constructor-guard
-analysis does not rely on a syntactically nearby but non-dominating atom.
+analysis does not rely on a syntactically nearby but non-dominating atom, and the reversed
+conjunction order `PAnd (projection atom) (PInCtor ...)` must classify exactly as its guard-first
+spelling.
 
 Equality and negated equality over exact projections may receive `ExactTranslation`. Ordering or
 arithmetic involving a projection must report `ProjectionUsedOutsideEquality` and remain
 conservative until a later operation-level contract is implemented.
 
 Contract enforcement is accepted when both malformed inverse fixtures return an explicit detailed
-failure and never `VerifiedSatisfiable`. Finite declaration-law helpers exhaust the declared image.
+failure and never `VerifiedSatisfiable`, and when the under-declared domain fixture is reported by
+the owner-side declaration-law helper. Finite declaration-law helpers exhaust the declared image
+and, given an owner enumeration, the owner-side law `member domain (projectFieldValue owner)`.
 All extracted keys and owners are recoverable only through matching `TypeRep` evidence, and two
 fields with the same display name but different structural paths cannot collide.
 
@@ -581,7 +655,10 @@ constructors and witness declarations are pure; no persisted representation or d
 introduced. Keep the domain compiler behind one function so a failed SBV API experiment can be
 replaced without changing the public declaration algebra.
 
-Implement one milestone at a time and keep its focused tests green. If a text pattern cannot be
+Implement one milestone at a time and keep its focused tests green. Milestones 3 and 4 are one
+release unit: after Milestone 3 an exact report can carry `verifyPredicate` to
+`VerifiedSatisfiable` while the model and inverse contract checks arrive only in Milestone 4, so
+never publish, tag, or mark IR-4 implemented between them. If a text pattern cannot be
 compiled exactly with the selected SBV version, return `UnsupportedProjectionDomain`, leave the
 symbolic variable unconstrained, and classify the translation conservatively. Do not approximate
 with a subset constraint, because that could create a false UNSAT proof. A superset fallback is

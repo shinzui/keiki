@@ -86,6 +86,24 @@ and prepares the witness representation for the exact-domain capability in
   unsatisfiability. Plan 83 uses exact inverses to recover more such witnesses.
   Date: 2026-08-01
 
+- Decision: Run the `symSatExt` concrete recheck under an exception guard and translate a thrown
+  `evalTerm` input-guard violation into `Nothing`.
+  Rationale: Concrete evaluation of a `PBInp` projection or direct `TInpCtorField` read errors when
+  the evaluated command is a different constructor. `evalPred` short-circuits `PAnd` left to right,
+  so predicates following the guard-first `PInCtor` discipline evaluate safely against their own
+  model, but an unguarded read — which validation already warns about — must not turn a previously
+  total `symSatExt` call into an imprecise exception from pure code.
+  Date: 2026-08-01
+
+- Decision: The concrete recheck deliberately covers opaque `TApp1`/`TApp2` terms and the non-`Sym`
+  equality fallback, not only projections, and the release notes must say so.
+  Rationale: The current Haddock scopes the `models` guarantee as "modulo escape-hatch terms."
+  After this plan, a predicate whose only symbolic support was a fabricated opaque assignment
+  returns `Nothing` where it previously returned a non-modeling pair. That is the intended
+  restoration of the witness postcondition, but it is a caller-visible behavior change beyond the
+  projection repair and must be documented as one.
+  Date: 2026-08-01
+
 
 ## Outcomes & Retrospective
 
@@ -209,8 +227,15 @@ At the final return point of `symSatExt` in `src/Keiki/Symbolic.hs`, evaluate a 
 candidate with the same concrete `evalPred`/`models` semantics used by `SymPred`. Return `Just` only
 when that check is true. Return `Nothing` for a candidate that cannot realize an opaque or projected
 symbolic assignment. Do not reinterpret this `Nothing` as UNSAT, and do not change `symIsBot`.
-Add a positive ordinary-register extraction regression beside the new negative projection case so
-the guard does not discard sound existing witnesses.
+Run the recheck inside the existing `unsafePerformIO` block under an exception guard that forces
+the Boolean result and maps `evalTerm`'s input-guard-violation error to `Nothing`. `evalPred`
+short-circuits `PAnd` left to right, so a predicate following the guard-first `PInCtor` discipline
+evaluates safely against its own model, but a predicate with an unguarded `PBInp` read — which
+validation already warns about — must degrade to "no witness recovered" rather than turn a
+previously total call into an exception from pure code. Add a regression with a deliberately
+unguarded input projection asserting `symSatExt` returns `Nothing` without raising, and a positive
+ordinary-register extraction regression beside the new negative projection case so the guard does
+not discard sound existing witnesses.
 
 Revise Haddocks in `src/Keiki/Core.hs` and `src/Keiki/Symbolic.hs` to use three precise terms.
 “Path-exact” means repeated reads share the same variable. “Over-approximate” means the solver may
@@ -230,7 +255,11 @@ Update `docs/adr/0003-proof-gates-fail-conservatively.md` with the durable disti
 exact verification and unsatisfiability proved over an over-approximation. Add an Unreleased
 changelog entry naming the prior `predicateTranslationExact` result as an overclaim and explaining
 that existing `fieldWitness` callers receive `UnverifiedOpaque` from `verifyPredicate` but retain
-conservative `symIsBot` behavior. At completion, reread the plan's Decision Log, Surprises &
+conservative `symIsBot` behavior. The same entry must state that the restored `symSatExt`
+postcondition also covers the opaque `TApp1`/`TApp2` terms and the non-`Sym` equality fallback: a
+predicate whose only symbolic support was a fabricated opaque assignment now returns `Nothing`
+where it previously returned a pair that failed `models`, and the Haddock carve-out that scoped
+the witness guarantee as "modulo escape-hatch terms" is removed rather than restated. At completion, reread the plan's Decision Log, Surprises &
 Discoveries, and Outcomes & Retrospective and promote any additional durable finding to ADR-0003
 instead of leaving it only here.
 
@@ -291,7 +320,9 @@ that z3 can satisfy the unrestricted third-value formula, yet `verifyPredicate` 
 `UnverifiedOpaque` and never `VerifiedSatisfiable`. Evaluating that predicate against both concrete
 owners must be false. `symSatExt` must return `Nothing` rather than a default-owner pair that fails
 concrete `models`; its documentation must identify that outcome as reconstruction failure, not an
-unsatisfiability proof. A predicate containing the same projection on both sides of `./=` must
+unsatisfiability proof. The recheck must not throw: a fixture with a deliberately unguarded input
+projection returns `Nothing` instead of raising `evalTerm`'s input-guard violation, and an
+opaque-only predicate whose fabricated witness fails `models` likewise returns `Nothing`. A predicate containing the same projection on both sides of `./=` must
 remain provably empty through `symIsBot` but must not be called translation-exact.
 
 Ordinary `Bool`, `Integer`, fixed-width numeric, `Text`, `UTCTime`, and supported `Natural`
