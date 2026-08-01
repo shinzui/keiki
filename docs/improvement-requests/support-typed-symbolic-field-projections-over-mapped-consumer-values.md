@@ -4,11 +4,25 @@ title: Support typed symbolic field projections over mapped consumer-owned value
 description: >-
   Add a first-class, solver-visible field-projection term so a guard can read one scalar field
   out of a mapped consumer-owned value without an opaque TApp escape hatch.
-timestamp: 2026-07-28T11:23:50Z
+timestamp: 2026-08-01T00:14:56Z
 requestId: IR-1
 status: released
 origin: mori://shinzui/keiro
 plan: docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md
+reviews:
+  - kind: model
+    reviewer: codex
+    reviewed_at: 2026-08-01T00:14:56Z
+    document_timestamp: 2026-08-01T00:14:56Z
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: gpt-5
+    effort: unspecified
+    context: >-
+      Revalidated the released IR-1 projection contract while deriving IR-3 and IR-4; corrected
+      stale downstream Keiro bounds and confirmed the released getter remains intentionally
+      one-way, motivating conservative exactness and exact-domain follow-ups.
 ---
 
 # Improvement Request: Support Typed Symbolic Field Projections over Mapped Consumer-Owned Values
@@ -19,12 +33,20 @@ plan: docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-
 [`keiki-0.4.0.0`](https://hackage.haskell.org/package/keiki-0.4.0.0), with the coordinated
 `keiki-codec-json-0.4.0.0` and `keiki-codec-json-test-0.4.0.0` releases. The implementation
 uses a structural `ProjBase`, nominal projection-tag/owner/result memo identity, and
-derived-term treatment in the inversion machinery. Keiro's current `<0.4` bounds
-intentionally exclude this PVP-major release until its adoption plan raises them.
+derived-term treatment in the inversion machinery. Keiro subsequently adopted the capability and
+currently constrains Keiki to `>=0.6 && <0.7` across its active packages.
 
 **Previously planned.** Accepted on 2026-07-28 after validation against the codebase;
 implementation was specified by ExecPlan 79
 (`docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`).
+
+**Post-release exactness clarification.** The released one-way `FieldProjection` contract provides
+path-stable, solver-visible over-approximation: every concrete getter result can be represented and
+repeated reads share one variable, but the solver can also choose result values outside the
+getter's image. Concrete-to-symbolic agreement is therefore one-way. Definite UNSAT over that
+larger domain remains a sound emptiness proof, while SAT is not necessarily backed by a concrete
+owner and must not be reported as exact. IR-3 and IR-4 respectively specify the conservative
+classification repair and the explicit domain/reconstruction evidence needed to regain exactness.
 
 **Originally proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl` (Keiro's
 improvement request IR-1, `docs/improvement-requests/support-structural-consumer-owned-types-in-keiro-dsl.md`
@@ -102,9 +124,11 @@ The exact spelling belongs to Keiki; the required semantics are:
    never a silent fallback to opacity.
 3. **Validator visibility.** A projection is not an opaque term: `predHasOpaqueTerm` (and hence
    the `OpaqueGuard` audit) does not fire on it, while continuing to fire on `TApp1`/`TApp2`.
-   The pure-fragment extraction, mutual-exclusion (`symIsBot`), and dead-edge analyses treat
-   projections precisely. Projecting out of an input-constructor field remains subject to the
-   established `PInCtor` guard discipline exactly as direct field reads are today.
+   The pure-fragment extraction, mutual-exclusion (`symIsBot`), and dead-edge analyses retain
+   path-stable projection identity. With only the released one-way witness they use a conservative
+   over-approximation: definite UNSAT is sound, while SAT is not an exact concrete witness.
+   Projecting out of an input-constructor field remains subject to the established `PInCtor` guard
+   discipline exactly as direct field reads are today.
 4. **Replay and inversion soundness — guards only.** In this request a projection may appear in
    guards. Using projections inside `OutFields` or register-write terms is out of scope: mapped
    values continue to move as whole-value copies (Keiro IR-1's contract). For the hidden-input
@@ -147,7 +171,8 @@ The request is complete when all of the following are demonstrated in Keiki:
 - the projection term and witness type exist with Haddocks stating the totality and identity
   laws and the provenance division above;
 - `evalTerm`, `translateTermSym`, and `translatePred` support the term, with a property test
-  that concrete evaluation and symbolic translation agree on satisfying assignments;
+  that each concrete evaluation has the corresponding symbolic assignment; the released one-way
+  witness does not claim that every symbolic assignment reconstructs a concrete owner;
 - the `SymEnv` cache keys projections by path and a test proves
   `proj #doc #contentHash .== proj #doc #contentHash` is valid (z3-backed, alongside the
   existing memoization tests);

@@ -1,5 +1,28 @@
 # Bundle Update Log
 
+## 2026-08-01
+* **Refinement**: IR-1 was revalidated while deriving the projection follow-ups; its stale Keiro
+  `<0.4` adoption note now records the active `>=0.6 && <0.7` bounds and a model review.
+* **Refinement**: IR-1 now distinguishes path-stable concrete-to-symbolic agreement from exact
+  owner-domain satisfiability; only definite UNSAT remains a proof for the released one-way
+  projection witness.
+* **Addition**: IR-3 records that one-way `FieldProjection` values are currently reported as
+  exact even though the symbolic carrier may contain values outside the getter image; it requests
+  a conservative structured verification result without changing concrete projection behavior.
+* **Status change**: IR-3 `proposed` -> `planned`. Its correctness repair is specified by ExecPlan
+  82 (`docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`).
+* **Refinement**: IR-3 also closes the projection-model gap in `symSatExt` by requiring concrete
+  validation of every returned full witness; failure to reconstruct remains distinct from UNSAT.
+* **Addition**: IR-4 requests declaration-tagged exact projection domains, symbolic constraints,
+  reconstruction, and counterexample attribution for finite enums and validated textual IDs. It
+  is the upstream prerequisite for Keiro IR-12 and IR-14.
+* **Refinement**: IR-4 now requires predicate-global owner-view consistency, canonical inverse
+  laws, and the complete TypeID-style lexical domain; individual projection domains alone do not
+  establish joint realizability.
+* **Status change**: IR-4 `proposed` -> `planned`. Its exact-domain and model-extraction work is
+  specified by ExecPlan 83
+  (`docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`).
+
 ## 2026-07-31
 * **Addition**: IR-2 requests structured successful edge attribution for forward stepping and
   replay, including live/replay-only mode and completed multi-event input spans, so downstream
