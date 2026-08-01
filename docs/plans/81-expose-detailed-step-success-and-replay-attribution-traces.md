@@ -128,6 +128,12 @@ active parent initiative.
   all with zero failures. Haddock retained only the existing project-wide link and coverage
   warnings. Profile/log-enforced OKF validation reported `OK: 2 concepts`; strict validation still
   reports only IR-1's pre-existing missing recommended `reviews` field. Diff whitespace is clean.
+- [x] (2026-08-01T00:01:39Z) Integrated the validated branch into `master`. Commit `d1bdd9a`
+  explicitly reverted the temporary release deferral, and merge commit `4cadca3` brought in the
+  Milestone 3b specialization; its tree was byte-identical to `b2e8745`. The four focused suites
+  passed 13/18/22/36 examples. The repeated scale benchmark stayed below the 20% timing threshold;
+  builder allocation deltas at 32/1,024/4,096/16,384 events were 0/-11/0/+105 B and AST deltas were
+  0/0/-49/-93 B. `nix flake check` passed on the merge.
 - [ ] Milestone 6: reconcile release authority, publish the additive release through the repository
   release workflow, and record the final tag/version evidence.
 
@@ -352,11 +358,11 @@ active parent initiative.
 ## Outcomes & Retrospective
 
 Interim outcome: the requested attribution semantics, laws, documentation, and benchmark evidence
-exist on `feat/detailed-attribution-traces`. Milestone 3b removed the approximately 64--66
-additional bytes per event from compatibility replay while preserving one semantic event kernel;
-the performance blocker is cleared. The feature remains deliberately absent from published
-`v0.6.0.0`; all Milestone 5 repository gates are green, so only the separately authorized additive
-release remains. The IR remains `planned` and no Plan 81 API has been published.
+are integrated into `master`. Milestone 3b removed the approximately 64--66 additional bytes per
+event from compatibility replay while preserving one semantic event kernel; the performance
+blocker is cleared. The feature remains deliberately absent from published `v0.6.0.0`; all
+Milestone 5 and post-merge gates are green, so only the separately authorized additive release
+remains. The IR remains `planned` and no Plan 81 API has been published.
 
 
 ## Context and Orientation
@@ -1039,3 +1045,6 @@ branch at Milestone 3b.
 Revision note (2026-07-31): Completed Milestone 3b with a pair-shaped compatibility fold and one
 continuation-shaped event kernel. The matched four-size gate shows no event-count-proportional
 allocation delta, so the performance release blocker is cleared.
+
+Revision note (2026-08-01): Recorded the explicit restoration and clean merge into `master`, plus
+the focused, allocation, timing-repeat, and Nix evidence from the exact merged tree.
