@@ -72,6 +72,7 @@ library
     Keiki.NoThunks
     Keiki.Operators
     Keiki.Profunctor
+    Keiki.ProjectionDomain
     Keiki.Render.Inspector
     Keiki.Render.Markdown
     Keiki.Render.Mermaid
@@ -80,7 +81,10 @@ library
     Keiki.Shape
     Keiki.Symbolic
 
-  other-modules:   Keiki.Internal.SymbolicTypes
+  other-modules:
+    Keiki.Internal.ProjectionDomain
+    Keiki.Internal.SymbolicTypes
+
   hs-source-dirs:  src
   build-depends:
     , base               ^>=4.21
@@ -134,6 +138,7 @@ test-suite keiki-test
     Keiki.OperatorsQualifiedSpec
     Keiki.OperatorsSpec
     Keiki.ProfunctorSpec
+    Keiki.ProjectionDomainSpec
     Keiki.RecomputeVerifySpec
     Keiki.Render.InspectorSpec
     Keiki.Render.MarkdownSpec

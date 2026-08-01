@@ -12,6 +12,7 @@ module Keiki.Internal.SymbolicTypes
     symbolicTypeSupportsEquality,
     symbolicTypeSupportsOrdering,
     symbolicTypeSupportsNumeric,
+    symbolicTypeWholeCarrierExact,
   )
 where
 
@@ -77,3 +78,14 @@ symbolicTypeSupportsNumeric SymbolicWord8 = True
 symbolicTypeSupportsNumeric SymbolicInt64 = True
 symbolicTypeSupportsNumeric SymbolicInt32 = True
 symbolicTypeSupportsNumeric _ = False
+
+-- | Whether the symbolic representation is an isomorphism over the complete
+-- concrete carrier. This is stricter than supporting equality. In particular,
+-- machine 'Int' is represented by unbounded SMT integers, 'Text' contains
+-- Haskell code points above SMT-LIB's U+2FFFF maximum, and 'UTCTime' can denote
+-- a leap second that POSIX conversion clamps to the following day boundary.
+symbolicTypeWholeCarrierExact :: SymbolicType r -> Bool
+symbolicTypeWholeCarrierExact SymbolicInt = False
+symbolicTypeWholeCarrierExact SymbolicText = False
+symbolicTypeWholeCarrierExact SymbolicUTCTime = False
+symbolicTypeWholeCarrierExact _ = True

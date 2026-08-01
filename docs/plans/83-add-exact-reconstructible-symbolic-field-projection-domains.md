@@ -41,9 +41,9 @@ exactness and model-extraction portions of
 
 ## Progress
 
-- [ ] Milestone 1: introduce a backend-neutral exact domain algebra with an executable concrete
+- [x] (2026-08-01T04:04:27Z) Milestone 1: introduce a backend-neutral exact domain algebra with an executable concrete
       membership test and an equivalent SBV constraint compiler.
-- [ ] Milestone 2: add coherent exact projection evidence, checked reconstruction laws, and a
+- [x] (2026-08-01T04:04:27Z) Milestone 2: add coherent exact projection evidence, checked reconstruction laws, and a
       compatibility-safe constructor beside the existing unconstrained `fieldWitness`.
 - [ ] Milestone 3: produce a predicate-wide translation report, impose each projection domain once,
       and reject owner-view combinations whose joint relation is not represented.
@@ -55,7 +55,26 @@ exactness and model-extraction portions of
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Observation: The Mori SBV corpus is pinned to 14.2, while both Hackage preferred versions and
+  upstream tags identify 14.5 as the current release. The inspected `Data.SBV.RegExp` API is
+  sufficient and Keiki's existing `sbv >=11.7 && <15` bound already admits 14.5, so no dependency
+  edit is necessary.
+  Evidence: `mori registry show LeventErkok/sbv --full` located the 14.2 corpus;
+  `https://hackage.haskell.org/package/sbv/preferred.json` lists 14.5 first; upstream tag `v14.5`
+  resolves to `42b20bdfc72a0bca6c74092c380a4475cbffa8e3`.
+
+- Observation: `UTCTime` is not whole-carrier exact despite its picosecond representation being
+  lossless for ordinary POSIX times. The `time` implementation clamps `utctDayTime` with
+  `min posixDayLength`, so a leap-second value at 86,401 seconds is not injective through
+  `utcTimeToPOSIXSeconds` and `posixSecondsToUTCTime`.
+  Evidence: Mori located `mori://haskell/time/packages/time`; its
+  `lib/Data/Time/Clock/POSIX.hs` implements that clamp, and
+  `lib/Data/Time/Clock/Internal/UTCTime.hs` documents day times below 86,401 seconds.
+
+- Observation: The Milestone 1 and 2 focused projection run passes all existing compatibility
+  tests plus the new domain/compiler and declaration-law fixtures.
+  Evidence: `cabal test keiki-test --test-option=--match --test-option=projection` completed with
+  48 examples and 0 failures at 2026-08-01T04:04:27Z.
 
 
 ## Decision Log
@@ -167,6 +186,21 @@ exactness and model-extraction portions of
   with domain constraints applied but with the model-membership, inverse, and round-trip contract
   checks arriving only in Milestone 4. That intermediate state must never be published, tagged, or
   used to mark IR-4 implemented.
+  Date: 2026-08-01
+
+- Decision: Keep the existing SBV dependency bounds unchanged and compile the validated text AST
+  directly to `Data.SBV.RegExp`.
+  Rationale: The current bound already includes the authoritative 14.5 release, the required
+  literal/range/concatenation/union/loop constructors are present in the inspected source, and a
+  bound change would add PVP surface without improving compatibility.
+  Date: 2026-08-01
+
+- Decision: Text literal and character-set smart constructors return
+  `Either DomainConstructionError TextPattern`, matching the already-fallible range and repetition
+  constructors.
+  Rationale: Literals and sets can contain Haskell code points above U+2FFFF. A total constructor
+  with a hidden exception would not satisfy the plan's requirement that such declarations be
+  rejected before a witness exists.
   Date: 2026-08-01
 
 - Decision: The deferred multi-view mechanism is recorded as finite-owner joint enumeration.
@@ -739,3 +773,8 @@ and `Type.Reflection` come from `base`; `NonEmpty` comes from `base`. Do not add
 package or a dependency on `mmzk-typeid`: both would create a second semantics that could diverge
 from the SBV constraint. Any `sbv` bound change must be justified by source inspection through Mori,
 then verified against Hackage and upstream tags before editing the Cabal file.
+
+
+Revision note (2026-08-01T04:04:27Z): Recorded completion and focused validation of Milestones 1
+and 2, the authoritative dependency audit, the `UTCTime` leap-second carrier finding, and the two
+implementation decisions that preserve exact pure/SBV semantics.

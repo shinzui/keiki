@@ -61,8 +61,13 @@ module Keiki.Core
     Term (..),
     NumOp (..),
     FieldProjection (..),
+    ExactFieldProjection (..),
     FieldWitness,
     fieldWitness,
+    exactFieldWitness,
+    ProjectionLawFailure (..),
+    checkFieldProjectionOwner,
+    checkFieldProjectionKey,
     ProjBase (..),
 
     -- * Input-side structural constructor (v2)
@@ -203,6 +208,8 @@ module Keiki.Core
     fieldProjectionPath,
     fieldWitnessAgrees,
     fieldWitnessHasExactDomain,
+    fieldWitnessDomain,
+    fieldWitnessReconstruct,
     fieldWitnessGet,
     indexPosition,
   )
@@ -230,6 +237,10 @@ import Keiki.Internal.SymbolicTypes
     symbolicTypeSupportsEquality,
     symbolicTypeSupportsNumeric,
     symbolicTypeSupportsOrdering,
+  )
+import Keiki.ProjectionDomain
+  ( ProjectionDomain,
+    memberProjectionDomain,
   )
 import Numeric.Natural (Natural)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
@@ -359,6 +370,30 @@ class FieldProjection projection where
   projectFieldValue ::
     Proxy projection -> FieldOwner projection -> FieldResult projection
 
+-- | A projection whose declared symbolic domain is exactly the image of its
+-- concrete getter and whose inverse returns a canonical owner for every
+-- admitted key.
+--
+-- Instances must satisfy both directions of the contract:
+--
+-- * every well-formed owner projects to a member of
+--   'fieldProjectionDomain'; and
+-- * every domain member is accepted by 'reconstructFieldOwner', whose returned
+--   owner projects back to that same key.
+--
+-- 'checkFieldProjectionOwner' and 'checkFieldProjectionKey' make these laws
+-- executable for consumer conformance suites. Keiki also checks every
+-- solver-returned model before reporting it as satisfiable. An omitted real
+-- owner key can still create false UNSAT, so owner-side conformance testing is
+-- required whenever 'exactFieldWitness' is used.
+class (FieldProjection projection) => ExactFieldProjection projection where
+  fieldProjectionDomain ::
+    Proxy projection -> ProjectionDomain (FieldResult projection)
+  reconstructFieldOwner ::
+    Proxy projection ->
+    FieldResult projection ->
+    Maybe (FieldOwner projection)
+
 -- | Abstract nominal token for a coherent 'FieldProjection' instance and its
 -- private symbolic-domain evidence. Construct one with 'fieldWitness'. Its
 -- nominal role prevents changing the projection tag with 'coerce', and the
@@ -366,10 +401,15 @@ class FieldProjection projection where
 -- caller-controlled diagnostic strings.
 type role FieldWitness nominal
 
-data FieldDomainEvidence
-  = FieldDomainUnconstrained
+data FieldDomainEvidence projection where
+  FieldDomainUnconstrained :: FieldDomainEvidence projection
+  FieldDomainExact ::
+    (Eq (FieldResult projection)) =>
+    ProjectionDomain (FieldResult projection) ->
+    (FieldResult projection -> Maybe (FieldOwner projection)) ->
+    FieldDomainEvidence projection
 
-data FieldWitness projection = FieldWitness FieldDomainEvidence
+data FieldWitness projection = FieldWitness (FieldDomainEvidence projection)
 
 -- | Construct the abstract witness for a projection tag. Normal Haskell
 -- instance coherence supplies one getter per tag; generators should therefore
@@ -386,12 +426,49 @@ fieldWitness ::
   FieldWitness projection
 fieldWitness = FieldWitness FieldDomainUnconstrained
 
+-- | Construct an exact witness explicitly. Merely defining an
+-- 'ExactFieldProjection' instance does not change existing 'fieldWitness' call
+-- sites: callers opt into the stronger contract at each use.
+exactFieldWitness ::
+  forall projection.
+  ( ExactFieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection),
+    Eq (FieldResult projection)
+  ) =>
+  FieldWitness projection
+exactFieldWitness =
+  FieldWitness
+    ( FieldDomainExact
+        (fieldProjectionDomain (Proxy @projection))
+        (reconstructFieldOwner (Proxy @projection))
+    )
+
 -- | Whether a witness carries evidence that the symbolic result domain is
 -- exactly the image of its concrete owner getter. The released 'fieldWitness'
 -- constructor records only a total one-way getter, so it always returns
 -- 'False'. This read-only query does not let callers claim exactness.
 fieldWitnessHasExactDomain :: FieldWitness projection -> Bool
 fieldWitnessHasExactDomain (FieldWitness FieldDomainUnconstrained) = False
+fieldWitnessHasExactDomain (FieldWitness FieldDomainExact {}) = True
+
+-- | Read the declared exact domain without exposing the witness constructor.
+fieldWitnessDomain ::
+  FieldWitness projection ->
+  Maybe (ProjectionDomain (FieldResult projection))
+fieldWitnessDomain (FieldWitness FieldDomainUnconstrained) = Nothing
+fieldWitnessDomain (FieldWitness (FieldDomainExact domain _)) = Just domain
+
+-- | Apply the declared inverse. An unconstrained witness has no inverse.
+fieldWitnessReconstruct ::
+  FieldWitness projection ->
+  FieldResult projection ->
+  Maybe (FieldOwner projection)
+fieldWitnessReconstruct (FieldWitness FieldDomainUnconstrained) _ = Nothing
+fieldWitnessReconstruct (FieldWitness (FieldDomainExact _ reconstruct)) key =
+  reconstruct key
 
 -- | Eliminate a 'FieldWitness' using its coherent projection instance.
 fieldWitnessGet ::
@@ -401,6 +478,48 @@ fieldWitnessGet ::
   FieldOwner projection ->
   FieldResult projection
 fieldWitnessGet _ = projectFieldValue (Proxy @projection)
+
+-- | A failed executable declaration law. No constructor stores the owner or
+-- key, so the result is safe to log even when consumer values are sensitive.
+data ProjectionLawFailure
+  = ProjectionWitnessIsUnconstrained
+  | ProjectedKeyOutsideDeclaredDomain
+  | ProjectionInverseRejectedDomainKey
+  | ProjectionInverseRoundTripMismatch
+  deriving stock (Eq, Show)
+
+-- | Check the owner-to-domain direction and the canonical inverse round trip
+-- for one consumer-supplied owner value.
+checkFieldProjectionOwner ::
+  forall projection.
+  (FieldProjection projection) =>
+  FieldWitness projection ->
+  FieldOwner projection ->
+  Either ProjectionLawFailure ()
+checkFieldProjectionOwner witness owner =
+  () <$ checkFieldProjectionKey witness (fieldWitnessGet witness owner)
+
+-- | Check one declared domain key and return its reconstructed owner on
+-- success. Finite domains can call this helper for every member; validated
+-- infinite text domains should combine it with schema-derived generators.
+checkFieldProjectionKey ::
+  forall projection.
+  (FieldProjection projection) =>
+  FieldWitness projection ->
+  FieldResult projection ->
+  Either ProjectionLawFailure (FieldOwner projection)
+checkFieldProjectionKey (FieldWitness FieldDomainUnconstrained) _ =
+  Left ProjectionWitnessIsUnconstrained
+checkFieldProjectionKey
+  witness@(FieldWitness (FieldDomainExact domain reconstruct))
+  key
+    | not (memberProjectionDomain domain key) =
+        Left ProjectedKeyOutsideDeclaredDomain
+    | otherwise = case reconstruct key of
+        Nothing -> Left ProjectionInverseRejectedDomainKey
+        Just owner
+          | fieldWitnessGet witness owner == key -> Right owner
+          | otherwise -> Left ProjectionInverseRoundTripMismatch
 
 -- | Where a structural field projection may read its owner value. Restricting
 -- the base to a register slot or one input-constructor field gives the

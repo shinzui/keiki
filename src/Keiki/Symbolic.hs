@@ -55,6 +55,7 @@ module Keiki.Symbolic
     discoverSymOrd,
     SymNumDict (..),
     discoverSymNum,
+    symbolicWholeCarrierExact,
 
     -- * Translation
     SymEnv (..),
@@ -97,6 +98,7 @@ import Control.Exception (ErrorCall, evaluate, try)
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Fixed (Fixed (MkFixed))
+import Data.Foldable (toList)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.Int (Int32, Int64)
 import Data.Kind (Type)
@@ -104,6 +106,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
+import Data.SBV.RegExp qualified as SBV.RegExp
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, nominalDiffTimeToSeconds, secondsToNominalDiffTime)
@@ -112,9 +115,14 @@ import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Keiki.Core
+import Keiki.Internal.ProjectionDomain
+  ( ProjectionDomain (..),
+    TextPattern (..),
+  )
 import Keiki.Internal.SymbolicTypes
   ( SymbolicType (..),
     discoverSymbolicType,
+    symbolicTypeWholeCarrierExact,
   )
 import Numeric.Natural (Natural)
 import System.IO.Unsafe (unsafePerformIO)
@@ -353,6 +361,13 @@ discoverSymNum = case discoverSymbolicType @r of
   Just SymbolicUTCTime -> Nothing
   Nothing -> Nothing
 
+-- | Whether the curated representation covers the complete concrete carrier
+-- bijectively. This is the gate for 'wholeProjectionDomain': supporting
+-- symbolic equality alone is not sufficient.
+symbolicWholeCarrierExact :: forall (r :: Type). (Typeable r) => Bool
+symbolicWholeCarrierExact =
+  maybe False symbolicTypeWholeCarrierExact (discoverSymbolicType @r)
+
 -- | Lift a concrete value to an SBV literal of its 'SymRep'.
 symLit :: forall a. (Sym a) => a -> SBV.SBV (SymRep a)
 symLit = SBV.literal . toSym
@@ -525,7 +540,53 @@ translateTermSym env (TArith op a b) = case discoverSymNum @r of
               OpMul -> (*)
         pure (apply sa sb)
 translateTermSym env (TFieldProj (witness :: FieldWitness projection) base) =
-  memoFree @r env (projectionVarKey witness base)
+  do
+    symbolic <- memoFree @r env (projectionVarKey witness base)
+    case fieldWitnessDomain witness of
+      Nothing -> pure ()
+      Just domain -> case compileProjectionDomain @r domain symbolic of
+        Left _unsupported -> pure ()
+        Right domainConstraint -> SBV.constrain domainConstraint
+    pure symbolic
+
+-- | Why a declared projection domain could not be compiled exactly for its
+-- active symbolic carrier. The translator must omit the entire constraint on
+-- failure; emitting a stronger subset could manufacture false UNSAT.
+data ProjectionDomainCompileError
+  = UnsupportedWholeProjectionCarrier SomeTypeRep
+  deriving stock (Eq, Show)
+
+compileProjectionDomain ::
+  forall r.
+  (Sym r) =>
+  ProjectionDomain r ->
+  SBV.SBV (SymRep r) ->
+  Either ProjectionDomainCompileError SBV.SBool
+compileProjectionDomain ProjectionWhole _symbolic
+  | symbolicWholeCarrierExact @r = Right SBV.sTrue
+  | otherwise = Left (UnsupportedWholeProjectionCarrier (SomeTypeRep (typeRep @r)))
+compileProjectionDomain (ProjectionFinite values) symbolic =
+  Right (SBV.sOr [symbolic SBV..== symLit value | value <- toList values])
+compileProjectionDomain (ProjectionText textPattern) symbolic =
+  Right (symbolic `SBV.RegExp.match` compileTextPattern textPattern)
+
+compileTextPattern :: TextPattern -> SBV.RegExp.RegExp
+compileTextPattern (TextLiteral literal) =
+  SBV.RegExp.Literal (T.unpack literal)
+compileTextPattern (TextRanges ranges) =
+  SBV.RegExp.Union
+    [ SBV.RegExp.Range lower upper
+    | (lower, upper) <- toList ranges
+    ]
+compileTextPattern (TextConcat patterns) =
+  SBV.RegExp.Conc (compileTextPattern <$> toList patterns)
+compileTextPattern (TextAlternation patterns) =
+  SBV.RegExp.Union (compileTextPattern <$> toList patterns)
+compileTextPattern (TextRepeatBetween lower upper textPattern) =
+  SBV.RegExp.Loop
+    (fromIntegral lower)
+    (fromIntegral upper)
+    (compileTextPattern textPattern)
 
 projectionVarKey ::
   forall projection rs ci ifs.
