@@ -9,6 +9,15 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.7.0.0] — 2026-08-01
+
+### Changed
+
+- Co-released with `keiki-0.7.0.0`; internal dependency bounds now target the
+  `^>=0.7` PVP range containing the corrected projection-exactness and
+  `symSatExt` witness semantics. The JSON wire format is unchanged.
+
+
 ## [0.6.0.0] — 2026-07-31
 
 ### Changed

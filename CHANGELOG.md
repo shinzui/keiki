@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.7.0.0] — 2026-08-01
+
 ### Added
 
 - `Keiki.ProjectionDomain` provides backend-neutral exact images for nominal
