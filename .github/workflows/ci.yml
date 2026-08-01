@@ -34,6 +34,13 @@ jobs:
       run:
         shell: nix develop .#ci -c bash -e {0}
 
+    env:
+      # Pins cabal's home, so the store path is deterministic and cacheable
+      # without interrogating cabal for it. Asking `cabal path --store-dir` does
+      # not work here: with no config file yet it prepends a "Config file not
+      # found / Writing default configuration" preamble to stdout.
+      CABAL_DIR: ${{ github.workspace }}/.cabal
+
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +50,17 @@ jobs:
       # literals outside the byte range and so fails any property that
       # generates a non-Latin-1 char. Pinning it keeps the solver identical to
       # the one the specs are written against.
+      # The substituter is set here rather than left to the flake's own
+      # nixConfig: that is only honored for users who trust the flake, so in CI
+      # nix ignores it and warns. install-nix-action writes nix.conf as a
+      # trusted user, so these actually take effect. Pull-only — nothing here
+      # needs a CACHIX_AUTH_TOKEN, since this flake builds no custom
+      # derivations to push.
       - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://shinzui.cachix.org
+            extra-trusted-public-keys = shinzui.cachix.org-1:QEmAoJrA9WwLP0uxfDgktLi2BRrcvQQWdz8NzcMg4/E=
 
       # Must precede the first step that enters the dev shell, since that is
       # what realizes the closure. Without this the toolchain (~3.5G on linux,
@@ -71,16 +88,10 @@ jobs:
           cabal --version | head -1
           z3 --version
 
-      # Resolved from the shell's own cabal rather than hardcoded: the path is
-      # XDG-dependent and moves between cabal releases.
-      - name: Resolve cabal store dir
-        id: cabal-store
-        run: echo "dir=$(cabal path --store-dir)" >> "$GITHUB_OUTPUT"
-
       - name: Cache cabal store
         uses: actions/cache@v4
         with:
-          path: ${{ steps.cabal-store.outputs.dir }}
+          path: ${{ github.workspace }}/.cabal/store
           key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', 'cabal.project', 'flake.lock') }}
           restore-keys: |
             cabal-${{ runner.os }}-${{ matrix.ghc }}-
