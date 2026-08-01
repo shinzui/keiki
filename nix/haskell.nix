@@ -22,9 +22,14 @@
     let
       hsdev = inputs.haskell-nix-dev.lib.${system};
 
-      mkProjectShell = ghc: hsdev.mkDevShell {
+      # `interactive` distinguishes a human's shell from CI's. CI gets the same
+      # toolchain and the same tool list — that parity is the point, it is what
+      # keeps `z3` identical to the one specs are written against — but skips
+      # HLS (a large closure no batch job invokes) and the pre-commit install
+      # (which writes into .git/hooks and only makes sense for a working tree).
+      mkProjectShell = { ghc, interactive ? true }: hsdev.mkDevShell {
         inherit ghc;
-        withHls = true;
+        withHls = interactive;
         extraNativeBuildInputs =
           [
             pkgs.just
@@ -33,13 +38,17 @@
             pkgs.z3
           ]
           ++ config.haskellProject.extraDevPackages;
-        shellHook = ''
+        shellHook = lib.optionalString interactive ''
           ${config.pre-commit.installationScript}
         '';
       };
     in
     {
-      devShells.default = mkProjectShell "ghc9124";
-      devShells.ghc9124 = mkProjectShell "ghc9124";
+      devShells.default = mkProjectShell { ghc = "ghc9124"; };
+      devShells.ghc9124 = mkProjectShell { ghc = "ghc9124"; };
+
+      # Consumed by .github/workflows/ci.yml. See the comment above for what it
+      # drops relative to the interactive shell.
+      devShells.ci = mkProjectShell { ghc = "ghc9124"; interactive = false; };
     };
 }

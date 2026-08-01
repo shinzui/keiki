@@ -25,36 +25,50 @@ jobs:
         # tracked on EP-37 — see MP-11 Dependency Graph.
         ghc: ['9.12.4']
 
+    # Every `run` step below executes inside the flake's `ci` dev shell, so no
+    # step can silently pick up a host toolchain. This job's GHC is pinned by
+    # the flake, not by `matrix.ghc` — that entry is the job label. Adding a
+    # second GHC means adding a matching CI shell in nix/haskell.nix and
+    # parameterising this `shell:` line alongside the matrix.
+    defaults:
+      run:
+        shell: nix develop .#ci -c bash -e {0}
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: haskell-actions/setup@v2
-        id: setup-haskell
-        with:
-          ghc-version: ${{ matrix.ghc }}
-          cabal-version: 'latest'
+      # keiki:keiki-test runs the Keiki.Symbolic specs (single-valuedness /
+      # sat gates), which shell out to z3 via SBV. z3 comes from the dev shell
+      # rather than `apt-get`: the archive's z3 is 4.8.12, which rejects string
+      # literals outside the byte range and so fails any property that
+      # generates a non-Latin-1 char. Pinning it keeps the solver identical to
+      # the one the specs are written against.
+      - uses: cachix/install-nix-action@v31
 
-      # keiki:keiki-test runs the Keiki.Symbolic specs (single-valuedness
-      # / sat gates), which shell out to z3 via SBV. Without it on PATH the
-      # symbolic specs fail loudly. The codec/bench jobs don't need it.
-      - name: Install z3
+      - name: Toolchain versions
         run: |
-          sudo apt-get update
-          sudo apt-get install -y z3
+          ghc --version
+          cabal --version | head -1
           z3 --version
+
+      # Resolved from the shell's own cabal rather than hardcoded: the path is
+      # XDG-dependent and moves between cabal releases.
+      - name: Resolve cabal store dir
+        id: cabal-store
+        run: echo "dir=$(cabal path --store-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache cabal store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cabal-store.outputs.dir }}
+          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', 'cabal.project', 'flake.lock') }}
+          restore-keys: |
+            cabal-${{ runner.os }}-${{ matrix.ghc }}-
 
       - name: Configure
         run: |
           cabal update
           cabal configure --enable-tests --enable-benchmarks
-
-      - name: Cache cabal store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.setup-haskell.outputs.cabal-store }}
-          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
-          restore-keys: |
-            cabal-${{ runner.os }}-${{ matrix.ghc }}-
 
       - name: Build
         run: cabal build all
@@ -70,6 +84,10 @@ jobs:
   # transitive closure). If the golden hash flips under a dep perturbation
   # that should NOT affect `tyConModule + tyConName`, the hash has an
   # unintentional dependency on a non-stable accessor — release-blocking.
+  #
+  # Deliberately NOT on the nix dev shell, unlike `test`: the point of this job
+  # is unpinned Hackage resolution, so it must be free to solve against a moving
+  # index. It needs no z3 — it runs only the codec suite.
   test-perturbed-deps:
     name: perturbed deps
     runs-on: ubuntu-latest
