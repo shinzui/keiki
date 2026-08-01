@@ -7,8 +7,8 @@
 -- @BoolAlg HsPred@ instance pinned by EP-4 of MasterPlan 1's
 -- Outcomes & Retrospective. After EP-2 of MasterPlan 2, asking
 -- "are these two edge guards mutually exclusive?" is a mechanical
--- question with a precise answer; the synthesis-§7 invariant that
--- edge guards form an /effective/ Boolean algebra is honored at v2.
+-- question with a precise answer for exact translations. Conservative
+-- translations remain one-sided and carry explicit strength evidence.
 --
 -- The module re-exports everything from "Keiki.Core" so a single
 -- import is sufficient for callers that need both the pure and the
@@ -35,10 +35,9 @@
 --     structural 'top' / 'bot' / 'conj' / 'disj' / 'neg', a 'models'
 --     that re-uses the v1 'evalPred' (concrete evaluation, no solver
 --     call), and an 'isBot' backed by z3.
---   * 'symIsBot' — pure-API wrapper around SBV's solver call (via
---     'unsafePerformIO' + NOINLINE) that 'SymPred''s 'isBot' routes
---     through, so the v1 syntactic over-approximation is replaced with a
---     precise symbolic answer.
+--   * 'symIsBot' — conservative pure-API wrapper around SBV's solver call
+--     (via 'unsafePerformIO' + NOINLINE) that 'SymPred''s 'isBot' routes
+--     through. Solver failures and non-UNSAT statuses return 'False'.
 --   * 'symSatExt' — full witness extraction. Since EP-44 (MasterPlan 12)
 --     the 'Keiki.Core.Sat' method 'sat' on 'SymPred' /is/
 --     'symSatExt' (via the @Sat (SymPred …)@ instance, which carries the
@@ -63,8 +62,19 @@ module Keiki.Symbolic
     translateTermSym,
     translatePred,
     constrainFieldProjection,
+    ProjectionBaseKind (..),
+    ProjectionBaseDescriptor (..),
+    ProjectionDescriptor (..),
+    TranslationStrength (..),
+    TranslationIssue (..),
     PredicateVerification (..),
+    ProjectionModel (..),
+    projectionModelKeyAs,
+    projectionModelOwnerAs,
+    PredicateVerificationDetail (..),
+    predicateTranslationReport,
     predicateTranslationExact,
+    verifyPredicateDetailed,
     verifyPredicate,
 
     -- * Symbolic predicate wrapper
@@ -86,27 +96,37 @@ module Keiki.Symbolic
     withSymPred,
 
     -- * Solver-backed validation diagnostics (EP-56)
+    DeterminismAnalysisDetail (..),
+    checkTransitionDeterminismSymDetailed,
     checkTransitionDeterminismSym,
+    DeadEdgeAnalysisDetail (..),
+    checkDeadEdgesSymDetailed,
     checkDeadEdgesSym,
 
     -- * Re-exports
     module Keiki.Core,
+    module Keiki.ProjectionDomain,
   )
 where
 
-import Control.Exception (ErrorCall, evaluate, try)
-import Control.Monad (when)
+import Control.Exception (ErrorCall, SomeException, displayException, evaluate, try)
+import Control.Monad (forM, when)
 import Control.Monad.IO.Class (liftIO)
+import Data.Dynamic (Dynamic, fromDynamic, toDyn)
 import Data.Fixed (Fixed (MkFixed))
 import Data.Foldable (toList)
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Int (Int32, Int64)
 import Data.Kind (Type)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (listToMaybe)
 import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
 import Data.SBV.RegExp qualified as SBV.RegExp
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, nominalDiffTimeToSeconds, secondsToNominalDiffTime)
@@ -124,6 +144,7 @@ import Keiki.Internal.SymbolicTypes
     discoverSymbolicType,
     symbolicTypeWholeCarrierExact,
   )
+import Keiki.ProjectionDomain
 import Numeric.Natural (Natural)
 import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection (SomeTypeRep (..), eqTypeRep, typeRep, type (:~~:) (HRefl))
@@ -412,6 +433,56 @@ data ProjectionBaseKey
   | ProjectionInp String String Int
   deriving stock (Eq, Ord, Show)
 
+-- | Which structural carrier owns a projection base.
+data ProjectionBaseKind
+  = ProjectionRegisterOwner
+  | ProjectionInputOwner
+  deriving stock (Eq, Ord, Show)
+
+-- | Stable structural identity for the concrete owner read beneath a field
+-- projection. Display names are diagnostic; kind, optional input constructor,
+-- and zero-based position keep identity structural.
+data ProjectionBaseDescriptor = ProjectionBaseDescriptor
+  { projectionBaseKind :: ProjectionBaseKind,
+    projectionBaseConstructorName :: Maybe String,
+    projectionBaseSlotName :: String,
+    projectionBasePosition :: Int,
+    projectionBaseOwnerType :: SomeTypeRep
+  }
+  deriving stock (Eq, Ord, Show)
+
+-- | Public, function-free metadata for one nominal projection occurrence.
+data ProjectionDescriptor = ProjectionDescriptor
+  { projectionDescriptorBase :: ProjectionBaseDescriptor,
+    projectionDescriptorPath :: String,
+    projectionDescriptorShape :: String,
+    projectionDescriptorTagType :: SomeTypeRep,
+    projectionDescriptorOwnerType :: SomeTypeRep,
+    projectionDescriptorResultType :: SomeTypeRep
+  }
+  deriving stock (Eq, Ord, Show)
+
+-- | Whether every symbolic valuation of a predicate corresponds to its
+-- concrete semantics, or the translation is only a sound over-approximation.
+data TranslationStrength
+  = ExactTranslation
+  | ConservativeOverApproximation (NonEmpty TranslationIssue)
+  deriving stock (Eq, Show)
+
+-- | A deterministic explanation for lost translation exactness.
+data TranslationIssue
+  = OpaqueApplication
+  | UnsupportedEquality SomeTypeRep
+  | UnsupportedOrdering SomeTypeRep
+  | UnsupportedArithmetic SomeTypeRep
+  | UnconstrainedProjection ProjectionDescriptor
+  | UnsupportedProjectionDomain ProjectionDescriptor String
+  | ProjectionUsedOutsideEquality ProjectionDescriptor
+  | ConflictingProjectionViews ProjectionBaseDescriptor
+  | DirectAndProjectedOwnerRead ProjectionBaseDescriptor
+  | UnguardedProjectionInputRead ProjectionDescriptor
+  deriving stock (Eq, Show)
+
 data SymVarKey
   = RegVar String
   | InpVar String String
@@ -438,6 +509,14 @@ data SymEnv = SymEnv
     --     'translatePred' walk (one 'mkSymEnv'), so variables are shared
     --     /within/ a query but never leak across independent queries.
     seVarCache :: IORef (Map SymVarKey SomeSBV),
+    -- | Stable model label for every memoized structural variable.
+    seVarLabels :: IORef (Map SymVarKey String),
+    -- | Projection keys in allocation/first-occurrence order.
+    seProjectionKeyOrder :: IORef [SymVarKey],
+    -- | Keys whose complete exact-domain constraint was emitted.
+    seConstrainedProjectionKeys :: IORef (Set SymVarKey),
+    -- | Exact evidence used to decode and reconstruct satisfiable models.
+    seProjectionBindings :: IORef (Map SymVarKey SomeProjectionBinding),
     -- | Next internal projection label. Projection labels are intentionally
     --     generated by Keiki so arbitrary schema names never reach SBV's
     --     restricted label namespace.
@@ -453,6 +532,19 @@ data SymEnv = SymEnv
 data SomeSBV where
   SomeSBV :: (SBV.SymVal a) => SBV.SBV a -> SomeSBV
 
+data SomeProjectionBinding where
+  SomeProjectionBinding ::
+    ( FieldProjection projection,
+      Typeable projection,
+      Typeable (FieldOwner projection),
+      Typeable (FieldResult projection),
+      Sym (FieldResult projection)
+    ) =>
+    ProjectionDescriptor ->
+    String ->
+    FieldWitness projection ->
+    SomeProjectionBinding
+
 -- | Allocate a fresh 'SymEnv'. Lives in 'SBV.Symbolic' because
 -- 'seInputCtor' is a free symbolic variable and the memo cache is an
 -- 'IORef' created in the underlying 'IO' ('SBV.Symbolic' is
@@ -462,8 +554,22 @@ mkSymEnv = do
   ctor <- SBV.free "inputCtor"
   arm <- SBV.free "inputArm"
   cache <- liftIO (newIORef Map.empty)
+  labels <- liftIO (newIORef Map.empty)
+  projectionOrder <- liftIO (newIORef [])
+  constrainedProjectionKeys <- liftIO (newIORef Set.empty)
+  projectionBindings <- liftIO (newIORef Map.empty)
   projectionOrdinal <- liftIO (newIORef 0)
-  pure (SymEnv ctor arm cache projectionOrdinal)
+  pure
+    ( SymEnv
+        ctor
+        arm
+        cache
+        labels
+        projectionOrder
+        constrainedProjectionKeys
+        projectionBindings
+        projectionOrdinal
+    )
 
 -- * Translation -------------------------------------------------------------
 
@@ -503,12 +609,11 @@ mkSymEnv = do
 -- reads of the same slot (e.g.
 -- @proj #x .== proj #x@) share /one/ SBV variable: the solver knows
 -- they are equal, @x \/= x@ is unsat, and 'symSatExt''s by-name witness
--- extraction is correct for ordinary repeated reads. Projection variables
--- are deliberately not extracted: the solver knows the scalar result but not
--- how to construct its consumer-owned base value. A released one-way
--- projection remains /over-approximate/, because that scalar may be outside
--- the getter's concrete image, and is therefore not /translation-exact/ (not
--- every satisfying valuation corresponds to concrete owners). The 'TApp1' \/ 'TApp2'
+-- extraction is correct for ordinary repeated reads. Exact projection
+-- variables carry a declared image and inverse, so detailed verification can
+-- decode model values and reconstruct path-local owner witnesses. Legacy
+-- one-way projections remain over-approximate and are not reconstructed. The
+-- 'TApp1' \/ 'TApp2'
 -- escape hatches stay per-occurrence fresh (their opaque functions
 -- have no 'Eq', so two applications cannot be recognized as equal);
 -- their values are not part of the extracted witness.
@@ -541,12 +646,38 @@ translateTermSym env (TArith op a b) = case discoverSymNum @r of
         pure (apply sa sb)
 translateTermSym env (TFieldProj (witness :: FieldWitness projection) base) =
   do
-    symbolic <- memoFree @r env (projectionVarKey witness base)
+    let key = projectionVarKey witness base
+    symbolic <- memoFree @r env key
     case fieldWitnessDomain witness of
       Nothing -> pure ()
       Just domain -> case compileProjectionDomain @r domain symbolic of
         Left _unsupported -> pure ()
-        Right domainConstraint -> SBV.constrain domainConstraint
+        Right domainConstraint -> do
+          constrained <- liftIO (readIORef (seConstrainedProjectionKeys env))
+          when (key `Set.notMember` constrained) $ do
+            SBV.constrain domainConstraint
+            liftIO
+              ( modifyIORef'
+                  (seConstrainedProjectionKeys env)
+                  (Set.insert key)
+              )
+          labels <- liftIO (readIORef (seVarLabels env))
+          case Map.lookup key labels of
+            Nothing -> error "translateTermSym: projection variable has no model label"
+            Just label ->
+              liftIO
+                ( modifyIORef'
+                    (seProjectionBindings env)
+                    ( Map.insertWith
+                        (\_existing original -> original)
+                        key
+                        ( SomeProjectionBinding
+                            (projectionDescriptor witness base)
+                            label
+                            witness
+                        )
+                    )
+                )
     pure symbolic
 
 -- | Why a declared projection domain could not be compiled exactly for its
@@ -612,10 +743,8 @@ projectionVarKey _ base =
 -- a known owner. Pass @fieldWitnessGet witness owner@ as the concrete result.
 -- This supplies the concrete-to-symbolic simulation used by agreement
 -- properties: every concrete evaluation has a matching symbolic valuation.
--- The converse is intentionally not claimed: this over-approximate binding is
--- path-exact but not translation-exact. This function is not an inverse for
--- 'symSatExt', and projection variables are not extracted into consumer-owned
--- values.
+-- The converse requires an 'ExactFieldProjection' witness; legacy witnesses
+-- remain over-approximate and are not reconstructed by 'symSatExt'.
 constrainFieldProjection ::
   forall projection rs ci ifs.
   ( Typeable projection,
@@ -661,7 +790,13 @@ memoFree env key = do
           modifyIORef' (seProjectionOrdinal env) (+ 1)
           pure ("proj/" <> show ordinal)
       v <- symFree @r label
-      liftIO (modifyIORef' (seVarCache env) (Map.insert key (SomeSBV v)))
+      liftIO $ do
+        modifyIORef' (seVarCache env) (Map.insert key (SomeSBV v))
+        modifyIORef' (seVarLabels env) (Map.insert key label)
+        case key of
+          ProjectionVar {} ->
+            modifyIORef' (seProjectionKeyOrder env) (++ [key])
+          _ -> pure ()
       pure v
 
 -- | Recover the slot name an 'Index' points at by walking to the
@@ -746,77 +881,373 @@ data PredicateVerification
   | UnverifiedSolverFailure String
   deriving stock (Eq, Show)
 
--- | Whether every node in a predicate has a /translation-exact/ structural
--- symbolic representation: every satisfying symbolic valuation corresponds to
--- concrete values under the carrier laws documented by this module. This is
--- stricter than merely being accepted by 'translatePred', whose compatibility
--- fallback intentionally replaces unsupported or over-approximate pieces with
--- fresh variables.
-predicateTranslationExact :: forall rs ci. HsPred rs ci -> Bool
-predicateTranslationExact = goPred
+-- | One solver-origin projection key and its checked reconstructed owner.
+-- Values stay dynamically typed because one predicate can mention unrelated
+-- projection carriers. Use the typed eliminators, never display names, to cast.
+data ProjectionModel = ProjectionModel
+  { projectionModelDescriptor :: ProjectionDescriptor,
+    projectionModelKey :: Dynamic,
+    projectionModelOwner :: Dynamic
+  }
+  deriving stock (Show)
+
+-- | Cast a projection model key using its runtime type evidence.
+projectionModelKeyAs :: (Typeable a) => ProjectionModel -> Maybe a
+projectionModelKeyAs = fromDynamic . projectionModelKey
+
+-- | Cast a reconstructed projection owner using its runtime type evidence.
+projectionModelOwnerAs :: (Typeable a) => ProjectionModel -> Maybe a
+projectionModelOwnerAs = fromDynamic . projectionModelOwner
+
+-- | Solver status, translation strength, and checked projection-origin models
+-- without changing the compatibility 'PredicateVerification' constructor set.
+data PredicateVerificationDetail
+  = PredicateSatisfiable TranslationStrength [ProjectionModel]
+  | PredicateUnsatisfiable TranslationStrength
+  | PredicateSolverUnknown TranslationStrength String
+  | PredicateSolverFailure TranslationStrength String
+  | PredicateProjectionContractViolation
+      TranslationStrength
+      ProjectionDescriptor
+      String
+  deriving stock (Show)
+
+data ProjectionUseContext
+  = ProjectionEqualityOperand
+  | ProjectionOutsideEquality
+
+data TranslationReportEvent
+  = TranslationIssueEvent TranslationIssue
+  | DirectOwnerReadEvent ProjectionBaseDescriptor
+  | ProjectionReadEvent ProjectionDescriptor Bool
+
+data ProjectionBaseUsage = ProjectionBaseUsage
+  { projectionUsageDirect :: Bool,
+    projectionUsageViews :: [(SomeTypeRep, Bool)]
+  }
+
+-- | Explain the complete predicate translation. Per-node support is combined
+-- with predicate-wide owner-path analysis so individually exact projections
+-- are not promoted when the solver lacks their joint relation.
+predicateTranslationReport :: forall rs ci. HsPred rs ci -> TranslationStrength
+predicateTranslationReport predicate =
+  case reportIssues of
+    [] -> ExactTranslation
+    firstIssue : remainingIssues ->
+      ConservativeOverApproximation (firstIssue :| remainingIssues)
   where
-    goPred :: HsPred rs ci -> Bool
-    goPred PTop = True
-    goPred PBot = True
-    goPred (PAnd p q) = goPred p && goPred q
-    goPred (POr p q) = goPred p && goPred q
-    goPred (PNot p) = goPred p
-    goPred (PEq a b) = exactEquality a b
-    goPred (PInCtor _) = True
-    goPred PLeftArm = True
-    goPred PRightArm = True
-    goPred (PCmp _ a b) = exactOrdering a b
+    events = predicateReportEvents predicate predicate
+    (reportIssues, _) = foldl consumeEvent ([], Map.empty) events
 
-    exactEquality ::
-      forall r ifs1 ifs2.
-      (Typeable r) =>
-      Term rs ci ifs1 r ->
-      Term rs ci ifs2 r ->
-      Bool
-    exactEquality a b = case discoverSym @r of
-      Nothing -> False
-      Just SymDict -> exactTerm a && exactTerm b
+    consumeEvent ::
+      ([TranslationIssue], Map ProjectionBaseDescriptor ProjectionBaseUsage) ->
+      TranslationReportEvent ->
+      ([TranslationIssue], Map ProjectionBaseDescriptor ProjectionBaseUsage)
+    consumeEvent (issues, usages) event = case event of
+      TranslationIssueEvent issue -> (appendIssue issue issues, usages)
+      DirectOwnerReadEvent base ->
+        let usage = Map.findWithDefault (ProjectionBaseUsage False []) base usages
+            issues' =
+              if null (projectionUsageViews usage)
+                then issues
+                else appendIssue (DirectAndProjectedOwnerRead base) issues
+            usage' = usage {projectionUsageDirect = True}
+         in (issues', Map.insert base usage' usages)
+      ProjectionReadEvent descriptor exactEvidence ->
+        let base = projectionDescriptorBase descriptor
+            tag = projectionDescriptorTagType descriptor
+            usage = Map.findWithDefault (ProjectionBaseUsage False []) base usages
+            conflicts =
+              any
+                (\(seenTag, seenExact) -> seenTag /= tag || seenExact /= exactEvidence)
+                (projectionUsageViews usage)
+            issuesWithDirect =
+              if projectionUsageDirect usage
+                then appendIssue (DirectAndProjectedOwnerRead base) issues
+                else issues
+            issues' =
+              if conflicts
+                then appendIssue (ConflictingProjectionViews base) issuesWithDirect
+                else issuesWithDirect
+            views =
+              if (tag, exactEvidence) `elem` projectionUsageViews usage
+                then projectionUsageViews usage
+                else projectionUsageViews usage ++ [(tag, exactEvidence)]
+            usage' = usage {projectionUsageViews = views}
+         in (issues', Map.insert base usage' usages)
 
-    exactOrdering ::
-      forall r ifs1 ifs2.
-      (Typeable r) =>
-      Term rs ci ifs1 r ->
-      Term rs ci ifs2 r ->
-      Bool
-    exactOrdering a b = case discoverSymOrd @r of
-      Nothing -> False
-      Just SymOrdDict -> exactTerm a && exactTerm b
+    appendIssue issue issues
+      | issue `elem` issues = issues
+      | otherwise = issues ++ [issue]
 
-    exactTerm :: forall ifs r. (Sym r) => Term rs ci ifs r -> Bool
-    exactTerm (TLit _) = True
-    exactTerm (TReg _) = True
-    exactTerm (TInpCtorField _ _) = True
-    exactTerm (TApp1 _ _) = False
-    exactTerm (TApp2 _ _ _) = False
-    exactTerm (TArith _ a b) = case discoverSymNum @r of
-      Nothing -> False
-      Just SymNumDict -> exactTerm a && exactTerm b
-    exactTerm (TFieldProj witness _) = fieldWitnessHasExactDomain witness
+predicateReportEvents ::
+  forall rs ci.
+  HsPred rs ci ->
+  HsPred rs ci ->
+  [TranslationReportEvent]
+predicateReportEvents root = go
+  where
+    go PTop = []
+    go PBot = []
+    go (PAnd p q) = go p ++ go q
+    go (POr p q) = go p ++ go q
+    go (PNot p) = go p
+    go (PEq (a :: Term rs ci ifs1 r) b) =
+      equalitySupport @r
+        ++ termReportEvents root ProjectionEqualityOperand a
+        ++ termReportEvents root ProjectionEqualityOperand b
+    go (PInCtor _) = []
+    go PLeftArm = []
+    go PRightArm = []
+    go (PCmp _ (a :: Term rs ci ifs1 r) b) =
+      orderingSupport @r
+        ++ termReportEvents root ProjectionOutsideEquality a
+        ++ termReportEvents root ProjectionOutsideEquality b
 
--- | Translate and solve one predicate without collapsing uncertainty into a
--- Boolean. Exact translations produce a verified satisfiable or unsatisfiable
--- answer. Any opaque fallback is rejected before invoking the solver, and
--- every non-definite solver result remains visibly unverified.
+    equalitySupport :: forall (r :: Type). (Typeable r) => [TranslationReportEvent]
+    equalitySupport = case discoverSym @r of
+      Nothing -> [TranslationIssueEvent (UnsupportedEquality (SomeTypeRep (typeRep @r)))]
+      Just SymDict -> []
+
+    orderingSupport :: forall (r :: Type). (Typeable r) => [TranslationReportEvent]
+    orderingSupport = case discoverSymOrd @r of
+      Nothing -> [TranslationIssueEvent (UnsupportedOrdering (SomeTypeRep (typeRep @r)))]
+      Just SymOrdDict -> []
+
+termReportEvents ::
+  forall rs ci ifs r.
+  (Typeable r) =>
+  HsPred rs ci ->
+  ProjectionUseContext ->
+  Term rs ci ifs r ->
+  [TranslationReportEvent]
+termReportEvents _root _context (TLit _) = []
+termReportEvents _root _context (TReg ix) =
+  [DirectOwnerReadEvent (registerBaseDescriptor @r ix)]
+termReportEvents _root _context (TInpCtorField ic ix) =
+  [DirectOwnerReadEvent (inputBaseDescriptor @r ic ix)]
+termReportEvents _root _context (TApp1 _ _) =
+  [TranslationIssueEvent OpaqueApplication]
+termReportEvents _root _context (TApp2 _ _ _) =
+  [TranslationIssueEvent OpaqueApplication]
+termReportEvents root _context (TArith _ a b) =
+  arithmeticSupport @r
+    ++ termReportEvents root ProjectionOutsideEquality a
+    ++ termReportEvents root ProjectionOutsideEquality b
+  where
+    arithmeticSupport :: forall (a :: Type). (Typeable a) => [TranslationReportEvent]
+    arithmeticSupport = case discoverSymNum @a of
+      Nothing -> [TranslationIssueEvent (UnsupportedArithmetic (SomeTypeRep (typeRep @a)))]
+      Just SymNumDict -> []
+termReportEvents
+  root
+  context
+  (TFieldProj (witness :: FieldWitness projection) base) =
+    relationIssue
+      ++ evidenceIssues
+      ++ inputGuardIssue
+      ++ [ProjectionReadEvent descriptor exactEvidence]
+    where
+      descriptor = projectionDescriptor witness base
+      relationIssue = case context of
+        ProjectionEqualityOperand -> []
+        ProjectionOutsideEquality ->
+          [TranslationIssueEvent (ProjectionUsedOutsideEquality descriptor)]
+      (evidenceIssues, exactEvidence) = case fieldWitnessDomain witness of
+        Nothing ->
+          ([TranslationIssueEvent (UnconstrainedProjection descriptor)], False)
+        Just domain -> case discoverSym @(FieldResult projection) of
+          Nothing -> ([], False)
+          Just SymDict -> case projectionDomainSupport domain of
+            Nothing -> ([], True)
+            Just reason ->
+              ( [TranslationIssueEvent (UnsupportedProjectionDomain descriptor reason)],
+                False
+              )
+      inputGuardIssue = case projectionDescriptorBase descriptor of
+        ProjectionBaseDescriptor {projectionBaseKind = ProjectionRegisterOwner} -> []
+        ProjectionBaseDescriptor
+          { projectionBaseKind = ProjectionInputOwner,
+            projectionBaseConstructorName = Just ctorName
+          }
+            | predicateImpliesInCtor ctorName root -> []
+            | otherwise ->
+                [TranslationIssueEvent (UnguardedProjectionInputRead descriptor)]
+        ProjectionBaseDescriptor {projectionBaseKind = ProjectionInputOwner} ->
+          [TranslationIssueEvent (UnguardedProjectionInputRead descriptor)]
+
+projectionDomainSupport ::
+  forall r.
+  (Sym r) =>
+  ProjectionDomain r ->
+  Maybe String
+projectionDomainSupport ProjectionWhole
+  | symbolicWholeCarrierExact @r = Nothing
+  | otherwise = Just "whole carrier is not representation-exact"
+projectionDomainSupport ProjectionFinite {} = Nothing
+projectionDomainSupport ProjectionText {} = Nothing
+
+registerBaseDescriptor ::
+  forall r rs.
+  (Typeable r) =>
+  Index rs r ->
+  ProjectionBaseDescriptor
+registerBaseDescriptor ix =
+  ProjectionBaseDescriptor
+    { projectionBaseKind = ProjectionRegisterOwner,
+      projectionBaseConstructorName = Nothing,
+      projectionBaseSlotName = indexName ix,
+      projectionBasePosition = indexPosition ix,
+      projectionBaseOwnerType = SomeTypeRep (typeRep @r)
+    }
+
+inputBaseDescriptor ::
+  forall r ci ifs.
+  (Typeable r) =>
+  InCtor ci ifs ->
+  Index ifs r ->
+  ProjectionBaseDescriptor
+inputBaseDescriptor ic ix =
+  ProjectionBaseDescriptor
+    { projectionBaseKind = ProjectionInputOwner,
+      projectionBaseConstructorName = Just (icName ic),
+      projectionBaseSlotName = indexName ix,
+      projectionBasePosition = indexPosition ix,
+      projectionBaseOwnerType = SomeTypeRep (typeRep @r)
+    }
+
+projectionDescriptor ::
+  forall projection rs ci ifs.
+  ( FieldProjection projection,
+    KnownSymbol (FieldName projection),
+    Typeable projection,
+    Typeable (FieldOwner projection),
+    Typeable (FieldResult projection)
+  ) =>
+  FieldWitness projection ->
+  ProjBase rs ci ifs (FieldOwner projection) ->
+  ProjectionDescriptor
+projectionDescriptor witness base =
+  ProjectionDescriptor
+    { projectionDescriptorBase = case base of
+        PBReg ix -> registerBaseDescriptor @(FieldOwner projection) ix
+        PBInp ic ix -> inputBaseDescriptor @(FieldOwner projection) ic ix,
+      projectionDescriptorPath = fieldProjectionPath witness base,
+      projectionDescriptorShape = fieldShapeId (Proxy @projection),
+      projectionDescriptorTagType = SomeTypeRep (typeRep @projection),
+      projectionDescriptorOwnerType = SomeTypeRep (typeRep @(FieldOwner projection)),
+      projectionDescriptorResultType = SomeTypeRep (typeRep @(FieldResult projection))
+    }
+
+-- | Whether the predicate-wide report contains no translation issue.
+predicateTranslationExact :: HsPred rs ci -> Bool
+predicateTranslationExact predicate = case predicateTranslationReport predicate of
+  ExactTranslation -> True
+  ConservativeOverApproximation _ -> False
+
+data PredicateSolve = PredicateSolve
+  { predicateSolveStrength :: TranslationStrength,
+    predicateSolveEnvironment :: SymEnv,
+    predicateSolveResult :: SBV.SatResult
+  }
+
+runPredicateSolver ::
+  HsPred rs ci ->
+  (SymEnv -> SBV.Symbolic ()) ->
+  IO (Either String PredicateSolve)
+runPredicateSolver predicate addConstraints = do
+  environmentRef <- newIORef Nothing
+  attempt <- try @SomeException $ SBV.sat $ do
+    environment <- mkSymEnv
+    liftIO (writeIORef environmentRef (Just environment))
+    translated <- translatePred environment predicate
+    addConstraints environment
+    pure translated
+  case attempt of
+    Left failure -> pure (Left (displayException failure))
+    Right result -> do
+      maybeEnvironment <- readIORef environmentRef
+      pure $ case maybeEnvironment of
+        Nothing -> Left "solver translation did not publish its environment"
+        Just environment ->
+          Right
+            PredicateSolve
+              { predicateSolveStrength = predicateTranslationReport predicate,
+                predicateSolveEnvironment = environment,
+                predicateSolveResult = result
+              }
+
+-- | Solve and preserve status, translation strength, and checked exact
+-- projection models.
+verifyPredicateDetailed :: HsPred rs ci -> IO PredicateVerificationDetail
+verifyPredicateDetailed predicate = do
+  solved <- runPredicateSolver predicate (const (pure ()))
+  case solved of
+    Left failure ->
+      pure (PredicateSolverFailure (predicateTranslationReport predicate) failure)
+    Right PredicateSolve {predicateSolveStrength = strength, predicateSolveEnvironment = environment, predicateSolveResult = result} ->
+      decodeDetailedResult strength environment result
+
+decodeDetailedResult ::
+  TranslationStrength ->
+  SymEnv ->
+  SBV.SatResult ->
+  IO PredicateVerificationDetail
+decodeDetailedResult strength environment result@(SBV.SatResult status) =
+  case status of
+    SBV.Satisfiable {} -> do
+      extracted <- extractProjectionModels environment result
+      pure $ case extracted of
+        Left (descriptor, failure) ->
+          PredicateProjectionContractViolation strength descriptor failure
+        Right projectionModels -> PredicateSatisfiable strength projectionModels
+    SBV.Unsatisfiable {} -> pure (PredicateUnsatisfiable strength)
+    SBV.Unknown {} -> pure (PredicateSolverUnknown strength "solver returned Unknown")
+    SBV.ProofError {} -> pure (PredicateSolverFailure strength "solver returned ProofError")
+    SBV.DeltaSat {} -> pure (PredicateSolverUnknown strength "solver returned DeltaSat")
+    SBV.SatExtField {} -> pure (PredicateSolverUnknown strength "solver returned SatExtField")
+
+extractProjectionModels ::
+  SymEnv ->
+  SBV.SatResult ->
+  IO (Either (ProjectionDescriptor, String) [ProjectionModel])
+extractProjectionModels environment result = do
+  orderedKeys <- readIORef (seProjectionKeyOrder environment)
+  bindings <- readIORef (seProjectionBindings environment)
+  pure $ do
+    projectionModels <- forM orderedKeys $ \key -> case Map.lookup key bindings of
+      Nothing -> Right Nothing
+      Just (SomeProjectionBinding descriptor label witness) ->
+        case SBV.getModelValue label result of
+          Nothing -> Left (descriptor, "solver model omitted the projection value")
+          Just symbolicRepresentation ->
+            let concreteKey = fromSym symbolicRepresentation
+             in case checkFieldProjectionKey witness concreteKey of
+                  Left lawFailure -> Left (descriptor, show lawFailure)
+                  Right owner ->
+                    Right
+                      ( Just
+                          ProjectionModel
+                            { projectionModelDescriptor = descriptor,
+                              projectionModelKey = toDyn concreteKey,
+                              projectionModelOwner = toDyn owner
+                            }
+                      )
+    pure [model | Just model <- projectionModels]
+
+-- | Conservative compatibility projection of 'verifyPredicateDetailed'.
 verifyPredicate :: HsPred rs ci -> IO PredicateVerification
-verifyPredicate predicate
-  | not (predicateTranslationExact predicate) = pure UnverifiedOpaque
-  | otherwise = do
-      result <- SBV.sat $ do
-        env <- mkSymEnv
-        translatePred env predicate
-      pure $ case result of
-        SBV.SatResult status -> case status of
-          SBV.Satisfiable {} -> VerifiedSatisfiable
-          SBV.Unsatisfiable {} -> VerifiedUnsatisfiable
-          SBV.Unknown {} -> UnverifiedSolverUnknown "solver returned Unknown"
-          SBV.ProofError {} -> UnverifiedSolverFailure "solver returned ProofError"
-          SBV.DeltaSat {} -> UnverifiedSolverUnknown "solver returned DeltaSat"
-          SBV.SatExtField {} -> UnverifiedSolverUnknown "solver returned SatExtField"
+verifyPredicate predicate = do
+  detail <- verifyPredicateDetailed predicate
+  pure $ case detail of
+    PredicateSatisfiable ExactTranslation _ -> VerifiedSatisfiable
+    PredicateUnsatisfiable ExactTranslation -> VerifiedUnsatisfiable
+    PredicateSatisfiable ConservativeOverApproximation {} _ -> UnverifiedOpaque
+    PredicateUnsatisfiable ConservativeOverApproximation {} -> UnverifiedOpaque
+    PredicateSolverUnknown _ message -> UnverifiedSolverUnknown message
+    PredicateSolverFailure _ message -> UnverifiedSolverFailure message
+    PredicateProjectionContractViolation _ _ message ->
+      UnverifiedSolverFailure ("projection contract violation: " <> message)
 
 -- * Symbolic predicate wrapper ----------------------------------------------
 
@@ -839,9 +1270,8 @@ type SymGuarded rs s ci co = SymTransducer (SymPred rs ci) rs s ci co
 -- 'HsPred' constructors. 'models' delegates to the v1 'evalPred'
 -- (concrete evaluation, no solver call). 'isBot' routes through
 -- 'symIsBot', which dispatches to an external z3 process via SBV and
--- 'unsafePerformIO'. Consequently, evaluating 'isBot' throws an exception from
--- otherwise pure code when z3 is not on @PATH@; the repository's nix development
--- shell supplies it. Witness extraction
+-- 'unsafePerformIO'. Solver failures are caught and conservatively mean "not
+-- proved empty". Witness extraction
 -- ('Keiki.Core.sat') lives in the separate 'Sat' instance below, which
 -- carries the 'ExtractRegFile' / 'KnownInCtors' evidence it needs; this
 -- instance is deliberately /unconstrained/ so the witness-free analyses
@@ -890,17 +1320,17 @@ satResultIsProvablyUnsat (SBV.SatResult result) = case result of
 -- predicate is bot; 'False' means either satisfiable or that the solver gave up.
 -- The latter can occur for 'Text' guards translated through z3's string theory.
 -- This conservative failure direction may surface an overlap warning but never
--- blesses an uncertain pair as disjoint. Requires z3 on @PATH@; because the call
--- is wrapped in 'unsafePerformIO', a missing solver throws from pure code. The
--- wrapper is justified because each query is deterministic for a given predicate
--- and side-effect-free outside the solver process.
+-- blesses an uncertain pair as disjoint. Solver startup and execution failures
+-- are caught and conservatively return 'False'. The wrapper is justified
+-- because each query is deterministic for a given predicate and side-effect-free
+-- outside the solver process.
 {-# NOINLINE symIsBot #-}
 symIsBot :: HsPred rs ci -> Bool
 symIsBot p = unsafePerformIO $ do
-  res <- SBV.sat $ do
-    env <- mkSymEnv
-    translatePred env p
-  pure (satResultIsProvablyUnsat res)
+  solved <- runPredicateSolver p (const (pure ()))
+  pure $ case solved of
+    Left _ -> False
+    Right result -> satResultIsProvablyUnsat (predicateSolveResult result)
 
 -- * Single-valuedness ------------------------------------------------------
 
@@ -967,6 +1397,34 @@ withSymPred t =
 
 -- * Solver-backed validation diagnostics (EP-56) ---------------------------
 
+-- | One live outgoing-edge pair and the single detailed solver result used to
+-- decide its compatibility warning.
+data DeterminismAnalysisDetail s = DeterminismAnalysisDetail
+  { determinismDetailEdgeA :: EdgeRef s,
+    determinismDetailEdgeB :: EdgeRef s,
+    determinismDetailVerification :: PredicateVerificationDetail
+  }
+
+-- | Solve every live pair once, retaining edge attribution and full status.
+checkTransitionDeterminismSymDetailed ::
+  (Bounded s, Enum s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  IO [DeterminismAnalysisDetail s]
+checkTransitionDeterminismSymDetailed transducer =
+  sequence
+    [ DeterminismAnalysisDetail
+        (EdgeRef {edgeSource = source, edgeIndex = firstIndex})
+        (EdgeRef {edgeSource = source, edgeIndex = secondIndex})
+        <$> verifyPredicateDetailed (PAnd (guard firstEdge) (guard secondEdge))
+    | source <- [minBound .. maxBound],
+      let indexedEdges = zip [(0 :: Int) ..] (edgesOut transducer source),
+      (firstIndex, firstEdge) <- indexedEdges,
+      (secondIndex, secondEdge) <- indexedEdges,
+      firstIndex < secondIndex,
+      mode firstEdge == Live,
+      mode secondEdge == Live
+    ]
+
 -- | Solver-backed determinism diagnostic. Lifts the transducer with
 -- 'withSymPred' and runs the 'BoolAlg'-polymorphic 'checkTransitionDeterminism'
 -- at the 'SymPred' carrier, whose 'isBot' is the exact z3 decision. Unlike the
@@ -977,7 +1435,47 @@ checkTransitionDeterminismSym ::
   (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   [DeterminismWarning s]
-checkTransitionDeterminismSym = checkTransitionDeterminism . withSymPred
+checkTransitionDeterminismSym transducer = unsafePerformIO $ do
+  details <- checkTransitionDeterminismSymDetailed transducer
+  pure
+    [ DeterminismWarning
+        { dwSource = edgeSource firstRef,
+          dwEdgeA = edgeIndex firstRef,
+          dwEdgeB = edgeIndex secondRef,
+          dwDetail =
+            "edges #"
+              <> show (edgeIndex firstRef)
+              <> " and #"
+              <> show (edgeIndex secondRef)
+              <> " out of "
+              <> show (edgeSource firstRef)
+              <> " may overlap (symbolic)"
+        }
+    | DeterminismAnalysisDetail firstRef secondRef verification <- details,
+      not (verificationIsDefinitelyUnsatisfiable verification)
+    ]
+{-# NOINLINE checkTransitionDeterminismSym #-}
+
+-- | One edge and the detailed result used to decide whether it is dead in
+-- isolation.
+data DeadEdgeAnalysisDetail s = DeadEdgeAnalysisDetail
+  { deadEdgeDetailEdge :: EdgeRef s,
+    deadEdgeDetailVerification :: PredicateVerificationDetail
+  }
+
+-- | Solve every edge guard once and retain its attribution and full status.
+checkDeadEdgesSymDetailed ::
+  (Bounded s, Enum s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  IO [DeadEdgeAnalysisDetail s]
+checkDeadEdgesSymDetailed transducer =
+  sequence
+    [ DeadEdgeAnalysisDetail
+        (EdgeRef {edgeSource = source, edgeIndex = edgeNumber})
+        <$> verifyPredicateDetailed (guard edge)
+    | source <- [minBound .. maxBound],
+      (edgeNumber, edge) <- zip [(0 :: Int) ..] (edgesOut transducer source)
+    ]
 
 -- | Symbolic dead-edge sketch. Flags edges whose guard is unsatisfiable
 -- /in isolation/ (via 'symIsBot'), which the structural 'checkDeadEdges'
@@ -992,23 +1490,28 @@ checkDeadEdgesSym ::
   (Bounded s, Enum s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   [DeadEdgeWarning s]
-checkDeadEdgesSym t =
-  [ DeadEdgeWarning
-      (EdgeRef {edgeSource = s, edgeIndex = i})
-      "guard is unsatisfiable in isolation (symbolic)"
-  | s <- [minBound .. maxBound],
-    (i, e) <- zip [(0 :: Int) ..] (edgesOut t s),
-    symIsBot (guard e)
-  ]
+checkDeadEdgesSym transducer = unsafePerformIO $ do
+  details <- checkDeadEdgesSymDetailed transducer
+  pure
+    [ DeadEdgeWarning
+        edgeRef
+        "guard is unsatisfiable in isolation (symbolic)"
+    | DeadEdgeAnalysisDetail edgeRef verification <- details,
+      verificationIsDefinitelyUnsatisfiable verification
+    ]
+{-# NOINLINE checkDeadEdgesSym #-}
+
+verificationIsDefinitelyUnsatisfiable :: PredicateVerificationDetail -> Bool
+verificationIsDefinitelyUnsatisfiable PredicateUnsatisfiable {} = True
+verificationIsDefinitelyUnsatisfiable _ = False
 
 -- * Witness extraction -----------------------------------------------------
 
--- | Materialize a 'RegFile' from a name-keyed reader. The reader's
--- input is a slot name (the same string 'translateTermSym' allocates
--- under @"reg/" <> slotName@); the reader's output is the slot's
--- value, of any 'Sym'-supported type. The reader is total: callers
--- (notably 'symSatExt') fall back to 'symDefault' for slots whose
--- names the SBV model did not bind.
+-- | Materialize a 'RegFile' from a name-keyed reader. The reader's input is a
+-- slot name; its output is a value of any 'Sym'-supported type. The reader is
+-- total: callers fall back to 'symDefault' for slots absent from the model.
+-- 'extractRegFileAt' additionally supplies zero-based structural position so
+-- exact projection owners remain distinct even when diagnostic names repeat.
 --
 -- Two instances cover the slot list:
 --
@@ -1024,8 +1527,18 @@ checkDeadEdgesSym t =
 class ExtractRegFile (rs :: [Slot]) where
   extractRegFile :: (forall r. (Sym r) => String -> r) -> RegFile rs
 
+  -- | Position-aware private traversal used to install exact reconstructed
+  -- projection owners. The default preserves source compatibility for custom
+  -- instances by delegating to their existing name-only implementation.
+  extractRegFileAt ::
+    Int ->
+    (forall r. (Sym r) => Int -> String -> r) ->
+    RegFile rs
+  extractRegFileAt _ reader = extractRegFile (reader (-1))
+
 instance ExtractRegFile '[] where
   extractRegFile _ = RNil
+  extractRegFileAt _ _ = RNil
 
 instance
   ( KnownSymbol s,
@@ -1039,6 +1552,11 @@ instance
       (Proxy @s)
       (reader @t (symbolVal (Proxy @s)))
       (extractRegFile @rs reader)
+  extractRegFileAt position reader =
+    RCons
+      (Proxy @s)
+      (reader @t position (symbolVal (Proxy @s)))
+      (extractRegFileAt @rs (position + 1) reader)
 
 -- | Existential wrapper around an 'InCtor' that hides the
 -- input-field slot list. The hidden 'ExtractRegFile' constraint lets
@@ -1096,9 +1614,12 @@ instance KnownInCtors () where
 -- returns it only when concrete 'models' evaluation confirms the predicate.
 -- Thus @models p (regs, cmd) == True@ holds unconditionally for every returned
 -- witness. Escape-hatch terms ('TApp1', 'TApp2', and 'PEq' over a non-'Sym'
--- operand type) and over-approximate field projections can make the solver's
--- assignment impossible for the reconstructed values; such a candidate is
--- discarded.
+-- operand type) and legacy over-approximate field projections can make the
+-- solver's assignment impossible for the reconstructed values; such a
+-- candidate is discarded. Exact projections contribute checked, path-local
+-- owner overrides when their predicate-wide relation is safe. Every decoded
+-- key is validated against its domain, inverse, and getter round-trip before
+-- any override is installed.
 --
 -- /Repeated reads/ of the same register or input field are handled
 -- correctly: since EP-42 'translateTermSym' memoizes 'TReg' \/
@@ -1132,47 +1653,108 @@ symSatExt ::
   ) =>
   HsPred rs ci -> Maybe (RegFile rs, ci)
 symSatExt p = unsafePerformIO $ do
-  res <- SBV.sat $ do
-    env <- mkSymEnv
-    b <- translatePred env p
-    -- Constrain the shared input-constructor tag to the known
-    -- constructor domain so the solver cannot pick a string matching no
-    -- constructor. Predicates without a 'PInCtor' atom leave the tag
-    -- free, so without this the solver could choose an unknown tag,
-    -- 'pickCi' would find no match, and a satisfiable predicate would
-    -- (wrongly) yield no witness. Confining the tag to the real finite
-    -- domain keeps the reconstructed witness sound (it always satisfies
-    -- 'models') and improves completeness on @PNot (PInCtor …)@ guards.
-    let ctorNames = [icName ic | SomeInCtor ic <- allInCtors @ci]
-    when (not (null ctorNames)) $
-      SBV.constrain $
-        SBV.sOr [seInputCtor env SBV..== SBV.literal n | n <- ctorNames]
-    pure b
-  if SBV.modelExists res
-    then do
-      let candidate = do
-            ctorTag <- SBV.getModelValue "inputCtor" res
-            let regReader :: forall r. (Sym r) => String -> r
-                regReader name = readModel res ("reg/" <> name)
-            let regs = extractRegFile @rs regReader
-            ci <-
-              pickCi @ci
-                ctorTag
-                ( \icN fieldName ->
-                    readModel
-                      res
-                      ("inp/" <> icN <> "/" <> fieldName)
-                )
-            pure (regs, ci)
-      case candidate of
-        Nothing -> pure Nothing
-        Just witness -> do
-          checked <- try @ErrorCall (evaluate (models (SymPred p) witness))
-          pure $ case checked of
-            Right True -> Just witness
-            Right False -> Nothing
-            Left _ -> Nothing
-    else pure Nothing
+  solved <- runPredicateSolver p constrainKnownConstructors
+  case solved of
+    Left _ -> pure Nothing
+    Right PredicateSolve {predicateSolveStrength = strength, predicateSolveEnvironment = environment, predicateSolveResult = result}
+      | SBV.modelExists result -> do
+          extracted <- extractProjectionModels environment result
+          case extracted of
+            Left _ -> pure Nothing
+            Right projectionModels -> do
+              let safeProjectionModels =
+                    filter
+                      (projectionModelRelationSafe strength)
+                      projectionModels
+                  candidate = do
+                    ctorTag <- SBV.getModelValue "inputCtor" result
+                    let regReader :: forall r. (Sym r) => Int -> String -> r
+                        regReader position name =
+                          maybe
+                            (readModel result ("reg/" <> name))
+                            id
+                            ( projectionOwnerOverride @r
+                                safeProjectionModels
+                                ProjectionBaseDescriptor
+                                  { projectionBaseKind = ProjectionRegisterOwner,
+                                    projectionBaseConstructorName = Nothing,
+                                    projectionBaseSlotName = name,
+                                    projectionBasePosition = position,
+                                    projectionBaseOwnerType = SomeTypeRep (typeRep @r)
+                                  }
+                            )
+                        registers = extractRegFileAt @rs 0 regReader
+                        inputReader ::
+                          forall r.
+                          (Sym r) =>
+                          String ->
+                          Int ->
+                          String ->
+                          r
+                        inputReader ctorName position fieldName =
+                          maybe
+                            (readModel result ("inp/" <> ctorName <> "/" <> fieldName))
+                            id
+                            ( projectionOwnerOverride @r
+                                safeProjectionModels
+                                ProjectionBaseDescriptor
+                                  { projectionBaseKind = ProjectionInputOwner,
+                                    projectionBaseConstructorName = Just ctorName,
+                                    projectionBaseSlotName = fieldName,
+                                    projectionBasePosition = position,
+                                    projectionBaseOwnerType = SomeTypeRep (typeRep @r)
+                                  }
+                            )
+                    command <-
+                      pickCi @ci
+                        ctorTag
+                        inputReader
+                    pure (registers, command)
+              case candidate of
+                Nothing -> pure Nothing
+                Just witness -> do
+                  checked <- try @ErrorCall (evaluate (models (SymPred p) witness))
+                  pure $ case checked of
+                    Right True -> Just witness
+                    Right False -> Nothing
+                    Left _ -> Nothing
+      | otherwise -> pure Nothing
+  where
+    constrainKnownConstructors environment = do
+      let ctorNames = [icName ic | SomeInCtor ic <- allInCtors @ci]
+      when (not (null ctorNames)) $
+        SBV.constrain $
+          SBV.sOr
+            [ seInputCtor environment SBV..== SBV.literal name
+            | name <- ctorNames
+            ]
+
+projectionOwnerOverride ::
+  forall r.
+  (Typeable r) =>
+  [ProjectionModel] ->
+  ProjectionBaseDescriptor ->
+  Maybe r
+projectionOwnerOverride projectionModels base =
+  listToMaybe
+    [ owner
+    | projectionModel <- projectionModels,
+      projectionDescriptorBase (projectionModelDescriptor projectionModel) == base,
+      Just owner <- [projectionModelOwnerAs projectionModel]
+    ]
+
+projectionModelRelationSafe :: TranslationStrength -> ProjectionModel -> Bool
+projectionModelRelationSafe strength projectionModel =
+  all (not . invalidates base) (translationIssues strength)
+  where
+    base = projectionDescriptorBase (projectionModelDescriptor projectionModel)
+    invalidates expected (ConflictingProjectionViews actual) = expected == actual
+    invalidates expected (DirectAndProjectedOwnerRead actual) = expected == actual
+    invalidates _ _ = False
+
+translationIssues :: TranslationStrength -> [TranslationIssue]
+translationIssues ExactTranslation = []
+translationIssues (ConservativeOverApproximation issues) = toList issues
 
 -- | Look up @name@ in @res@'s SBV model; on a hit return @fromSym@
 -- of the model value, on a miss return @symDefault@. Used by
@@ -1196,13 +1778,13 @@ pickCi ::
   forall ci.
   (KnownInCtors ci) =>
   String ->
-  (forall r. (Sym r) => String -> String -> r) ->
+  (forall r. (Sym r) => String -> Int -> String -> r) ->
   Maybe ci
 pickCi tag readField = go (allInCtors @ci)
   where
     go [] = Nothing
     go (SomeInCtor ic@InCtor {} : rest)
       | icName ic == tag =
-          let regs = extractRegFile (readField (icName ic))
+          let regs = extractRegFileAt 0 (readField (icName ic))
            in Just (icBuild ic regs)
       | otherwise = go rest

@@ -187,6 +187,7 @@ module Keiki.Core
     headRecoverabilityWarnings,
     inversionAmbiguityWarnings,
     guardImpliesInputReadWarnings,
+    predicateImpliesInCtor,
     stateChangingEpsilonWarnings,
     opaqueGuardWarnings,
     DeterminismWarning (..),
@@ -2923,6 +2924,31 @@ predInCtorReadNames (PInCtor _) = []
 predInCtorReadNames PLeftArm = []
 predInCtorReadNames PRightArm = []
 predInCtorReadNames (PCmp _ a b) = termInCtorNames a ++ termInCtorNames b
+
+-- | A sound structural implication check for constructor guards. It answers
+-- whether every satisfying valuation of the predicate must match the named
+-- input constructor. Conjunction needs either side to imply the constructor;
+-- disjunction needs both sides. Negation and non-constructor atoms establish
+-- nothing.
+--
+-- Unlike the crash-safety walk in 'guardImpliesInputReadWarnings', this check
+-- is deliberately independent of conjunction operand order. Symbolic
+-- translation can therefore classify @projection && PInCtor@ the same as
+-- @PInCtor && projection@, while concrete evaluation retains its existing
+-- left-to-right partiality warning.
+predicateImpliesInCtor :: String -> HsPred rs ci -> Bool
+predicateImpliesInCtor expected = go
+  where
+    go PTop = False
+    go PBot = True
+    go (PAnd p q) = go p || go q
+    go (POr p q) = go p && go q
+    go (PNot _) = False
+    go (PEq _ _) = False
+    go (PInCtor ic) = icName ic == expected
+    go PLeftArm = False
+    go PRightArm = False
+    go (PCmp _ _ _) = False
 
 updateInCtorNames :: Update rs w ci -> [String]
 updateInCtorNames UKeep = []

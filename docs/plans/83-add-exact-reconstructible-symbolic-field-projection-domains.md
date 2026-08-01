@@ -45,9 +45,9 @@ exactness and model-extraction portions of
       membership test and an equivalent SBV constraint compiler.
 - [x] (2026-08-01T04:04:27Z) Milestone 2: add coherent exact projection evidence, checked reconstruction laws, and a
       compatibility-safe constructor beside the existing unconstrained `fieldWitness`.
-- [ ] Milestone 3: produce a predicate-wide translation report, impose each projection domain once,
+- [x] (2026-08-01T04:29:27Z) Milestone 3: produce a predicate-wide translation report, impose each projection domain once,
       and reject owner-view combinations whose joint relation is not represented.
-- [ ] Milestone 4: add detailed solver/model results and route compatibility verification,
+- [x] (2026-08-01T04:29:27Z) Milestone 4: add detailed solver/model results and route compatibility verification,
       emptiness, determinism, and dead-edge analysis through one result-aware solving kernel.
 - [ ] Milestone 5: add exhaustive and adversarial fixtures, update durable documentation and
       release notes, run all project gates, and perform the ADR distillation pass.
@@ -75,6 +75,20 @@ exactness and model-extraction portions of
   tests plus the new domain/compiler and declaration-law fixtures.
   Evidence: `cabal test keiki-test --test-option=--match --test-option=projection` completed with
   48 examples and 0 failures at 2026-08-01T04:04:27Z.
+
+- Observation: Predicate-wide relation analysis has adversarial coverage for repeated views,
+  distinct bases, conflicting tags, mixed exact/unconstrained evidence in both occurrence orders,
+  direct owner reads, projection arithmetic/ordering, and logically dominating input-constructor
+  guards in both conjunction orders.
+  Evidence: `cabal test keiki-test --test-option=--match --test-option=projection` completed with
+  65 examples and 0 failures at 2026-08-01T04:29:27Z; the verification-only run completed with
+  19 examples and 0 failures.
+
+- Observation: Existing solver-backed compatibility APIs can be implemented as projections of
+  one detailed result per guard or live-edge pair without rerunning the solver.
+  Evidence: the determinism, `dead-edge`, and witness-extraction focused runs completed with 5, 2,
+  and 2 examples respectively and no failures at 2026-08-01T04:29:27Z. The actual Hspec label that
+  selects the new detailed dead-edge fixture is `dead-edge`, not `dead edge`.
 
 
 ## Decision Log
@@ -212,6 +226,27 @@ exactness and model-extraction portions of
   deferred by IR-4 from being re-derived from scratch.
   Date: 2026-08-01
 
+- Decision: Add a defaulted, position-aware `extractRegFileAt` method to `ExtractRegFile` and use it
+  privately for full-witness projection-owner overrides.
+  Rationale: Structural position is required to distinguish duplicate diagnostic slot names. The
+  default delegates to the existing name-only method, preserving source compatibility for custom
+  instances; the built-in recursive instances supply exact positions. A custom legacy instance
+  therefore remains conservative rather than receiving an incorrectly targeted override.
+  Date: 2026-08-01
+
+- Decision: Catch solver startup and execution exceptions in the shared detailed kernel and map
+  them to explicit failure results; pure compatibility wrappers retain `NOINLINE` and fail
+  conservatively.
+  Rationale: Detailed callers need status rather than exceptions, while the old emptiness,
+  determinism, and dead-edge contracts must never treat infrastructure failure as proof.
+  Date: 2026-08-01
+
+- Decision: Preserve projection model order by the first allocation of each structured projection
+  key, and store typed model values behind `Dynamic` with descriptor-backed eliminators.
+  Rationale: Allocation follows deterministic predicate traversal, repeated reads collapse to one
+  key, and unrelated result/owner types can coexist without casting from display names.
+  Date: 2026-08-01
+
 
 ## Outcomes & Retrospective
 
@@ -273,7 +308,7 @@ rules in validation and symbolic verification.
 
 `src/Keiki/Internal/SymbolicTypes.hs` centralizes runtime discovery of the types accepted by the
 symbolic layer. Extend this internal registry with the carrier fact needed to decide whether a
-whole-carrier projection domain is exact. Fixed-width integers, `Bool`, `Integer`, exact `Text`,
+whole-carrier projection domain is exact. Fixed-width integers, `Bool`, `Integer`,
 and other genuinely round-tripping representations may opt in. `Natural` remains exact with its
 non-negative `constrainSymDomain`. Machine `Int` does not opt in while its overflow behavior differs
 from the SMT representation. The implementation must audit `UTCTime` rather than assuming that its
@@ -602,7 +637,7 @@ labels, updating this plan if those labels differ:
 
 ```bash
 cabal test keiki-test --test-option=--match --test-option=determinism
-cabal test keiki-test --test-option=--match --test-option="dead edge"
+cabal test keiki-test --test-option=--match --test-option=dead-edge
 cabal test keiki-test --test-option=--match --test-option="witness extraction"
 ```
 
@@ -722,8 +757,8 @@ data DomainConstructionError
 finiteProjectionDomain :: Eq a => NonEmpty a -> ProjectionDomain a
 wholeProjectionDomain :: ProjectionDomain a
 textProjectionDomain :: TextPattern -> ProjectionDomain Text
-textLiteral :: Text -> TextPattern
-textCharSet :: NonEmpty Char -> TextPattern
+textLiteral :: Text -> Either DomainConstructionError TextPattern
+textCharSet :: NonEmpty Char -> Either DomainConstructionError TextPattern
 textCharRanges :: NonEmpty (Char, Char) -> Either DomainConstructionError TextPattern
 textConcat :: NonEmpty TextPattern -> TextPattern
 textAlternation :: NonEmpty TextPattern -> TextPattern
@@ -778,3 +813,8 @@ then verified against Hackage and upstream tags before editing the Cabal file.
 Revision note (2026-08-01T04:04:27Z): Recorded completion and focused validation of Milestones 1
 and 2, the authoritative dependency audit, the `UTCTime` leap-second carrier finding, and the two
 implementation decisions that preserve exact pure/SBV semantics.
+
+Revision note (2026-08-01T04:29:27Z): Recorded completion and focused validation of Milestones 3
+and 4, the predicate-wide relation rules, the shared detailed solver kernel, checked path-local
+model reconstruction, and the compatibility-preserving positional extraction choice. Corrected
+the focused dead-edge label and interface synopsis to match the implementation.

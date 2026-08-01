@@ -2,24 +2,43 @@
 
 module Keiki.FieldProjSpec where
 
+import Data.Foldable (toList)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (isNothing)
 import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
 import Data.Text (Text)
 import Data.Text qualified as T
 import Keiki.Core
+import Keiki.ProjectionDomain
 import Keiki.Symbolic
-  ( KnownInCtors (..),
+  ( DeadEdgeAnalysisDetail (..),
+    DeterminismAnalysisDetail (..),
+    KnownInCtors (..),
     PredicateVerification (..),
+    PredicateVerificationDetail (..),
+    ProjectionBaseDescriptor (..),
+    ProjectionDescriptor (..),
+    ProjectionModel (..),
     SomeInCtor (..),
     SymEnv (..),
+    TranslationIssue (..),
+    TranslationStrength (..),
+    checkDeadEdgesSym,
+    checkDeadEdgesSymDetailed,
+    checkTransitionDeterminismSym,
+    checkTransitionDeterminismSymDetailed,
     constrainFieldProjection,
     mkSymEnv,
     predicateTranslationExact,
+    predicateTranslationReport,
+    projectionModelKeyAs,
+    projectionModelOwnerAs,
     symIsBot,
     symSatExt,
     translatePred,
     verifyPredicate,
+    verifyPredicateDetailed,
   )
 import Test.Hspec
 import Test.QuickCheck
@@ -252,10 +271,20 @@ instance FieldProjection BoolKey where
   projectFieldValue _ False = "disabled"
   projectFieldValue _ True = "enabled"
 
+instance ExactFieldProjection BoolKey where
+  fieldProjectionDomain _ =
+    finiteProjectionDomain ("disabled" :| ["enabled"])
+  reconstructFieldOwner _ "disabled" = Just False
+  reconstructFieldOwner _ "enabled" = Just True
+  reconstructFieldOwner _ _ = Nothing
+
 type BoolOwnerRegs = '[ '("owner", Bool)]
 
 boolKeyW :: FieldWitness BoolKey
 boolKeyW = fieldWitness @BoolKey
+
+exactBoolKeyW :: FieldWitness BoolKey
+exactBoolKeyW = exactFieldWitness @BoolKey
 
 boolOwnerIx :: Index BoolOwnerRegs Bool
 boolOwnerIx = #owner
@@ -269,6 +298,121 @@ exhaustiveProjectionPredicate =
 repeatedProjectionContradiction :: HsPred BoolOwnerRegs ()
 repeatedProjectionContradiction =
   regProj boolKeyW boolOwnerIx ./= regProj boolKeyW boolOwnerIx
+
+exactExhaustiveProjectionPredicate :: HsPred BoolOwnerRegs ()
+exactExhaustiveProjectionPredicate =
+  PAnd
+    (regProj exactBoolKeyW boolOwnerIx ./= TLit "disabled")
+    (regProj exactBoolKeyW boolOwnerIx ./= TLit "enabled")
+
+exactEnabledProjectionPredicate :: HsPred BoolOwnerRegs ()
+exactEnabledProjectionPredicate =
+  regProj exactBoolKeyW boolOwnerIx .== TLit "enabled"
+
+data BoolAsInt
+
+instance FieldProjection BoolAsInt where
+  type FieldName BoolAsInt = "asInt"
+  type FieldOwner BoolAsInt = Bool
+  type FieldResult BoolAsInt = Int
+  fieldShapeId _ = "test.bool-as-int.v1"
+  projectFieldValue _ False = 0
+  projectFieldValue _ True = 1
+
+instance ExactFieldProjection BoolAsInt where
+  fieldProjectionDomain _ = finiteProjectionDomain (0 :| [1])
+  reconstructFieldOwner _ 0 = Just False
+  reconstructFieldOwner _ 1 = Just True
+  reconstructFieldOwner _ _ = Nothing
+
+exactBoolAsIntW :: FieldWitness BoolAsInt
+exactBoolAsIntW = exactFieldWitness @BoolAsInt
+
+data RichOwner = RichOwner Bool Bool
+  deriving stock (Eq, Show)
+
+data RichFirst
+
+instance FieldProjection RichFirst where
+  type FieldName RichFirst = "first"
+  type FieldOwner RichFirst = RichOwner
+  type FieldResult RichFirst = Bool
+  fieldShapeId _ = "test.rich-owner.v1"
+  projectFieldValue _ (RichOwner first _) = first
+
+instance ExactFieldProjection RichFirst where
+  fieldProjectionDomain _ = wholeProjectionDomain
+  reconstructFieldOwner _ first = Just (RichOwner first False)
+
+data RichSecond
+
+instance FieldProjection RichSecond where
+  type FieldName RichSecond = "second"
+  type FieldOwner RichSecond = RichOwner
+  type FieldResult RichSecond = Bool
+  fieldShapeId _ = "test.rich-owner.v1"
+  projectFieldValue _ (RichOwner _ second) = second
+
+instance ExactFieldProjection RichSecond where
+  fieldProjectionDomain _ = wholeProjectionDomain
+  reconstructFieldOwner _ second = Just (RichOwner False second)
+
+exactRichFirstW :: FieldWitness RichFirst
+exactRichFirstW = exactFieldWitness @RichFirst
+
+exactRichSecondW :: FieldWitness RichSecond
+exactRichSecondW = exactFieldWitness @RichSecond
+
+type RichRegs = '[ '("left", RichOwner), '("right", RichOwner)]
+
+richLeftIx :: Index RichRegs RichOwner
+richLeftIx = #left
+
+richRightIx :: Index RichRegs RichOwner
+richRightIx = #right
+
+data BrokenRejectInverse
+
+instance FieldProjection BrokenRejectInverse where
+  type FieldName BrokenRejectInverse = "brokenReject"
+  type FieldOwner BrokenRejectInverse = Bool
+  type FieldResult BrokenRejectInverse = Text
+  fieldShapeId _ = "test.broken-reject.v1"
+  projectFieldValue _ False = "disabled"
+  projectFieldValue _ True = "enabled"
+
+instance ExactFieldProjection BrokenRejectInverse where
+  fieldProjectionDomain _ = finiteProjectionDomain ("enabled" :| [])
+  reconstructFieldOwner _ _ = Nothing
+
+data BrokenRoundTripInverse
+
+instance FieldProjection BrokenRoundTripInverse where
+  type FieldName BrokenRoundTripInverse = "brokenRoundTrip"
+  type FieldOwner BrokenRoundTripInverse = Bool
+  type FieldResult BrokenRoundTripInverse = Text
+  fieldShapeId _ = "test.broken-round-trip.v1"
+  projectFieldValue _ False = "disabled"
+  projectFieldValue _ True = "enabled"
+
+instance ExactFieldProjection BrokenRoundTripInverse where
+  fieldProjectionDomain _ = finiteProjectionDomain ("enabled" :| [])
+  reconstructFieldOwner _ _ = Just False
+
+data UnderDeclaredDomain
+
+instance FieldProjection UnderDeclaredDomain where
+  type FieldName UnderDeclaredDomain = "underDeclared"
+  type FieldOwner UnderDeclaredDomain = Bool
+  type FieldResult UnderDeclaredDomain = Text
+  fieldShapeId _ = "test.under-declared.v1"
+  projectFieldValue _ False = "disabled"
+  projectFieldValue _ True = "enabled"
+
+instance ExactFieldProjection UnderDeclaredDomain where
+  fieldProjectionDomain _ = finiteProjectionDomain ("disabled" :| [])
+  reconstructFieldOwner _ "disabled" = Just False
+  reconstructFieldOwner _ _ = Nothing
 
 data BoolProjectionCmd = WithOwner Bool | WithoutOwner
   deriving stock (Eq, Show)
@@ -310,6 +454,78 @@ proveConcreteAgreement predicate bindConcrete concrete = do
     bindConcrete env
     pure (translated SBV..<=> SBV.literal concrete)
   pure (not (SBV.modelExists result))
+
+translationIssuesOf :: HsPred rs ci -> [TranslationIssue]
+translationIssuesOf predicate = case predicateTranslationReport predicate of
+  ExactTranslation -> []
+  ConservativeOverApproximation issues -> toList issues
+
+isConflictingViews :: TranslationIssue -> Bool
+isConflictingViews ConflictingProjectionViews {} = True
+isConflictingViews _ = False
+
+isDirectAndProjected :: TranslationIssue -> Bool
+isDirectAndProjected DirectAndProjectedOwnerRead {} = True
+isDirectAndProjected _ = False
+
+isUnguardedProjection :: TranslationIssue -> Bool
+isUnguardedProjection UnguardedProjectionInputRead {} = True
+isUnguardedProjection _ = False
+
+isOutsideEquality :: TranslationIssue -> Bool
+isOutsideEquality ProjectionUsedOutsideEquality {} = True
+isOutsideEquality _ = False
+
+data ProjectionAnalysisState = ProjectionAnalysisState
+  deriving stock (Eq, Show, Enum, Bounded)
+
+projectionAnalysisEdge ::
+  HsPred BoolOwnerRegs () ->
+  Edge (HsPred BoolOwnerRegs ()) BoolOwnerRegs () () ProjectionAnalysisState
+projectionAnalysisEdge edgeGuard =
+  Edge
+    { guard = edgeGuard,
+      update = UKeep,
+      output = [],
+      target = ProjectionAnalysisState,
+      mode = Live
+    }
+
+projectionDeterminismTransducer ::
+  SymTransducer
+    (HsPred BoolOwnerRegs ())
+    BoolOwnerRegs
+    ProjectionAnalysisState
+    ()
+    ()
+projectionDeterminismTransducer =
+  SymTransducer
+    { edgesOut = \ProjectionAnalysisState ->
+        [ projectionAnalysisEdge
+            (regProj exactBoolKeyW boolOwnerIx .== TLit "disabled"),
+          projectionAnalysisEdge
+            (regProj exactBoolKeyW boolOwnerIx .== TLit "enabled")
+        ],
+      initial = ProjectionAnalysisState,
+      initialRegs = RCons (Proxy @"owner") False RNil,
+      isFinal = const True
+    }
+
+projectionDeadEdgeTransducer ::
+  SymTransducer
+    (HsPred BoolOwnerRegs ())
+    BoolOwnerRegs
+    ProjectionAnalysisState
+    ()
+    ()
+projectionDeadEdgeTransducer =
+  SymTransducer
+    { edgesOut = \ProjectionAnalysisState ->
+        [projectionAnalysisEdge exactExhaustiveProjectionPredicate],
+      initial = ProjectionAnalysisState,
+      initialRegs = RCons (Proxy @"owner") False RNil,
+      isFinal = const True
+    }
 
 spec :: Spec
 spec = do
@@ -447,6 +663,183 @@ spec = do
               (PInCtor withoutOwnerCtor) ::
               HsPred '[] BoolProjectionCmd
       isNothing (symSatExt predicate) `shouldBe` True
+
+    it "proves the excluded third key unsatisfiable for an exact finite image" $ do
+      predicateTranslationReport exactExhaustiveProjectionPredicate
+        `shouldBe` ExactTranslation
+      verifyPredicate exactExhaustiveProjectionPredicate
+        `shouldReturn` VerifiedUnsatisfiable
+      symIsBot exactExhaustiveProjectionPredicate `shouldBe` True
+
+    it "returns a typed checked projection model" $ do
+      detail <- verifyPredicateDetailed exactEnabledProjectionPredicate
+      case detail of
+        PredicateSatisfiable ExactTranslation [projectionModel] -> do
+          projectionModelKeyAs @Text projectionModel `shouldBe` Just "enabled"
+          projectionModelOwnerAs @Bool projectionModel `shouldBe` Just True
+        other -> expectationFailure ("expected one exact projection model, got " <> show other)
+      verifyPredicate exactEnabledProjectionPredicate
+        `shouldReturn` VerifiedSatisfiable
+
+    it "uses a relation-safe projection owner in full witness extraction" $
+      case symSatExt exactEnabledProjectionPredicate of
+        Nothing -> expectationFailure "expected exact projection owner override"
+        Just (registers, ()) -> registers ! boolOwnerIx `shouldBe` True
+
+    it "installs a relation-safe owner into the matching input constructor field" $ do
+      let predicate =
+            PAnd
+              (PInCtor withOwnerCtor)
+              (inpProj exactBoolKeyW withOwnerCtor #owner .== TLit "enabled") ::
+              HsPred '[] BoolProjectionCmd
+      case symSatExt predicate of
+        Just (RNil, WithOwner True) -> pure ()
+        other -> expectationFailure ("expected WithOwner True, got " <> show (snd <$> other))
+
+    it "keeps path-local models distinct from an inconsistent full owner witness" $ do
+      let predicate =
+            PAnd
+              (regProj exactBoolKeyW boolOwnerIx .== TLit "enabled")
+              (regProj exactBoolAsIntW boolOwnerIx .== TLit 0) ::
+              HsPred BoolOwnerRegs ()
+      detail <- verifyPredicateDetailed predicate
+      case detail of
+        PredicateSatisfiable (ConservativeOverApproximation _) projectionModels ->
+          length projectionModels `shouldBe` 2
+        other -> expectationFailure ("expected conservative path models, got " <> show other)
+      isNothing (symSatExt predicate) `shouldBe` True
+
+    it "keeps equal display names distinct by structural position in models" $ do
+      let first = ZIdx :: Index '[ '("owner", Bool), '("owner", Bool)] Bool
+          second = SIdx ZIdx :: Index '[ '("owner", Bool), '("owner", Bool)] Bool
+          predicate =
+            PAnd
+              (regProj exactBoolKeyW first .== TLit "disabled")
+              (regProj exactBoolKeyW second .== TLit "enabled") ::
+              HsPred '[ '("owner", Bool), '("owner", Bool)] ()
+      detail <- verifyPredicateDetailed predicate
+      case detail of
+        PredicateSatisfiable ExactTranslation projectionModels -> do
+          length projectionModels `shouldBe` 2
+          fmap (projectionBasePosition . projectionDescriptorBase . projectionModelDescriptor) projectionModels
+            `shouldBe` [0, 1]
+        other -> expectationFailure ("expected two structural models, got " <> show other)
+
+    it "reports an inverse that rejects an admitted model as a contract violation" $ do
+      let witness = exactFieldWitness @BrokenRejectInverse
+          predicate =
+            regProj witness boolOwnerIx .== TLit "enabled" ::
+              HsPred BoolOwnerRegs ()
+      detail <- verifyPredicateDetailed predicate
+      case detail of
+        PredicateProjectionContractViolation ExactTranslation _ message ->
+          message `shouldContain` show ProjectionInverseRejectedDomainKey
+        other -> expectationFailure ("expected inverse rejection, got " <> show other)
+      compatibility <- verifyPredicate predicate
+      compatibility `shouldSatisfy` \case
+        UnverifiedSolverFailure _ -> True
+        _ -> False
+
+    it "reports an inverse getter mismatch as a contract violation" $ do
+      let witness = exactFieldWitness @BrokenRoundTripInverse
+          predicate =
+            regProj witness boolOwnerIx .== TLit "enabled" ::
+              HsPred BoolOwnerRegs ()
+      detail <- verifyPredicateDetailed predicate
+      case detail of
+        PredicateProjectionContractViolation ExactTranslation _ message ->
+          message `shouldContain` show ProjectionInverseRoundTripMismatch
+        other -> expectationFailure ("expected round-trip violation, got " <> show other)
+
+    it "catches an under-declared image only through the owner-side law" $ do
+      let witness = exactFieldWitness @UnderDeclaredDomain
+      checkFieldProjectionOwner witness True
+        `shouldBe` Left ProjectedKeyOutsideDeclaredDomain
+
+  describe "predicate-wide projection translation report" $ do
+    it "allows repeated exact reads and the same tag on distinct bases" $ do
+      let repeated =
+            regProj exactBoolKeyW boolOwnerIx
+              .== regProj exactBoolKeyW boolOwnerIx
+          distinctBases =
+            PAnd
+              (regProj exactRichFirstW richLeftIx .== TLit True)
+              (regProj exactRichFirstW richRightIx .== TLit False)
+      predicateTranslationReport repeated `shouldBe` ExactTranslation
+      predicateTranslationReport distinctBases `shouldBe` ExactTranslation
+
+    it "allows distinct exact tags only when their bases differ" $ do
+      let separate =
+            PAnd
+              (regProj exactRichFirstW richLeftIx .== TLit True)
+              (regProj exactRichSecondW richRightIx .== TLit False)
+          correlated =
+            PAnd
+              (regProj exactRichFirstW richLeftIx .== TLit True)
+              (regProj exactRichSecondW richLeftIx .== TLit False)
+      predicateTranslationReport separate `shouldBe` ExactTranslation
+      translationIssuesOf correlated `shouldSatisfy` any isConflictingViews
+
+    it "rejects a direct owner read combined with its projection" $ do
+      let predicate =
+            PAnd
+              (TReg boolOwnerIx .== TLit True)
+              (regProj exactBoolKeyW boolOwnerIx .== TLit "enabled")
+      translationIssuesOf predicate `shouldSatisfy` any isDirectAndProjected
+
+    it "constrains mixed exact/unconstrained occurrences in both orders but reports both inexact" $ do
+      let unconstrainedFirst =
+            PAnd
+              (regProj boolKeyW boolOwnerIx ./= TLit "disabled")
+              (regProj exactBoolKeyW boolOwnerIx ./= TLit "enabled")
+          exactFirst =
+            PAnd
+              (regProj exactBoolKeyW boolOwnerIx ./= TLit "enabled")
+              (regProj boolKeyW boolOwnerIx ./= TLit "disabled")
+      symIsBot unconstrainedFirst `shouldBe` True
+      symIsBot exactFirst `shouldBe` True
+      predicateTranslationExact unconstrainedFirst `shouldBe` False
+      predicateTranslationExact exactFirst `shouldBe` False
+      translationIssuesOf unconstrainedFirst `shouldSatisfy` any isConflictingViews
+      translationIssuesOf exactFirst `shouldSatisfy` any isConflictingViews
+
+    it "uses logical constructor domination independently of conjunction order" $ do
+      let projectionAtom =
+            inpProj exactBoolKeyW withOwnerCtor #owner .== TLit "enabled"
+          guardFirst = PAnd (PInCtor withOwnerCtor) projectionAtom
+          projectionFirst = PAnd projectionAtom (PInCtor withOwnerCtor)
+          nonDominating = POr (PInCtor withOwnerCtor) projectionAtom
+      predicateTranslationReport guardFirst `shouldBe` ExactTranslation
+      predicateTranslationReport projectionFirst `shouldBe` ExactTranslation
+      translationIssuesOf nonDominating
+        `shouldSatisfy` any isUnguardedProjection
+
+    it "keeps projection ordering and arithmetic conservative" $ do
+      let ordered =
+            PCmp
+              CmpLt
+              (regProj exactBoolAsIntW boolOwnerIx)
+              (TLit 1)
+          arithmetic =
+            tadd (regProj exactBoolAsIntW boolOwnerIx) (TLit 1)
+              .== TLit 2
+      translationIssuesOf ordered `shouldSatisfy` any isOutsideEquality
+      translationIssuesOf arithmetic `shouldSatisfy` any isOutsideEquality
+
+  describe "detailed projection analyses" $ do
+    it "retains one exact UNSAT result for a disjoint live pair" $ do
+      details <- checkTransitionDeterminismSymDetailed projectionDeterminismTransducer
+      case details of
+        [DeterminismAnalysisDetail _ _ (PredicateUnsatisfiable ExactTranslation)] -> pure ()
+        _ -> expectationFailure ("unexpected determinism details: " <> show (length details))
+      checkTransitionDeterminismSym projectionDeterminismTransducer `shouldBe` []
+
+    it "retains the exact dead-edge result used by the compatibility warning" $ do
+      details <- checkDeadEdgesSymDetailed projectionDeadEdgeTransducer
+      case details of
+        [DeadEdgeAnalysisDetail _ (PredicateUnsatisfiable ExactTranslation)] -> pure ()
+        _ -> expectationFailure ("unexpected dead-edge details: " <> show (length details))
+      length (checkDeadEdgesSym projectionDeadEdgeTransducer) `shouldBe` 1
 
   describe "concrete-to-symbolic agreement" $ do
     it "agrees for register projections in both truth directions" $
