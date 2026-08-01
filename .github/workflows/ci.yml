@@ -45,6 +45,26 @@ jobs:
       # the one the specs are written against.
       - uses: cachix/install-nix-action@v31
 
+      # Must precede the first step that enters the dev shell, since that is
+      # what realizes the closure. Without this the toolchain (~3.5G on linux,
+      # dominated by GHC) is re-fetched from cache.nixos.org on every run.
+      # Keyed on what determines the closure: flake.lock pins nixpkgs, nix/
+      # lists the packages.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # Bounds what gets saved, so a stray build can't walk the repo toward
+          # GitHub's 10G cache cap, which the cabal store cache shares.
+          gc-max-store-size-linux: 4G
+          # Keep exactly one nix cache per ref: on a flake.lock bump the new
+          # cache is saved and the superseded one dropped, rather than both
+          # sitting against the cap until GitHub's 7-day eviction.
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
       - name: Toolchain versions
         run: |
           ghc --version
