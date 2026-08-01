@@ -626,6 +626,14 @@ spec = do
             `shouldBe` True
 
   describe "projection verification" $ do
+    it "checks every owner and key in the finite exact image" $
+      mapM_
+        ( \(owner, key) -> do
+            checkFieldProjectionOwner exactBoolKeyW owner `shouldBe` Right ()
+            checkFieldProjectionKey exactBoolKeyW key `shouldBe` Right owner
+        )
+        [(False, "disabled"), (True, "enabled")]
+
     it "does not call a supported but unconstrained projection translation-exact" $ do
       -- Before the conservative classifier, z3 could invent a third Text key
       -- outside the getter's two-value image and verify that fabricated model.

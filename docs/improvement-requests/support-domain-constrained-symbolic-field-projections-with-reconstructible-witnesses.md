@@ -4,9 +4,9 @@ title: Support domain-constrained symbolic field projections with reconstructibl
 description: >-
   Let a declaration-scoped projection describe its exact symbolic image and reconstruct concrete
   owners so finite enums and validated identifiers receive truthful proofs and counterexamples.
-timestamp: 2026-08-01T00:14:56Z
+timestamp: 2026-08-01T04:37:32Z
 requestId: IR-4
-status: planned
+status: implemented
 origin: mori://shinzui/keiro
 plan: docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md
 reviews:
@@ -29,11 +29,20 @@ reviews:
 
 ## Status
 
-**Planned.** Accepted as the upstream prerequisite for exact nominal equality in Keiro and
-specified by
+**Implemented.** ExecPlan 83 adds a backend-neutral exact-domain algebra,
+`ExactFieldProjection`/`exactFieldWitness`, executable declaration laws, predicate-wide relational
+exactness reporting, checked path-local model reconstruction, and shared detailed verification and
+transducer-analysis results. The finite, conflicting-view, broken-inverse, under-declared-domain,
+and complete TypeID-v7-shaped boundary fixtures pass, as do all Cabal tests/builds, native flake
+checks, strict OKF validation, formatting, and whitespace checks. The change is recorded under
+Unreleased; Hackage publication and the upstream tag remain separate release work and must precede
+any downstream dependency-floor increase.
+
+**Previously planned.** Accepted as the upstream prerequisite for exact nominal equality in Keiro
+and specified by
 [ExecPlan 83](../plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md).
-IR-3's conservative classification repair should land first or in the same release; this request
-supplies the evidence that allows selected projections to be classified exact again.
+IR-3's conservative classification repair established the compatibility baseline that this request
+selectively promotes through explicit evidence.
 
 ## Context
 

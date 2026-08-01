@@ -49,7 +49,7 @@ exactness and model-extraction portions of
       and reject owner-view combinations whose joint relation is not represented.
 - [x] (2026-08-01T04:29:27Z) Milestone 4: add detailed solver/model results and route compatibility verification,
       emptiness, determinism, and dead-edge analysis through one result-aware solving kernel.
-- [ ] Milestone 5: add exhaustive and adversarial fixtures, update durable documentation and
+- [x] (2026-08-01T04:38:43Z) Milestone 5: add exhaustive and adversarial fixtures, update durable documentation and
       release notes, run all project gates, and perform the ADR distillation pass.
 
 
@@ -89,6 +89,28 @@ exactness and model-extraction portions of
   Evidence: the determinism, `dead-edge`, and witness-extraction focused runs completed with 5, 2,
   and 2 examples respectively and no failures at 2026-08-01T04:29:27Z. The actual Hspec label that
   selects the new detailed dead-edge fixture is `dead-edge`, not `dead edge`.
+
+- Observation: UUID-v7 constraints map directly to fixed Crockford Base32 character positions in
+  the 26-character TypeID suffix: character 0 is `0`–`7`, character 10 is `e` or `f`, and
+  character 13 is one of `8`, `9`, `a`, `b`, `r`, `s`, `t`, or `v`.
+  Evidence: Mori located `mori://MMZK1526/mmzk-typeid/packages/mmzk-typeid`; its UUID validation
+  checks version nibble 7 and RFC variant bits `10`, while its decoder enforces the 26-character
+  Crockford alphabet and leading-overflow bound. The schema-local fixture's accepted/rejected
+  boundary table agrees with both the pure matcher and z3.
+
+- Observation: The completed implementation passes the full repository validation matrix without
+  changing dependency bounds.
+  Evidence: by 2026-08-01T04:46:43Z, `cabal test all` passed all four current test suites
+  (`keiki-test` contains 626 examples with 0 failures), `cabal build all` was up to date,
+  `nix flake check` passed the native treefmt and pre-commit checks, strict `okf validate` reported
+  `OK: 4 concepts`, and `git diff --check` produced no output.
+
+- Observation: A finite domain does not automatically make a non-isomorphic carrier exact; every
+  enumerated literal must itself be representable by the active symbolic encoding.
+  Evidence: the final semantic audit added regressions for a leap-second `UTCTime` literal that
+  does not round-trip through POSIX time and a finite `Text` literal above U+2FFFF. Both now produce
+  `UnsupportedProjectionDomain`, emit no partial domain constraint, and keep `symIsBot`
+  conservative. The focused domain suite passes 12 examples with 0 failures.
 
 
 ## Decision Log
@@ -247,10 +269,53 @@ exactness and model-extraction portions of
   key, and unrelated result/owner types can coexist without casting from display names.
   Date: 2026-08-01
 
+- Decision: Keep the TypeID-v7 integration fixture schema-local with the fixed prefix `order_` and
+  derive its exact suffix language into `TextPattern`; do not add a runtime TypeID dependency.
+  Rationale: The fixture exercises every requested lexical boundary while demonstrating that
+  consumers own nominal codecs and prefixes. One closed pattern drives pure membership, SBV
+  membership, inverse parsing, and model round trips, avoiding a second regex/parser semantics in
+  the library.
+  Date: 2026-08-01
+
+- Decision: Compile a finite projection domain only when every listed literal round-trips through
+  `SymRep` and satisfies any backend representability bound, including Text's U+2FFFF ceiling.
+  Rationale: Finite `Int` and ordinary-time domains recover precision safely, but finiteness alone
+  cannot repair a lossy literal encoding. Omitting the complete constraint and reporting the
+  unsupported domain preserves the over-approximation; emitting only the representable subset
+  could manufacture false UNSAT.
+  Date: 2026-08-01
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The implementation delivers the intended two-way projection capability without changing the
+released one-way default. `Keiki.ProjectionDomain` exposes a backend-neutral finite/whole/text
+domain algebra; `ExactFieldProjection` and `exactFieldWitness` attach coherent image and inverse
+evidence to one nominal tag; and the existing `fieldWitness` remains explicitly unconstrained.
+The concrete law helpers cover both declaration directions, while satisfying model extraction
+checks membership, inverse success, and getter round trip before exposing typed path-local models.
+
+Exactness is now reported at the complete-predicate level. Repeated reads of one exact tag share a
+single constrained variable, but multiple tags over one owner, direct-plus-projected reads,
+projection ordering/arithmetic, and undominated input projections remain auditable conservative
+over-approximations. The detailed solver kernel preserves exactness strength, all solver statuses,
+contract violations, ordered projection models, and edge attribution. Compatibility verification,
+emptiness, determinism, dead-edge checks, and `symSatExt` all project from those same semantics;
+only definite UNSAT acts as an emptiness proof, and every full witness is concretely rechecked.
+
+The finite enum and complete TypeID-v7-shaped fixtures demonstrate excluded-key UNSAT, every finite
+owner/key law, accepted and rejected lexical boundaries, checked reconstruction, structural
+position identity, predicate-wide conflicts, and all three dishonest declaration directions. The
+leap-second regression makes the conservative `UTCTime` whole-carrier decision executable rather
+than documentary, and the finite-literal regressions ensure an enumerated domain cannot bypass the
+same carrier boundary.
+
+The final ADR distillation reread this plan's decisions and surprises. All durable semantic rules
+belong to the proof-gate policy already owned by ADR-0003, so that ADR now records exact-domain
+forms, carrier exclusions, predicate-global relation rules, path-local versus full witnesses, and
+the conditional trust boundary for under-declared images. No superseding ADR was necessary.
+IR-4 is marked implemented under Unreleased and IR-1 records the exactness follow-up; publishing a
+Hackage release and upstream tag remains separate release work.
 
 
 ## Context and Orientation
@@ -818,3 +883,11 @@ Revision note (2026-08-01T04:29:27Z): Recorded completion and focused validation
 and 4, the predicate-wide relation rules, the shared detailed solver kernel, checked path-local
 model reconstruction, and the compatibility-preserving positional extraction choice. Corrected
 the focused dead-edge label and interface synopsis to match the implementation.
+
+Revision note (2026-08-01T04:38:43Z): Completed Milestone 5, recorded the TypeID-v7 derivation and
+full validation evidence, filled the retrospective, and distilled every durable proof/trust rule
+into ADR-0003. Marked IR-4 implemented under Unreleased; publication remains separate release work.
+
+Revision note (2026-08-01T04:43:40Z): Recorded the final finite-literal representability hardening,
+its leap-second and high-code-point regressions, and the updated full-suite count after rerunning
+all Cabal tests.

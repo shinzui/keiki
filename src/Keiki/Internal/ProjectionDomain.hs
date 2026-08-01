@@ -34,7 +34,7 @@ import Numeric.Natural (Natural)
 -- a text pattern cannot accidentally be attached to another result carrier.
 data ProjectionDomain a where
   ProjectionWhole :: ProjectionDomain a
-  ProjectionFinite :: NonEmpty a -> ProjectionDomain a
+  ProjectionFinite :: (Eq a) => NonEmpty a -> ProjectionDomain a
   ProjectionText :: TextPattern -> ProjectionDomain Text
 
 -- | A deliberately small full-string pattern language. Every constructor has
@@ -60,7 +60,10 @@ maximumSmtCodePoint :: Char
 maximumSmtCodePoint = '\x2FFFF'
 
 -- | Construct a non-empty finite domain, removing duplicates while retaining
--- the first occurrence of every value.
+-- the first occurrence of every value. The symbolic compiler separately
+-- verifies that each retained literal round-trips through its representation
+-- and satisfies backend bounds; failure omits the entire constraint and makes
+-- the containing translation conservative.
 finiteProjectionDomain :: (Eq a) => NonEmpty a -> ProjectionDomain a
 finiteProjectionDomain = ProjectionFinite . stableNub
   where

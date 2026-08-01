@@ -766,11 +766,71 @@ The other exports:
 
 | Export | What it does |
 |---|---|
-| `symIsBot p` | Is the predicate definitely unsatisfiable? Inconclusive solver results conservatively return `False` |
-| `symSatExt p` | Is there a satisfying assignment, returning a concrete `(RegFile rs, ci)` witness. Since EP-44 this also backs `sat` on `SymPred`. Needs `ExtractRegFile rs` / `KnownInCtors ci`. |
+| `predicateTranslationReport p` | Explains whether the complete translation is exact and, if not, lists stable structural issues in predicate order |
+| `verifyPredicateDetailed p` | Returns solver status, translation strength, and checked path-local projection models without erasing failures or contract violations |
+| `symIsBot p` | Is the predicate definitely unsatisfiable? Inconclusive solver results and failures conservatively return `False`; exact-projection proofs depend on the declaration laws below |
+| `symSatExt p` | Is there a satisfying assignment, returning a concrete `(RegFile rs, ci)` witness that passes concrete evaluation. Relation-safe exact projections may reconstruct owner paths. Needs `ExtractRegFile rs` / `KnownInCtors ci`. |
 | `withSymPred t` | Re-tag a transducer's edge guards from `HsPred` to `SymPred` |
 | `isSingleValuedSym t` | All-pairs `isBot (g1 \`conj\` g2)` over each vertex's edges |
-| `Sym a` typeclass | Curated equality set: `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, `Int32`/`Int64`. `Natural` equality and ordering are structural; its generic arithmetic is opaque. |
+| `Sym a` typeclass | Curated equality set: `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, `Int32`/`Int64`. `Natural` arithmetic uses total monus for subtraction. |
+
+### 7.1 Exact field projections
+
+`fieldWitness` remains the source-compatible one-way projection: repeated
+reads share one symbolic variable, but the solver may choose a key outside the
+getter's concrete image. Use `exactFieldWitness` only when the projection tag
+can declare its complete image and reconstruct a canonical owner for every
+admitted key:
+
+```haskell
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Text (Text)
+import Keiki.Symbolic
+
+data StatusKey
+
+instance FieldProjection StatusKey where
+  type FieldName StatusKey = "status"
+  type FieldOwner StatusKey = Bool
+  type FieldResult StatusKey = Text
+  fieldShapeId _ = "status.v1"
+  projectFieldValue _ False = "closed"
+  projectFieldValue _ True = "open"
+
+instance ExactFieldProjection StatusKey where
+  fieldProjectionDomain _ =
+    finiteProjectionDomain ("closed" :| ["open"])
+  reconstructFieldOwner _ "closed" = Just False
+  reconstructFieldOwner _ "open" = Just True
+  reconstructFieldOwner _ _ = Nothing
+
+statusKey :: FieldWitness StatusKey
+statusKey = exactFieldWitness @StatusKey
+```
+
+`ProjectionDomain` also supports validated full-string `TextPattern` values
+and genuinely isomorphic whole carriers. Text smart constructors reject code
+points above U+2FFFF, malformed ranges, and repetition bounds the SBV backend
+cannot represent. `Int`, `Text`, and `UTCTime` are deliberately not classified
+as whole-carrier exact; finite domains over representable literals are still
+available.
+
+Two laws are mandatory. Every real owner must project inside the declared
+domain, and every admitted key must reconstruct an owner that projects back to
+the same key. Put `checkFieldProjectionOwner` over generated owners and
+`checkFieldProjectionKey` over finite members or schema-derived text samples in
+the consumer's conformance suite. Keiki checks every satisfying projection
+model dynamically, but an under-declared domain can create false UNSAT without
+producing a model, so `symIsBot`, exact UNSAT verification, determinism
+blessings, and dead-edge proofs are conditional on these declaration laws.
+
+Exactness is also predicate-wide. Repeating one tag at one structural base is
+exact. Two projection tags over the same owner, a direct owner read plus a
+projection, projection arithmetic/ordering, or an input projection not
+logically dominated by its constructor guard remains a documented
+`ConservativeOverApproximation`. `ProjectionModel` values are checked
+path-local owners; only `symSatExt`'s final concrete recheck turns them into a
+complete witness.
 
 ---
 
@@ -1037,10 +1097,10 @@ this guide and in the haddocks.
 | **`RegFile rs`** | A typed heterogeneous tuple indexed by a slot list. The data the transducer remembers between transitions. |
 | **`Index rs r`** | A position into a register file pointing at a slot of type `r`. `ZIdx` is the head; `SIdx` the recursive constructor. |
 | **`IndexN s rs r`** | A slot-name-tagged index. The `s :: Symbol` parameter pins the slot's name in the type, which is what makes the static disjoint-targets check on `(.=)` possible. |
-| **`Term rs ci ifs r`** | A small AST for expressions over registers and the input schema `ifs`. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TApp1`, `TApp2`, `TArith`. Smart constructors: `lit`, `proj`, `inpCtor`, `tadd`/`tsub`/`tmul` (operators `.+`/`.-`/`.*`). |
+| **`Term rs ci ifs r`** | A small AST for expressions over registers and the input schema `ifs`. Constructors: `TLit`, `TReg`, `TInpCtorField`, `TFieldProj`, `TApp1`, `TApp2`, `TArith`. Smart constructors include `lit`, `proj`, `regProj`, `inpProj`, `inpCtor`, and `tadd`/`tsub`/`tmul` (operators `.+`/`.-`/`.*`). |
 | **`Pred rs ci`** | Synonym for `HsPred rs ci` (EP-45). The short, readable name for a guard's type. |
 | **`HsPred rs ci`** | The v1 predicate carrier. Constructors: `PTop`, `PBot`, `PAnd`, `POr`, `PNot`, `PEq`, `PInCtor`, `PCmp`. The preferred authoring surface is the EP-45 operators (`.>=`/`.<=`/`.==`/`./=`/`.&&`/`.||`/`pnot`, see §3.4) — thin aliases for these constructors; `matchInCtor` builds a `PInCtor`. |
-| **`SymPred rs ci`** | The v2 predicate carrier (a newtype over `HsPred`). Same constructors; the difference is the SBV-backed instances — `BoolAlg`'s `isBot` and the `Sat` class's `sat` dispatch to z3, giving precise answers and (for `sat`) a real `(RegFile rs, ci)` witness. |
+| **`SymPred rs ci`** | The v2 predicate carrier (a newtype over `HsPred`). Same constructors; the difference is the SBV-backed instances — `BoolAlg`'s `isBot` and the `Sat` class's `sat` dispatch to z3. Exact translations give precise results; conservative translations retain only their documented one-sided guarantees. |
 | **`BoolAlg phi a`** | The effective Boolean algebra typeclass: `top`/`bot`/`conj`/`disj`/`neg`/`models`/`isBot`. The interface every predicate carrier implements. |
 | **`Sat phi a`** | A subclass of `BoolAlg` adding `sat :: phi -> Maybe a` (witness extraction). Split out of `BoolAlg` by EP-44 so witness-free analyses (`isSingleValuedSym`) carry no extraction evidence. On `SymPred` the instance is constrained `(ExtractRegFile rs, KnownInCtors ci)` and defines `sat = symSatExt`. |
 | **`Update rs w ci`** | The register-update language. `UKeep`, `USet`, `UCombine`. The phantom `w :: [Symbol]` index records the slots written so far for the static distinct-targets check. |
@@ -1115,14 +1175,16 @@ this guide and in the haddocks.
 | **SBV** | "SMT-Based Verification" — Levent Erkok's Haskell library that compiles symbolic-value Haskell to SMT-LIB and dispatches to a back-end solver. |
 | **SMT solver** | A decision procedure for satisfiability modulo theories (linear arithmetic, strings, equality, etc.). z3 is the default. |
 | **z3** | Microsoft Research's SMT solver. Required at runtime for `Keiki.Symbolic`'s analyses. Install with `brew install z3` or `apt install z3`. |
-| **`Sym a`** | Typeclass for types that have an SBV representation. Curated equality set: `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, and `Int32`/`Int64`. `Natural` is also orderable, but deliberately absent from generic arithmetic. |
-| **`SymRep a`** | The SBV-side representation of `a`. Fixed-width integers use exact bit vectors; `UTCTime` uses lossless picoseconds; platform `Int` and non-negative `Natural` use unbounded `Integer`, with every allocated `Natural` variable constrained to be at least zero. |
+| **`Sym a`** | Typeclass for types that have an SBV representation. Curated equality set: `Bool`, `Int`, `Integer`, `Natural`, `Text`, `UTCTime`, `Word8`/`Word16`/`Word32`/`Word64`, and `Int32`/`Int64`. `Natural` equality, ordering, addition, multiplication, and total-monus subtraction are structural. |
+| **`SymRep a`** | The SBV-side representation of `a`. Fixed-width integers use exact bit vectors; platform `Int` and non-negative `Natural` use unbounded `Integer`, with every allocated `Natural` variable constrained to be at least zero. `UTCTime` uses picoseconds through POSIX conversion, which is not injective for leap-second day times. |
 | **`sat` / `Sat phi a`** | Witness extraction: `sat :: phi -> Maybe a`, the sole method of the `Sat` subclass of `BoolAlg`. On `SymPred` it returns the real `symSatExt` witness (since EP-44); the old crashing placeholder is gone. |
 | **`symIsBot`** | Symbolic emptiness check. `True` only for a definite solver `Unsatisfiable`; `Unknown`, `ProofError`, and other inconclusive results conservatively return `False`. |
-| **`symSatExt`** | Symbolic sat with concrete witness reconstruction. Requires `ExtractRegFile rs` and `KnownInCtors ci` evidence. Backs `sat` on `SymPred`. |
-| **`ExtractRegFile rs`** | Typeclass that materialises a `RegFile rs` from a name-keyed reader. The two instances cover `'[]` and `'(s, t) ': rs`. |
+| **`symSatExt`** | Symbolic sat with concrete witness reconstruction and a final concrete predicate check. Requires `ExtractRegFile rs` and `KnownInCtors ci` evidence. Backs `sat` on `SymPred`. |
+| **`ProjectionDomain` / `TextPattern`** | Closed exact-image declarations interpreted by both the concrete law helpers and the SBV translator. Text patterns match the complete value. |
+| **`ProjectionModel`** | One typed, path-local solver key and checked reconstructed owner. It is not a complete register/input witness. |
+| **`ExtractRegFile rs`** | Typeclass that materialises a `RegFile rs` from a reader. Built-in instances also retain structural position for exact projection-owner overrides. |
 | **`KnownInCtors ci`** | Typeclass enumerating a `ci`'s `InCtor` values for the witness extractor. Hand-written per aggregate (one entry per command constructor). |
-| **`unsafePerformIO` + `NOINLINE`** | The wrapping that makes `symIsBot`/`symSatExt` pure. Justified because each query is deterministic for the same predicate and side-effect-free outside the solver process. |
+| **`unsafePerformIO` + `NOINLINE`** | The wrapping that makes compatibility `symIsBot`/`symSatExt` pure. Solver exceptions are caught; each query is deterministic for the same predicate and side-effect-free outside the solver process. |
 
 ### 10.7 Naming origins
 

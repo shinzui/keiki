@@ -685,6 +685,7 @@ translateTermSym env (TFieldProj (witness :: FieldWitness projection) base) =
 -- failure; emitting a stronger subset could manufacture false UNSAT.
 data ProjectionDomainCompileError
   = UnsupportedWholeProjectionCarrier SomeTypeRep
+  | UnsupportedFiniteProjectionLiteral SomeTypeRep
   deriving stock (Eq, Show)
 
 compileProjectionDomain ::
@@ -696,10 +697,24 @@ compileProjectionDomain ::
 compileProjectionDomain ProjectionWhole _symbolic
   | symbolicWholeCarrierExact @r = Right SBV.sTrue
   | otherwise = Left (UnsupportedWholeProjectionCarrier (SomeTypeRep (typeRep @r)))
-compileProjectionDomain (ProjectionFinite values) symbolic =
-  Right (SBV.sOr [symbolic SBV..== symLit value | value <- toList values])
+compileProjectionDomain (ProjectionFinite values) symbolic
+  | all projectionLiteralExact values =
+      Right (SBV.sOr [symbolic SBV..== symLit value | value <- toList values])
+  | otherwise =
+      Left (UnsupportedFiniteProjectionLiteral (SomeTypeRep (typeRep @r)))
 compileProjectionDomain (ProjectionText textPattern) symbolic =
   Right (symbolic `SBV.RegExp.match` compileTextPattern textPattern)
+
+-- | A finite domain can be exact on a carrier whose whole representation is
+-- not: machine 'Int', ordinary 'UTCTime', and bounded 'Text' literals are
+-- examples. Each literal must nevertheless round-trip through 'SymRep', and a
+-- 'Text' literal must stay within SMT-LIB's code-point ceiling.
+projectionLiteralExact :: forall r. (Sym r, Eq r) => r -> Bool
+projectionLiteralExact value =
+  fromSym (toSym value) == value
+    && case discoverSymbolicType @r of
+      Just SymbolicText -> T.all (<= maximumSmtCodePoint) value
+      _ -> True
 
 compileTextPattern :: TextPattern -> SBV.RegExp.RegExp
 compileTextPattern (TextLiteral literal) =
@@ -902,11 +917,19 @@ projectionModelOwnerAs = fromDynamic . projectionModelOwner
 -- | Solver status, translation strength, and checked projection-origin models
 -- without changing the compatibility 'PredicateVerification' constructor set.
 data PredicateVerificationDetail
-  = PredicateSatisfiable TranslationStrength [ProjectionModel]
-  | PredicateUnsatisfiable TranslationStrength
-  | PredicateSolverUnknown TranslationStrength String
-  | PredicateSolverFailure TranslationStrength String
-  | PredicateProjectionContractViolation
+  = -- | A satisfying symbolic valuation. Projection models are checked,
+    -- path-local key/owner pairs, not complete register/input witnesses.
+    PredicateSatisfiable TranslationStrength [ProjectionModel]
+  | -- | A definite solver proof of emptiness. For exact projections this proof
+    -- is conditional on the consumer's owner-to-domain declaration law.
+    PredicateUnsatisfiable TranslationStrength
+  | -- | The solver returned an inconclusive status.
+    PredicateSolverUnknown TranslationStrength String
+  | -- | Translation, solver startup, solver execution, or model decoding failed.
+    PredicateSolverFailure TranslationStrength String
+  | -- | An admitted model key was rejected by the declared inverse or failed
+    -- its getter round trip.
+    PredicateProjectionContractViolation
       TranslationStrength
       ProjectionDescriptor
       String
@@ -1084,7 +1107,9 @@ projectionDomainSupport ::
 projectionDomainSupport ProjectionWhole
   | symbolicWholeCarrierExact @r = Nothing
   | otherwise = Just "whole carrier is not representation-exact"
-projectionDomainSupport ProjectionFinite {} = Nothing
+projectionDomainSupport (ProjectionFinite values)
+  | all projectionLiteralExact values = Nothing
+  | otherwise = Just "finite domain contains a non-representable symbolic literal"
 projectionDomainSupport ProjectionText {} = Nothing
 
 registerBaseDescriptor ::
@@ -1177,8 +1202,9 @@ runPredicateSolver predicate addConstraints = do
                 predicateSolveResult = result
               }
 
--- | Solve and preserve status, translation strength, and checked exact
--- projection models.
+-- | Solve once and preserve status, predicate-global translation strength,
+-- and checked exact projection models. This can report definite results for a
+-- conservative translation without promoting them through 'verifyPredicate'.
 verifyPredicateDetailed :: HsPred rs ci -> IO PredicateVerificationDetail
 verifyPredicateDetailed predicate = do
   solved <- runPredicateSolver predicate (const (pure ()))
@@ -1323,7 +1349,10 @@ satResultIsProvablyUnsat (SBV.SatResult result) = case result of
 -- blesses an uncertain pair as disjoint. Solver startup and execution failures
 -- are caught and conservatively return 'False'. The wrapper is justified
 -- because each query is deterministic for a given predicate and side-effect-free
--- outside the solver process.
+-- outside the solver process. When @p@ contains 'exactFieldWitness', a 'True'
+-- result is conditional on the declaration laws documented by
+-- 'ExactFieldProjection'; an under-declared image can otherwise create false
+-- UNSAT without producing a model that Keiki could check.
 {-# NOINLINE symIsBot #-}
 symIsBot :: HsPred rs ci -> Bool
 symIsBot p = unsafePerformIO $ do

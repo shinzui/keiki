@@ -48,6 +48,14 @@ larger domain remains a sound emptiness proof, while SAT is not necessarily back
 owner and must not be reported as exact. IR-3 and IR-4 respectively specify the conservative
 classification repair and the explicit domain/reconstruction evidence needed to regain exactness.
 
+**Unreleased exactness follow-up.** IR-3 and IR-4 are now implemented by ExecPlans 82 and 83.
+Existing `fieldWitness` uses remain conservative and source-compatible. A consumer may opt one
+nominal tag into `exactFieldWitness` by declaring its exact `ProjectionDomain`, a canonical-owner
+inverse, and generated/consumer conformance coverage for both declaration laws. Exactness remains
+predicate-wide: conflicting views of one owner path, direct-plus-projected reads, projection
+ordering/arithmetic, and unguarded input projections are still conservative. Publication is
+separate release work.
+
 **Originally proposed.** Keiro is implementing structural consumer-owned types in `keiro-dsl`
 under `mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1`, coordinated by the intended
 master-plan URI

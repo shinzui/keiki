@@ -10,6 +10,20 @@ and this project adheres to the
 
 ### Added
 
+- `Keiki.ProjectionDomain` provides backend-neutral exact images for nominal
+  projections: non-empty finite domains, audited whole-carrier domains, and a
+  validated full-string `TextPattern` algebra with literal, character set/range,
+  concatenation, alternation, and bounded repetition forms.
+- `ExactFieldProjection`, `exactFieldWitness`,
+  `checkFieldProjectionOwner`, and `checkFieldProjectionKey` let one coherent
+  projection tag declare its complete image and a checked canonical-owner
+  inverse without changing existing `fieldWitness` call sites.
+- `predicateTranslationReport` explains predicate-wide exactness, including
+  conflicting views, direct-plus-projected reads, unsupported operations, and
+  unguarded input projections. `verifyPredicateDetailed` returns translation
+  strength, full solver status, and typed, checked path-local
+  `ProjectionModel` values. Detailed determinism and dead-edge APIs retain the
+  one solver result and `EdgeRef` attribution used by compatibility warnings.
 - `StepSuccess` and `stepDetailedEither` expose the exact construction-local
   `EdgeRef`, `Live` mode, post-state, registers, and ordered output word selected
   by forward execution. `stepEither` preserves its signature and erases this
@@ -24,6 +38,18 @@ and this project adheres to the
 
 ### Changed
 
+- Exact projection domains are constrained once per structured symbolic key.
+  Finite domains are accepted only when every literal round-trips through its
+  symbolic representation and satisfies backend bounds such as Text's
+  U+2FFFF ceiling; unsupported domains emit no partial constraint.
+  Satisfying model keys are checked for domain membership, inverse success, and
+  getter round-trip before they are exposed. Relation-safe owners may override
+  the matching structural path during `symSatExt`, whose final concrete recheck
+  remains authoritative.
+- `verifyPredicate` is now a compatibility projection of the detailed solver
+  result and reports verified SAT/UNSAT only for predicate-global exact
+  translations. `symIsBot`, determinism, and dead-edge compatibility paths use
+  the same failure-aware solving kernel; only definite UNSAT counts as proof.
 - **Semantic correctness fix:** `predicateTranslationExact` no longer treats a
   one-way `fieldWitness` projection as exact merely because its result carrier
   is solver-supported. Existing projection callers now receive
