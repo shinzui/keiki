@@ -1,5 +1,6 @@
 module Keiki.ValidationSpec (spec) where
 
+import Control.Monad (forM_)
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy (..))
 import Data.Word (Word8)
@@ -675,6 +676,23 @@ spec = do
     it "uses a mentioned non-integral literal as a concrete witness" $
       checkTransitionDeterminismPure boolLiteralWitnessT
         `shouldSatisfy` (not . null)
+
+    it "treats every readable/opaque literal pairing identically" $ do
+      let readable value = lit value :: Term OverlapRegs Cmd '[] Int
+          hidden value = opaqueLit value :: Term OverlapRegs Cmd '[] Int
+          pairings =
+            [ (readable 3, readable 5),
+              (readable 3, hidden 5),
+              (hidden 3, readable 5),
+              (hidden 3, hidden 5)
+            ]
+      forM_ pairings $ \(left, right) -> do
+        checkTransitionDeterminismPure
+          (overlapFixture (PEq left left) (PEq right right))
+          `shouldSatisfy` (not . null)
+        checkTransitionDeterminismPure
+          (overlapFixture (PCmp CmpLt left right) PTop)
+          `shouldSatisfy` (not . null)
 
     it "finds an interior overlap in Natural's zero-bounded domain" $ do
       let purePairs = map warningPair (checkTransitionDeterminismPure naturalInteriorOverlapT)

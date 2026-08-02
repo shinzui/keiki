@@ -15,6 +15,7 @@ import Keiki.Core
     Term (..),
     Update (..),
     inpProj,
+    opaqueLit,
     regProj,
   )
 import Keiki.FieldProjSpec qualified as FieldProj
@@ -66,8 +67,11 @@ spec = do
     it "renders an input-field read as ctor.field" $
       prettyTerm (TInpCtorField inCtorDeposit amountIx :: Term Regs Cmd DepFields Int)
         `shouldBe` T.pack "Deposit.amount"
-    it "renders a literal opaquely as <lit>" $
+    it "renders an ordinary literal from its value" $
       prettyTerm (TLit (42 :: Int) :: Term Regs Cmd '[] Int)
+        `shouldBe` T.pack "42"
+    it "renders an explicit display-opaque literal as <lit>" $
+      prettyTerm (opaqueLit (42 :: Int) :: Term Regs Cmd '[] Int)
         `shouldBe` T.pack "<lit>"
     it "renders TApp1 as <fn>(arg)" $
       prettyTerm (TApp1 (+ (1 :: Int)) (TReg balanceIx) :: Term Regs Cmd '[] Int)
@@ -105,9 +109,9 @@ spec = do
     it "renders PInCtor as the constructor name" $
       prettyPred (PInCtor inCtorDeposit :: HsPred Regs Cmd)
         `shouldBe` T.pack "Deposit"
-    it "renders PEq structurally with <lit> on the literal side" $
+    it "renders PEq structurally with the literal value" $
       prettyPred (PEq (TReg balanceIx) (TLit (0 :: Int)) :: HsPred Regs Cmd)
-        `shouldBe` T.pack "balance == <lit>"
+        `shouldBe` T.pack "balance == 0"
     it "renders each PCmp direction" $ do
       prettyPred (PCmp CmpLt (TReg balanceIx) (TReg limitIx) :: HsPred Regs Cmd)
         `shouldBe` T.pack "balance < limit"
@@ -127,14 +131,14 @@ spec = do
             ) ::
             HsPred Regs Cmd
         )
-        `shouldBe` T.pack "(Deposit && (balance >= <lit> || !(limit == <lit>)))"
+        `shouldBe` T.pack "(Deposit && (balance >= 0 || !(limit == 0)))"
 
   describe "prettyUpdate" $ do
     it "renders UKeep" $
       prettyUpdate (UKeep :: Update Regs '[] Cmd) `shouldBe` T.pack "(keep)"
     it "renders USet as slot := term" $
       prettyUpdate (USet balanceN (TLit (0 :: Int)) :: Update Regs '["balance"] Cmd)
-        `shouldBe` T.pack "balance := <lit>"
+        `shouldBe` T.pack "balance := 0"
     it "renders UCombine comma-separated" $
       prettyUpdate
         ( UCombine
@@ -142,4 +146,4 @@ spec = do
             (USet balanceN (TLit (1 :: Int))) ::
             Update Regs '["balance", "balance"] Cmd
         )
-        `shouldBe` T.pack "balance := limit, balance := <lit>"
+        `shouldBe` T.pack "balance := limit, balance := 1"

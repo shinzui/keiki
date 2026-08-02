@@ -762,6 +762,7 @@ firstSym t =
           Term rs ci ifs a ->
           Term rs (ci, c) ('("snd", c) ': ifs) a
         goTerm (TLit r) = TLit r
+        goTerm (TOpaqueLit r) = TOpaqueLit r
         goTerm (TReg ix) = TReg ix
         goTerm (TInpCtorField _ ix) = TInpCtorField cic (SIdx ix)
         goTerm (TApp1 h a) = TApp1 h (goTerm a)
@@ -956,6 +957,7 @@ contraTerm f = go
   where
     go :: forall a. Term rs ci ifs a -> Term rs ci' ifs a
     go (TLit r) = TLit r
+    go (TOpaqueLit r) = TOpaqueLit r
     go (TReg ix) = TReg ix
     go (TInpCtorField ic ix) = TInpCtorField (contraInCtor f ic) ix
     go (TApp1 h a) = TApp1 h (go a)
@@ -971,6 +973,7 @@ contraMaybeTerm f = go
   where
     go :: forall a. Term rs ci ifs a -> Term rs ci' ifs a
     go (TLit r) = TLit r
+    go (TOpaqueLit r) = TOpaqueLit r
     go (TReg ix) = TReg ix
     go (TInpCtorField ic ix) = TInpCtorField (contraMaybeInCtor f ic) ix
     go (TApp1 h a) = TApp1 h (go a)

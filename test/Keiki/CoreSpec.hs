@@ -14,6 +14,8 @@ data TinyCmd = TinyFoo Int Int | TinyBar Int deriving (Eq, Show)
 -- any accidental renderer observation on a semantic path.
 data NoShowValue = NoShowValue Int deriving (Eq)
 
+data NoShowEvent = NoShowEvent NoShowValue deriving (Eq)
+
 data ThrowingShowValue = ThrowingShowValue Int deriving (Eq)
 
 instance Show ThrowingShowValue where
@@ -45,28 +47,29 @@ literalLedgerWireCtor =
 literalLedgerValue :: ThrowingShowValue
 literalLedgerValue = ThrowingShowValue 41
 
-literalLedgerTransducer ::
+literalLedgerTransducerWith ::
+  Term LiteralLedgerRegs () '[] ThrowingShowValue ->
   SymTransducer
     (HsPred LiteralLedgerRegs ())
     LiteralLedgerRegs
     LiteralLedgerVertex
     ()
     LiteralLedgerEvent
-literalLedgerTransducer =
+literalLedgerTransducerWith literalTerm =
   SymTransducer
     { edgesOut = \case
         LiteralLedgerStart ->
           [ Edge
-              { guard = PEq (lit literalLedgerValue) (lit literalLedgerValue),
+              { guard = PEq literalTerm literalTerm,
                 update =
                   USet
                     (#payload :: IndexN "payload" LiteralLedgerRegs ThrowingShowValue)
-                    (lit literalLedgerValue),
+                    literalTerm,
                 output =
                   [ pack
                       literalLedgerInCtor
                       literalLedgerWireCtor
-                      (OFCons (lit literalLedgerValue) OFNil)
+                      (OFCons literalTerm OFNil)
                   ],
                 target = LiteralLedgerDone,
                 mode = Live
@@ -76,6 +79,68 @@ literalLedgerTransducer =
       initial = LiteralLedgerStart,
       initialRegs =
         RCons (Proxy @"payload") (ThrowingShowValue 0) RNil,
+      isFinal = (== LiteralLedgerDone)
+    }
+
+literalLedgerTransducer ::
+  SymTransducer
+    (HsPred LiteralLedgerRegs ())
+    LiteralLedgerRegs
+    LiteralLedgerVertex
+    ()
+    LiteralLedgerEvent
+literalLedgerTransducer = literalLedgerTransducerWith (lit literalLedgerValue)
+
+opaqueLiteralLedgerTransducer ::
+  SymTransducer
+    (HsPred LiteralLedgerRegs ())
+    LiteralLedgerRegs
+    LiteralLedgerVertex
+    ()
+    LiteralLedgerEvent
+opaqueLiteralLedgerTransducer =
+  literalLedgerTransducerWith (opaqueLit literalLedgerValue)
+
+type NoShowRegs = '[ '("payload", NoShowValue)]
+
+noShowWireCtor :: WireCtor NoShowEvent (NoShowValue, ())
+noShowWireCtor =
+  WireCtor
+    { wcName = "NoShowEvent",
+      wcMatch = \(NoShowEvent value) -> Just (value, ()),
+      wcBuild = \(value, ()) -> NoShowEvent value
+    }
+
+noShowTransducer ::
+  SymTransducer
+    (HsPred NoShowRegs ())
+    NoShowRegs
+    LiteralLedgerVertex
+    ()
+    NoShowEvent
+noShowTransducer =
+  SymTransducer
+    { edgesOut = \case
+        LiteralLedgerStart ->
+          [ Edge
+              { guard = PTop,
+                update =
+                  USet
+                    (#payload :: IndexN "payload" NoShowRegs NoShowValue)
+                    (opaqueLit (NoShowValue 7)),
+                output =
+                  [ pack
+                      literalLedgerInCtor
+                      noShowWireCtor
+                      (OFCons (opaqueLit (NoShowValue 7)) OFNil)
+                  ],
+                target = LiteralLedgerDone,
+                mode = Live
+              }
+          ]
+        LiteralLedgerDone -> [],
+      initial = LiteralLedgerStart,
+      initialRegs = RCons (Proxy @"payload") (NoShowValue 0) RNil,
       isFinal = (== LiteralLedgerDone)
     }
 
@@ -157,10 +222,25 @@ synthetic =
 spec :: Spec
 spec = do
   describe "EP-84 literal semantic guarantee ledger" $ do
-    it "evaluates a value with no Show instance" $
-      case evalTerm (lit (NoShowValue 7)) RNil () of
+    it "evaluates a display-opaque value with no Show instance" $
+      case evalTerm (opaqueLit (NoShowValue 7)) RNil () of
         NoShowValue 7 -> pure ()
         _ -> expectationFailure "literal evaluation changed the no-Show value"
+
+    it "updates, emits, and replays a value with no Show instance" $ do
+      case step
+        noShowTransducer
+        (initial noShowTransducer, initialRegs noShowTransducer)
+        () of
+        Just
+          ( LiteralLedgerDone,
+            RCons _ (NoShowValue 7) RNil,
+            [NoShowEvent (NoShowValue 7)]
+            ) -> pure ()
+        _ -> expectationFailure "no-Show literal step changed its value"
+      case reconstitute noShowTransducer [NoShowEvent (NoShowValue 7)] of
+        Just (LiteralLedgerDone, RCons _ (NoShowValue 7) RNil) -> pure ()
+        _ -> expectationFailure "no-Show literal replay changed its value"
 
     it "evaluates, compares, updates, and emits without forcing Show" $ do
       evalPred
@@ -194,6 +274,34 @@ spec = do
     it "retains the clean validation classification" $
       validateTransducer defaultValidationOptions literalLedgerTransducer
         `shouldBe` []
+
+    it "gives readable and display-opaque literals identical step and replay results" $ do
+      let readableStep =
+            step
+              literalLedgerTransducer
+              (initial literalLedgerTransducer, initialRegs literalLedgerTransducer)
+              ()
+          opaqueStep =
+            step
+              opaqueLiteralLedgerTransducer
+              (initial opaqueLiteralLedgerTransducer, initialRegs opaqueLiteralLedgerTransducer)
+              ()
+      case (readableStep, opaqueStep) of
+        ( Just (LiteralLedgerDone, RCons _ (ThrowingShowValue 41) RNil, [LiteralLedgerEvent (ThrowingShowValue 41)]),
+          Just (LiteralLedgerDone, RCons _ (ThrowingShowValue 41) RNil, [LiteralLedgerEvent (ThrowingShowValue 41)])
+          ) -> pure ()
+        _ -> expectationFailure "readable and opaque literal steps diverged"
+      let observed = [LiteralLedgerEvent literalLedgerValue]
+      case ( reconstitute literalLedgerTransducer observed,
+             reconstitute opaqueLiteralLedgerTransducer observed
+           ) of
+        ( Just (LiteralLedgerDone, RCons _ (ThrowingShowValue 41) RNil),
+          Just (LiteralLedgerDone, RCons _ (ThrowingShowValue 41) RNil)
+          ) -> pure ()
+        _ -> expectationFailure "readable and opaque literal replay diverged"
+
+    it "does not classify display opacity as an opaque semantic guard" $
+      opaqueGuardWarnings opaqueLiteralLedgerTransducer `shouldBe` []
 
   describe "evalTerm" $ do
     it "evaluates TLit" $

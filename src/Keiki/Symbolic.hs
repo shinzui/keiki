@@ -576,7 +576,7 @@ mkSymEnv = do
 -- | Translate a 'Term rs ci r' to an SBV expression of the carrier's
 -- representation type. Requires 'Sym' evidence for @r@.
 --
--- The translation is /structural/ for 'TLit', 'TReg',
+-- The translation is /structural/ for 'TLit', 'TOpaqueLit', 'TReg',
 -- 'TInpCtorField', and (since EP-43) 'TArith': a 'TArith' over a type
 -- whose 'SymRep' is SBV-numeric (a 'discoverSymNum' hit) emits a real
 -- @+@ \/ @-@ \/ @*@ over the translated operands, so a guard over a
@@ -624,6 +624,7 @@ translateTermSym ::
   Term rs ci ifs r ->
   SBV.Symbolic (SBV.SBV (SymRep r))
 translateTermSym _env (TLit r) = pure (symLit r)
+translateTermSym _env (TOpaqueLit r) = pure (symLit r)
 translateTermSym env (TReg ix) =
   memoFree @r env (RegVar (indexName ix))
 translateTermSym env (TInpCtorField ic ix) =
@@ -1045,6 +1046,7 @@ termReportEvents ::
   Term rs ci ifs r ->
   [TranslationReportEvent]
 termReportEvents _root _context (TLit _) = []
+termReportEvents _root _context (TOpaqueLit _) = []
 termReportEvents _root _context (TReg ix) =
   [DirectOwnerReadEvent (registerBaseDescriptor @r ix)]
 termReportEvents _root _context (TInpCtorField ic ix) =

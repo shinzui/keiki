@@ -1,12 +1,14 @@
 module Keiki.CompositionAlignmentSpec (spec) where
 
 import Data.Proxy (Proxy (..))
+import Data.Text qualified as T
 import Keiki.Composition
 import Keiki.Core
 import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Fixtures.ComposeStateful
 import Keiki.Fixtures.CounterPipeline
 import Keiki.Profunctor (rmapCo)
+import Keiki.Render.Pretty (prettyPred, prettyTerm)
 import Test.Hspec
 
 type Payload1 = '[ '("payload", Int)]
@@ -218,6 +220,7 @@ spec = do
         inputTerm = TInpCtorField projectionSourceCtor #doc
         passThrough = projectionSource inputTerm
         literalOwner = projectionSource (TLit matchingDoc)
+        opaqueOwner = projectionSource (opaqueLit matchingDoc)
         computedOwner = projectionSource (TApp1 id inputTerm)
 
     it "preserves a stable input-field owner through checked composition" $ do
@@ -226,15 +229,39 @@ spec = do
         Left warnings -> expectationFailure ("stable projection warned: " <> show warnings)
         Right pipeline -> opaqueGuardWarnings pipeline `shouldBe` []
 
-    it "constant-folds a literal owner without introducing opacity" $ do
-      let pipeline = compose literalOwner projectionSink
-      opaqueGuardWarnings pipeline `shouldBe` []
-      case stepEither
-        pipeline
-        (initial pipeline, initialRegs pipeline)
-        (ProjectionSourceCmd (FieldProj.DocInfo "ignored" "" [])) of
-        Left failure -> expectationFailure ("literal-folded pipeline failed: " <> show failure)
-        Right _ -> pure ()
+    it "constant-folds a literal owner with display opacity but exact semantics" $ do
+      case composeChecked literalOwner projectionSink of
+        Left warnings -> expectationFailure ("literal fold failed checked composition: " <> show warnings)
+        Right pipeline -> do
+          opaqueGuardWarnings pipeline `shouldBe` []
+          case edgesOut pipeline (initial pipeline) of
+            [edge] ->
+              prettyPred (guard edge)
+                `shouldSatisfy` T.isInfixOf (T.pack "<lit>")
+            _ -> expectationFailure "literal-folded pipeline no longer has one edge"
+          case stepEither
+            pipeline
+            (initial pipeline, initialRegs pipeline)
+            (ProjectionSourceCmd (FieldProj.DocInfo "ignored" "" [])) of
+            Left failure -> expectationFailure ("literal-folded pipeline failed: " <> show failure)
+            Right _ -> pure ()
+
+    it "preserves literal display evidence through positional substitution" $ do
+      let midRead = TInpCtorField projectionMidCtor #doc
+      case edgesOut literalOwner (initial literalOwner) of
+        [Edge {output = [out]}] -> do
+          let substituted =
+                substTerm @'[] @'[] midRead out ::
+                  Term '[] ProjectionSourceCmd ProjectionSourceFields FieldProj.DocInfo
+          prettyTerm substituted `shouldBe` T.pack (show matchingDoc)
+        _ -> expectationFailure "readable literal source no longer has one output"
+      case edgesOut opaqueOwner (initial opaqueOwner) of
+        [Edge {output = [out]}] -> do
+          let substituted =
+                substTerm @'[] @'[] midRead out ::
+                  Term '[] ProjectionSourceCmd ProjectionSourceFields FieldProj.DocInfo
+          prettyTerm substituted `shouldBe` T.pack "<lit>"
+        _ -> expectationFailure "opaque literal source no longer has one output"
 
     it "keeps raw composition forward-correct but rejects a computed owner at the checked boundary" $ do
       let pipeline = compose computedOwner projectionSink

@@ -1,5 +1,6 @@
 module Keiki.SymbolicSpec (spec) where
 
+import Control.Monad (forM_)
 import Data.Int (Int32, Int64)
 import Data.Kind (Type)
 import Data.Maybe (isJust, isNothing)
@@ -476,6 +477,48 @@ spec = do
       predicateTranslationExact unsatisfiable `shouldBe` True
       verifyPredicate satisfiable `shouldReturn` VerifiedSatisfiable
       verifyPredicate unsatisfiable `shouldReturn` VerifiedUnsatisfiable
+
+    it "keeps every readable/opaque literal equality pairing exact" $ do
+      let readable value = lit value :: Term '[] () '[] Bool
+          hidden value = opaqueLit value :: Term '[] () '[] Bool
+          equalPairs =
+            [ (readable True, readable True),
+              (readable True, hidden True),
+              (hidden True, readable True),
+              (hidden True, hidden True)
+            ]
+          unequalPairs =
+            [ (readable True, readable False),
+              (readable True, hidden False),
+              (hidden True, readable False),
+              (hidden True, hidden False)
+            ]
+      forM_ equalPairs $ \(left, right) -> do
+        let predicate = PEq left right :: HsPred '[] ()
+        predicateTranslationReport predicate `shouldBe` ExactTranslation
+        verifyPredicate predicate `shouldReturn` VerifiedSatisfiable
+        detail <- verifyPredicateDetailed predicate
+        detail `shouldSatisfy` \case
+          PredicateSatisfiable ExactTranslation [] -> True
+          _ -> False
+      forM_ unequalPairs $ \(left, right) -> do
+        let predicate = PEq left right :: HsPred '[] ()
+        predicateTranslationReport predicate `shouldBe` ExactTranslation
+        verifyPredicate predicate `shouldReturn` VerifiedUnsatisfiable
+
+    it "keeps every readable/opaque literal ordering pairing exact" $ do
+      let readable value = lit value :: Term '[] () '[] Int
+          hidden value = opaqueLit value :: Term '[] () '[] Int
+          pairings =
+            [ (readable 3, readable 5),
+              (readable 3, hidden 5),
+              (hidden 3, readable 5),
+              (hidden 3, hidden 5)
+            ]
+      forM_ pairings $ \(left, right) -> do
+        let predicate = PCmp CmpLt left right :: HsPred '[] ()
+        predicateTranslationReport predicate `shouldBe` ExactTranslation
+        verifyPredicate predicate `shouldReturn` VerifiedSatisfiable
 
     it "verifies supported structural arithmetic" $ do
       let arithmetic =

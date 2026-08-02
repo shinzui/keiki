@@ -119,6 +119,7 @@ module Keiki.Core
     regProj,
     inpProj,
     lit,
+    opaqueLit,
     tadd,
     tsub,
     tmul,
@@ -536,7 +537,7 @@ data ProjBase (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) owner where
 -- The @ifs :: [Slot]@ parameter is the /input field schema/ this term
 -- may project from: it is pinned by 'TInpCtorField' (whose 'Index' is
 -- into @ifs@) and left free by terms that do not read an input field
--- ('TLit', 'TReg'). Threading @ifs@ through the AST is what lets an
+-- ('TLit', 'TOpaqueLit', 'TReg'). Threading @ifs@ through the AST is what lets an
 -- 'OutFields' (and hence an 'OPack') guarantee /by construction/ that
 -- every top-level input projection reads the same constructor schema as
 -- the 'OPack''s 'InCtor' — so 'solveOutput' recovers a command field
@@ -545,7 +546,12 @@ data ProjBase (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) owner where
 -- existentially hide @ifs@, so it never leaks into the 'Edge' /
 -- 'SymTransducer' surface. See @docs/research/tinpproj-design.md@.
 data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
-  TLit :: r -> Term rs ci ifs r
+  -- | An ordinary literal. The 'Show' dictionary is presentation evidence
+  -- retained for renderers; evaluation and proof paths use only the value.
+  TLit :: (Show r) => r -> Term rs ci ifs r
+  -- | A display-opaque literal. It has the same concrete and symbolic meaning
+  -- as 'TLit' but renderers deliberately do not expose its value.
+  TOpaqueLit :: r -> Term rs ci ifs r
   TReg :: Index rs r -> Term rs ci ifs r
   -- | Structural input projection: read field @ix@ of the input
   --     constructor described by @ic@. The 'InCtor' value names the
@@ -1032,9 +1038,15 @@ inpProj ::
   Term rs ci ifs (FieldResult projection)
 inpProj witness ic ix = TFieldProj witness (PBInp ic ix)
 
--- | A constant 'Term'.
-lit :: r -> Term rs ci ifs r
+-- | A readable constant 'Term'. Renderers derive its text from 'show'; use
+-- 'opaqueLit' when the value has no 'Show' instance or must remain redacted.
+lit :: (Show r) => r -> Term rs ci ifs r
 lit = TLit
+
+-- | A display-opaque constant 'Term'. This changes presentation only: concrete
+-- evaluation and symbolic translation still treat the stored value exactly.
+opaqueLit :: r -> Term rs ci ifs r
+opaqueLit = TOpaqueLit
 
 -- | Structural arithmetic smart constructors. @tadd@\/@tsub@\/@tmul@
 -- build a 'TArith' over @+@\/@-@\/@*@. The operand type must be numeric
@@ -1137,6 +1149,7 @@ pack = OPack
 -- | Evaluate a 'Term' against a register file and an input symbol.
 evalTerm :: Term rs ci ifs r -> RegFile rs -> ci -> r
 evalTerm (TLit r) _ _ = r
+evalTerm (TOpaqueLit r) _ _ = r
 evalTerm (TReg ix) regs _ = regs ! ix
 evalTerm (TInpCtorField ic ix) _ ci = case icMatch ic ci of
   Just rf -> rf ! ix
@@ -2022,7 +2035,8 @@ applyEventsDetailedEither t (s0, regs0) events =
 -- == Recompute-and-verify (EP-47)
 --
 -- The command is recovered from the /invertible/ fields alone
--- (@TLit@\/@TReg@\/@TInpCtorField@); /derived/ fields (@TArith@\/@TApp1@\/
+-- (@TLit@\/@TOpaqueLit@\/@TReg@\/@TInpCtorField@); /derived/ fields
+-- (@TArith@\/@TApp1@\/
 -- @TApp2@) are skipped during recovery by 'gatherInpEntries'. After the
 -- command is rebuilt, the observed field tuple is rebuilt with each
 -- /derived/ field recomputed forward (via 'recomputeDerivedFields') and
@@ -2067,7 +2081,7 @@ solveOutput (OPack ic@InCtor {} ctor fields) regs co = do
 -- | Rebuild an observed output-field tuple, recomputing each /derived/
 -- field ('TApp1'\/'TApp2'\/'TArith') forward via 'evalTerm' against the
 -- recovered command and the pre-update registers, while leaving every
--- /invertible/ field ('TLit'\/'TReg'\/'TInpCtorField') at its observed
+-- /invertible/ field ('TLit'\/'TOpaqueLit'\/'TReg'\/'TInpCtorField') at its observed
 -- value. Used by 'solveOutput' (EP-47 recompute-and-verify): comparing the
 -- rebuilt event to the observed one (via 'Eq' on @co@) then verifies
 -- exactly the derived fields. Invertible fields are deliberately /not/
@@ -2091,7 +2105,7 @@ recomputeDerivedFields (OFCons t rest) (v, vs) regs ci =
 
 -- | Walk an 'OutFields' HList in lockstep with an observed-fields
 -- tuple, gathering '(Index, value)' pairs for the named 'InCtor' from
--- the /invertible/ fields. 'TLit'\/'TReg' contribute nothing; a
+-- the /invertible/ fields. 'TLit'\/'TOpaqueLit'\/'TReg' contribute nothing; a
 -- 'TInpCtorField' for the matching 'InCtor' contributes its
 -- '(Index, value)' pair. Since EP-47 the /derived/ fields
 -- ('TArith'\/'TApp1'\/'TApp2') are /skipped/ (they contribute no
@@ -2127,6 +2141,7 @@ gatherInpEntries (OFCons t rest) (v, fs) ic = do
   where
     stepOne :: forall f. Term rs ci ifs f -> f -> InCtor ci ifs -> Maybe [ByIndex ifs]
     stepOne (TLit _) _val _ = Just []
+    stepOne (TOpaqueLit _) _val _ = Just []
     stepOne (TReg _) _val _ = Just []
     stepOne (TInpCtorField ic2 ix) val ic1
       | icName ic1 == icName ic2 = Just [ByIndex ix val]
@@ -2322,6 +2337,7 @@ updateReadsInput (UCombine a b) = updateReadsInput a || updateReadsInput b
 -- | Does the 'Term' read the input symbol via 'TInpCtorField'?
 termReadsInput :: Term rs ci ifs r -> Bool
 termReadsInput (TLit _) = False
+termReadsInput (TOpaqueLit _) = False
 termReadsInput (TReg _) = False
 termReadsInput (TInpCtorField _ _) = True
 termReadsInput (TApp1 _ t) = termReadsInput t
@@ -2338,6 +2354,7 @@ outFieldsHaveInpCtorField (OFCons t rest) =
   where
     termHasInpCtorField :: Term rs ci ifs r -> Bool
     termHasInpCtorField (TLit _) = False
+    termHasInpCtorField (TOpaqueLit _) = False
     termHasInpCtorField (TReg _) = False
     termHasInpCtorField (TInpCtorField _ _) = True
     termHasInpCtorField (TApp1 _ t') = termHasInpCtorField t'
@@ -2710,6 +2727,7 @@ headRecoverabilityWarnings t =
 -- deliberately falls back to a fresh domain-valid value.
 termHasOpaqueFallback :: forall rs ci ifs r. Term rs ci ifs r -> Bool
 termHasOpaqueFallback (TLit _) = False
+termHasOpaqueFallback (TOpaqueLit _) = False
 termHasOpaqueFallback (TReg _) = False
 termHasOpaqueFallback (TInpCtorField _ _) = False
 termHasOpaqueFallback (TApp1 _ _) = True
@@ -2774,6 +2792,7 @@ data ProjectionInfo = ProjectionInfo
 
 termProjectionInfos :: Term rs ci ifs r -> [ProjectionInfo]
 termProjectionInfos (TLit _) = []
+termProjectionInfos (TOpaqueLit _) = []
 termProjectionInfos (TReg _) = []
 termProjectionInfos (TInpCtorField _ _) = []
 termProjectionInfos (TApp1 _ term) = termProjectionInfos term
@@ -2905,6 +2924,7 @@ projectionValidationWarnings transducer =
 
 termInCtorNames :: Term rs ci ifs r -> [String]
 termInCtorNames (TLit _) = []
+termInCtorNames (TOpaqueLit _) = []
 termInCtorNames (TReg _) = []
 termInCtorNames (TInpCtorField ic _) = [icName ic]
 termInCtorNames (TApp1 _ t) = termInCtorNames t
@@ -3094,8 +3114,9 @@ stateChangingEpsilonWarnings t =
 --
 -- This structural check intentionally over-approximates ambiguity. It cannot
 -- prove semantic guard disjointness over recovered values or registers; it
--- cannot compare differing 'TLit' values because 'TLit' carries no 'Eq' or
--- 'Typeable' evidence; and it does not predict derived-field verification in
+-- cannot compare differing literal values without the 'Eq' or 'Typeable'
+-- evidence supplied by a predicate constructor; and it does not predict
+-- derived-field verification in
 -- 'solveOutput'. It ignores tail events because replay equality-checks rather
 -- than inverts them. Different head constructor names are safe under the
 -- documented honesty law of 'wcMatch'. Literal-'PBot' guards are exempt because
@@ -3311,16 +3332,26 @@ pureEquality ::
   Term rs ci ifs1 r ->
   Term rs ci ifs2 r ->
   PureFragment
-pureEquality (TLit a) (TLit b)
-  | a == b = PureKnown emptyPureGuard
-  | otherwise = PureUnsatisfiable
-pureEquality variable (TLit literalValue)
-  | Just name <- pureVariable variable =
+pureEquality left right
+  | Just a <- termLiteralValue left,
+    Just b <- termLiteralValue right,
+    a == b =
+      PureKnown emptyPureGuard
+  | Just _ <- termLiteralValue left,
+    Just _ <- termLiteralValue right =
+      PureUnsatisfiable
+  | Just literalValue <- termLiteralValue right,
+    Just name <- pureVariable left =
       knownComparison name PureEq literalValue (== literalValue)
-pureEquality (TLit literalValue) variable
-  | Just name <- pureVariable variable =
+  | Just literalValue <- termLiteralValue left,
+    Just name <- pureVariable right =
       knownComparison name PureEq literalValue (== literalValue)
-pureEquality _ _ = PureUnknown
+  | otherwise = PureUnknown
+
+termLiteralValue :: Term rs ci ifs r -> Maybe r
+termLiteralValue (TLit value) = Just value
+termLiteralValue (TOpaqueLit value) = Just value
+termLiteralValue _ = Nothing
 
 pureOrdering ::
   forall rs ci ifs1 ifs2 r.
@@ -3329,26 +3360,31 @@ pureOrdering ::
   Term rs ci ifs1 r ->
   Term rs ci ifs2 r ->
   PureFragment
-pureOrdering relation (TLit a) (TLit b)
-  | applyPureCmp relation a b = PureKnown emptyPureGuard
-  | otherwise = PureUnsatisfiable
-pureOrdering relation variable (TLit literalValue)
-  | Just name <- pureVariable variable =
+pureOrdering relation left right
+  | Just a <- termLiteralValue left,
+    Just b <- termLiteralValue right,
+    applyPureCmp relation a b =
+      PureKnown emptyPureGuard
+  | Just _ <- termLiteralValue left,
+    Just _ <- termLiteralValue right =
+      PureUnsatisfiable
+  | Just literalValue <- termLiteralValue right,
+    Just name <- pureVariable left =
       let normalized = pureRelation relation
        in knownComparison
             name
             normalized
             literalValue
             (\value -> applyPureRelation normalized value literalValue)
-pureOrdering relation (TLit literalValue) variable
-  | Just name <- pureVariable variable =
+  | Just literalValue <- termLiteralValue left,
+    Just name <- pureVariable right =
       let normalized = flipPureRelation (pureRelation relation)
        in knownComparison
             name
             normalized
             literalValue
             (\value -> applyPureRelation normalized value literalValue)
-pureOrdering _ _ _ = PureUnknown
+  | otherwise = PureUnknown
 
 knownComparison ::
   (Typeable r) =>

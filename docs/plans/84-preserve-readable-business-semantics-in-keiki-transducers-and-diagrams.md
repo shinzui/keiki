@@ -59,8 +59,14 @@ This section must always reflect the actual current state of the work.
   Jitsurei 122 examples, all with zero failures.  Existing named tests continue
   to pin pure overlap, SBV verification, projection folding, composition,
   alternative/feedback/profunctor behavior, and every legacy topology golden.
-- [ ] Milestone 1: preserve value-derived literal display evidence in `Term` while
-  keeping evaluation, symbolic execution, composition, and replay behavior equal.
+- [x] (2026-08-02T14:53:21Z) Milestone 1: added `Show`-carrying `TLit`,
+  display-opaque `TOpaqueLit`, and `opaqueLit`; updated every evaluator, replay
+  inversion path, pure and SBV analyzer, structural walker, composition rewrite,
+  profunctor rewrite, and pretty-printer.  The Keiki suite passed 638 examples
+  after focused Core, Symbolic, Composition, Pretty, and Validation coverage
+  proved all four readable/opaque proof pairings exact, no-`Show` execution,
+  throwing-`Show` non-observation, projection-fold display loss without semantic
+  opacity, and safe readable-literal retention through positional substitution.
 - [ ] Milestone 2: render full guards and register assignments in the primary
   Mermaid API, with an explicit topology-only compatibility API.
 - [ ] Milestone 3: document the rendering contract, create the governing ADR, and

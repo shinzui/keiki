@@ -248,12 +248,13 @@ weakenL ZIdx = ZIdx
 weakenL (SIdx i) = SIdx (weakenL @_ @rs2 i)
 
 -- | Walk a 'Term' and weaken every register read across an rs2
--- suffix. 'TInpCtorField' / 'TLit' do not touch the register file,
+-- suffix. 'TInpCtorField', 'TLit', and 'TOpaqueLit' do not touch the register file,
 -- so they pass through unchanged.
 weakenLTerm ::
   forall rs1 rs2 ci ifs r.
   Term rs1 ci ifs r -> Term (Append rs1 rs2) ci ifs r
 weakenLTerm (TLit r) = TLit r
+weakenLTerm (TOpaqueLit r) = TOpaqueLit r
 weakenLTerm (TReg ix) = TReg (weakenL @rs1 @rs2 ix)
 weakenLTerm (TInpCtorField ic ix) = TInpCtorField ic ix
 weakenLTerm (TApp1 f t) = TApp1 f (weakenLTerm @rs1 @rs2 t)
@@ -331,6 +332,7 @@ weakenRTerm ::
   (WeakenR rs1) =>
   Term rs2 ci ifs r -> Term (Append rs1 rs2) ci ifs r
 weakenRTerm (TLit r) = TLit r
+weakenRTerm (TOpaqueLit r) = TOpaqueLit r
 weakenRTerm (TReg ix) = TReg (weakenR @rs1 ix)
 weakenRTerm (TInpCtorField ic ix) = TInpCtorField ic ix
 weakenRTerm (TApp1 f t) = TApp1 f (weakenRTerm @rs1 @rs2 t)
@@ -466,12 +468,13 @@ nthTerm n (OFCons _ rest)
 -- Structural walkers see an opaque 'TApp1' over a harmless literal, so a
 -- constructor-mismatched composite edge cannot crash validation or rendering.
 poisonTerm :: String -> Term rs ci ifs r
-poisonTerm message = TApp1 (\() -> error message) (TLit ())
+poisonTerm message = TApp1 (\() -> error message) (TOpaqueLit ())
 
 -- | Detect a field read for a constructor other than the mid constructor
 -- produced by the t1 output currently being substituted.
 termHasCtorMismatch :: String -> Term rs ci ifs r -> Bool
 termHasCtorMismatch _ (TLit _) = False
+termHasCtorMismatch _ (TOpaqueLit _) = False
 termHasCtorMismatch _ (TReg _) = False
 termHasCtorMismatch expected (TInpCtorField ic _) = icName ic /= expected
 termHasCtorMismatch expected (TApp1 _ term) = termHasCtorMismatch expected term
@@ -500,6 +503,7 @@ substTerm ::
   OutTerm rs1 ci1 mid ->
   Term (Append rs1 rs2) ci1 ifsR r
 substTerm (TLit r) _o1 = TLit r
+substTerm (TOpaqueLit r) _o1 = TOpaqueLit r
 substTerm (TReg ix2) _o1 = TReg (weakenR @rs1 ix2)
 substTerm (TInpCtorField ic2 ix2) o1 =
   substInputField @rs1 @rs2 ic2 ix2 o1
@@ -593,7 +597,9 @@ projectThroughTermWithStatus witness (TReg ix) =
 projectThroughTermWithStatus witness (TInpCtorField ic ix) =
   (TFieldProj witness (PBInp ic ix), ProjectionPreserved)
 projectThroughTermWithStatus witness (TLit owner) =
-  (TLit (fieldWitnessGet witness owner), ProjectionFolded)
+  (TOpaqueLit (fieldWitnessGet witness owner), ProjectionFolded)
+projectThroughTermWithStatus witness (TOpaqueLit owner) =
+  (TOpaqueLit (fieldWitnessGet witness owner), ProjectionFolded)
 projectThroughTermWithStatus witness ownerTerm =
   (TApp1 (fieldWitnessGet witness) ownerTerm, ProjectionLowered)
 
@@ -805,12 +811,13 @@ rightWireCtor WireCtor {wcName = n, wcMatch = m, wcBuild = b} =
 
 -- | Lift a 'Term' from the left side's input alphabet to
 -- @Either ci1 ci2@. Walks the AST and adjusts every 'TInpCtorField'
--- to read through 'leftInCtor'. 'TLit' / 'TReg' don't depend on
+-- to read through 'leftInCtor'. Literals and 'TReg' don't depend on
 -- @ci@ and pass through unchanged.
 liftLTermAlt ::
   forall rs ci1 ci2 ifs r.
   Term rs ci1 ifs r -> Term rs (Either ci1 ci2) ifs r
 liftLTermAlt (TLit r) = TLit r
+liftLTermAlt (TOpaqueLit r) = TOpaqueLit r
 liftLTermAlt (TReg ix) = TReg ix
 liftLTermAlt (TInpCtorField ic ix) = TInpCtorField (leftInCtor ic) ix
 liftLTermAlt (TApp1 f t) = TApp1 f (liftLTermAlt @rs @ci1 @ci2 t)
@@ -829,6 +836,7 @@ liftRTermAlt ::
   forall rs ci1 ci2 ifs r.
   Term rs ci2 ifs r -> Term rs (Either ci1 ci2) ifs r
 liftRTermAlt (TLit r) = TLit r
+liftRTermAlt (TOpaqueLit r) = TOpaqueLit r
 liftRTermAlt (TReg ix) = TReg ix
 liftRTermAlt (TInpCtorField ic ix) = TInpCtorField (rightInCtor ic) ix
 liftRTermAlt (TApp1 f t) = TApp1 f (liftRTermAlt @rs @ci1 @ci2 t)
@@ -1104,6 +1112,7 @@ applyEnvTerm ::
   Term rs ci ifs r ->
   Term rs ci ifs r
 applyEnvTerm _ (TLit r) = TLit r
+applyEnvTerm _ (TOpaqueLit r) = TOpaqueLit r
 applyEnvTerm env (TReg ix) = maybe (TReg ix) id (lookupPending ix env)
 applyEnvTerm _ (TInpCtorField ic ix) = TInpCtorField ic ix
 applyEnvTerm env (TApp1 f term) = TApp1 f (applyEnvTerm env term)
@@ -1251,6 +1260,7 @@ edgeEmittedNames source edgeIx edge =
 
 termExpectedReads :: Term rs ci ifs r -> [(String, Int)]
 termExpectedReads (TLit _) = []
+termExpectedReads (TOpaqueLit _) = []
 termExpectedReads (TReg _) = []
 termExpectedReads (TInpCtorField ic ix) = [(icName ic, indexInt ix)]
 termExpectedReads (TApp1 _ term) = termExpectedReads term
@@ -1341,6 +1351,7 @@ upstreamProjectionWarnings edge1Ref edge2Ref midOutput = goPred
 
     goTerm :: forall ifs r. Term rs2 mid ifs r -> [ComposeAlignmentWarning s1 s2]
     goTerm (TLit _) = []
+    goTerm (TOpaqueLit _) = []
     goTerm (TReg _) = []
     goTerm (TInpCtorField _ _) = []
     goTerm (TApp1 _ term) = goTerm term
@@ -1393,6 +1404,7 @@ pendingProjectionWarnings edge1Ref edge2Ref env = goPred
 
     goTerm :: forall ifs r. Term rs ci ifs r -> [ComposeAlignmentWarning s1 s2]
     goTerm (TLit _) = []
+    goTerm (TOpaqueLit _) = []
     goTerm (TReg _) = []
     goTerm (TInpCtorField _ _) = []
     goTerm (TApp1 _ term) = goTerm term

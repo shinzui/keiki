@@ -6,10 +6,10 @@
 -- renderer ('Keiki.Render.Mermaid') and the sibling edge-inspector /
 -- multiline-label renderers.
 --
--- Two things are provably unprintable and are marked, not dropped:
--- applied opaque Haskell functions render as @<fn>(...)@; literal
--- values render as @<lit>@ (a 'TLit' carries an unconstrained type
--- with no 'Show').
+-- Two things are deliberately marked rather than invented: applied opaque
+-- Haskell functions render as @<fn>(...)@, and explicit display-opaque literal
+-- values render as @<lit>@. Ordinary 'TLit' values use their retained 'Show'
+-- evidence.
 module Keiki.Render.Pretty
   ( indexName,
     prettyTerm,
@@ -44,11 +44,12 @@ indexName (SIdx i) = indexName i
 
 -- | Render a 'Term' as domain-readable 'Text'. Register reads render by
 -- slot name, input-field reads as @ctor.field@, arithmetic structurally
--- with @+ - *@. Opaque applied functions render @<fn>(...)@; literal
--- values render @<lit>@ (a 'TLit' carries an unconstrained type with no
--- 'Show').
+-- with @+ - *@. Opaque applied functions render @<fn>(...)@. Ordinary
+-- literals use their value's 'Show' instance; explicit opaque literals render
+-- as @<lit>@.
 prettyTerm :: Term rs ci ifs r -> Text
-prettyTerm (TLit _) = T.pack "<lit>"
+prettyTerm (TLit value) = T.pack (show value)
+prettyTerm (TOpaqueLit _) = T.pack "<lit>"
 prettyTerm (TReg ix) = T.pack (indexName ix)
 prettyTerm (TInpCtorField ic ix) =
   T.pack (icName ic) <> T.pack "." <> T.pack (indexName ix)
