@@ -10,7 +10,8 @@
     "test": "test"
   },
   "scripts": {
-    "build": "node site/build.mjs",
+    "build": "pnpm run test:mermaid-backend && node site/build.mjs",
+    "test:mermaid-backend": "node site/verify-semantic-label-escaping.mjs",
     "dev": "pnpm run build && portless run --name keiki-docs vite site-dist",
     "dev:raw": "pnpm run build && vite site-dist --host 127.0.0.1",
     "preview": "pnpm run build && portless run --name keiki-docs-preview vite preview site-dist",

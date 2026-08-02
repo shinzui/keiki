@@ -24,31 +24,54 @@ import Keiki.Render.Mermaid
   ( toMermaid,
     toMermaidCompose3,
     toMermaidCompose3Nested,
+    toMermaidCompose3NestedWith,
+    toMermaidCompose3With,
+    toTopologyMermaid,
+    topologyMermaidOptions,
   )
 import Test.Hspec
 
 spec :: Spec
 spec = do
   describe "toMermaid loanApplication" $
-    it "renders the canonical six-vertex stateDiagram-v2 block" $
-      toMermaid loanApplication `shouldBe` loanApplicationCanonical
+    it "renders readable transition semantics" $
+      toMermaid loanApplication `shouldSatisfy` hasReadableSemantics
 
   describe "toMermaid loan" $
-    it "renders the three-vertex stateDiagram-v2 block" $
-      toMermaid loan `shouldBe` loanCanonical
+    it "renders readable transition semantics" $
+      toMermaid loan `shouldSatisfy` hasReadableSemantics
 
   describe "toMermaid coreBankingSync" $
-    it "renders the three-vertex stateDiagram-v2 block" $
-      toMermaid coreBankingSync `shouldBe` coreBankingSyncCanonical
+    it "renders readable transition semantics" $
+      toMermaid coreBankingSync `shouldSatisfy` hasReadableSemantics
 
   describe "toMermaidCompose3 loanWorkflow" $
-    it "renders the 54-vertex flat block" $
-      toMermaidCompose3 loanWorkflow `shouldBe` loanWorkflowFlatCanonical
+    it "renders readable transition semantics in the flat block" $
+      toMermaidCompose3 loanWorkflow `shouldSatisfy` hasReadableSemantics
 
   describe "toMermaidCompose3Nested loanWorkflow" $
-    it "renders the 6-outer × 9-inner nested block" $
+    it "renders readable transition semantics in the nested block" $
       toMermaidCompose3Nested loanWorkflow
+        `shouldSatisfy` hasReadableSemantics
+
+  describe "topologyMermaidOptions (0.7 Jitsurei goldens)" $ do
+    it "preserves loanApplication" $
+      toTopologyMermaid loanApplication `shouldBe` loanApplicationCanonical
+    it "preserves loan" $
+      toTopologyMermaid loan `shouldBe` loanCanonical
+    it "preserves coreBankingSync" $
+      toTopologyMermaid coreBankingSync `shouldBe` coreBankingSyncCanonical
+    it "preserves the flat loan workflow" $
+      toMermaidCompose3With topologyMermaidOptions loanWorkflow
+        `shouldBe` loanWorkflowFlatCanonical
+    it "preserves the nested loan workflow" $
+      toMermaidCompose3NestedWith topologyMermaidOptions loanWorkflow
         `shouldBe` loanWorkflowNestedCanonical
+
+hasReadableSemantics :: Text -> Bool
+hasReadableSemantics diagram =
+  T.pack "<br/>u: " `T.isInfixOf` diagram
+    && T.pack "<br/>g: " `T.isInfixOf` diagram
 
 -- | Canonical render for 'loanApplication'. Mirrored verbatim by
 -- @docs/guide/diagrams/loan-application.mmd@.

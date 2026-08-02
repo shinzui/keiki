@@ -24,13 +24,20 @@
 --     for the initiative motivation.
 module Keiki.Render.Mermaid
   ( toMermaid,
+    toTopologyMermaid,
     toMermaidAlternative,
     toMermaidAlternativeWith,
+    toMermaidAlternativeWithOptions,
     toMermaidComposite,
+    toMermaidCompositeWith,
     toMermaidCompositeNested,
+    toMermaidCompositeNestedWith,
     toMermaidCompose3,
+    toMermaidCompose3With,
     toMermaidCompose3Nested,
+    toMermaidCompose3NestedWith,
     toMermaidFeedback1,
+    toMermaidFeedback1With,
     toMermaidAtlas,
     toMermaidAtlasWith,
     MermaidSection (..),
@@ -42,11 +49,13 @@ module Keiki.Render.Mermaid
     toMermaidWithLabels,
     MermaidOptions (..),
     MermaidGuardMode (..),
+    MermaidUpdateMode (..),
     MermaidLabelLayout (..),
     MermaidOutputLayout (..),
     MermaidStateLabels (..),
     duplicateStateIds,
     defaultMermaidOptions,
+    topologyMermaidOptions,
     vertexLabel,
     compositeLabel,
     compose3Label,
@@ -73,7 +82,7 @@ import Keiki.Core
   )
 import Keiki.Generics (Append)
 import Keiki.Internal.Slots (indexNName)
-import Keiki.Render.Pretty (prettyPred)
+import Keiki.Render.Pretty (prettyPred, prettyUpdate)
 
 -- | How an edge's guard predicate is rendered into the @[g: …]@
 -- segment.
@@ -81,7 +90,7 @@ import Keiki.Render.Pretty (prettyPred)
 --   * 'MermaidGuardHidden' — no guard segment at all.
 --   * 'MermaidGuardStructuralSummary' — the structural constructor-tag
 --     walk produced by 'guardSummary', e.g. @PAnd PInCtor PEq@. This is
---     the legacy rendering that the 'showGuardSummary' flag selects.
+--     the compact structural alternative to readable guards.
 --   * 'MermaidGuardPretty' — the domain-readable rendering produced by
 --     'Keiki.Render.Pretty.prettyPred', e.g.
 --     @(ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)@.
@@ -89,6 +98,19 @@ data MermaidGuardMode
   = MermaidGuardHidden
   | MermaidGuardStructuralSummary
   | MermaidGuardPretty
+  deriving stock (Eq, Show)
+
+-- | How an edge's register update is rendered.
+--
+--   * 'MermaidUpdateHidden' — no update segment at all.
+--   * 'MermaidUpdateWrittenSlots' — only the names of written slots,
+--     retained as a compact compatibility option.
+--   * 'MermaidUpdatePretty' — the complete update produced by
+--     'Keiki.Render.Pretty.prettyUpdate', including right-hand terms.
+data MermaidUpdateMode
+  = MermaidUpdateHidden
+  | MermaidUpdateWrittenSlots
+  | MermaidUpdatePretty
   deriving stock (Eq, Show)
 
 -- | How dense edge labels are laid out.
@@ -116,32 +138,18 @@ data MermaidOutputLayout
   | MermaidOutputCounted
   deriving stock (Eq, Show)
 
--- | Rendering options for the structural edge-summary suffix. All
--- fields default to the no-suffix setting in 'defaultMermaidOptions', so
--- the default rendering is byte-identical to 'toMermaid'.
+-- | Rendering options for edge semantics and layout.
 --
--- The record is extended /additively/: new fields are appended with a
--- default that reproduces the existing behaviour, and existing fields
--- are never removed or reordered. The legacy 'showGuardSummary' flag and
--- the newer 'guardMode' field are reconciled by 'renderGuardSegment' (an
--- explicit 'guardMode' wins; otherwise 'showGuardSummary' is honoured as
--- the legacy spelling of 'MermaidGuardStructuralSummary').
+-- 'defaultMermaidOptions' is the readable primary policy: complete guards
+-- and updates, multiline labels, and no semantic truncation.
+-- 'topologyMermaidOptions' is the explicit compact compatibility policy and
+-- reproduces Keiki 0.7's topology-only bytes.
 data MermaidOptions = MermaidOptions
-  { -- | When 'True', append the update's written-slot names, e.g.
-    --     @[w: email; confirmCode; registeredAt]@.
-    showWrittenSlots :: Bool,
-    -- | When 'True', append a structural guard summary listing the
-    --     guard's constructor / comparison tags, e.g. @[g: PAnd PInCtor PEq]@.
-    --     This is the legacy spelling of @'guardMode' = 'MermaidGuardStructuralSummary'@;
-    --     it is honoured only when 'guardMode' is left at its default
-    --     ('MermaidGuardHidden').
-    showGuardSummary :: Bool,
-    -- | How the guard segment is rendered. When set to anything other
-    --     than 'MermaidGuardHidden', it takes precedence over the legacy
-    --     'showGuardSummary' flag. Defaults to 'MermaidGuardHidden'.
+  { -- | How the guard segment is rendered.
     guardMode :: MermaidGuardMode,
-    -- | Inline (default, byte-identical) or multiline @<br/>@ layout
-    --     of an edge label's segments. Defaults to 'MermaidLabelInline'.
+    -- | How the register-update segment is rendered.
+    updateMode :: MermaidUpdateMode,
+    -- | Inline bracketed segments or multiline @<br/>@ layout.
     labelLayout :: MermaidLabelLayout,
     -- | When @'Just' k@ and an edge writes @n > k@ slots, show the
     --     first @k@ then a single @+{n-k} more@ token. 'Nothing' (the
@@ -157,14 +165,26 @@ data MermaidOptions = MermaidOptions
     outputLayout :: MermaidOutputLayout
   }
 
--- | The default: no summary suffix. @'toMermaid' t@ equals
--- @'toMermaidWith' 'defaultMermaidOptions' t@.
+-- | The readable primary policy used by every no-options renderer.
 defaultMermaidOptions :: MermaidOptions
 defaultMermaidOptions =
   MermaidOptions
-    { showWrittenSlots = False,
-      showGuardSummary = False,
-      guardMode = MermaidGuardHidden,
+    { guardMode = MermaidGuardPretty,
+      updateMode = MermaidUpdatePretty,
+      labelLayout = MermaidLabelMultiline,
+      maxInlineWrittenSlots = Nothing,
+      maxInlineGuardWidth = Nothing,
+      outputLayout = MermaidOutputSemicolon
+    }
+
+-- | Keiki 0.7's compact topology-only policy. This is intentionally a
+-- separate named value rather than an implicit default so callers make the
+-- loss of business semantics explicit.
+topologyMermaidOptions :: MermaidOptions
+topologyMermaidOptions =
+  MermaidOptions
+    { guardMode = MermaidGuardHidden,
+      updateMode = MermaidUpdateHidden,
       labelLayout = MermaidLabelInline,
       maxInlineWrittenSlots = Nothing,
       maxInlineGuardWidth = Nothing,
@@ -186,14 +206,18 @@ toMermaid ::
   Text
 toMermaid = toMermaidWith defaultMermaidOptions
 
--- | Like 'toMermaid', but takes 'MermaidOptions' controlling the
--- structural edge-summary suffix. @'toMermaidWith' 'defaultMermaidOptions'@
--- is byte-identical to 'toMermaid'. With 'showWrittenSlots' and/or
--- 'showGuardSummary' enabled, each edge label gains a compact bracketed
--- suffix, e.g. @… [w: email; confirmCode; registeredAt; g: PAnd PInCtor PTop]@.
---
--- Only the single-transducer path is annotated; the composite renderers
--- ('toMermaidComposite' and relatives) keep the guard-free default.
+-- | Render only topology using Keiki 0.7's compact label policy. Use this
+-- when guards and register assignments are intentionally out of scope.
+toTopologyMermaid ::
+  (Enum s, Bounded s, Show s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  Text
+toTopologyMermaid = toMermaidWith topologyMermaidOptions
+
+-- | Like 'toMermaid', but takes the complete edge-semantics and layout
+-- policy explicitly. @'toMermaidWith' 'defaultMermaidOptions'@ is
+-- byte-identical to 'toMermaid'; use 'topologyMermaidOptions' for the
+-- Keiki 0.7 topology-only form.
 toMermaidWith ::
   (Enum s, Bounded s, Show s) =>
   MermaidOptions ->
@@ -282,7 +306,22 @@ toMermaidComposite ::
   ) =>
   SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co ->
   Text
-toMermaidComposite = renderTopology compositeLabel
+toMermaidComposite = toMermaidCompositeWith defaultMermaidOptions
+
+-- | Options-aware variant of 'toMermaidComposite'.
+toMermaidCompositeWith ::
+  ( Enum s1,
+    Bounded s1,
+    Show s1,
+    Enum s2,
+    Bounded s2,
+    Show s2
+  ) =>
+  MermaidOptions ->
+  SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co ->
+  Text
+toMermaidCompositeWith opts =
+  renderTopologyWith opts compositeLabel compositeLabel
 
 -- | Render a right-associative 3-deep
 -- @t1 \`'Keiki.Composition.compose'\` (t2 \`'Keiki.Composition.compose'\` t3)@
@@ -316,7 +355,31 @@ toMermaidCompose3 ::
     ci
     co ->
   Text
-toMermaidCompose3 = renderTopology compose3Label
+toMermaidCompose3 = toMermaidCompose3With defaultMermaidOptions
+
+-- | Options-aware variant of 'toMermaidCompose3'.
+toMermaidCompose3With ::
+  forall rs s1 s2 s3 ci co.
+  ( Enum s1,
+    Bounded s1,
+    Show s1,
+    Enum s2,
+    Bounded s2,
+    Show s2,
+    Enum s3,
+    Bounded s3,
+    Show s3
+  ) =>
+  MermaidOptions ->
+  SymTransducer
+    (HsPred rs ci)
+    rs
+    (Composite s1 (Composite s2 s3))
+    ci
+    co ->
+  Text
+toMermaidCompose3With opts =
+  renderTopologyWith opts compose3Label compose3Label
 
 -- | Render a composite 'SymTransducer' (a 'Keiki.Composition.compose'
 -- result, vertex type @'Composite' s1 s2@) using the **nested-subgraph**
@@ -359,7 +422,23 @@ toMermaidCompositeNested ::
   ) =>
   SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co ->
   Text
-toMermaidCompositeNested t =
+toMermaidCompositeNested =
+  toMermaidCompositeNestedWith defaultMermaidOptions
+
+-- | Options-aware variant of 'toMermaidCompositeNested'.
+toMermaidCompositeNestedWith ::
+  forall rs s1 s2 ci co.
+  ( Enum s1,
+    Bounded s1,
+    Show s1,
+    Enum s2,
+    Bounded s2,
+    Show s2
+  ) =>
+  MermaidOptions ->
+  SymTransducer (HsPred rs ci) rs (Composite s1 s2) ci co ->
+  Text
+toMermaidCompositeNestedWith opts t =
   let outers = [minBound .. maxBound] :: [s1]
       inners = [minBound .. maxBound] :: [s2]
       composites = [minBound .. maxBound] :: [Composite s1 s2]
@@ -390,7 +469,7 @@ toMermaidCompositeNested t =
             <> arrow
             <> compositeLabel (target e)
             <> colon
-            <> edgeLabel e
+            <> edgeLabelWith opts e
         | s <- composites,
           e <- edgesOut t s
         ]
@@ -448,7 +527,31 @@ toMermaidCompose3Nested ::
     ci
     co ->
   Text
-toMermaidCompose3Nested t =
+toMermaidCompose3Nested =
+  toMermaidCompose3NestedWith defaultMermaidOptions
+
+-- | Options-aware variant of 'toMermaidCompose3Nested'.
+toMermaidCompose3NestedWith ::
+  forall rs s1 s2 s3 ci co.
+  ( Enum s1,
+    Bounded s1,
+    Show s1,
+    Enum s2,
+    Bounded s2,
+    Show s2,
+    Enum s3,
+    Bounded s3,
+    Show s3
+  ) =>
+  MermaidOptions ->
+  SymTransducer
+    (HsPred rs ci)
+    rs
+    (Composite s1 (Composite s2 s3))
+    ci
+    co ->
+  Text
+toMermaidCompose3NestedWith opts t =
   let outers = [minBound .. maxBound] :: [s1]
       inners = [minBound .. maxBound] :: [Composite s2 s3]
       composites = [minBound .. maxBound] :: [Composite s1 (Composite s2 s3)]
@@ -479,7 +582,7 @@ toMermaidCompose3Nested t =
             <> arrow
             <> compose3Label (target e)
             <> colon
-            <> edgeLabel e
+            <> edgeLabelWith opts e
         | s <- composites,
           e <- edgesOut t s
         ]
@@ -535,7 +638,10 @@ toMermaidAlternative ::
   SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2 ->
   Text
 toMermaidAlternative =
-  toMermaidAlternativeWith (T.pack "LeftArm") (T.pack "RightArm")
+  toMermaidAlternativeWithOptions
+    defaultMermaidOptions
+    (T.pack "LeftArm")
+    (T.pack "RightArm")
 
 -- | The arm-name-overridable variant of 'toMermaidAlternative'. The
 -- two 'Text' arguments name the left and right @state … { … }@
@@ -560,7 +666,27 @@ toMermaidAlternativeWith ::
   SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 co1 ->
   SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2 ->
   Text
-toMermaidAlternativeWith leftName rightName t1 t2 =
+toMermaidAlternativeWith =
+  toMermaidAlternativeWithOptions defaultMermaidOptions
+
+-- | Options-aware, arm-name-overridable variant of
+-- 'toMermaidAlternative'.
+toMermaidAlternativeWithOptions ::
+  forall rs1 rs2 s1 s2 ci1 ci2 co1 co2.
+  ( Enum s1,
+    Bounded s1,
+    Show s1,
+    Enum s2,
+    Bounded s2,
+    Show s2
+  ) =>
+  MermaidOptions ->
+  Text ->
+  Text ->
+  SymTransducer (HsPred rs1 ci1) rs1 s1 ci1 co1 ->
+  SymTransducer (HsPred rs2 ci2) rs2 s2 ci2 co2 ->
+  Text
+toMermaidAlternativeWithOptions opts leftName rightName t1 t2 =
   let ind = T.pack "    "
       ind2 = T.pack "        "
       arrow = T.pack " --> "
@@ -587,7 +713,7 @@ toMermaidAlternativeWith leftName rightName t1 t2 =
                    <> arrow
                    <> vertexLabel (target e)
                    <> colon
-                   <> edgeLabel e
+                   <> edgeLabelWith opts e
                | s <- [minBound .. maxBound],
                  e <- edgesOut t s
                ]
@@ -645,7 +771,27 @@ toMermaidFeedback1 ::
   SymTransducer (HsPred rs1 ci) rs1 s1 ci co ->
   SymTransducer (HsPred rs2 co) rs2 s2 co ci ->
   Text
-toMermaidFeedback1 t f = renderTopology feedback1Label (feedback1 t f)
+toMermaidFeedback1 = toMermaidFeedback1With defaultMermaidOptions
+
+-- | Options-aware variant of 'toMermaidFeedback1'.
+toMermaidFeedback1With ::
+  ( Enum s1,
+    Bounded s1,
+    Show s1,
+    Enum s2,
+    Bounded s2,
+    Show s2,
+    WeakenR rs1,
+    WeakenR rs2,
+    Disjoint (Names rs2) (Names rs1),
+    Disjoint (Names rs1) (Names (Append rs2 rs1))
+  ) =>
+  MermaidOptions ->
+  SymTransducer (HsPred rs1 ci) rs1 s1 ci co ->
+  SymTransducer (HsPred rs2 co) rs2 s2 co ci ->
+  Text
+toMermaidFeedback1With opts t f =
+  renderTopologyWith opts feedback1Label feedback1Label (feedback1 t f)
 
 -- | The Mermaid identifier for a 'feedback1' composite vertex.
 -- @\<show outer\>_\<show policy\>_\<show inner\>@. Like
@@ -685,25 +831,9 @@ compose3Label (Composite a (Composite b c)) =
     <> T.pack "_"
     <> T.pack (show c)
 
--- | The shared rendering core: walk @[minBound .. maxBound]@, emit
--- the @stateDiagram-v2@ header, the initial-state line, one line per
--- outgoing edge, and one final-state line per vertex where
--- 'isFinal' fires. The vertex-label function is the only piece that
--- varies between 'toMermaid' (single transducer) and
--- 'toMermaidComposite' (composite); factoring it out keeps the
--- rendering logic in one place.
-renderTopology ::
-  (Enum s, Bounded s) =>
-  (s -> Text) ->
-  SymTransducer (HsPred rs ci) rs s ci co ->
-  Text
-renderTopology label = renderTopologyWith defaultMermaidOptions label label
-
--- | The options-aware rendering core. Identical to 'renderTopology'
--- except the per-edge line calls 'edgeLabelWith' so the structural
--- summary suffix appears when 'MermaidOptions' requests it. With
--- 'defaultMermaidOptions' the output is byte-identical to the original
--- 'renderTopology', which is what keeps 'toMermaid' guard-free.
+-- | The shared options-aware rendering core: walk
+-- @[minBound .. maxBound]@ and render every transition with
+-- 'edgeLabelWith'.
 renderTopologyWith ::
   (Enum s, Bounded s) =>
   MermaidOptions ->
@@ -827,7 +957,7 @@ edgeOutputNameWith layout Edge {output = outs} = case outs of
   many -> Just (render layout (Prelude.map wcN many))
   where
     wcN :: OutTerm rs ci co -> Text
-    wcN (OPack _ wc _) = T.pack (wcName wc)
+    wcN (OPack _ wc _) = escapeSemanticText (T.pack (wcName wc))
     render :: MermaidOutputLayout -> [Text] -> Text
     render MermaidOutputSemicolon ns
       | length ns == 2 = T.intercalate (T.pack "; ") ns
@@ -852,16 +982,13 @@ edgeLabelWithLayout ::
   Edge (HsPred rs ci) rs ci co s ->
   Text
 edgeLabelWithLayout layout e =
-  let inp = maybe (T.pack "?") id (edgeInputName e)
+  let inp = escapeSemanticText (maybe (T.pack "?") id (edgeInputName e))
       out = maybe (T.pack "\x03B5") id (edgeOutputNameWith layout e)
    in inp <> T.pack " / " <> out
 
--- | The options-aware edge label: 'edgeLabel' plus an optional
--- structural suffix @[w: …; g: …]@. When neither flag is set this is
--- exactly 'edgeLabel' (no trailing space, no brackets), which is what
--- keeps the 'toMermaid' default byte-identical. The written-slots part
--- is omitted entirely when the edge writes nothing (an empty @w:@ would
--- be noise); the guard part renders the full structural tag walk.
+-- | The options-aware edge label. Semantic text is escaped before this
+-- function inserts its own @<br/>@ layout separators, so user/domain text
+-- cannot create extra label lines.
 edgeLabelWith ::
   MermaidOptions ->
   Edge (HsPred rs ci) rs ci co s ->
@@ -874,15 +1001,13 @@ edgeLabelWith opts e@Edge {update = u, guard = g} =
   -- the output rendering; guard /text/ is produced by
   -- 'renderGuardSegment' (EP-61's chokepoint).
   let base = edgeLabelWithLayout (outputLayout opts) e
-      ws = if showWrittenSlots opts then writtenSlots u else []
-      wPart =
-        case truncateSlots (maxInlineWrittenSlots opts) ws of
-          [] -> []
-          xs -> [T.pack "w: " <> T.intercalate (T.pack "; ") xs]
+      uPart = case renderUpdateSegment opts u of
+        Just t -> [t]
+        Nothing -> []
       gPart = case renderGuardSegment opts g of
         Just t -> [T.pack "g: " <> truncateGuard (maxInlineGuardWidth opts) t]
         Nothing -> []
-      parts = wPart ++ gPart
+      parts = uPart ++ gPart
    in case labelLayout opts of
         MermaidLabelInline ->
           if null parts
@@ -920,28 +1045,61 @@ writtenSlots UKeep = []
 writtenSlots (USet ix _) = [T.pack (indexNName ix)]
 writtenSlots (UCombine a b) = writtenSlots a ++ writtenSlots b
 
+-- | Produce the update segment text for an edge. Pretty mode retains the
+-- complete right-hand expressions; written-slot mode is the compact legacy
+-- summary and may use its dedicated truncation option.
+renderUpdateSegment :: MermaidOptions -> Update rs w ci -> Maybe Text
+renderUpdateSegment opts u =
+  case updateMode opts of
+    MermaidUpdateHidden -> Nothing
+    MermaidUpdateWrittenSlots ->
+      case truncateSlots
+        (maxInlineWrittenSlots opts)
+        (Prelude.map escapeSemanticText (writtenSlots u)) of
+        [] -> Nothing
+        xs -> Just (T.pack "w: " <> T.intercalate (T.pack "; ") xs)
+    MermaidUpdatePretty ->
+      Just (T.pack "u: " <> escapeSemanticText (prettyUpdate u))
+
 -- | Produce the guard segment text for an edge, or 'Nothing' when no
--- guard segment should appear. The effective mode reconciles the legacy
--- 'showGuardSummary' flag with the new 'guardMode': an explicit
--- 'guardMode' (anything other than 'MermaidGuardHidden') wins; otherwise
--- 'showGuardSummary' is honoured as the legacy spelling of
--- 'MermaidGuardStructuralSummary'.
---
--- This is the single chokepoint for guard /text/ production. A sibling
--- renderer that changes how edge-label /segments are laid out/ (inline
--- vs. multiline) wraps the assembly of segments and leaves this
--- function's text untouched.
+-- guard segment should appear. Semantic text is escaped here, before label
+-- layout is assembled.
 renderGuardSegment :: MermaidOptions -> HsPred rs ci -> Maybe Text
 renderGuardSegment opts g =
-  case effectiveMode of
+  escapeSemanticText <$> case guardMode opts of
     MermaidGuardHidden -> Nothing
     MermaidGuardStructuralSummary -> Just (guardSummary g)
     MermaidGuardPretty -> Just (prettyPred g)
+
+-- | Escape domain-derived label text exactly once into a visible,
+-- non-structural alphabet. The documentation backend decodes XML entities
+-- before parsing Mermaid and also turns both @<br>@ spellings and literal
+-- @\\n@ into line breaks, so entity encoding alone cannot isolate semantic
+-- text. Full-width punctuation keeps the value recognizable while preventing
+-- parser control. XML entities retain punctuation that the backend can safely
+-- decode, full-width angle brackets keep break-tag-like input inert, and
+-- control pictures make raw line endings visible rather than structural.
+-- Renderer-owned ASCII @<br/>@ is inserted only after this pass. The known
+-- opaque marker @<lit>@ is encoded as entities because it cannot be a break
+-- tag and should remain visually exact.
+escapeSemanticText :: Text -> Text
+escapeSemanticText =
+  T.intercalate (T.pack "&lt;lit&gt;")
+    . Prelude.map (T.concatMap escapeChar)
+    . T.splitOn (T.pack "<lit>")
   where
-    effectiveMode
-      | guardMode opts /= MermaidGuardHidden = guardMode opts
-      | showGuardSummary opts = MermaidGuardStructuralSummary
-      | otherwise = MermaidGuardHidden
+    escapeChar '\r' = T.pack "\x240D"
+    escapeChar '\n' = T.pack "\x240A"
+    escapeChar '\\' = T.pack "\xFF3C"
+    escapeChar '\'' = T.pack "&apos;"
+    escapeChar '"' = T.pack "&quot;"
+    escapeChar '&' = T.pack "&amp;"
+    escapeChar '<' = T.pack "\xFF1C"
+    escapeChar '>' = T.pack "\xFF1E"
+    escapeChar '|' = T.pack "&#124;"
+    escapeChar '{' = T.pack "&#123;"
+    escapeChar '}' = T.pack "&#125;"
+    escapeChar c = T.singleton c
 
 -- | A structural, total summary of a guard predicate: its constructor
 -- tags in left-to-right (prefix) order, with 'PCmp' carrying its 'Cmp'

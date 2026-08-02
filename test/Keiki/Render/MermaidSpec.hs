@@ -30,6 +30,7 @@
 --     nested) and the synthetic three-toy fixture.
 module Keiki.Render.MermaidSpec (spec) where
 
+import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Keiki.Composition (Composite, compose)
@@ -41,13 +42,16 @@ import Keiki.Core
     EdgeMode (..),
     HsPred (..),
     InCtor (..),
+    IndexN (..),
     OutFields (..),
     RegFile (..),
     SymTransducer (..),
     Update (..),
     WireCtor (..),
+    opaqueLit,
     pack,
   )
+import Keiki.Fixtures.CounterPipeline (stageB)
 import Keiki.Fixtures.EmailDelivery (emailDelivery)
 import Keiki.Fixtures.UserRegistration (Vertex (..), userReg)
 import Keiki.Render.Mermaid
@@ -60,57 +64,112 @@ import Keiki.Render.Mermaid
     MermaidSection (..),
     MermaidSectionKind (..),
     MermaidStateLabels (..),
+    MermaidUpdateMode (..),
     defaultMermaidAtlasOptions,
     defaultMermaidOptions,
     duplicateStateIds,
     toMermaid,
     toMermaidAlternative,
+    toMermaidAlternativeWithOptions,
     toMermaidAtlas,
     toMermaidAtlasWith,
     toMermaidCompose3,
     toMermaidCompose3Nested,
+    toMermaidCompose3NestedWith,
+    toMermaidCompose3With,
     toMermaidComposite,
     toMermaidCompositeNested,
+    toMermaidCompositeNestedWith,
+    toMermaidCompositeWith,
     toMermaidFeedback1,
+    toMermaidFeedback1With,
     toMermaidWith,
     toMermaidWithLabels,
+    toTopologyMermaid,
+    topologyMermaidOptions,
     vertexLabel,
+  )
+import Keiki.Render.Validate
+  ( MermaidValidationOptions (..),
+    defaultMermaidValidationOptions,
+    validateMermaidDiagram,
   )
 import Test.Hspec
 
 spec :: Spec
 spec = do
-  describe "toMermaid (single SymTransducer)" $
+  describe "toMermaid (readable single SymTransducer)" $
     it "renders userReg to the canonical stateDiagram-v2 block" $
-      toMermaid userReg `shouldBe` userRegCanonical
+      toMermaid userReg `shouldBe` userRegReadableCanonical
 
-  describe "toMermaidComposite (composite SymTransducer)" $
-    it "renders the AlertSource ⨾ EmailDelivery pipeline" $
+  describe "toMermaid (complete business expressions, EP-84)" $
+    it "shows update right-hand expressions and ordinary literal values" $ do
+      let diagram = toMermaid stageB
+      diagram `shouldSatisfy` T.isInfixOf (T.pack "u: regB := (regB + MsgB.payload)")
+      diagram `shouldSatisfy` T.isInfixOf (T.pack "g: (MsgB &amp;&amp; regB ＞= 0)")
+      diagram `shouldNotSatisfy` T.isInfixOf (T.pack "<lit>")
+
+  describe "toMermaid (explicit display opacity, EP-84)" $
+    it "shows opaqueLit as <lit> while topology mode hides the expression" $ do
+      toMermaid opaqueValue
+        `shouldSatisfy` T.isInfixOf (T.pack "u: secret := &lt;lit&gt;")
+      toTopologyMermaid opaqueValue
+        `shouldNotSatisfy` T.isInfixOf (T.pack "lit")
+
+  describe "toTopologyMermaid (0.7 compatibility)" $
+    it "renders userReg to the prior topology-only block exactly" $
+      toTopologyMermaid userReg `shouldBe` userRegCanonical
+
+  describe "toMermaidComposite (composite SymTransducer)" $ do
+    it "renders readable semantics for the AlertSource ⨾ EmailDelivery pipeline" $
       toMermaidComposite (compose alertSource emailDelivery)
+        `shouldSatisfy` hasReadableSemantics
+    it "reproduces the 0.7 topology with explicit options" $
+      toMermaidCompositeWith topologyMermaidOptions (compose alertSource emailDelivery)
         `shouldBe` alertEmailCompositeCanonical
 
-  describe "toMermaidCompositeNested (composite SymTransducer)" $
-    it "renders the AlertSource ⨾ EmailDelivery pipeline in nested form" $
+  describe "toMermaidCompositeNested (composite SymTransducer)" $ do
+    it "renders readable semantics in nested form" $
       toMermaidCompositeNested (compose alertSource emailDelivery)
+        `shouldSatisfy` hasReadableSemantics
+    it "reproduces the 0.7 nested topology with explicit options" $
+      toMermaidCompositeNestedWith topologyMermaidOptions (compose alertSource emailDelivery)
         `shouldBe` alertEmailCompositeNestedCanonical
 
-  describe "toMermaidAlternative (alternative composite)" $
-    it "renders alternative emailDelivery pinger as parallel arms" $
+  describe "toMermaidAlternative (alternative composite)" $ do
+    it "renders readable semantics for both parallel arms" $
       toMermaidAlternative emailDelivery pinger
+        `shouldSatisfy` hasReadableSemantics
+    it "reproduces the 0.7 parallel-arm topology with explicit options" $
+      toMermaidAlternativeWithOptions
+        topologyMermaidOptions
+        (T.pack "LeftArm")
+        (T.pack "RightArm")
+        emailDelivery
+        pinger
         `shouldBe` emailPingerAltCanonical
 
-  describe "toMermaidFeedback1 (feedback1 composite)" $
-    it "renders feedback1 toggleAgg togglePolicy as flat 3-deep cross-product" $
+  describe "toMermaidFeedback1 (feedback1 composite)" $ do
+    it "renders readable feedback semantics" $
       toMermaidFeedback1 toggleAgg togglePolicy
+        `shouldSatisfy` hasReadableSemantics
+    it "reproduces the 0.7 flat feedback topology with explicit options" $
+      toMermaidFeedback1With topologyMermaidOptions toggleAgg togglePolicy
         `shouldBe` toggleFeedback1Canonical
 
-  describe "toMermaidCompose3 (right-associative 3-deep compose)" $
-    it "renders the toy1 ⨾ (toy2 ⨾ toy3) flat block" $
-      toMermaidCompose3 toy3deep `shouldBe` toy3deepFlatCanonical
+  describe "toMermaidCompose3 (right-associative 3-deep compose)" $ do
+    it "renders readable semantics in the flat block" $
+      toMermaidCompose3 toy3deep `shouldSatisfy` hasReadableSemantics
+    it "reproduces the 0.7 flat topology with explicit options" $
+      toMermaidCompose3With topologyMermaidOptions toy3deep
+        `shouldBe` toy3deepFlatCanonical
 
-  describe "toMermaidCompose3Nested (right-associative 3-deep compose)" $
-    it "renders the toy1 ⨾ (toy2 ⨾ toy3) one-level nested block" $
-      toMermaidCompose3Nested toy3deep `shouldBe` toy3deepNestedCanonical
+  describe "toMermaidCompose3Nested (right-associative 3-deep compose)" $ do
+    it "renders readable semantics in the one-level nested block" $
+      toMermaidCompose3Nested toy3deep `shouldSatisfy` hasReadableSemantics
+    it "reproduces the 0.7 nested topology with explicit options" $
+      toMermaidCompose3NestedWith topologyMermaidOptions toy3deep
+        `shouldBe` toy3deepNestedCanonical
 
   -- EP-50 M3: the default must stay byte-identical to today (the
   -- guard-free pedagogy in deriving-lifecycle-transitions.md depends on
@@ -124,23 +183,27 @@ spec = do
   describe "toMermaidWith (annotated edge summary)" $
     it "renders userReg with written-slot and guard-summary suffixes" $
       toMermaidWith
-        (defaultMermaidOptions {showWrittenSlots = True, showGuardSummary = True})
+        ( topologyMermaidOptions
+            { updateMode = MermaidUpdateWrittenSlots,
+              guardMode = MermaidGuardStructuralSummary
+            }
+        )
         userReg
         `shouldBe` userRegAnnotatedCanonical
 
   describe "toMermaidWith (MermaidGuardPretty, EP-61)" $
     it "renders userReg guards in domain-readable form" $
       toMermaidWith
-        (defaultMermaidOptions {guardMode = MermaidGuardPretty})
+        (topologyMermaidOptions {guardMode = MermaidGuardPretty})
         userReg
         `shouldBe` userRegPrettyGuardCanonical
 
   describe "toMermaidWith (multiline label layout, EP-63)" $
     it "renders userReg labels with <br/>-separated segments" $
       toMermaidWith
-        ( defaultMermaidOptions
-            { showWrittenSlots = True,
-              showGuardSummary = True,
+        ( topologyMermaidOptions
+            { updateMode = MermaidUpdateWrittenSlots,
+              guardMode = MermaidGuardStructuralSummary,
               labelLayout = MermaidLabelMultiline
             }
         )
@@ -150,8 +213,8 @@ spec = do
   describe "toMermaidWith (written-slot truncation, EP-63)" $
     it "truncates a long written-slot list with +N more" $
       toMermaidWith
-        ( defaultMermaidOptions
-            { showWrittenSlots = True,
+        ( topologyMermaidOptions
+            { updateMode = MermaidUpdateWrittenSlots,
               maxInlineWrittenSlots = Just 2
             }
         )
@@ -161,8 +224,8 @@ spec = do
   describe "toMermaidWith (guard-width truncation, EP-63)" $
     it "truncates an over-long guard segment with an ellipsis" $
       toMermaidWith
-        ( defaultMermaidOptions
-            { showGuardSummary = True,
+        ( topologyMermaidOptions
+            { guardMode = MermaidGuardStructuralSummary,
               maxInlineGuardWidth = Just 10
             }
         )
@@ -171,25 +234,36 @@ spec = do
 
   describe "toMermaidWith (MermaidOutputSemicolon default, EP-63)" $
     it "renders multiEvt with the length-based default output layout" $
-      toMermaid multiEvt `shouldBe` multiEvtSemicolonCanonical
+      toTopologyMermaid multiEvt `shouldBe` multiEvtSemicolonCanonical
 
   describe "toMermaidWith (MermaidOutputMultiline, EP-63)" $
     it "renders every multi-event edge one event per line" $
       toMermaidWith
-        (defaultMermaidOptions {outputLayout = MermaidOutputMultiline})
+        (topologyMermaidOptions {outputLayout = MermaidOutputMultiline})
         multiEvt
         `shouldBe` multiEvtMultilineCanonical
 
   describe "toMermaidWith (MermaidOutputCounted, EP-63)" $
     it "renders multi-event edges as an N events count" $
       toMermaidWith
-        (defaultMermaidOptions {outputLayout = MermaidOutputCounted})
+        (topologyMermaidOptions {outputLayout = MermaidOutputCounted})
         multiEvt
         `shouldBe` multiEvtCountedCanonical
 
+  describe "semantic-label escaping (EP-84)" $ do
+    it "escapes every backend control spelling before inserting layout" $
+      toMermaid specialChars `shouldBe` specialCharsCanonical
+    it "preserves the diagram and transition line counts" $ do
+      length (T.lines (toMermaid specialChars)) `shouldBe` 4
+      T.count (T.pack " --> ") (toMermaid specialChars) `shouldBe` 3
+      T.count (T.pack "<br/>") (toMermaid specialChars) `shouldBe` 2
+    it "passes suspicious-character validation without disabling that check" $
+      validateMermaidDiagram semanticValidationOptions (toMermaid specialChars)
+        `shouldBe` []
+
   describe "toMermaidWithLabels (stable ASCII ids, spaced display labels, EP-64)" $
     it "renders userReg with friendly labels and stable ids" $
-      toMermaidWithLabels defaultMermaidOptions userRegLabels userReg
+      toMermaidWithLabels topologyMermaidOptions userRegLabels userReg
         `shouldBe` userRegLabeledCanonical
 
   describe "toMermaidWithLabels (id == display is byte-identical, EP-64)" $
@@ -210,8 +284,8 @@ spec = do
   describe "toMermaidAtlas (multi-diagram document)" $
     it "assembles two labelled diagrams into one document" $
       toMermaidAtlas
-        [ (T.pack "User registration", toMermaid userReg),
-          (T.pack "Alert \x2A3E Email", toMermaidComposite (compose alertSource emailDelivery))
+        [ (T.pack "User registration", toTopologyMermaid userReg),
+          (T.pack "Alert \x2A3E Email", toMermaidCompositeWith topologyMermaidOptions (compose alertSource emailDelivery))
         ]
         `shouldBe` atlasCanonical
 
@@ -228,14 +302,35 @@ spec = do
             (T.pack "incident-command")
             (T.pack "Incident Command")
             AggregateDiagram
-            (toMermaid userReg),
+            (toTopologyMermaid userReg),
           MermaidSection
             (T.pack "dispatch")
             (T.pack "Dispatch")
             ProcessManagerDiagram
-            (toMermaidComposite (compose alertSource emailDelivery))
+            (toMermaidCompositeWith topologyMermaidOptions (compose alertSource emailDelivery))
         ]
         `shouldBe` typedAtlasCanonical
+
+hasReadableSemantics :: Text -> Bool
+hasReadableSemantics diagram =
+  T.pack "<br/>u: " `T.isInfixOf` diagram
+    && T.pack "<br/>g: " `T.isInfixOf` diagram
+
+-- | The readable-primary golden. Unlike the Keiki 0.7 topology golden below,
+-- every transition includes the complete update and guard expression.
+userRegReadableCanonical :: Text
+userRegReadableCanonical =
+  T.intercalate
+    (T.pack "\n")
+    [ "stateDiagram-v2",
+      "    [*] --> PotentialCustomer",
+      "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent<br/>u: registeredAt := StartRegistration.at, confirmCode := StartRegistration.confirmCode, email := StartRegistration.email, (keep)<br/>g: StartRegistration",
+      "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed<br/>u: confirmedAt := ConfirmAccount.at, (keep)<br/>g: (ConfirmAccount &amp;&amp; ConfirmAccount.confirmCode == confirmCode)",
+      "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent<br/>u: registeredAt := ResendConfirmation.at, confirmCode := ResendConfirmation.code, (keep)<br/>g: ResendConfirmation",
+      "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>u: deletedAt := FulfillGDPRRequest.at, (keep)<br/>g: FulfillGDPRRequest",
+      "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>u: deletedAt := FulfillGDPRRequest.at, (keep)<br/>g: FulfillGDPRRequest",
+      "    Deleted --> [*]"
+    ]
 
 -- | The canonical Mermaid block for @userReg@, mirrored verbatim from
 -- the aggregate's diagram in @docs/guide/diagrams/user-registration.md@.
@@ -293,7 +388,7 @@ userRegPrettyGuardCanonical =
     [ "stateDiagram-v2",
       "    [*] --> PotentialCustomer",
       "    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent [g: StartRegistration]",
-      "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [g: (ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)]",
+      "    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed [g: (ConfirmAccount &amp;&amp; ConfirmAccount.confirmCode == confirmCode)]",
       "    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent [g: ResendConfirmation]",
       "    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted [g: FulfillGDPRRequest]",
       "    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted [g: FulfillGDPRRequest]",
@@ -749,6 +844,124 @@ toy3deepNestedCanonical =
       "    T1A_T2A_T3A --> T1B_T2B_T3B : Tick / Tick",
       "    T1B_T2B_T3B --> [*]"
     ]
+
+-- * Semantic-label escaping fixture (EP-84) -------------------------
+
+type SecretRegs = '[ '("secret", Int)]
+
+data SecretCmd = SetSecret
+
+data SecretEvt = SecretSet
+
+data SecretState = SecretState
+  deriving (Eq, Show, Enum, Bounded)
+
+secretInCtor :: InCtor SecretCmd '[]
+secretInCtor =
+  InCtor
+    { icName = "SetSecret",
+      icMatch = \SetSecret -> Just RNil,
+      icBuild = \RNil -> SetSecret
+    }
+
+secretWireCtor :: WireCtor SecretEvt ()
+secretWireCtor =
+  WireCtor
+    { wcName = "SecretSet",
+      wcMatch = \SecretSet -> Just (),
+      wcBuild = \() -> SecretSet
+    }
+
+opaqueValue ::
+  SymTransducer
+    (HsPred SecretRegs SecretCmd)
+    SecretRegs
+    SecretState
+    SecretCmd
+    SecretEvt
+opaqueValue =
+  SymTransducer
+    { edgesOut = \SecretState ->
+        [ Edge
+            { guard = PInCtor secretInCtor,
+              update = USet IZ (opaqueLit (7 :: Int)),
+              output = [pack secretInCtor secretWireCtor OFNil],
+              target = SecretState,
+              mode = Live
+            }
+        ],
+      initial = SecretState,
+      initialRegs = RCons (Proxy @"secret") 0 RNil,
+      isFinal = const True
+    }
+
+data SpecialCmd = SpecialCmd
+
+data SpecialEvt = SpecialEvt
+
+data SpecialState = SpecialStart | SpecialDone
+  deriving (Eq, Show, Enum, Bounded)
+
+specialName :: String
+specialName =
+  "Command \"quote\" 'apostrophe' <br> <br/> <br /> &lt;br&gt; | {value}\r\n\\n"
+
+specialInCtor :: InCtor SpecialCmd '[]
+specialInCtor =
+  InCtor
+    { icName = specialName,
+      icMatch = \SpecialCmd -> Just RNil,
+      icBuild = \RNil -> SpecialCmd
+    }
+
+specialWireCtor :: WireCtor SpecialEvt ()
+specialWireCtor =
+  WireCtor
+    { wcName = "Event",
+      wcMatch = \SpecialEvt -> Just (),
+      wcBuild = \() -> SpecialEvt
+    }
+
+specialChars ::
+  SymTransducer
+    (HsPred '[] SpecialCmd)
+    '[]
+    SpecialState
+    SpecialCmd
+    SpecialEvt
+specialChars =
+  SymTransducer
+    { edgesOut = \case
+        SpecialStart ->
+          [ Edge
+              { guard = PInCtor specialInCtor,
+                update = UKeep,
+                output = [pack specialInCtor specialWireCtor OFNil],
+                target = SpecialDone,
+                mode = Live
+              }
+          ]
+        SpecialDone -> [],
+      initial = SpecialStart,
+      initialRegs = RNil,
+      isFinal = (== SpecialDone)
+    }
+
+specialCharsCanonical :: Text
+specialCharsCanonical =
+  T.intercalate
+    (T.pack "\n")
+    [ "stateDiagram-v2",
+      "    [*] --> SpecialStart",
+      "    SpecialStart --> SpecialDone : Command &quot;quote&quot; &apos;apostrophe&apos; ＜br＞ ＜br/＞ ＜br /＞ &amp;lt;br&amp;gt; &#124; &#123;value&#125;␍␊＼n / Event<br/>u: (keep)<br/>g: Command &quot;quote&quot; &apos;apostrophe&apos; ＜br＞ ＜br/＞ ＜br /＞ &amp;lt;br&amp;gt; &#124; &#123;value&#125;␍␊＼n",
+      "    SpecialDone --> [*]"
+    ]
+
+semanticValidationOptions :: MermaidValidationOptions
+semanticValidationOptions =
+  defaultMermaidValidationOptions
+    { maxLabelLength = Nothing
+    }
 
 -- * Multi-event output fixture (EP-63 M2) -----------------------------
 

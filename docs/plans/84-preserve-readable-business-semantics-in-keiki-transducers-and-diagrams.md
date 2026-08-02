@@ -67,8 +67,16 @@ This section must always reflect the actual current state of the work.
   proved all four readable/opaque proof pairings exact, no-`Show` execution,
   throwing-`Show` non-observation, projection-fold display loss without semantic
   opacity, and safe readable-literal retention through positional substitution.
-- [ ] Milestone 2: render full guards and register assignments in the primary
-  Mermaid API, with an explicit topology-only compatibility API.
+- [x] (2026-08-02T15:13:30Z) Milestone 2: made readable guards, complete
+  updates, multiline layout, and no semantic truncation the primary Mermaid
+  policy; added explicit update modes, `toTopologyMermaid`, and options-aware
+  routes for every shape.  All 0.7 topology goldens remain byte-exact under
+  `topologyMermaidOptions`, while primary single, composite, nested,
+  alternative, three-way, feedback, and labeled paths expose business
+  semantics.  The special-character fixture passed the heuristic validator,
+  exact `beautiful-mermaid` SVG assertions, the 170-page site build, and the
+  exact no-`diagram-error` search.  The full suite passed: Keiki 643,
+  codec 104, codec-test 13, and Jitsurei 127 examples, all with zero failures.
 - [ ] Milestone 3: document the rendering contract, create the governing ADR, and
   update examples and migration guidance for the breaking API.
 - [ ] Milestone 4: audit Mori dependents, release the coordinated Keiki packages as
@@ -144,6 +152,16 @@ implementation. Provide concise evidence.
   this repository.
   Evidence: the user's ownership correction and Mina's successful JSON result for
   this plan's exact title on 2026-08-01.
+- Discovery: `beautiful-mermaid` 1.1.3 accepts quotes, pipes, braces, and
+  ampersands after its entity-decode pass, but angle-bracket break tags and both
+  raw and backslash-spelled newlines change structure before SVG escaping.
+  Keiki can therefore preserve safe punctuation through XML entities while
+  rendering angle brackets as full-width visible punctuation, raw CR/LF as
+  control pictures, and backslashes as full-width backslashes.  The known
+  `<lit>` sentinel is safe to entity-encode directly and remains visually exact.
+  Evidence: `site/verify-semantic-label-escaping.mjs` asserts three parsed edges,
+  three exact SVG `tspan` lines, and the recovered label text from the checked-in
+  four-line fixture.
 
 
 ## Decision Log
@@ -246,6 +264,15 @@ Record every decision made while working on the plan.
   commit trailers it tracks.  Reusing the Keiro intention would merge unrelated
   execution histories.
   Date: 2026-08-01
+- Decision: Escape Mermaid edge semantics with a backend-aware visible scheme:
+  XML entities for punctuation that is safe after one decode, full-width angle
+  brackets and backslashes for parser-active spellings, and control pictures for
+  raw line endings; insert renderer-owned `<br/>` only after segment escaping.
+  Rationale: this preserves readable punctuation wherever the backend permits it,
+  makes control input visible rather than silently deleting it, and gives the
+  actual parser no opportunity to reinterpret semantic text as transitions or
+  label layout.
+  Date: 2026-08-02
 
 
 ## Outcomes & Retrospective
@@ -267,6 +294,15 @@ Intention-correction outcome (2026-08-01): Mina created
 `intention_01kz0chaggerxaswdydar94e3c` from the plan title, and the plan now uses
 that Keiki-owned ID as its authoritative frontmatter intention.  Future commits
 for this ExecPlan must use the same value in their `Intention:` trailer.
+
+Milestone 2 outcome (2026-08-02): the primary Mermaid APIs now render the
+behavior a reviewer needs to inspect, including full register right-hand sides
+and ordinary literal values; explicit topology policy retains every prior golden
+without semantic segments.  No public diagram shape bypasses the options-aware
+edge-label path.  A checked-in adversarial label proves quotes, apostrophes,
+ampersands, pipes, braces, raw CR/LF, literal `\\n`, all three break-tag
+spellings, and already-entity-like input stay one transition and render as three
+intended SVG text lines through the repository's concrete backend.
 
 
 ## Context and Orientation
