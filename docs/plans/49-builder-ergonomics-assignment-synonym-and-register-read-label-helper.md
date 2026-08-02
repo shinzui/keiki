@@ -724,7 +724,7 @@ where register reads via `#name` are introduced) and in the "Slot writes" / guar
 neighbourhood (around lines 248–305, where `(.=)` and the operators are introduced), so an
 author who reaches for a register read or hits the `.=`/`Control.Lens.(.=)` clash is sent to
 the principle. The link text should be brief, e.g. "If you use generic-lens, see
-[Generic-lens and label reads](generic-lens-and-label-reads.md) for the import discipline that
+[Generic-lens and label reads](../guide/generic-lens-and-label-reads.md) for the import discipline that
 keeps bare `#slot` reads working."
 
 Commands to run from the repository root (see Validation for full detail):

@@ -27,10 +27,9 @@ not left. Nothing throws. The aggregate just quietly reports a status that
 its own registers contradict, and the discrepancy surfaces months later as
 "why is this still marked active?"
 
-This door is invisible in scattered handler code. It is **glaring** as a
-topology. Rendered (`Keiki.Render.Mermaid`, which labels edges
-`Command / Event` and deliberately omits the guard), the bug looks like this
-— `Stocked` has no edge back to `NeedsReorder`:
+This door is invisible in scattered handler code. It is **glaring** in the
+explicit topology view (`Keiki.Render.Mermaid.toTopologyMermaid`, whose compact
+labels are `Command / Event`). `Stocked` has no edge back to `NeedsReorder`:
 
 ```mermaid
 stateDiagram-v2
@@ -40,8 +39,8 @@ stateDiagram-v2
 ```
 
 and the fix is one missing arrow — a second `FulfillOrder` edge out of
-`Stocked`, distinguished from the self-loop only by a guard the diagram does
-not show:
+`Stocked`. The topology view intentionally hides the guard to foreground that
+arrow; primary `toMermaid` output also shows the two distinct guard expressions:
 
 ```mermaid
 stateDiagram-v2
@@ -164,11 +163,10 @@ the solver. The promote direction is the mirror image from `NeedsReorder` on
 > (`docs/guide/output-invertibility.md`); the portable workaround is a mirror
 > command, which the sibling plan
 > `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md`
-> removes the need for. Separately, the Mermaid default edge label is deliberately
-> guard-free (as noted near the top of this guide); the renderer's opt-in
-> structural summary ([Mermaid rendering](mermaid-rendering.md)) keeps that default
-> guard-free — the diagram is not going to start showing the guards that
-> distinguish these two edges unless you ask for the summary explicitly.
+> removes the need for. For topology-only review, use `toTopologyMermaid`; for
+> behavioral review, primary `toMermaid` shows the complete guards and register
+> assignments that distinguish the two edges. See
+> [Mermaid rendering](mermaid-rendering.md) for both policies.
 
 Here the single-valuedness gate does **real** work. The two `FulfillOrder`
 edges share an input constructor, so the gate must prove their guards never

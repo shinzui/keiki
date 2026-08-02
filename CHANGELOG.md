@@ -8,6 +8,33 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `TOpaqueLit` and `opaqueLit` preserve exact concrete, replay, pure-analysis,
+  and symbolic literal semantics while deliberately rendering the stored value
+  as `<lit>`.
+- `MermaidUpdateMode`, `topologyMermaidOptions`, and `toTopologyMermaid` make
+  complete updates, compact written-slot summaries, and Keiki 0.7-compatible
+  topology output explicit policies.
+- Options-aware Mermaid entry points now cover composite, nested, three-way,
+  alternative, feedback, and labeled diagrams. Backend-level regression tests
+  pin semantic-label escaping through the documentation site's
+  `beautiful-mermaid` renderer.
+
+### Changed
+
+- **Breaking:** `TLit` and `lit` now require `Show` so renderers derive ordinary
+  literal text from the executable value. Exhaustive `Term` matches must handle
+  `TOpaqueLit`; values without `Show`, secrets, and deliberately redacted values
+  use `opaqueLit`.
+- **Breaking:** `toMermaid` and every no-options shape renderer now default to
+  readable guards, complete register assignments, multiline labels, and no
+  semantic truncation. Use `toTopologyMermaid` or an options-aware shape
+  renderer with `topologyMermaidOptions` for the previous compact bytes.
+- **Breaking:** `MermaidOptions` removes `showWrittenSlots` and
+  `showGuardSummary`. Set `updateMode = MermaidUpdateWrittenSlots` and
+  `guardMode = MermaidGuardStructuralSummary` respectively.
+
 
 ## [0.7.0.0] — 2026-08-01
 

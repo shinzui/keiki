@@ -384,7 +384,7 @@ name and a register read is an accepting output term, this round-trips.
 - `docs/guide/symbolic-ci.md` — wiring `checkHiddenInputs` and the single-valuedness gate into
   CI.
 - `docs/guide/deriving-lifecycle-transitions.md` — the disjoint-guarded-edges pattern for
-  multi-way decisions (and the guard-free Mermaid default).
+  multi-way decisions; use `toTopologyMermaid` when reviewing that pattern as pure topology.
 - `docs/plans/47-recompute-and-verify-derived-event-outputs-in-solveoutput-replay.md` — the
   planned relaxation under which derived output fields round-trip by recompute-and-verify.
 - `docs/research/collection-registers-design.md` and

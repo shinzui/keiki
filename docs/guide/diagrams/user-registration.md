@@ -1,4 +1,4 @@
-# User Registration topology
+# User Registration behavior
 
 Rendered by `Keiki.Render.Mermaid.toMermaid` over
 `Jitsurei.UserRegistration.userReg`. To refresh:
@@ -12,11 +12,11 @@ Rendered by `Keiki.Render.Mermaid.toMermaid` over
 ```mermaid
 stateDiagram-v2
     [*] --> PotentialCustomer
-    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent
-    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed
-    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent
-    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted
-    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted
+    PotentialCustomer --> RequiresConfirmation : StartRegistration / RegistrationStarted; ConfirmationEmailSent<br/>u: registeredAt := StartRegistration.at, confirmCode := StartRegistration.confirmCode, email := StartRegistration.email, (keep)<br/>g: StartRegistration
+    RequiresConfirmation --> Confirmed : ConfirmAccount / AccountConfirmed<br/>u: confirmedAt := ConfirmAccount.at, (keep)<br/>g: (ConfirmAccount &amp;&amp; ConfirmAccount.confirmCode == confirmCode)
+    RequiresConfirmation --> RequiresConfirmation : ResendConfirmation / ConfirmationResent<br/>u: registeredAt := ResendConfirmation.at, confirmCode := ResendConfirmation.code, (keep)<br/>g: ResendConfirmation
+    RequiresConfirmation --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>u: deletedAt := FulfillGDPRRequest.at, (keep)<br/>g: FulfillGDPRRequest
+    Confirmed --> Deleted : FulfillGDPRRequest / AccountDeleted<br/>u: deletedAt := FulfillGDPRRequest.at, (keep)<br/>g: FulfillGDPRRequest
     Deleted --> [*]
 ```
 

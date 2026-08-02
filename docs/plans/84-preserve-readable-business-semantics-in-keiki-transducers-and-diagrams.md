@@ -77,8 +77,14 @@ This section must always reflect the actual current state of the work.
   exact `beautiful-mermaid` SVG assertions, the 170-page site build, and the
   exact no-`diagram-error` search.  The full suite passed: Keiki 643,
   codec 104, codec-test 13, and Jitsurei 127 examples, all with zero failures.
-- [ ] Milestone 3: document the rendering contract, create the governing ADR, and
-  update examples and migration guidance for the breaking API.
+- [x] (2026-08-02T15:23:38Z) Milestone 3: accepted ADR-0006, rewrote the
+  Mermaid guide around readable-primary and explicit-topology policies, added
+  the 0.7-to-0.8 literal/options migration and disclosure warning, updated
+  README/Haddocks/changelog/tutorials, and made every checked-in compact diagram
+  recipe call its topology-aware API explicitly.  The User Registration guide
+  now carries a behavior-readable primary diagram.  `cabal build all`, the
+  backend regression, the 170-page site build, the exact no-fallback search,
+  and the 270-page link audit all passed.
 - [ ] Milestone 4: audit Mori dependents, release the coordinated Keiki packages as
   `0.8.0.0`, and publish the exact tag and registry evidence needed by downstreams.
 
@@ -162,6 +168,14 @@ implementation. Provide concise evidence.
   Evidence: `site/verify-semantic-label-escaping.mjs` asserts three parsed edges,
   three exact SVG `tspan` lines, and the recovered label text from the checked-in
   four-line fixture.
+- Discovery: the documentation link audit had one pre-existing bad relative
+  link from plan 49 to the generic-lens guide.  The target existed under
+  `docs/guide/`, but the plan-local link resolved under `docs/plans/` and caused
+  both generated aliases for plan 49 to fail the site gate.
+  Evidence: `node site/check-links.mjs site-dist` reported exactly those two
+  generated pages before the local link became
+  `../guide/generic-lens-and-label-reads.md`; the repeat audit reported no broken
+  file links across 270 HTML pages.
 
 
 ## Decision Log
@@ -303,6 +317,14 @@ edge-label path.  A checked-in adversarial label proves quotes, apostrophes,
 ampersands, pipes, braces, raw CR/LF, literal `\\n`, all three break-tag
 spellings, and already-entity-like input stay one transition and render as three
 intended SVG text lines through the repository's concrete backend.
+
+Milestone 3 outcome (2026-08-02): ADR-0006 now holds the durable distinction
+between execution/proof meaning and presentation evidence.  Public documentation
+states that ordinary literal text is disclosed, `opaqueLit` is the value-level
+redaction choice, and topology policy is the whole-diagram redaction choice.
+Every example that keeps compact 0.7 bytes now opts into that policy by name;
+the primary User Registration example demonstrates full guard and update text
+without explanatory prose standing in for missing semantics.
 
 
 ## Context and Orientation

@@ -1,6 +1,7 @@
 # EmailDelivery + Pinger alternative composite topology
 
-Rendered by `Keiki.Render.Mermaid.toMermaidAlternative` over
+Rendered with the explicit topology policy via
+`Keiki.Render.Mermaid.toMermaidAlternativeWithOptions` over
 `emailDelivery` (from `Jitsurei.EmailDelivery`) and `pinger`
 (defined in `test/Keiki/CompositionAlternativeSpec.hs`). The Pinger
 fixture lives in a test module rather than the library, so refreshing
@@ -8,10 +9,12 @@ this diagram requires loading that module into ghci. To refresh:
 
     cabal repl keiki-test --repl-no-load
     ghci> :load Keiki.CompositionAlternativeSpec
-    ghci> import Keiki.Render.Mermaid (toMermaidAlternative)
+    ghci> import Keiki.Render.Mermaid (toMermaidAlternativeWithOptions, topologyMermaidOptions)
     ghci> import Jitsurei.EmailDelivery (emailDelivery)
+    ghci> import qualified Data.Text as T
     ghci> import qualified Data.Text.IO as TIO
-    ghci> TIO.putStrLn (toMermaidAlternative emailDelivery
+    ghci> TIO.putStrLn (toMermaidAlternativeWithOptions topologyMermaidOptions
+                          (T.pack "LeftArm") (T.pack "RightArm") emailDelivery
                           Keiki.CompositionAlternativeSpec.pinger)
 
 ```mermaid

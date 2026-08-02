@@ -332,10 +332,8 @@ userRegReadableCanonical =
       "    Deleted --> [*]"
     ]
 
--- | The canonical Mermaid block for @userReg@, mirrored verbatim from
--- the aggregate's diagram in @docs/guide/diagrams/user-registration.md@.
--- Stored inline (not in an external fixture file) so a formatting change
--- requires touching this file alongside the producer change.
+-- | The Keiki 0.7 topology-only block for @userReg@, retained as the
+-- compatibility golden for 'toTopologyMermaid'.
 userRegCanonical :: Text
 userRegCanonical =
   unlinesNoTrail
@@ -354,8 +352,8 @@ userRegCanonical =
   where
     unlinesNoTrail = T.intercalate (T.pack "\n")
 
--- | EP-50: the canonical block for @userReg@ rendered with both summary
--- flags on (@MermaidOptions True True@). Differs from 'userRegCanonical'
+-- | EP-50: the canonical block for @userReg@ rendered with written-slot
+-- and structural-guard modes. Differs from 'userRegCanonical'
 -- only by the bracketed @[w: …; g: …]@ suffixes. Captured verbatim from
 -- the renderer (the slot order is the @UCombine@ nesting order, and each
 -- guard is the actual 'HsPred' shape @onCmd@ produced — a bare 'PInCtor'
@@ -375,8 +373,8 @@ userRegAnnotatedCanonical =
     ]
 
 -- | EP-61: the canonical block for @userReg@ rendered with
--- @guardMode = MermaidGuardPretty@ and 'showWrittenSlots' left at its
--- default 'False', so each label carries only a domain-readable
+-- @guardMode = MermaidGuardPretty@ and updates hidden, so each label carries
+-- only a domain-readable
 -- @[g: …]@ segment. Differs from 'userRegAnnotatedCanonical' by
 -- rendering real names — @ConfirmAccount@, @confirmCode@ — instead of
 -- the structural constructor-tag walk (@PAnd PInCtor PEq@). Captured
@@ -395,7 +393,7 @@ userRegPrettyGuardCanonical =
       "    Deleted --> [*]"
     ]
 
--- | EP-63: @userReg@ rendered with both summary flags on and
+-- | EP-63: @userReg@ rendered with written-slot and structural-guard modes and
 -- @labelLayout = MermaidLabelMultiline@. Same per-edge content as
 -- 'userRegAnnotatedCanonical', but the bracketed inline suffix is replaced
 -- by @<br/>@-separated segments: the @command / event@ base on the first
@@ -417,7 +415,7 @@ userRegMultilineCanonical =
       "    Deleted --> [*]"
     ]
 
--- | EP-63: @userReg@ rendered with @showWrittenSlots = True@ and
+-- | EP-63: @userReg@ rendered with @updateMode = MermaidUpdateWrittenSlots@ and
 -- @maxInlineWrittenSlots = Just 2@. The only edge writing more than two
 -- slots is @StartRegistration@ (three slots), which truncates to the first
 -- two followed by a single @+1 more@ token; every other edge writes two or
@@ -436,7 +434,7 @@ userRegSlotTruncCanonical =
       "    Deleted --> [*]"
     ]
 
--- | EP-63: @userReg@ rendered with @showGuardSummary = True@ and
+-- | EP-63: @userReg@ rendered with structural guard summaries and
 -- @maxInlineGuardWidth = Just 10@. The only guard whose structural text
 -- exceeds ten characters is @ConfirmAccount@'s @PAnd PInCtor PEq@ (length
 -- 16), truncated to the first ten characters plus the ellipsis @…@. The

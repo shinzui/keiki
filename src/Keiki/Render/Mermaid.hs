@@ -8,8 +8,8 @@
 --
 -- The rendered output is a @stateDiagram-v2@ block as 'Data.Text.Text'.
 -- It can be pasted into a Markdown file or Notion page; GitHub renders
--- Mermaid blocks inline so PR reviewers see the topology diff alongside
--- the source diff.
+-- Mermaid blocks inline so PR reviewers see executable guard and update
+-- semantics alongside the topology and source diff.
 --
 -- The renderer is specialised to @phi ~ 'HsPred' rs ci@ — extracting
 -- the input-constructor name from an edge guard requires walking the
@@ -198,8 +198,9 @@ topologyMermaidOptions =
 -- 'show'. The output begins with @stateDiagram-v2@, followed by an
 -- initial-state line (@[*] --> <initial>@), one line per outgoing
 -- edge of every vertex, and a final-state line (@<vertex> --> [*]@)
--- for every vertex where 'isFinal' returns 'True'. Edge labels follow
--- the format described by 'edgeLabel'.
+-- for every vertex where 'isFinal' returns 'True'. The readable default
+-- adds complete update and guard segments on renderer-owned @<br/>@ lines;
+-- use 'toTopologyMermaid' for the compact 'edgeLabel' form.
 toMermaid ::
   (Enum s, Bounded s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
@@ -291,8 +292,8 @@ duplicateStateIds lbls _t =
 -- Uses the **flat cross-product** shape: each composite vertex
 -- @'Composite' a b@ becomes a single Mermaid identifier
 -- @<show a>_<show b>@. The structure is otherwise identical to
--- 'toMermaid' — same initial / final / edge emission rules, same
--- 'edgeLabel' format. See EP-31's Decision Log
+-- 'toMermaid' — same initial / final / edge emission rules and readable
+-- semantics policy. See EP-31's Decision Log
 -- (@docs/plans/31-mermaid-rendering-for-composite-symtransducers.md@)
 -- for why the flat shape was chosen over Mermaid's nested-subgraph
 -- syntax (Shape B in the plan).
@@ -331,8 +332,8 @@ toMermaidCompositeWith opts =
 -- Each composite vertex becomes a single Mermaid identifier
 -- @\<show s1\>_\<show s2\>_\<show s3\>@ via 'compose3Label'. The
 -- structure is otherwise identical to 'toMermaid' /
--- 'toMermaidComposite' — same initial / final / edge emission rules,
--- same 'edgeLabel' format. See EP-35's plan
+-- 'toMermaidComposite' — same initial / final / edge emission rules and
+-- readable semantics policy. See EP-35's plan
 -- (@docs/plans/35-mermaid-renderer-for-right-associative-3-deep-compose-composites.md@)
 -- for the rationale and for the comparison against the
 -- nested-subgraph variant 'toMermaidCompose3Nested'.
@@ -619,10 +620,11 @@ toMermaidCompose3NestedWith opts t =
 -- 'toMermaidAlternativeWith' to override (e.g. for domain-specific
 -- naming such as @EmailArm@ / @PingerArm@).
 --
--- Edge labels are the standard @\<input ctor\> / \<output ctor\>@ format
--- ('edgeLabel'). Because 'Keiki.Composition' lifters preserve
--- @icName@ and @wcName@ verbatim, the label reads naturally even
--- though the runtime input is @'Left' …@ / @'Right' …@.
+-- Edge labels use the same readable guard/update policy as 'toMermaid'.
+-- Because 'Keiki.Composition' lifters preserve @icName@ and @wcName@
+-- verbatim, the base label reads naturally even though the runtime input is
+-- @'Left' …@ / @'Right' …@. Use 'toMermaidAlternativeWithOptions' with
+-- 'topologyMermaidOptions' for the historical compact form.
 --
 -- See @docs/plans/33-shape-aware-mermaid-renderers-for-alternative-and-feedback1-composites.md@
 -- for the full design record.

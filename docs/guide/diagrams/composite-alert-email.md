@@ -1,6 +1,7 @@
 # AlertSource ⨾ EmailDelivery composite topology
 
-Rendered by `Keiki.Render.Mermaid.toMermaidComposite` over the
+Rendered with the explicit topology policy via
+`Keiki.Render.Mermaid.toMermaidCompositeWith` over the
 `pipeline` value (`compose alertSource emailDelivery`) defined in
 `test/Keiki/CompositionSpec.hs`. The pipeline lives in a test module
 rather than the library, so refreshing this diagram requires loading
@@ -8,9 +9,9 @@ that module into ghci. To refresh:
 
     cabal repl keiki-test --repl-no-load
     ghci> :load Keiki.CompositionSpec
-    ghci> import Keiki.Render.Mermaid (toMermaidComposite)
+    ghci> import Keiki.Render.Mermaid (toMermaidCompositeWith, topologyMermaidOptions)
     ghci> import qualified Data.Text.IO as TIO
-    ghci> TIO.putStrLn (toMermaidComposite Keiki.CompositionSpec.pipeline)
+    ghci> TIO.putStrLn (toMermaidCompositeWith topologyMermaidOptions Keiki.CompositionSpec.pipeline)
 
 ```mermaid
 stateDiagram-v2

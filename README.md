@@ -56,7 +56,8 @@ Symbolic Finite Transducers and Streaming String Transducers. From one
 - per-vertex projections (the "B-presentation" view),
 - checked sequential composition (`composeChecked`) plus `alternative` and `feedback1`,
 - profunctor / `Category` / `Strong` / `Choice` / `Arrow` instances,
-- Mermaid and Markdown renderers for documentation,
+- behavior-readable Mermaid and Markdown renderers, with explicit compact
+  topology output,
 - eager builder validation, default-on replay-safety checks, and optional
   single-valuedness checks via SBV + z3.
 
@@ -66,9 +67,9 @@ build-time analysis.
 
 ## Status
 
-Pre-1.0, prepared for the initial `0.1.0.0` Hackage release. The
-planned v0.1 surface is implemented and validated against in-tree tests
-plus the downstream `jitsurei` worked-example package.
+Pre-1.0 and released under the Haskell PVP. The current surface is validated
+against the in-tree suites plus the downstream `jitsurei` worked-example
+package; see [`CHANGELOG.md`](CHANGELOG.md) for release history and migrations.
 
 The core package is intentionally codec-free. JSON support lives in
 [`keiki-codec-json`](keiki-codec-json/README.md), and downstream codec
@@ -117,6 +118,12 @@ emailDelivery = B.buildTransducer EmailPending emptyRegFile
 Forward decisions, structured replay, `Acceptor`s, and the per-vertex
 view all operate from this one declaration. See the downstream
 `jitsurei` package for the full worked aggregates the test suite drives.
+
+The primary `toMermaid emailDelivery` diagram is derived from the same edge AST
+and shows its command, event constructor, complete register assignments, and
+guard. Use `toTopologyMermaid emailDelivery` when only shape is intended.
+Ordinary `lit` values appear in readable diagrams; model a value with
+`opaqueLit` when it lacks `Show` or must remain redacted.
 
 ## Repository documentation
 

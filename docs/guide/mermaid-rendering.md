@@ -1,12 +1,16 @@
 # Mermaid rendering
 
-keiki's render surface lives under `src/Keiki/Render/`. The core is
-`Keiki.Render.Mermaid`, which turns a transducer into a Mermaid `stateDiagram-v2`
-block — a text diagram that GitHub, Notion, VS Code, and most Markdown previewers
-render inline. The single-transducer entry point is `toMermaid`; composites have
-their own (`toMermaidComposite`, `toMermaidCompose3`, `toMermaidAlternative`,
-`toMermaidFeedback1`, and the nested variants). The default edge label is
-`<input command> / <output event>`.
+Keiki's render surface lives under `src/Keiki/Render/`. The primary
+`Keiki.Render.Mermaid.toMermaid` API turns a transducer into a Mermaid
+`stateDiagram-v2` block whose edge labels expose executable business behavior:
+the input command, emitted event constructors, complete register assignments,
+and guard expression. GitHub, Notion, VS Code, and the repository's documentation
+site render that text inline.
+
+`toTopologyMermaid` is the deliberate compact alternative. It emits only
+`<input command> / <output event>` and reproduces Keiki 0.7's single-transducer
+bytes exactly. Choosing topology output means choosing not to show the conditions
+and state changes that explain an edge.
 
 Around that core are four sibling modules, all pure (no IO, no solver):
 
@@ -16,102 +20,86 @@ Around that core are four sibling modules, all pure (no IO, no solver):
 - **`Keiki.Render.Markdown`** — regenerate a marked diagram block in place (§7).
 - **`Keiki.Render.Validate`** — lint rendered diagram / atlas text (§8).
 
-The default `toMermaid` output is unchanged by all of this; every extension is
-opt-in.
+## 1. Readable behavior is the primary contract
 
+`toMermaid` is equivalent to `toMermaidWith defaultMermaidOptions`. The default
+policy renders complete updates and pretty guards on separate label lines, with
+no truncation of business semantics. For example, a stateful counter edge
+contains source text shaped like:
 
-## 1. An atlas of many diagrams: `toMermaidAtlas` / `toMermaidAtlasWith`
-
-`toMermaidAtlas :: [(Text, Text)] -> Text` assembles several **already-rendered**
-diagrams into one Markdown document — each under a `## ` heading, each wrapped in
-a fenced ` ```mermaid ` block, sections separated by a blank line. It is the
-one-call replacement for the per-aggregate "render, wrap in a heading,
-concatenate" glue a multi-aggregate page would otherwise need.
-
-```haskell
-toMermaidAtlas
-  [ ("User registration", toMermaid userReg)
-  , ("Alert ⨾ Email",     toMermaidComposite (compose alertSource emailDelivery))
-  ]
+```text
+StageVertex --> StageVertex : MsgB / MsgC<br/>u: regB := (regB + MsgB.payload)<br/>g: (MsgB && regB >= 0)
 ```
 
-It takes `(label, rendered-diagram)` **pairs**, not a list of transducers,
-because transducers are heterogeneously typed — each has its own vertex,
-register, command, and event types, so a single `[SymTransducer …]` would not
-type-check. Letting each caller render its own transducer (with whichever entry
-point matches it) and pass the resulting `Text` is the smallest API that removes
-the glue. The output is a Markdown page, not a single `stateDiagram-v2` block,
-because Mermaid has no "several state diagrams in one block" construct.
+The actual Mermaid source uses backend-safe escaping described in §3; the
+rendered label preserves the human-readable operators. Ordinary literal values
+are present in guards and update right-hand sides. Output event fields are not:
+`WireCtor` records constructor names but does not invent field names that the
+executable transducer does not carry.
 
-For more control, `toMermaidAtlasWith :: MermaidAtlasOptions -> [MermaidSection] -> Text`
-takes typed sections and options:
+Use the topology path only when the diagram's purpose is shape rather than
+behavior:
 
 ```haskell
-data MermaidSection = MermaidSection
-  { sectionId      :: Text              -- stable id, also the marker key (§7)
-  , sectionTitle   :: Text              -- the heading text
-  , sectionKind    :: MermaidSectionKind -- AggregateDiagram | ProcessManagerDiagram | WorkflowDiagram
-  , sectionDiagram :: Text              -- the already-rendered diagram
-  }
+toTopologyMermaid userReg
 
-data MermaidAtlasOptions = MermaidAtlasOptions
-  { atlasTitle               :: Maybe Text     -- optional top-level `# ` heading (default Nothing)
-  , atlasSectionHeadingLevel :: Int            -- per-section heading level (default 2 → `## `)
-  , atlasShowSectionKind     :: AtlasKindDisplay -- KindHidden (default) | KindAsLabel | KindAsComment
-  , atlasWrapMarkers         :: Maybe Text     -- Just ns → wrap each section in begin/end markers (§7)
-  , atlasFenceLanguage       :: Text           -- fenced-block tag (default "mermaid")
-  }
+toMermaidCompositeWith topologyMermaidOptions composite
 ```
 
-`toMermaidAtlasWith defaultMermaidAtlasOptions` over sections built from
-`(title, diagram)` pairs is **byte-identical** to the legacy `toMermaidAtlas`;
-each field only adds output. Set `atlasWrapMarkers (Just ns)` to make the atlas
-regenerable in place (§7).
+## 2. Options and every diagram shape
 
-
-## 2. Edge-label options: `toMermaidWith` / `MermaidOptions`
-
-`toMermaidWith :: MermaidOptions -> SymTransducer … -> Text` is `toMermaid` with a
-record controlling an optional bracketed suffix and the label/output layout. Every
-field defaults to the no-suffix setting, so `toMermaidWith defaultMermaidOptions`
-is byte-identical to `toMermaid`:
+`MermaidOptions` has one authoritative mode for guards and one for updates:
 
 ```haskell
 data MermaidOptions = MermaidOptions
-  { showWrittenSlots      :: Bool             -- append [w: <slot>; <slot>; …]
-  , showGuardSummary      :: Bool             -- legacy spelling of guardMode = MermaidGuardStructuralSummary
-  , guardMode             :: MermaidGuardMode -- Hidden (default) | StructuralSummary | Pretty  (§3)
-  , labelLayout           :: MermaidLabelLayout  -- MermaidLabelInline (default) | MermaidLabelMultiline
-  , maxInlineWrittenSlots :: Maybe Int        -- Just k → show k slots then `+{n-k} more`
-  , maxInlineGuardWidth   :: Maybe Int        -- Just w → truncate the guard segment to w chars + `…`
-  , outputLayout          :: MermaidOutputLayout -- Semicolon (default) | Multiline | Counted
+  { guardMode             :: MermaidGuardMode
+  , updateMode            :: MermaidUpdateMode
+  , labelLayout           :: MermaidLabelLayout
+  , maxInlineWrittenSlots :: Maybe Int
+  , maxInlineGuardWidth   :: Maybe Int
+  , outputLayout          :: MermaidOutputLayout
   }
+
+data MermaidGuardMode
+  = MermaidGuardHidden
+  | MermaidGuardStructuralSummary
+  | MermaidGuardPretty
+
+data MermaidUpdateMode
+  = MermaidUpdateHidden
+  | MermaidUpdateWrittenSlots
+  | MermaidUpdatePretty
 ```
 
-With the slot and structural-guard summaries on, an edge label gains a compact
-suffix:
+`defaultMermaidOptions` selects `MermaidGuardPretty`,
+`MermaidUpdatePretty`, `MermaidLabelMultiline`, and no truncation.
+`topologyMermaidOptions` selects hidden guard/update modes, inline labels, and
+the historical output layout. Written-slot mode retains the compact legacy
+summary when assignments are intentionally too detailed:
 
 ```text
 ConfirmAccount / AccountConfirmed [w: confirmedAt; g: PAnd PInCtor PEq]
 ```
 
-- **`guardMode`** chooses how (or whether) the guard renders — see §3. An explicit
-  `guardMode` other than `MermaidGuardHidden` takes precedence over the legacy
-  `showGuardSummary` flag.
-- **`labelLayout = MermaidLabelMultiline`** puts each label segment on its own
-  `<br/>`-separated line instead of inline — useful for dense edges.
-- **`outputLayout`** controls how a multi-event edge renders its output names:
-  `MermaidOutputSemicolon` (today's default: `;` for two, `<br/>` for three or
-  more), `MermaidOutputMultiline` (always one per line), or `MermaidOutputCounted`
-  (a compact `N events`).
-- **`maxInlineWrittenSlots` / `maxInlineGuardWidth`** cap the suffix width so a
-  busy edge doesn't blow out the label.
+Every public shape has an options-aware route. The no-options function delegates
+with `defaultMermaidOptions`:
 
-The suffix is applied to the single-transducer path only; the composite renderers
-keep the plain `<input> / <output>` label.
+| Primary renderer | Options-aware renderer |
+|---|---|
+| `toMermaid` | `toMermaidWith` |
+| `toMermaidComposite` | `toMermaidCompositeWith` |
+| `toMermaidCompositeNested` | `toMermaidCompositeNestedWith` |
+| `toMermaidCompose3` | `toMermaidCompose3With` |
+| `toMermaidCompose3Nested` | `toMermaidCompose3NestedWith` |
+| `toMermaidAlternativeWith` | `toMermaidAlternativeWithOptions` |
+| `toMermaidFeedback1` | `toMermaidFeedback1With` |
+| labeled states | `toMermaidWithLabels` already takes options |
 
+`toMermaidAlternativeWithOptions` takes options first, then the existing left
+and right arm names. Passing `topologyMermaidOptions` to any right-hand function
+reproduces that shape's 0.7 golden.
 
-## 3. Domain-readable guards and the pretty-printer
+## 3. Literals, disclosure, and backend-safe labels
 
 `Keiki.Render.Pretty` is a pure pretty-printer for the syntax trees:
 
@@ -121,43 +109,48 @@ prettyPred   :: HsPred rs ci      -> Text
 prettyUpdate :: Update rs w ci    -> Text
 ```
 
-It renders a guard the way you wrote it, e.g.
-`(ConfirmAccount && ConfirmAccount.confirmCode == confirmCode)`, recovering slot
-and constructor names structurally. Setting `guardMode = MermaidGuardPretty` makes
-`toMermaidWith` use it for the guard segment; `renderEdgeInspector` (§6) uses it
-for the `includePrettyGuard` / `includeOutputFields` detail.
+`lit value` stores a normal `TLit` with a `Show` dictionary, so renderers derive
+the displayed text from the executable value itself. `opaqueLit value` stores a
+`TOpaqueLit` and renders `<lit>`. Both constructors evaluate, replay, compare,
+and translate symbolically as the same exact constant. Display opacity never
+means solver opacity.
 
-Two things are **provably unprintable** and are *marked, not dropped*: an applied
-opaque Haskell function (`Term`'s `TApp1` / `TApp2`) renders as `<fn>(…)`, and a
-literal (`TLit`, whose type carries no `Show`) renders as `<lit>`. So a
-`MermaidGuardPretty` label is faithful where it can be and honest where it can't —
-which doubles as a visual flag for the opaque guards that `validateTransducer`'s
-`warnOpaqueGuards` audit catches (see `user-guide.md` §8 and
-`modeling-collections.md`).
+`Show` is renderer-only evidence, not canonical serialization or a proof
+witness. A partial or throwing `Show` may make rendering fail, but execution,
+replay, validation, and proof paths do not force it. Values without a `Show`
+instance remain modelable with `opaqueLit`.
 
-> Note: an earlier version of this page stated keiki ships no pretty-printer for
-> `HsPred`/`Term`/`Update`. That is no longer true — `Keiki.Render.Pretty` is it.
-> The *structural summary* (`MermaidGuardStructuralSummary`, the constructor-tag
-> walk like `PAnd PInCtor PEq`) remains available as the terser, name-free option.
+Readable diagrams disclose ordinary literal text. Secrets, credentials,
+personal data, or deliberately redacted constants must use `opaqueLit`; use a
+topology renderer when the whole diagram should omit guards and updates.
 
+Edge segments are escaped before Keiki joins them with renderer-owned `<br/>`.
+The repository backend decodes XML entities before parsing and recognizes
+`<br>`, `<br/>`, `<br />`, and literal `\\n` as layout, so entities alone are
+not an isolation boundary. Keiki uses XML entities where one decode is safe,
+full-width angle brackets and backslashes for parser-active spellings, and the
+visible control pictures `␍`/`␊` for raw line endings. The known `<lit>` marker
+is entity-encoded and renders visually as `<lit>`. The fixture at
+`diagrams/semantic-label-escaping.mmd` is checked through the same
+`beautiful-mermaid` backend as the documentation site.
 
-## 4. The default stays guard-free — on purpose
+## 4. Atlases of many diagrams
 
-`toMermaid` (and `toMermaidWith defaultMermaidOptions`) produce **byte-identical**
-output to before: no suffix, no guard. This is load-bearing, not incidental. The
-bug-spotting technique in
-[Deriving lifecycle transitions](deriving-lifecycle-transitions.md) (§1) relies on
-the default label *deliberately omitting the guard*: two edges out of one vertex
-that differ only by an unshown guard render to identical-looking lines, which is
-exactly what makes a **missing** second edge (the "one-way door" bug) glaring as a
-topology. If the default ever started showing guards, those two edges would look
-different and the technique would lose its force. A regression golden pins the
-default output byte-for-byte so any accidental drift fails in CI.
+`toMermaidAtlas :: [(Text, Text)] -> Text` assembles heterogeneous,
+already-rendered diagrams under Markdown headings and Mermaid fences. Each
+caller chooses readable or topology policy before supplying its diagram:
 
-When you *want* to see guards while reviewing, turn them on explicitly —
-`MermaidGuardStructuralSummary` for the terse tag walk, `MermaidGuardPretty` for
-the domain-readable form (§3). The summary/pretty modes are there for review; the
-guard-free default is there for the pedagogy.
+```haskell
+toMermaidAtlas
+  [ ("User registration", toMermaid userReg)
+  , ("Alert topology", toMermaidCompositeWith topologyMermaidOptions composite)
+  ]
+```
+
+`toMermaidAtlasWith` adds typed `MermaidSection` values, an optional atlas title,
+section-kind display, replacement markers, heading level, and fence language.
+`defaultMermaidAtlasOptions` preserves the legacy atlas wrapper bytes; it does
+not change the semantics policy of the already-rendered section diagrams.
 
 
 ## 5. Stable state ids and friendly display labels
@@ -197,9 +190,9 @@ off the same id token, so the two agree by construction.
 
 ## 6. Full edge detail in Markdown: `renderEdgeInspector`
 
-Where `toMermaid` shows the *shape* of a workflow (one line per edge),
-`Keiki.Render.Inspector` lays out every edge in *full* as a Markdown document —
-edges grouped under a level-3 heading per source state:
+Where `toMermaid` keeps each edge's behavior compact inside the diagram,
+`Keiki.Render.Inspector` expands edge metadata and output-field terms into a
+Markdown document grouped by source state:
 
 ```haskell
 renderEdgeInspector :: (Bounded s, Enum s, Show s)
@@ -217,8 +210,8 @@ data EdgeInspectorOptions = EdgeInspectorOptions
 `defaultEdgeInspectorOptions` turns on everything that needs no domain-readable
 rendering; the two pretty options (`includePrettyGuard`, `includeOutputFields`)
 reuse §3 and default to `False`. `WireCtor` carries no field names, so output
-fields are labelled by position only. This is the tool for a human-reviewable
-"what does every edge actually do?" page that the topology diagram is too terse for.
+fields are labelled by position only. Use this when review needs edge indices,
+structural tags, or output term positions beyond the behavioral diagram.
 
 
 ## 7. Regenerating a diagram block in place: `Keiki.Render.Markdown`
@@ -276,17 +269,44 @@ so a downstream unit test catches the common, cheap-to-detect mistakes before a
 rendered document is committed. The `DuplicateStateId` check over text agrees with
 the AST-level `duplicateStateIds` (§5) by keying off the same id token.
 
+Complete readable labels often exceed the historical 80-character style budget.
+Set `maxLabelLength = Nothing` when length is not a project rule; keep
+`checkSuspiciousChars = True`. Keiki's special-character regression does exactly
+that and separately verifies the rendered SVG through the site backend. A
+warning-free heuristic result is never a substitute for backend rendering.
 
-## 9. Pointers
 
-- `src/Keiki/Render/Mermaid.hs` — `toMermaid`, `toMermaidWith`, `toMermaidWithLabels`,
-  `toMermaidAtlas`, `toMermaidAtlasWith`, `MermaidOptions`, `MermaidStateLabels`,
-  `duplicateStateIds`, and the atlas types.
+## 9. Migrating from 0.7 to 0.8
+
+The `Term` and Mermaid changes are intentionally breaking:
+
+- Normal `lit value` now requires `Show` and appears in readable output. Use
+  `opaqueLit value` for a type without `Show` or a value that must be redacted.
+- `toMermaid` and every no-options shape renderer now show complete guards and
+  updates. Replace `toMermaid t` with `toTopologyMermaid t` when the prior
+  shape-only bytes are required.
+- For composite, nested, alternative, three-way, feedback, or labeled diagrams,
+  call the options-aware renderer with `topologyMermaidOptions` to preserve 0.7
+  output.
+- Replace `showWrittenSlots = True` with
+  `updateMode = MermaidUpdateWrittenSlots`.
+- Replace `showGuardSummary = True` with
+  `guardMode = MermaidGuardStructuralSummary`. The legacy booleans were removed;
+  modes are now the only authorities.
+- Code that exhaustively matches `Term` must handle both `TLit` and
+  `TOpaqueLit`. Structural transforms should preserve the constructor; a typed
+  field-projection fold may lose display evidence and produce `TOpaqueLit` while
+  retaining exact execution and symbolic meaning.
+
+## 10. Pointers
+
+- `src/Keiki/Render/Mermaid.hs` — readable and topology renderers, every
+  options-aware shape, `MermaidOptions`, state labels, and atlas types.
 - `src/Keiki/Render/Pretty.hs` — `prettyPred` / `prettyTerm` / `prettyUpdate` (§3).
 - `src/Keiki/Render/Inspector.hs` — `renderEdgeInspector` / `EdgeInspectorOptions` (§6).
 - `src/Keiki/Render/Markdown.hs` — `replaceMarkdownDiagramBlock` and the markers (§7).
 - `src/Keiki/Render/Validate.hs` — `validateMermaidDiagram` / `validateMermaidAtlas` (§8).
-- `docs/guide/deriving-lifecycle-transitions.md` — the bug-spotting pedagogy the
-  guard-free default protects.
+- `docs/adr/0006-readable-business-semantics-are-the-primary-rendering-contract.md`
+  — the durable decision and consequences.
 - `docs/guide/diagrams/` — generated per-aggregate diagram pages; atlas output
   pastes straight in.

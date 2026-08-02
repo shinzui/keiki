@@ -1,7 +1,7 @@
 -- | A Markdown edge-detail renderer for 'SymTransducer', a sibling to
--- the Mermaid topology renderer in "Keiki.Render.Mermaid". Where
--- 'Keiki.Render.Mermaid.toMermaid' shows the /shape/ of a workflow (one
--- line per edge), this renderer lays out every edge in /full/: its
+-- the behavioral Mermaid renderer in "Keiki.Render.Mermaid". Where
+-- 'Keiki.Render.Mermaid.toMermaid' keeps executable behavior compact in
+-- one transition label, this renderer expands every edge's metadata: its
 -- source and target states, its 0-based edge index, the input
 -- (command) constructor, the output (event) constructor(s), the guard
 -- predicate (structural and/or domain-readable), the register slots it

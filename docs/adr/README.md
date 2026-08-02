@@ -60,3 +60,4 @@ one.
 | [0003](0003-proof-gates-fail-conservatively.md) | Proof gates fail conservatively | Accepted |
 | [0004](0004-composition-uses-snapshot-updates-and-checked-boundaries.md) | Composition uses snapshot updates and checked boundaries | Accepted |
 | [0005](0005-persisted-wire-identities-are-explicit-and-versioned.md) | Persisted wire identities are explicit and versioned | Accepted |
+| [0006](0006-readable-business-semantics-are-the-primary-rendering-contract.md) | Readable business semantics are the primary rendering contract | Accepted |

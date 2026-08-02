@@ -1,6 +1,7 @@
 # Toggle ↔ Toggle-policy feedback1 cascade topology
 
-Rendered by `Keiki.Render.Mermaid.toMermaidFeedback1` over
+Rendered with the explicit topology policy via
+`Keiki.Render.Mermaid.toMermaidFeedback1With` over
 `toggleAgg` and `togglePolicy` (both defined in
 `test/Keiki/CompositionFeedback1Spec.hs`). The fixtures live in a
 test module rather than the library, so refreshing this diagram
@@ -8,9 +9,9 @@ requires loading that module into ghci. To refresh:
 
     cabal repl keiki-test --repl-no-load
     ghci> :load Keiki.CompositionFeedback1Spec
-    ghci> import Keiki.Render.Mermaid (toMermaidFeedback1)
+    ghci> import Keiki.Render.Mermaid (toMermaidFeedback1With, topologyMermaidOptions)
     ghci> import qualified Data.Text.IO as TIO
-    ghci> TIO.putStrLn (toMermaidFeedback1
+    ghci> TIO.putStrLn (toMermaidFeedback1With topologyMermaidOptions
                           Keiki.CompositionFeedback1Spec.toggleAgg
                           Keiki.CompositionFeedback1Spec.togglePolicy)
 

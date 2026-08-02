@@ -549,8 +549,10 @@ the 6 × 3 × 3 = 54 cross-product vertices under the six outer
 `LoanAppVertex` aggregates, then lists every reachable composite
 edge at the top level. The flat-form sibling lives at
 `docs/guide/diagrams/loan-workflow.mmd` if you prefer one un-grouped
-list of transitions; both are produced by
-`Keiki.Render.Mermaid.toMermaidCompose3{,Nested}` from the same
+list of transitions. These checked-in shape snapshots use
+`Keiki.Render.Mermaid.toMermaidCompose3With` and
+`toMermaidCompose3NestedWith` with `topologyMermaidOptions`; the primary
+no-options renderers show complete guards and updates from the same
 `loanWorkflow` value:
 
 ```mermaid

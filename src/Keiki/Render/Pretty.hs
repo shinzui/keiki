@@ -2,7 +2,7 @@
 
 -- | Pure, domain-readable pretty-printer for keiki's predicate, term,
 -- and update syntax trees ('HsPred', 'Term', 'Update'). Produces
--- 'Data.Text.Text'. No solver, no IO. Shared by the Mermaid topology
+-- 'Data.Text.Text'. No solver, no IO. Shared by the Mermaid behavioral
 -- renderer ('Keiki.Render.Mermaid') and the sibling edge-inspector /
 -- multiline-label renderers.
 --
