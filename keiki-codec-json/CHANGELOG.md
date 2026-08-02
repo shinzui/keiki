@@ -9,6 +9,16 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.8.0.0] — 2026-08-02
+
+### Changed
+
+- Co-released with `keiki-0.8.0.0`; internal dependency bounds now target the
+  `^>=0.8` PVP range containing the readable-literal (`TOpaqueLit`) and
+  readable-by-default Mermaid rendering changes. The JSON wire format is
+  unchanged.
+
+
 ## [0.7.0.0] — 2026-08-01
 
 ### Changed

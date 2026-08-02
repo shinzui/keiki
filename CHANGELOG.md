@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.8.0.0] — 2026-08-02
+
 ### Added
 
 - `TOpaqueLit` and `opaqueLit` preserve exact concrete, replay, pure-analysis,
