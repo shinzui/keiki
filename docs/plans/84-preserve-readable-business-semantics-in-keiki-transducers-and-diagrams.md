@@ -47,9 +47,18 @@ This section must always reflect the actual current state of the work.
   soundness and backend-escaping obligations without starting implementation.
 - [x] (2026-08-01) Created a Keiki-specific intention through Mina and
   replaced the incorrect Keiro-owned intention in this plan's frontmatter.
-- [ ] Milestone 0: capture an executable guarantee ledger for evaluation, replay
-  inversion, pure and SBV proof classification, composition, projection,
-  validation, and legacy rendering.
+- [x] (2026-08-02T14:43:53Z) Refreshed Mori ownership and dependent evidence,
+  confirmed Hackage and upstream still expose `0.7.0.0`, selected GHC 9.12.4
+  through `nix develop`, and captured the clean pre-change full-suite result:
+  Keiki 626, codec 104, codec-test 13, and Jitsurei 122 examples, all passing.
+- [x] (2026-08-02T14:43:53Z) Milestone 0: captured an EP-84 executable
+  guarantee ledger that proves no-`Show` expressiveness and proves a deliberately
+  throwing `Show` is not forced by evaluation, predicate comparison, register
+  updates, event output, `solveOutput`, replay, or validation.  The strengthened
+  full suite passed under GHC 9.12.4: Keiki 630, codec 104, codec-test 13, and
+  Jitsurei 122 examples, all with zero failures.  Existing named tests continue
+  to pin pure overlap, SBV verification, projection folding, composition,
+  alternative/feedback/profunctor behavior, and every legacy topology golden.
 - [ ] Milestone 1: preserve value-derived literal display evidence in `Term` while
   keeping evaluation, symbolic execution, composition, and replay behavior equal.
 - [ ] Milestone 2: render full guards and register assignments in the primary

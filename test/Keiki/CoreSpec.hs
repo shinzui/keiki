@@ -8,6 +8,77 @@ import Test.Hspec
 -- | A two-constructor input symbol used by the 'TInpCtorField' tests.
 data TinyCmd = TinyFoo Int Int | TinyBar Int deriving (Eq, Show)
 
+-- EP-84 guarantee-ledger fixtures. 'NoShowValue' proves the term language can
+-- still carry a value with no display dictionary. 'ThrowingShowValue' carries
+-- a dictionary whose method is bottom, so execution and replay tests detect
+-- any accidental renderer observation on a semantic path.
+data NoShowValue = NoShowValue Int deriving (Eq)
+
+data ThrowingShowValue = ThrowingShowValue Int deriving (Eq)
+
+instance Show ThrowingShowValue where
+  show _ = error "EP-84: semantic execution forced Show"
+
+data LiteralLedgerEvent = LiteralLedgerEvent ThrowingShowValue deriving (Eq)
+
+data LiteralLedgerVertex = LiteralLedgerStart | LiteralLedgerDone
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+type LiteralLedgerRegs = '[ '("payload", ThrowingShowValue)]
+
+literalLedgerInCtor :: InCtor () '[]
+literalLedgerInCtor =
+  InCtor
+    { icName = "LiteralLedgerCommand",
+      icMatch = \() -> Just RNil,
+      icBuild = \RNil -> ()
+    }
+
+literalLedgerWireCtor :: WireCtor LiteralLedgerEvent (ThrowingShowValue, ())
+literalLedgerWireCtor =
+  WireCtor
+    { wcName = "LiteralLedgerEvent",
+      wcMatch = \(LiteralLedgerEvent value) -> Just (value, ()),
+      wcBuild = \(value, ()) -> LiteralLedgerEvent value
+    }
+
+literalLedgerValue :: ThrowingShowValue
+literalLedgerValue = ThrowingShowValue 41
+
+literalLedgerTransducer ::
+  SymTransducer
+    (HsPred LiteralLedgerRegs ())
+    LiteralLedgerRegs
+    LiteralLedgerVertex
+    ()
+    LiteralLedgerEvent
+literalLedgerTransducer =
+  SymTransducer
+    { edgesOut = \case
+        LiteralLedgerStart ->
+          [ Edge
+              { guard = PEq (lit literalLedgerValue) (lit literalLedgerValue),
+                update =
+                  USet
+                    (#payload :: IndexN "payload" LiteralLedgerRegs ThrowingShowValue)
+                    (lit literalLedgerValue),
+                output =
+                  [ pack
+                      literalLedgerInCtor
+                      literalLedgerWireCtor
+                      (OFCons (lit literalLedgerValue) OFNil)
+                  ],
+                target = LiteralLedgerDone,
+                mode = Live
+              }
+          ]
+        LiteralLedgerDone -> [],
+      initial = LiteralLedgerStart,
+      initialRegs =
+        RCons (Proxy @"payload") (ThrowingShowValue 0) RNil,
+      isFinal = (== LiteralLedgerDone)
+    }
+
 type SnapshotRegs =
   '[ '("x", Int),
      '("y", Int)
@@ -85,6 +156,45 @@ synthetic =
 
 spec :: Spec
 spec = do
+  describe "EP-84 literal semantic guarantee ledger" $ do
+    it "evaluates a value with no Show instance" $
+      case evalTerm (lit (NoShowValue 7)) RNil () of
+        NoShowValue 7 -> pure ()
+        _ -> expectationFailure "literal evaluation changed the no-Show value"
+
+    it "evaluates, compares, updates, and emits without forcing Show" $ do
+      evalPred
+        (PEq (lit literalLedgerValue) (lit literalLedgerValue) :: HsPred '[] ())
+        RNil
+        ()
+        `shouldBe` True
+      case step
+        literalLedgerTransducer
+        (initial literalLedgerTransducer, initialRegs literalLedgerTransducer)
+        () of
+        Just
+          ( LiteralLedgerDone,
+            RCons _ (ThrowingShowValue 41) RNil,
+            [LiteralLedgerEvent (ThrowingShowValue 41)]
+            ) -> pure ()
+        _ -> expectationFailure "literal step changed state, registers, or output"
+
+    it "solves and replays the emitted literal without forcing Show" $ do
+      let observed = LiteralLedgerEvent literalLedgerValue
+      case edgesOut literalLedgerTransducer LiteralLedgerStart of
+        [Edge {output = [out]}] -> solveOutput out (initialRegs literalLedgerTransducer) observed `shouldBe` Just ()
+        _ -> expectationFailure "literal ledger fixture no longer has one output"
+      case reconstitute literalLedgerTransducer [observed] of
+        Just
+          ( LiteralLedgerDone,
+            RCons _ (ThrowingShowValue 41) RNil
+            ) -> pure ()
+        _ -> expectationFailure "literal replay changed state or registers"
+
+    it "retains the clean validation classification" $
+      validateTransducer defaultValidationOptions literalLedgerTransducer
+        `shouldBe` []
+
   describe "evalTerm" $ do
     it "evaluates TLit" $
       evalTerm (TLit (42 :: Int)) RNil () `shouldBe` 42
