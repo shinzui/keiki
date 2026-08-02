@@ -50,37 +50,26 @@ jobs:
       # literals outside the byte range and so fails any property that
       # generates a non-Latin-1 char. Pinning it keeps the solver identical to
       # the one the specs are written against.
+      #
       # The substituter is set here rather than left to the flake's own
       # nixConfig: that is only honored for users who trust the flake, so in CI
-      # nix ignores it and warns. install-nix-action writes nix.conf as a
-      # trusted user, so these actually take effect. Pull-only — nothing here
-      # needs a CACHIX_AUTH_TOKEN, since this flake builds no custom
-      # derivations to push.
+      # nix ignores it (and says so — the "ignoring untrusted flake
+      # configuration setting" warnings are expected and harmless).
+      # install-nix-action writes nix.conf as a trusted user, so these do take
+      # effect. Pull-only — nothing here needs a CACHIX_AUTH_TOKEN, since this
+      # flake builds no custom derivations to push.
+      #
+      # There is deliberately no /nix store cache. Realizing the whole closure
+      # cold from the substituters measures ~38s, while caching it saved only
+      # ~449M of a multi-gigabyte closure (cache-nix-action garbage-collects
+      # before saving), cost ~11s of post-step, and spent that much of the 10G
+      # repo cache budget the cabal store cache shares. The build step is ~88%
+      # of this job; that is where caching earns its keep.
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             extra-substituters = https://shinzui.cachix.org
             extra-trusted-public-keys = shinzui.cachix.org-1:QEmAoJrA9WwLP0uxfDgktLi2BRrcvQQWdz8NzcMg4/E=
-
-      # Must precede the first step that enters the dev shell, since that is
-      # what realizes the closure. Without this the toolchain (~3.5G on linux,
-      # dominated by GHC) is re-fetched from cache.nixos.org on every run.
-      # Keyed on what determines the closure: flake.lock pins nixpkgs, nix/
-      # lists the packages.
-      - uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          # Bounds what gets saved, so a stray build can't walk the repo toward
-          # GitHub's 10G cache cap, which the cabal store cache shares.
-          gc-max-store-size-linux: 4G
-          # Keep exactly one nix cache per ref: on a flake.lock bump the new
-          # cache is saved and the superseded one dropped, rather than both
-          # sitting against the cap until GitHub's 7-day eviction.
-          purge: true
-          purge-prefixes: nix-${{ runner.os }}-
-          purge-created: 0
-          purge-primary-key: never
 
       - name: Toolchain versions
         run: |
