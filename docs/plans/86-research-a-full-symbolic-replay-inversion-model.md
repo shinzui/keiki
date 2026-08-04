@@ -63,8 +63,10 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
       `keiki.cabal`/`test/Spec.hs` registrations because the prerequisite result leaves no reusable
       internal production foundation. Post-removal focused baselines again passed 3, 5, and 9
       examples with zero failures.
-- [ ] Milestone 5: finish the research report, record a go/no-go/prerequisite decision, distill
-      durable conclusions into the relevant ADRs, and validate all surviving repository changes.
+- [x] (2026-08-04T18:14:54Z) Milestone 5: selected `Proceed after structural wire-schema
+      prerequisite`, completed the report and bounded follow-up scope, revised ADR-1/ADR-3/ADR-5,
+      and validated the documentation-only final tree. Formatting, build, all four test suites,
+      Haddock, flake checks, the profiled ADR bundle, and `git diff --check` pass.
 
 
 ## Surprises & Discoveries
@@ -157,7 +159,32 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The research achieved its discriminator without changing Keiki's public API or default behavior.
+A dual-candidate prototype modeled one shared register file, independent command scopes, and a
+structurally witnessed observed head. It proved the required output-dependent pair UNSAT while
+the overlapping control stayed SAT and bounded concrete `solveOutput` enumeration agreed. The
+intentionally wrong one-command control also demonstrated why today's `SymEnv` cannot be reused
+unchanged. At 100 pairs the full-model median was 894.728 ms versus 864.075 ms for the existing
+guard-only checker, about 1.04x and below the plan's 5x rejection threshold.
+
+The decisive negative result is architectural: current `WireCtor` closures and separately
+existential `OutFields` values cannot prove that two edges expose the same observed constructor
+and ordered field tuple. Equal diagnostic or persisted names are not type evidence. The selected
+outcome is therefore `Proceed after structural wire-schema prerequisite`, with a PVP-major typed
+descriptor, generation and composition laws, and a conservative optional solver entry point
+named as the bounded scope of a future ExecPlan in the report. The bounded reverse-dependent audit
+found no broader confirmed false-positive family that would justify weakening this prerequisite.
+
+The unsupported test module was checkpointed, measured, and removed. Commits `fd63b32` and
+`c315db7` retain its executable evidence; the permanent result is the research report plus durable
+ADR clarifications. Plan 85's shared-register analysis and the existing ambiguity warning remain
+the appropriate production behavior until the prerequisite is implemented.
+
+Final validation passed `nix fmt -- --no-cache`, `nix develop -c cabal build all`,
+`nix develop -c cabal test all --test-show-details=direct` (all four suites),
+`nix develop -c cabal haddock keiki`, `nix flake check`, `just adr-validate` (six profiled
+concepts), and `git diff --check`. Haddock retained its pre-existing unresolved-link and missing-
+documentation warnings but completed successfully.
 
 
 ## Context and Orientation

@@ -8,6 +8,7 @@ description: >-
 docId: ADR-3
 status: Accepted
 date: 2026-07-13
+timestamp: 2026-08-04T18:11:05Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -15,7 +16,7 @@ generated:
 
 # ADR-0003: Proof gates fail conservatively
 
-- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`
+- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`
 
 ## Context
 
@@ -31,6 +32,14 @@ Only a definite solver `Unsatisfiable` result proves a predicate empty.
 `Unknown`, `ProofError`, `DeltaSat`, and every other inconclusive result
 mean “not proved empty.” They may reject or warn on a valid model, but
 they must never bless an unsafe one.
+
+For replay-candidate pairs, the proof formula shares one symbolic register environment but gives
+each edge its own command constructor, input fields, outer-arm choices, and opaque atoms. It may
+share observed event fields only when typed structural wire evidence proves that both matchers
+expose the same positions. Unsupported functions or projections are widened by dropping their
+relationships, and absent or untrusted wire evidence makes the full event relation unavailable.
+Only definite UNSAT over this conservative formula may suppress an ambiguity warning. The current
+`WireCtor` representation does not carry the required cross-edge structural witness.
 
 Fixed-width integer types use their exact SBV bit-vector widths. Platform-sized
 `Int` remains modeled as unbounded `Integer`; models whose truth depends on
@@ -140,3 +149,6 @@ emit conformance tests exercising the owner-side law.
 - Exact-domain proof strength is conditional on generated or consumer-owned
   declaration-law coverage, especially the owner-to-domain direction that no
   solver model can test.
+- Full symbolic replay inversion remains an optional future proof gate after a structural
+  wire-schema prerequisite. Until that evidence exists, the existing warning and narrower
+  shared-register analysis remain authoritative and conservative.

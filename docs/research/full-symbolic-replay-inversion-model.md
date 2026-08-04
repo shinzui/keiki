@@ -14,9 +14,15 @@ Plan 85 is the narrower shared-register analysis in
 
 ## Executive conclusion
 
-The decision and measured evidence are filled after the prototype milestones. The three allowed
-outcomes are `Proceed`, `Proceed after structural wire-schema prerequisite`, and `Do not proceed`.
-Until then, no prototype result is production authority.
+**Proceed after structural wire-schema prerequisite.** A typed test-only descriptor demonstrated
+the required precision win: it proved an output-dependent candidate pair disjoint where both the
+current name-based warning and Plan 85's shared-register analysis must remain conservative, while
+finite concrete replay found no ambiguity. At 100 candidate pairs its median solver cost was
+about 1.04 times the existing guard-only checker. Production work cannot proceed against today's
+types, however, because opaque `WireCtor` closures and separately existential `OutFields` values
+provide no sound evidence that two edges expose the same observed fields. The bounded downstream
+audit also found no broader confirmed false-positive set that would justify accepting a weaker
+design or an immediate public-API migration.
 
 
 ## Concrete replay relation
@@ -193,9 +199,12 @@ and the explicit `SMTResult` constructors.
 ## Reverse-dependent audit
 
 `mori registry dependents shinzui/keiki --packages --json` reported twelve registered projects:
-Danwa, Kawa, Keiro, Keiro Runtime Docs, Keiro Runtime Jitsurei, Keiro Runtime Patterns, Kikan,
-Kioku, Kizashi, Kotei, Meibo, and Shikigami. Several registry entries currently describe only a
-project-level dependency, so “package-level” output cannot by itself name the affected package.
+`mori://shinzui/danwa`, `mori://shinzui/kawa`, `mori://shinzui/keiro`,
+`mori://shinzui/keiro-runtime-docs`, `mori://shinzui/keiro-runtime-jitsurei`,
+`mori://shinzui/keiro-runtime-patterns`, `mori://shinzui/kikan`, `mori://shinzui/kioku`,
+`mori://shinzui/kizashi`, `mori://shinzui/kotei`, `mori://shinzui/meibo`, and
+`mori://shinzui/shikigami`. Several registry entries currently describe only a project-level
+dependency, so “package-level” output cannot by itself name the affected package.
 
 Source inspection at the registered paths found extensive `deriveWireCtorsAll` and `B.emit` use in
 generated and hand-owned aggregates. Examples include the two packages under
@@ -387,7 +396,7 @@ requirements, and `inversionAmbiguityWarnings` deliberately has no solver or `Eq
 | Generics/TH | `deriveWireCtorsAll` sees constructor identity, selector order, and field types, so it is the lowest-maintenance producer. Generated declarations and golden source fixtures change; downstream regeneration is required. |
 | Composition | `leftWireCtor`/`rightWireCtor` can preserve a descriptor with a sum-path prefix. Arbitrary or name-aligned composition must drop it when field identity cannot be proved. |
 | Profunctor | `mapWireCtor`, `firstWireCtor`, and `arrWc` deliberately poison inversion with `wcMatch = const Nothing`; they must also mark structural inversion unavailable. `identityWireCtor` can supply a descriptor. |
-| Generated downstream code | Danwa, Keiro Runtime Jitsurei, Kizashi, and Kotei visibly generate or consume wire bindings. Regeneration is broad even if most `B.emit` call sites remain textually unchanged. |
+| Generated downstream code | `mori://shinzui/danwa`, `mori://shinzui/keiro-runtime-jitsurei`, `mori://shinzui/kizashi`, and `mori://shinzui/kotei` visibly generate or consume wire bindings. Regeneration is broad even if most `B.emit` call sites remain textually unchanged. |
 
 The production checker would need per-field symbolic dictionaries and `Typeable` evidence in the
 descriptor, or an equivalent closed existential eliminator. It need not add `Eq co`: exact derived
@@ -412,4 +421,32 @@ transcripts, environment, and timing results needed to interpret the experiment,
 
 ## Final decision and bounded next action
 
-To be completed by Milestone 5 with exactly one allowed decision label.
+**Proceed after structural wire-schema prerequisite.**
+
+The prerequisite is a typed structural descriptor carried by each inversion-capable `WireCtor`.
+It must identify the event constructor structurally, enumerate fields in order, retain the type
+and symbolic dictionaries needed to relate equal field positions, and distinguish generated or
+validated evidence from an unavailable relation. Generics/TH should produce the normal trusted
+descriptor. Manually built, composed, or profunctor-mapped wires must either preserve it by a
+typed construction or explicitly drop inversion capability. Equal `wcName` strings, persisted
+wire-kind strings, runtime casts, and separately unpacked existential field tuples are not
+acceptable substitutes.
+
+A follow-up ExecPlan should be titled **“Add structural wire schemas for optional symbolic replay
+inversion”** and remain bounded to:
+
+1. designing and migrating the `WireCtor` descriptor as a PVP-major source change;
+2. updating Generics/TH, composition, profunctor, builder, and golden generated-code paths with
+   explicit preserve-or-drop laws;
+3. adding a detailed opt-in solver API whose formula shares registers and a structurally witnessed
+   observed head while keeping commands candidate-scoped;
+4. proving that only definite UNSAT suppresses the compatibility warning and that every
+   unsupported relationship widens the formula; and
+5. rebuilding all registered reverse dependents before considering any default integration.
+
+That plan should not alter default validation, runtime replay, or the SBV bound. It should retain
+Plan 85's cheaper shared-register analysis and the existing conservative warning as fallbacks.
+The blockers it must resolve are the missing structural witness, the major-version migration, and
+the incomplete package-level metadata in the current reverse-dependent registry. The research
+prototype is intentionally absent from the final tree; commits `fd63b32` and `c315db7` preserve
+its executable evidence until the prerequisite supplies a reusable internal boundary.
