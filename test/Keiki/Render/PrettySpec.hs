@@ -14,6 +14,7 @@ import Keiki.Core
     RegFile (..),
     Term (..),
     Update (..),
+    inCtorSchemaUnavailable,
     inpProj,
     opaqueLit,
     regProj,
@@ -37,6 +38,7 @@ inCtorDeposit :: InCtor Cmd DepFields
 inCtorDeposit =
   InCtor
     { icName = "Deposit",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \(Deposit n) -> Just (RCons (Proxy @"amount") n RNil),
       icBuild = \(RCons _ n RNil) -> Deposit n
     }

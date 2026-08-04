@@ -45,11 +45,17 @@ import GHC.Generics
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Keiki.Core
 import Keiki.Internal.WireSchema
-  ( AppendWireFields,
+  ( AppendInCtorFields,
+    AppendWireFields,
+    InCtorFieldSchema,
     WireCtorPath,
+    appendInCtorFieldSchema,
     appendWireFieldSchema,
     genericPrefixWireCtorPathLeft,
     genericPrefixWireCtorPathRight,
+    inCtorFieldsCons,
+    inCtorFieldsNil,
+    trustedInCtorSchema,
     trustedWireSchema,
     wireCtorPathRoot,
     wireFieldsCons,
@@ -152,9 +158,11 @@ mkInCtor ::
   (ci -> Maybe d) ->
   (d -> ci) ->
   InCtor ci ifs
+{-# DEPRECATED mkInCtor "Use mkInCtorVia for Generic constructors, or construct InCtor explicitly with icSchema = inCtorSchemaUnavailable." #-}
 mkInCtor name match wrap =
   InCtor
     { icName = name,
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \ci -> case match ci of
         Just d -> Just (gToRegFile (from d))
         Nothing -> Nothing,
@@ -170,9 +178,11 @@ mkInCtor name match wrap =
 -- > inCtorContinue :: InCtor UserCmd '[]
 -- > inCtorContinue = mkInCtor0 "Continue" Continue
 mkInCtor0 :: forall ci. (Eq ci) => String -> ci -> InCtor ci '[]
+{-# DEPRECATED mkInCtor0 "Use mkInCtorVia for Generic nullary constructors, or construct InCtor explicitly with icSchema = inCtorSchemaUnavailable." #-}
 mkInCtor0 name singleton =
   InCtor
     { icName = name,
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \ci -> if ci == singleton then Just RNil else Nothing,
       icBuild = \RNil -> singleton
     }
@@ -451,6 +461,55 @@ instance
       (gWireFieldSchema @left)
       (gWireFieldSchema @right)
 
+-- | Derive a typed, source-ordered slot spine from an input payload's
+-- Generic representation. This class is private so only Keiki's Generic
+-- implementation can mint trusted input-constructor evidence.
+class
+  GInCtorFieldSchema
+    (rep :: Type -> Type)
+    (fields :: [Slot])
+    | rep -> fields
+  where
+  gInCtorFieldSchema :: InCtorFieldSchema fields
+
+instance
+  (GInCtorFieldSchema inner fields) =>
+  GInCtorFieldSchema (M1 D meta inner) fields
+  where
+  gInCtorFieldSchema = gInCtorFieldSchema @inner
+
+instance
+  (GInCtorFieldSchema inner fields) =>
+  GInCtorFieldSchema (M1 C meta inner) fields
+  where
+  gInCtorFieldSchema = gInCtorFieldSchema @inner
+
+instance
+  (KnownSymbol name, Typeable field) =>
+  GInCtorFieldSchema
+    (M1 S ('MetaSel ('Just name) su ss ds) (K1 r field))
+    '[ '(name, field)]
+  where
+  gInCtorFieldSchema =
+    inCtorFieldsCons
+      (Just (symbolVal (Proxy @name)))
+      inCtorFieldsNil
+
+instance GInCtorFieldSchema U1 '[] where
+  gInCtorFieldSchema = inCtorFieldsNil
+
+instance
+  ( GInCtorFieldSchema left leftFields,
+    GInCtorFieldSchema right rightFields,
+    AppendInCtorFields leftFields rightFields ~ fields
+  ) =>
+  GInCtorFieldSchema (left :*: right) fields
+  where
+  gInCtorFieldSchema =
+    appendInCtorFieldSchema
+      (gInCtorFieldSchema @left)
+      (gInCtorFieldSchema @right)
+
 -- Pass through the data-type wrapper.
 instance (GHasCtor n inner d) => GHasCtor n (M1 D meta inner) d where
   gMatchCtor (M1 r) = gMatchCtor @n r
@@ -520,8 +579,10 @@ mkInCtorVia ::
   ( KnownSymbol name,
     Generic ci,
     GHasCtor name (Rep ci) d,
+    GWireCtorPath name (Rep ci),
     Generic d,
     GRecord (Rep d) ifs,
+    GInCtorFieldSchema (Rep d) ifs,
     AssembleRegFile ifs,
     KnownSlotNames ifs
   ) =>
@@ -529,6 +590,10 @@ mkInCtorVia ::
 mkInCtorVia =
   InCtor
     { icName = symbolVal (Proxy @name),
+      icSchema =
+        trustedInCtorSchema
+          (gWireCtorPath @name @(Rep ci))
+          (gInCtorFieldSchema @(Rep d)),
       icMatch = \ci -> case gMatchCtor @name (from ci) of
         Just d -> Just (gToRegFile (from d))
         Nothing -> Nothing,

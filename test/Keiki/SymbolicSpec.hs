@@ -36,6 +36,7 @@ inCtorAmtTick :: InCtor AmtCmd '[]
 inCtorAmtTick =
   InCtor
     { icName = "AmtTick",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case AmtTick -> Just RNil,
       icBuild = \RNil -> AmtTick
     }
@@ -230,6 +231,7 @@ inCtorArithTick :: InCtor ArithCmd '[]
 inCtorArithTick =
   InCtor
     { icName = "ArithTick",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case ArithTick -> Just RNil,
       icBuild = \RNil -> ArithTick
     }
@@ -259,6 +261,7 @@ inCtorTinyFoo :: InCtor TinyCmd '[ '("a", Int)]
 inCtorTinyFoo =
   InCtor
     { icName = "TinyFoo",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         TinyFoo a -> Just (RCons (Proxy @"a") a RNil)
         _ -> Nothing,
@@ -269,6 +272,7 @@ inCtorTinyBar :: InCtor TinyCmd '[ '("b", Int)]
 inCtorTinyBar =
   InCtor
     { icName = "TinyBar",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         TinyBar b -> Just (RCons (Proxy @"b") b RNil)
         _ -> Nothing,
@@ -320,6 +324,7 @@ spec = do
         leftTinyFoo =
           InCtor
             { icName = "TinyFoo",
+              icSchema = inCtorSchemaUnavailable,
               icMatch = \case Left (TinyFoo _) -> Just RNil; _ -> Nothing,
               icBuild = \RNil -> Left (TinyFoo 0)
             }

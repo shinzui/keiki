@@ -34,6 +34,7 @@ inCtorConfirm :: InCtor DivertCmd '[ '("acuityBlack", Bool)]
 inCtorConfirm =
   InCtor
     { icName = "ConfirmReservation",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         ConfirmReservation b -> Just (RCons (Proxy @"acuityBlack") b RNil),
       icBuild = \(RCons _ b RNil) -> ConfirmReservation b

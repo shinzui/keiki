@@ -2352,6 +2352,7 @@ inCtorUnit :: InCtor () '[]
 inCtorUnit =
   InCtor
     { icName = "()",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \() -> Just RNil,
       icBuild = \RNil -> ()
     }

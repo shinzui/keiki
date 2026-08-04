@@ -41,6 +41,7 @@ firstCtor :: InCtor IdentityCommand '[]
 firstCtor =
   InCtor
     { icName = "ChooseFirst",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case ChooseFirst -> Just RNil; _ -> Nothing,
       icBuild = \RNil -> ChooseFirst
     }
@@ -49,6 +50,7 @@ secondCtor :: InCtor IdentityCommand '[]
 secondCtor =
   InCtor
     { icName = "ChooseSecond",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case ChooseSecond -> Just RNil; _ -> Nothing,
       icBuild = \RNil -> ChooseSecond
     }

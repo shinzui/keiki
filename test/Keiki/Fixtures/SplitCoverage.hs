@@ -43,6 +43,7 @@ inCtorBegin :: InCtor SplitCmd BeginFields
 inCtorBegin =
   InCtor
     { icName = "Begin",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         Begin a b c ->
           Just $

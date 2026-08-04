@@ -53,6 +53,7 @@ inCtorProvision :: InCtor BrokenCommand ProvisionFields
 inCtorProvision =
   InCtor
     { icName = "Provision",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         Provision ProvisionData {owner, quota} ->
           Just $

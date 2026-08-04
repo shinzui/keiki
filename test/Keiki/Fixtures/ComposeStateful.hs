@@ -87,6 +87,7 @@ inCtorTick :: InCtor SourceCmd '[]
 inCtorTick =
   InCtor
     { icName = "Tick",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Tick -> Just RNil,
       icBuild = \RNil -> Tick
     }
@@ -95,6 +96,7 @@ inCtorGo :: InCtor PairCmd '[]
 inCtorGo =
   InCtor
     { icName = "Go",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Go -> Just RNil,
       icBuild = \RNil -> Go
     }
@@ -103,6 +105,7 @@ inCtorProduceA :: InCtor M2SourceCmd '[]
 inCtorProduceA =
   InCtor
     { icName = "ProduceA",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case ProduceA -> Just RNil,
       icBuild = \RNil -> ProduceA
     }
@@ -111,6 +114,7 @@ inCtorMidVal :: InCtor MidVal '[ '("v", Int)]
 inCtorMidVal =
   InCtor
     { icName = "MidVal",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case MidVal v -> Just (RCons (Proxy @"v") v RNil),
       icBuild = \(RCons _ v RNil) -> MidVal v
     }
@@ -119,6 +123,7 @@ inCtorM2A :: InCtor Mid2 '[ '("a", Int)]
 inCtorM2A =
   InCtor
     { icName = "M2A",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         M2A a -> Just (RCons (Proxy @"a") a RNil)
         M2B _ -> Nothing,
@@ -129,6 +134,7 @@ inCtorM2B :: InCtor Mid2 '[ '("b", Int)]
 inCtorM2B =
   InCtor
     { icName = "M2B",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         M2A _ -> Nothing
         M2B b -> Just (RCons (Proxy @"b") b RNil),

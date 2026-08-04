@@ -27,6 +27,7 @@ inCtorT1Trigger :: InCtor T1Cmd '[ '("payload", Int)]
 inCtorT1Trigger =
   InCtor
     { icName = "T1Trigger",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         T1Trigger n -> Just (RCons (Proxy @"payload") n RNil),
       icBuild = \(RCons _ n RNil) -> T1Trigger n
@@ -39,6 +40,7 @@ inCtorMidA :: InCtor Mid '[ '("a", Int)]
 inCtorMidA =
   InCtor
     { icName = "MidA",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         MidA n -> Just (RCons (Proxy @"a") n RNil)
         _ -> Nothing,
@@ -49,6 +51,7 @@ inCtorMidB :: InCtor Mid '[ '("b", Int)]
 inCtorMidB =
   InCtor
     { icName = "MidB",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         MidB n -> Just (RCons (Proxy @"b") n RNil)
         _ -> Nothing,
@@ -205,6 +208,7 @@ pendingSourceCtor :: InCtor PendingSourceCmd '[ '("doc", FieldProj.DocInfo)]
 pendingSourceCtor =
   InCtor
     { icName = "PendingSourceCmd",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \(PendingSourceCmd doc) -> Just (RCons (Proxy @"doc") doc RNil),
       icBuild = \(RCons _ doc RNil) -> PendingSourceCmd doc
     }
@@ -218,6 +222,7 @@ pendingLoadCtor :: InCtor PendingMid '[ '("doc", FieldProj.DocInfo)]
 pendingLoadCtor =
   InCtor
     { icName = "PendingLoad",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         PendingLoad doc -> Just (RCons (Proxy @"doc") doc RNil)
         PendingCheck -> Nothing,
@@ -228,6 +233,7 @@ pendingCheckCtor :: InCtor PendingMid '[]
 pendingCheckCtor =
   InCtor
     { icName = "PendingCheck",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case PendingCheck -> Just RNil; PendingLoad _ -> Nothing,
       icBuild = \RNil -> PendingCheck
     }

@@ -144,6 +144,7 @@ newDocCtor :: InCtor DocCmd NewDocFields
 newDocCtor =
   InCtor
     { icName = "NewDoc",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         NewDoc doc -> Just (RCons (Proxy @"doc") doc RNil),
       icBuild = \(RCons _ doc RNil) -> NewDoc doc
@@ -424,6 +425,7 @@ withOwnerCtor :: InCtor BoolProjectionCmd WithOwnerFields
 withOwnerCtor =
   InCtor
     { icName = "WithOwner",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         WithOwner owner -> Just (RCons (Proxy @"owner") owner RNil)
         WithoutOwner -> Nothing,
@@ -434,6 +436,7 @@ withoutOwnerCtor :: InCtor BoolProjectionCmd '[]
 withoutOwnerCtor =
   InCtor
     { icName = "WithoutOwner",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         WithoutOwner -> Just RNil
         WithOwner _ -> Nothing,

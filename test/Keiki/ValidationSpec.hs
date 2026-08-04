@@ -18,6 +18,7 @@ inCtorFoo :: InCtor Cmd '[]
 inCtorFoo =
   InCtor
     { icName = "Foo",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Foo -> Just RNil; _ -> Nothing,
       icBuild = \RNil -> Foo
     }
@@ -26,6 +27,7 @@ inCtorBar :: InCtor Cmd '[]
 inCtorBar =
   InCtor
     { icName = "Bar",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Bar -> Just RNil; _ -> Nothing,
       icBuild = \RNil -> Bar
     }
@@ -201,6 +203,7 @@ inCtorBegin :: InCtor MultiInput '[ '("a", Int), '("b", Int), '("c", Int)]
 inCtorBegin =
   InCtor
     { icName = "Begin",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         Begin a b c ->
           Just $

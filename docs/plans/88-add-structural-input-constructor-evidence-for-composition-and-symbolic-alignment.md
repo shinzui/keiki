@@ -51,9 +51,13 @@ will choose the release line and coordinate Keiro and application adoption once.
       `0.8.0.0` as the preferred Keiki release. The actual reusable pieces are the nominal
       `WireCtorPath`, private three-way path comparison, and public trusted/unavailable pattern;
       the wire field spine is tuple-indexed and therefore needs a slot-list-indexed input sibling.
-- [ ] Milestone 2: add abstract input-constructor structural evidence to `InCtor` in
-      `src/Keiki/Core.hs` with trusted and unavailable construction paths, reusing Plan 87's
-      path/spine machinery.
+- [x] (2026-08-04T23:24:59Z) Milestone 2: added abstract nominal input-constructor schemas, a
+      slot-indexed typed spine, input/input and input/wire comparisons, trusted and unavailable
+      construction paths, checked `Either` prefixes, and explicit evidence on every in-tree
+      manual record. `mkInCtorVia` and both TH record/nullary derivations are trusted;
+      closure-taking, identity, profunctor-poisoned, and meaning-changing paths are unavailable.
+      InputSchema passed 9 examples and Generics/TH passed 29, both with 0 failures; the omitted
+      `icSchema` fixture failed with `-Werror=missing-fields` at the intended field.
 - [ ] Milestone 3: replace name-authorized composition substitution with checked structural
       alignment; propagate or deliberately drop evidence through composition and profunctor
       transformations.
@@ -101,6 +105,12 @@ will choose the release line and coordinate Keiro and application adoption once.
   document still reports `0.8.0.0` first. These facts do not expand this local-only plan.
   Evidence: `mori registry dependents shinzui/keiki --packages --json` and Hackage
   `preferred.json`, run 2026-08-04.
+
+- Observation: TH singleton command bindings previously called closure-taking `mkInCtor0`, which
+  cannot carry trusted path evidence. The existing Generic `GHasCtor` and empty-payload `GRecord`
+  instances already support nullary commands, so the generated binding can call
+  `mkInCtorVia @"Constructor"` exactly like record commands without adding a new public helper.
+  Evidence: `src/Keiki/Generics/TH.hs`; the focused TH suite passed 29 examples with 0 failures.
 
 
 ## Decision Log
@@ -154,6 +164,14 @@ will choose the release line and coordinate Keiro and application adoption once.
   Rationale: this is the landed Plan 87 non-forgeability boundary. The two field encodings have
   different kinds, so pretending they are one GADT would obscure rather than prove the
   composition correspondence; a hidden typed alignment can bridge them position by position.
+  Date: 2026-08-04
+
+- Decision: Keep input-spine derivation in a new private `GInCtorFieldSchema` class and switch
+  TH singleton declarations from deprecated `mkInCtor0` to `mkInCtorVia`, while leaving the
+  public splice invocation and generated binding names unchanged.
+  Rationale: closure-taking helpers must remain explicitly unwitnessed. The private class obtains
+  `Typeable` evidence for each Generic record slot without adding methods to the exported
+  `GRecord` class or letting consumers mint trusted schemas.
   Date: 2026-08-04
 
 
@@ -422,3 +440,7 @@ Plan revision note (2026-08-04): Milestone 1 revalidated the draft against Plan 
 hidden `Keiki.Internal.WireSchema` implementation. The plan now distinguishes the reusable
 nominal path from the tuple-indexed wire spine and specifies the slot-list-indexed input spine
 and typed input-to-wire alignment required by the actual code.
+
+Plan revision note (2026-08-04): Milestone 2 recorded the implemented private input-spine
+derivation and the TH nullary switch to trusted `mkInCtorVia`, plus focused and compile-failure
+evidence. These details resolve the producer choices left conceptual at plan creation.

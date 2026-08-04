@@ -53,6 +53,7 @@ mkInCtor :: String -> (msg -> Int) -> (Int -> msg) -> InCtor msg PayloadSchema
 mkInCtor name unwrap rebuild =
   InCtor
     { icName = name,
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \m -> Just (RCons (Proxy @"payload") (unwrap m) RNil),
       icBuild = \(RCons _ n RNil) -> rebuild n
     }

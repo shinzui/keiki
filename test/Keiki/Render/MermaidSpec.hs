@@ -48,6 +48,7 @@ import Keiki.Core
     SymTransducer (..),
     Update (..),
     WireCtor (..),
+    inCtorSchemaUnavailable,
     opaqueLit,
     pack,
     wireSchemaUnavailable,
@@ -708,6 +709,7 @@ inCtorTick :: InCtor Tick '[]
 inCtorTick =
   InCtor
     { icName = "Tick",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \Tick -> Just RNil,
       icBuild = \RNil -> Tick
     }
@@ -860,6 +862,7 @@ secretInCtor :: InCtor SecretCmd '[]
 secretInCtor =
   InCtor
     { icName = "SetSecret",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \SetSecret -> Just RNil,
       icBuild = \RNil -> SetSecret
     }
@@ -911,6 +914,7 @@ specialInCtor :: InCtor SpecialCmd '[]
 specialInCtor =
   InCtor
     { icName = specialName,
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \SpecialCmd -> Just RNil,
       icBuild = \RNil -> SpecialCmd
     }
@@ -987,6 +991,7 @@ inCtorGo :: InCtor MCmd '[]
 inCtorGo =
   InCtor
     { icName = "Go",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \MGo -> Just RNil,
       icBuild = \RNil -> MGo
     }

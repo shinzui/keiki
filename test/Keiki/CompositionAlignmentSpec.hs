@@ -19,6 +19,7 @@ typoInMsgB :: InCtor MsgB Payload1
 typoInMsgB =
   InCtor
     { icName = "MsgTypo",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \(MsgB n) -> Just (RCons (Proxy @"payload") n RNil),
       icBuild = \(RCons _ n RNil) -> MsgB n
     }
@@ -27,6 +28,7 @@ twoFieldInMsgB :: InCtor MsgB Payload2
 twoFieldInMsgB =
   InCtor
     { icName = "MsgB",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \(MsgB n) ->
         Just
           ( RCons
@@ -86,6 +88,7 @@ projectionSourceCtor :: InCtor ProjectionSourceCmd ProjectionSourceFields
 projectionSourceCtor =
   InCtor
     { icName = "ProjectionSourceCmd",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \(ProjectionSourceCmd doc) ->
         Just (RCons (Proxy @"doc") doc RNil),
       icBuild = \(RCons _ doc RNil) -> ProjectionSourceCmd doc
@@ -98,6 +101,7 @@ projectionMidCtor :: InCtor ProjectionMid '[ '("doc", FieldProj.DocInfo)]
 projectionMidCtor =
   InCtor
     { icName = "ProjectionMid",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \(ProjectionMid doc) -> Just (RCons (Proxy @"doc") doc RNil),
       icBuild = \(RCons _ doc RNil) -> ProjectionMid doc
     }

@@ -115,7 +115,9 @@ import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
 import Keiki.Internal.WireSchema
-  ( prefixWireSchemaLeft,
+  ( prefixInCtorSchemaLeft,
+    prefixInCtorSchemaRight,
+    prefixWireSchemaLeft,
     prefixWireSchemaRight,
   )
 import NoThunks.Class (NoThunks (..), allNoThunks)
@@ -767,9 +769,10 @@ unsafeCoerceInCtor = unsafeCoerce
 -- 'icBuild' wraps the rebuilt @ci1@ in 'Left' so the lifted
 -- transducer's 'solveOutput' walks back to the original input form.
 leftInCtor :: InCtor ci1 ifs -> InCtor (Either ci1 ci2) ifs
-leftInCtor InCtor {icName = n, icMatch = m, icBuild = b} =
+leftInCtor InCtor {icName = n, icSchema = schema, icMatch = m, icBuild = b} =
   InCtor
     { icName = n,
+      icSchema = prefixInCtorSchemaLeft schema,
       icMatch = \case
         Left c1 -> m c1
         Right _ -> Nothing,
@@ -779,9 +782,10 @@ leftInCtor InCtor {icName = n, icMatch = m, icBuild = b} =
 -- | Lift an 'InCtor' from the right arm of an 'Either' input
 -- alphabet. Symmetric to 'leftInCtor'.
 rightInCtor :: InCtor ci2 ifs -> InCtor (Either ci1 ci2) ifs
-rightInCtor InCtor {icName = n, icMatch = m, icBuild = b} =
+rightInCtor InCtor {icName = n, icSchema = schema, icMatch = m, icBuild = b} =
   InCtor
     { icName = n,
+      icSchema = prefixInCtorSchemaRight schema,
       icMatch = \case
         Left _ -> Nothing
         Right c2 -> m c2,
@@ -924,6 +928,7 @@ liftedArmInCtor ::
 liftedArmInCtor outerName project wantLeft =
   InCtor
     { icName = "keiki#" <> outerName <> "#" <> (if wantLeft then "leftArm#lmapped" else "rightArm#lmapped"),
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \outer -> case project outer of
         Just (Left _) | wantLeft -> Just RNil
         Just (Right _) | not wantLeft -> Just RNil

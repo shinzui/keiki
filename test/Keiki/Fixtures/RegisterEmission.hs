@@ -41,6 +41,7 @@ inCtorOpen :: InCtor RegisterCmd '[ '("owner", Text)]
 inCtorOpen =
   InCtor
     { icName = "Open",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Open owner -> Just (RCons (Proxy @"owner") owner RNil); _ -> Nothing,
       icBuild = \(RCons _ owner RNil) -> Open owner
     }
@@ -49,6 +50,7 @@ inCtorAdd :: InCtor RegisterCmd '[ '("amount", Int)]
 inCtorAdd =
   InCtor
     { icName = "Add",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Add amount -> Just (RCons (Proxy @"amount") amount RNil); _ -> Nothing,
       icBuild = \(RCons _ amount RNil) -> Add amount
     }
@@ -57,6 +59,7 @@ inCtorClose :: InCtor RegisterCmd '[]
 inCtorClose =
   InCtor
     { icName = "Close",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case Close -> Just RNil; _ -> Nothing,
       icBuild = \RNil -> Close
     }

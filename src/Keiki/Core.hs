@@ -72,6 +72,10 @@ module Keiki.Core
 
     -- * Input-side structural constructor (v2)
     InCtor (..),
+    InCtorSchema,
+    InCtorSchemaAvailability (..),
+    inCtorSchemaUnavailable,
+    inCtorSchemaAvailability,
     AssembleRegFile,
     KnownSlotNames (..),
     slotNamesOf,
@@ -192,6 +196,8 @@ module Keiki.Core
     hiddenInputWarnings,
     headRecoverabilityWarnings,
     inversionAmbiguityWarnings,
+    InputHeadRelation (..),
+    classifyInputHeads,
     WireHeadRelation (..),
     classifyWireHeads,
     wireHeadsMayAliasForDefault,
@@ -222,6 +228,7 @@ module Keiki.Core
     fieldWitnessReconstruct,
     fieldWitnessGet,
     indexPosition,
+    inCtorSchemaPrefixRelationForTesting,
     wireSchemaPrefixRelationForTesting,
   )
 where
@@ -250,12 +257,20 @@ import Keiki.Internal.SymbolicTypes
     symbolicTypeSupportsOrdering,
   )
 import Keiki.Internal.WireSchema
-  ( WireFieldSchema,
+  ( InCtorSchema,
+    InCtorSchemaAvailability (..),
+    InCtorSchemaComparison (..),
+    InputHeadRelation (..),
+    WireFieldSchema,
     WireHeadRelation (..),
     WireSchema,
     WireSchemaAvailability (..),
     WireSchemaComparison (..),
+    compareInCtorSchemas,
     compareWireSchemas,
+    inCtorSchemaAvailability,
+    inCtorSchemaPrefixRelationForTesting,
+    inCtorSchemaUnavailable,
     wireSchemaAvailability,
     wireSchemaPrefixRelationForTesting,
     wireSchemaUnavailable,
@@ -651,10 +666,20 @@ data InCtor ci (ifs :: [Slot]) where
   InCtor ::
     (AssembleRegFile ifs, KnownSlotNames ifs) =>
     { icName :: String,
+      icSchema :: InCtorSchema ci ifs,
       icMatch :: ci -> Maybe (RegFile ifs),
       icBuild :: RegFile ifs -> ci
     } ->
     InCtor ci ifs
+
+-- | Compare two input constructors using trusted structural evidence only.
+-- Diagnostic names never participate in this proof.
+classifyInputHeads :: InCtor ci left -> InCtor ci right -> InputHeadRelation
+classifyInputHeads left right =
+  case compareInCtorSchemas left.icSchema right.icSchema of
+    InCtorSchemasEqual _ -> InputHeadsStructurallyEqual
+    InCtorSchemasDifferent -> InputHeadsStructurallyDifferent
+    InCtorSchemasUnwitnessed -> InputHeadsUnwitnessed
 
 -- * Slot-list helper classes (v2 inversion machinery) ---------------------
 

@@ -15,6 +15,7 @@ inCtorBegin :: InCtor MultiInput '[ '("payload", Int)]
 inCtorBegin =
   InCtor
     { icName = "Begin",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         Begin n -> Just (RCons (Proxy @"payload") n RNil),
       icBuild = \(RCons _ n RNil) -> Begin n

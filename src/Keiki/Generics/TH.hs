@@ -115,7 +115,6 @@ import Keiki.Core
 import Keiki.Generics
   ( FieldsOf,
     RegFieldsOf,
-    mkInCtor0,
     mkInCtorVia,
     mkWireCtor0Via,
     mkWireCtorVia,
@@ -696,7 +695,7 @@ genCtor cmdName regsName ctorMap (ctorStr, shortStr) =
 
 singletonDecls ::
   Name -> Name -> String -> String -> Name -> Q [Dec]
-singletonDecls cmdName regsName ctorStr shortStr ctorN = do
+singletonDecls cmdName regsName ctorStr shortStr _ctorN = do
   let inCtorN = mkName ("inCtor" <> shortStr)
       isN = mkName ("is" <> shortStr)
   inCtorSig <-
@@ -709,11 +708,10 @@ singletonDecls cmdName regsName ctorStr shortStr ctorN = do
       [ clause
           []
           ( normalB
-              [|
-                mkInCtor0
-                  $(litE (stringL ctorStr))
-                  $(conE ctorN)
-                |]
+              ( appTypeE
+                  [|mkInCtorVia|]
+                  (litT (strTyLit ctorStr))
+              )
           )
           []
       ]

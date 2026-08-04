@@ -135,6 +135,7 @@ test-suite keiki-test
     Keiki.Fixtures.UserRegistration
     Keiki.FullSymbolicReplayInversionSpec
     Keiki.Generics.THSpec
+    Keiki.InputSchemaSpec
     Keiki.LawHelpers
     Keiki.NoThunksSpec
     Keiki.OperatorsQualifiedSpec

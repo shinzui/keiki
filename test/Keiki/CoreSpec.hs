@@ -32,6 +32,7 @@ literalLedgerInCtor :: InCtor () '[]
 literalLedgerInCtor =
   InCtor
     { icName = "LiteralLedgerCommand",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \() -> Just RNil,
       icBuild = \RNil -> ()
     }
@@ -158,6 +159,7 @@ inCtorTinyFoo ::
 inCtorTinyFoo =
   InCtor
     { icName = "TinyFoo",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         TinyFoo a b ->
           Just
@@ -177,6 +179,7 @@ inCtorTrue :: InCtor Bool '[]
 inCtorTrue =
   InCtor
     { icName = "True",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case
         True -> Just RNil
         False -> Nothing,
@@ -466,6 +469,7 @@ spec = do
         inCtorTinyFooOther =
           InCtor
             { icName = "OtherName",
+              icSchema = inCtorSchemaUnavailable,
               icMatch = \case
                 TinyFoo a b ->
                   Just

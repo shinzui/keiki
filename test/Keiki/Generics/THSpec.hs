@@ -169,6 +169,10 @@ $( deriveWireCtorsWith
 spec :: Spec
 spec = do
   describe "deriveAggregateCtors on a record-payload constructor (DoIt)" $ do
+    it "carries trusted structural input evidence" $
+      inCtorSchemaAvailability inCtorDoIt.icSchema
+        `shouldBe` InCtorSchemaTrusted
+
     it "names the InCtor after the source ctor" $
       icName inCtorDoIt `shouldBe` "DoIt"
 
@@ -197,6 +201,10 @@ spec = do
       evalPred isDoIt toyRegs NoArgs `shouldBe` False
 
   describe "deriveAggregateCtors on a singleton constructor (NoArgs)" $ do
+    it "carries trusted structural input evidence" $
+      inCtorSchemaAvailability inCtorNoArgs.icSchema
+        `shouldBe` InCtorSchemaTrusted
+
     it "names the InCtor after the source ctor" $
       icName inCtorNoArgs `shouldBe` "NoArgs"
 

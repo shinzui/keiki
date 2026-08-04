@@ -23,6 +23,7 @@ import Keiki.CoreSpec qualified
 import Keiki.FieldProjSpec qualified
 import Keiki.FullSymbolicReplayInversionSpec qualified
 import Keiki.Generics.THSpec qualified
+import Keiki.InputSchemaSpec qualified
 import Keiki.NoThunksSpec qualified
 import Keiki.OperatorsQualifiedSpec qualified
 import Keiki.OperatorsSpec qualified
@@ -70,6 +71,7 @@ main = hspec $ do
   describe "Keiki.Core.InFlight / streaming (EP-19 M3)" Keiki.CoreInFlightSpec.spec
   describe "Keiki.Core.checkHiddenInputs (EP-19 M4 union)" Keiki.CoreHiddenInputsGSMSpec.spec
   describe "Keiki.Generics.TH" Keiki.Generics.THSpec.spec
+  describe "Keiki.InputSchema" Keiki.InputSchemaSpec.spec
   describe "Keiki.NoThunks" Keiki.NoThunksSpec.spec
   describe "Keiki.Core operators (EP-45)" Keiki.OperatorsSpec.spec
   describe "Keiki.Operators (qualified import, EP-58)" Keiki.OperatorsQualifiedSpec.spec

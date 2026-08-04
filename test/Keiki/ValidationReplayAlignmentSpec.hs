@@ -44,6 +44,7 @@ inCtorX :: InCtor AmbiguousCmd AmbiguousFields
 inCtorX =
   InCtor
     { icName = "CmdX",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case CmdX value -> Just (RCons (Proxy @"value") value RNil); _ -> Nothing,
       icBuild = \(RCons _ value RNil) -> CmdX value
     }
@@ -52,6 +53,7 @@ inCtorY :: InCtor AmbiguousCmd AmbiguousFields
 inCtorY =
   InCtor
     { icName = "CmdY",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \case CmdY value -> Just (RCons (Proxy @"value") value RNil); _ -> Nothing,
       icBuild = \(RCons _ value RNil) -> CmdY value
     }

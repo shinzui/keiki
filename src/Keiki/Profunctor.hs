@@ -353,6 +353,7 @@ identityInCtor :: forall a. InCtor a '[ '("payload", a)]
 identityInCtor =
   InCtor
     { icName = "Identity",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \a -> Just (RCons (Proxy @"payload") a RNil),
       icBuild = \(RCons _ a RNil) -> a
     }
@@ -734,6 +735,7 @@ firstSym t =
     firstInCtor ic@InCtor {} =
       InCtor
         { icName = icName ic,
+          icSchema = inCtorSchemaUnavailable,
           icMatch = \(civ, cv) -> case icMatch ic civ of
             Just rf -> Just (RCons (Proxy @"snd") cv rf)
             Nothing -> Nothing,
@@ -918,6 +920,7 @@ contraInCtor :: (ci' -> ci) -> InCtor ci ifs -> InCtor ci' ifs
 contraInCtor f InCtor {icName = n, icMatch = m} =
   InCtor
     { icName = n <> "#lmapped",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = m . f,
       icBuild = poisonedIcBuild n
     }
@@ -929,6 +932,7 @@ contraMaybeInCtor :: (ci' -> Maybe ci) -> InCtor ci ifs -> InCtor ci' ifs
 contraMaybeInCtor f InCtor {icName = n, icMatch = m} =
   InCtor
     { icName = n <> "#lmapped",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \ci' -> f ci' >>= m,
       icBuild = poisonedIcBuild n
     }
@@ -1027,6 +1031,7 @@ mappedArmInCtor ::
 mappedArmInCtor f wantLeft =
   InCtor
     { icName = if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped",
+      icSchema = inCtorSchemaUnavailable,
       icMatch = \ci' -> case f ci' of
         Just (Left _) | wantLeft -> Just RNil
         Just (Right _) | not wantLeft -> Just RNil
