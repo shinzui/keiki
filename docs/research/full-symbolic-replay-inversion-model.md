@@ -251,12 +251,13 @@ constraint, not a Keiki semantic failure.
 
 ## Prototype results
 
-The unsupported test-only prototype lives in `test/Keiki/InversionModelResearchSpec.hs` while the
-experiment is active. It defines a `DualCandidateEnv` with two register variables shared by both
-candidates and two `CandidateVars` records. Each candidate record owns its constructor tag, outer
-`Either` arm, two input fields, and an opaque atom. Every SBV label is prefixed by ownership and
-structural position; the two register variables deliberately share a human diagnostic suffix but
-remain distinct positions.
+The unsupported test-only prototype was implemented in
+`test/Keiki/InversionModelResearchSpec.hs`, committed as `fd63b32`, extended with reproducible
+measurements in `c315db7`, and then removed from the final tree. It defined a `DualCandidateEnv`
+with two register variables shared by both candidates and two `CandidateVars` records. Each
+candidate record owned its constructor tag, outer `Either` arm, two input fields, and an opaque
+atom. Every SBV label was prefixed by ownership and structural position; the two register
+variables deliberately shared a human diagnostic suffix but remained distinct positions.
 
 The focused command is:
 
@@ -267,7 +268,9 @@ nix develop -c cabal test keiki-test \
 ```
 
 It passed 14 examples with zero failures in 0.1092 seconds of Hspec-reported example time. Solver
-process startup is included in the wall-clock command but not in that Hspec summary.
+process startup is included in the wall-clock command but not in that Hspec summary. The focused
+command is historical now that the module has been removed; the surviving repository gates are
+listed in the final decision section.
 
 ### Dual-command result
 
@@ -399,6 +402,12 @@ runs. Default validation and runtime replay keep their current dependency and pe
 The reverse-dependent registry lists twelve projects. Because several entries lack package
 metadata, a production migration plan must rerun Mori after registry enrichment and compile every
 registered source consumer; in-tree tests alone cannot establish source compatibility.
+
+The prototype is intentionally absent from the final tree. It duplicated a hypothetical schema
+and solver driver rather than exercising a reusable internal API, so retaining it would impose
+maintenance before the prerequisite exists. The report contains the formulas, classifications,
+transcripts, environment, and timing results needed to interpret the experiment, while commits
+`fd63b32` and `c315db7` preserve executable reproduction.
 
 
 ## Final decision and bounded next action

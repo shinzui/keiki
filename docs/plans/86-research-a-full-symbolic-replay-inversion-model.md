@@ -58,9 +58,11 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
       inspected generated SMT variable ownership, measured five samples at 1, 10, 50, and 100
       pairs against `checkTransitionDeterminismSymDetailed`, and completed the source/PVP audit.
       The 100-pair full-model median was 894.728 ms versus 864.075 ms guard-only (about 1.04x).
-- [ ] Milestone 4 remaining: checkpoint the reproducible measurement prototype, then remove its
-      test module and registrations because the selected structural-prerequisite result does not
-      leave a reusable internal production foundation.
+- [x] (2026-08-04T18:07:33Z) Milestone 4 remaining: checkpointed executable evidence in commits
+      `fd63b32` and `c315db7`, then removed `test/Keiki/InversionModelResearchSpec.hs` and its
+      `keiki.cabal`/`test/Spec.hs` registrations because the prerequisite result leaves no reusable
+      internal production foundation. Post-removal focused baselines again passed 3, 5, and 9
+      examples with zero failures.
 - [ ] Milestone 5: finish the research report, record a go/no-go/prerequisite decision, distill
       durable conclusions into the relevant ADRs, and validate all surviving repository changes.
 
