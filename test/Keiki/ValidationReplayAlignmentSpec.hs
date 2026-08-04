@@ -152,7 +152,7 @@ openSteps = TReg (#openSteps :: Index RegisterReplayRegs Natural)
 
 opaqueCommandIdentity ::
   InCtor RegisterReplayCmd ReplayCompletionFields ->
-  HsPred RegisterReplayRegs RegisterReplayCmd
+  HsPred rs RegisterReplayCmd
 opaqueCommandIdentity inputCtor =
   PEq
     ( TApp1
@@ -163,8 +163,8 @@ opaqueCommandIdentity inputCtor =
 
 registerReplayGuard ::
   InCtor RegisterReplayCmd ReplayCompletionFields ->
-  HsPred RegisterReplayRegs RegisterReplayCmd ->
-  HsPred RegisterReplayRegs RegisterReplayCmd
+  HsPred rs RegisterReplayCmd ->
+  HsPred rs RegisterReplayCmd
 registerReplayGuard inputCtor registerCondition =
   PAnd
     (PInCtor inputCtor)
@@ -172,7 +172,7 @@ registerReplayGuard inputCtor registerCondition =
 
 registerReplayOutput ::
   InCtor RegisterReplayCmd ReplayCompletionFields ->
-  OutTerm RegisterReplayRegs RegisterReplayCmd RegisterReplayEvent
+  OutTerm rs RegisterReplayCmd RegisterReplayEvent
 registerReplayOutput inputCtor =
   pack
     inputCtor
@@ -263,6 +263,43 @@ opaqueOnlyFixture ::
     RegisterReplayCmd
     RegisterReplayEvent
 opaqueOnlyFixture = registerReplayFixture 2 Live PTop PTop
+
+type UnsupportedCarrierRegs = '[ '("enabled", Bool)]
+
+unsupportedCarrierFixture ::
+  SymTransducer
+    (HsPred UnsupportedCarrierRegs RegisterReplayCmd)
+    UnsupportedCarrierRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+unsupportedCarrierFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ unsupportedEdge inCompleteNonFinal True,
+            unsupportedEdge inCompleteFinal False
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"enabled") True RNil,
+      isFinal = id
+    }
+  where
+    unsupportedEdge inputCtor expected =
+      Edge
+        { guard =
+            PAnd
+              (PInCtor inputCtor)
+              ( PEq
+                  (TReg (#enabled :: Index UnsupportedCarrierRegs Bool))
+                  (TLit expected)
+              ),
+          update = UKeep,
+          output = [registerReplayOutput inputCtor],
+          target = True,
+          mode = Live
+        }
 
 type DuplicateLabelRegs =
   '[ '("openSteps", Natural),
@@ -521,17 +558,9 @@ spec = do
         _ -> expectationFailure "distinct-head transducer did not replay"
 
   describe "shared-register replay candidate disjointness" $ do
-    it "pins the current false-positive warning for openSteps > 1 versus openSteps == 1" $ do
-      let warnings = inversionAmbiguityWarnings (registerDisjointFixture 2 Live)
-      case warnings of
-        [ InversionAmbiguity
-            { tvwSource = False,
-              tvwEdgeA = 0,
-              tvwEdgeB = 1,
-              tvwWireCtor = "StepCompleted"
-            }
-          ] -> pure ()
-        other -> expectationFailure ("expected the current false positive, got " <> show other)
+    it "suppresses the false positive for openSteps > 1 versus openSteps == 1" $
+      inversionAmbiguityWarnings (registerDisjointFixture 2 Live)
+        `shouldBe` []
 
     it "preserves forward/replay agreement for both non-final and final register paths" $ do
       let cases =
@@ -555,9 +584,10 @@ spec = do
         )
         cases
 
-    it "retains the overlapping warning and exhibits two concrete candidates" $ do
-      inversionAmbiguityWarnings registerOverlappingFixture
-        `shouldSatisfy` (not . null)
+    it "retains the overlapping warning with its opaque precision blocker and exhibits two concrete candidates" $ do
+      case inversionAmbiguityWarnings registerOverlappingFixture of
+        [InversionAmbiguity {tvwDetail = detail}] -> detail `shouldContain` "TApp1"
+        other -> expectationFailure ("expected one overlap warning, got " <> show other)
       case reconstituteEither
         registerOverlappingFixture
         [StepCompleted (ReplayCompletionData 7)] of
@@ -570,13 +600,24 @@ spec = do
         Right result ->
           expectationFailure ("expected ambiguous replay, got " <> show (fst result))
 
-    it "retains a warning when only opaque command-dependent conjuncts remain" $
-      inversionAmbiguityWarnings opaqueOnlyFixture
-        `shouldSatisfy` (not . null)
+    it "names the opaque conjunct when only command-dependent conditions remain" $
+      case inversionAmbiguityWarnings opaqueOnlyFixture of
+        [InversionAmbiguity {tvwDetail = detail}] -> detail `shouldContain` "TApp1"
+        other -> expectationFailure ("expected one opaque-only warning, got " <> show other)
+
+    it "names an unsupported register carrier and fails conservatively" $
+      case inversionAmbiguityWarnings unsupportedCarrierFixture of
+        [InversionAmbiguity {tvwDetail = detail}] -> do
+          detail `shouldContain` "unsupported register carrier"
+          detail `shouldContain` "Bool"
+        other -> expectationFailure ("expected one unsupported-carrier warning, got " <> show other)
 
     it "does not merge distinct duplicate-labelled register positions" $ do
-      inversionAmbiguityWarnings duplicateLabelFixture
-        `shouldSatisfy` (not . null)
+      case inversionAmbiguityWarnings duplicateLabelFixture of
+        [InversionAmbiguity {tvwDetail = detail}] -> do
+          detail `shouldContain` "distinct positions [0,1]"
+          detail `shouldContain` "duplicate label \"openSteps\""
+        other -> expectationFailure ("expected one duplicate-label warning, got " <> show other)
       case reconstituteEither
         duplicateLabelFixture
         [StepCompleted (ReplayCompletionData 7)] of

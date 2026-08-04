@@ -265,7 +265,7 @@ import Keiki.ProjectionDomain
     memberProjectionDomain,
   )
 import Numeric.Natural (Natural)
-import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
+import Type.Reflection (SomeTypeRep (..), eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 -- | A register slot is a label paired with the type of its value.
 type Slot = (Symbol, Type)
@@ -3193,7 +3193,8 @@ inversionAmbiguityWarnings t =
             <> wireName
             <> "\" as their first event; replay may not be able to attribute an observed \""
             <> wireName
-            <> "\" to a unique edge"
+            <> "\" to a unique edge; "
+            <> candidateRegisterDetail registerAnalysis
       }
   | s <- [minBound .. maxBound],
     let indexedEdges = zip [(0 :: Int) ..] (edgesOut t s),
@@ -3205,14 +3206,20 @@ inversionAmbiguityWarnings t =
     -- so only same-mode pairs can be runtime-ambiguous.
     mode e1 == mode e2,
     not (isBot (guard e1) || isBot (guard e2)),
-    Just wireName <- [headWireName e1],
-    Just otherWireName <- [headWireName e2],
-    wireName == otherWireName
+    Just (SomeWireCtor wire) <- [headWireCtor e1],
+    Just (SomeWireCtor otherWire) <- [headWireCtor e2],
+    wireHeadsMayAliasForDefault wire otherWire,
+    let wireName = wcName wire,
+    let registerAnalysis = analyzeCandidateRegisterConstraints (guard e1) (guard e2),
+    candidateRegisterDisjointness registerAnalysis == CandidateDisjointnessNotProven
   ]
   where
-    headWireName :: Edge (HsPred rs ci) rs ci co s -> Maybe String
-    headWireName Edge {output = OPack _ wire _ : _} = Just (wcName wire)
-    headWireName _ = Nothing
+    headWireCtor :: Edge (HsPred rs ci) rs ci co s -> Maybe (SomeWireCtor co)
+    headWireCtor Edge {output = OPack _ wire _ : _} = Just (SomeWireCtor wire)
+    headWireCtor _ = Nothing
+
+data SomeWireCtor co where
+  SomeWireCtor :: WireCtor co fields -> SomeWireCtor co
 
 -- ** Determinism diagnostics
 
@@ -3321,6 +3328,355 @@ data PureVariable = PureVariable
 
 data PureRelation = PureEq | PureLt | PureLe | PureGt | PureGe
   deriving stock (Eq, Show)
+
+-- | Result of checking the conjunction of the register-only necessary
+-- conditions extracted from two replay guards. Unsatisfiable is the only
+-- verdict that may suppress an inversion warning. Satisfiable means the
+-- complete supported fragment overlaps; unknown means an unsupported or
+-- malformed construct prevented a complete answer.
+data RegisterConstraintVerdict
+  = RegisterConstraintsUnsatisfiable
+  | RegisterConstraintsSatisfiable
+  | RegisterConstraintsUnknown
+  deriving stock (Eq, Show)
+
+data CandidateDisjointness
+  = ProvenCandidateDisjoint
+  | CandidateDisjointnessNotProven
+  deriving stock (Eq, Show)
+
+-- | Structural register identity. Labels are retained only for diagnostics;
+-- proof identity is the zero-based position paired with the value type.
+data RegisterVariable = RegisterVariable
+  { registerVariablePosition :: Int,
+    registerVariableType :: SomeTypeRep,
+    registerVariableLabel :: String
+  }
+  deriving stock (Show)
+
+data RegisterComparison where
+  RegisterComparison ::
+    (Typeable r) =>
+    RegisterVariable ->
+    PureRelation ->
+    r ->
+    (r -> Bool) ->
+    RegisterComparison
+
+data RegisterConstraintExtraction = RegisterConstraintExtraction
+  { registerExtractionIsBottom :: Bool,
+    registerExtractionComparisons :: [RegisterComparison],
+    registerExtractionBlockers :: [String]
+  }
+
+data CandidateRegisterAnalysis = CandidateRegisterAnalysis
+  { candidateRegisterDisjointness :: CandidateDisjointness,
+    candidateRegisterDetail :: String
+  }
+
+emptyRegisterConstraintExtraction :: RegisterConstraintExtraction
+emptyRegisterConstraintExtraction = RegisterConstraintExtraction False [] []
+
+blockedRegisterConstraintExtraction :: String -> RegisterConstraintExtraction
+blockedRegisterConstraintExtraction blocker =
+  emptyRegisterConstraintExtraction
+    { registerExtractionBlockers = [blocker]
+    }
+
+mergeRegisterConstraintExtractions ::
+  RegisterConstraintExtraction ->
+  RegisterConstraintExtraction ->
+  RegisterConstraintExtraction
+mergeRegisterConstraintExtractions left right =
+  RegisterConstraintExtraction
+    { registerExtractionIsBottom =
+        registerExtractionIsBottom left || registerExtractionIsBottom right,
+      registerExtractionComparisons =
+        registerExtractionComparisons left <> registerExtractionComparisons right,
+      registerExtractionBlockers =
+        registerExtractionBlockers left <> registerExtractionBlockers right
+    }
+
+-- | Extract a weakened condition that every successful replay candidate must
+-- satisfy on the shared pre-event register file. Recursing through 'PAnd' and
+-- dropping unsupported sibling conjuncts is sound because a true conjunction
+-- implies each retained conjunct. We deliberately do not descend through
+-- 'POr' or 'PNot'. Therefore, if the conjunction of two extracted conditions
+-- is unsatisfiable, the full replay candidates are disjoint without modeling
+-- either reconstructed command or any output field.
+extractRegisterConstraints :: HsPred rs ci -> RegisterConstraintExtraction
+extractRegisterConstraints PTop = emptyRegisterConstraintExtraction
+extractRegisterConstraints PBot =
+  emptyRegisterConstraintExtraction {registerExtractionIsBottom = True}
+extractRegisterConstraints (PAnd left right) =
+  mergeRegisterConstraintExtractions
+    (extractRegisterConstraints left)
+    (extractRegisterConstraints right)
+extractRegisterConstraints (PEq left right) =
+  extractRegisterEquality left right
+extractRegisterConstraints (PCmp relation left right) =
+  extractRegisterOrdering relation left right
+-- Input-constructor tests constrain independently reconstructed commands, not
+-- the register file shared by the two replay candidates. Dropping them is an
+-- intentional weakening and not a precision blocker for this proof.
+extractRegisterConstraints (PInCtor _) = emptyRegisterConstraintExtraction
+extractRegisterConstraints PLeftArm =
+  blockedRegisterConstraintExtraction "unsupported input-arm conjunct (PLeftArm)"
+extractRegisterConstraints PRightArm =
+  blockedRegisterConstraintExtraction "unsupported input-arm conjunct (PRightArm)"
+extractRegisterConstraints (POr _ _) =
+  blockedRegisterConstraintExtraction "unsupported disjunction conjunct (POr)"
+extractRegisterConstraints (PNot _) =
+  blockedRegisterConstraintExtraction "unsupported negation conjunct (PNot)"
+
+extractRegisterEquality ::
+  forall rs ci ifs1 ifs2 r.
+  (Eq r, Typeable r) =>
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  RegisterConstraintExtraction
+extractRegisterEquality left right
+  | Just variable <- registerVariable left,
+    Just literalValue <- termLiteralValue right =
+      knownRegisterComparison variable PureEq literalValue (== literalValue)
+  | Just literalValue <- termLiteralValue left,
+    Just variable <- registerVariable right =
+      knownRegisterComparison variable PureEq literalValue (== literalValue)
+  | otherwise = unsupportedRegisterAtom "equality" left right
+
+extractRegisterOrdering ::
+  forall rs ci ifs1 ifs2 r.
+  (Ord r, Typeable r) =>
+  Cmp ->
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  RegisterConstraintExtraction
+extractRegisterOrdering relation left right
+  | Just variable <- registerVariable left,
+    Just literalValue <- termLiteralValue right =
+      let normalized = pureRelation relation
+       in knownRegisterComparison
+            variable
+            normalized
+            literalValue
+            (\value -> applyPureRelation normalized value literalValue)
+  | Just literalValue <- termLiteralValue left,
+    Just variable <- registerVariable right =
+      let normalized = flipPureRelation (pureRelation relation)
+       in knownRegisterComparison
+            variable
+            normalized
+            literalValue
+            (\value -> applyPureRelation normalized value literalValue)
+  | otherwise = unsupportedRegisterAtom "ordering" left right
+
+registerVariable ::
+  forall rs ci ifs r.
+  (Typeable r) =>
+  Term rs ci ifs r ->
+  Maybe RegisterVariable
+registerVariable (TReg index) =
+  Just
+    RegisterVariable
+      { registerVariablePosition = indexPosition index,
+        registerVariableType = SomeTypeRep (typeRep @r),
+        registerVariableLabel = pureIndexName index
+      }
+registerVariable _ = Nothing
+
+knownRegisterComparison ::
+  forall r.
+  (Typeable r) =>
+  RegisterVariable ->
+  PureRelation ->
+  r ->
+  (r -> Bool) ->
+  RegisterConstraintExtraction
+knownRegisterComparison variable relation literalValue accepts =
+  case discoverIntegralDomain @r of
+    Nothing ->
+      blockedRegisterConstraintExtraction
+        ( "unsupported register carrier "
+            <> show (typeRep @r)
+            <> " at position "
+            <> show variable.registerVariablePosition
+        )
+    Just _ ->
+      emptyRegisterConstraintExtraction
+        { registerExtractionComparisons =
+            [RegisterComparison variable relation literalValue accepts]
+        }
+
+unsupportedRegisterAtom ::
+  String ->
+  Term rs ci ifs1 r ->
+  Term rs ci ifs2 r ->
+  RegisterConstraintExtraction
+unsupportedRegisterAtom relation left right =
+  blockedRegisterConstraintExtraction
+    ( "unsupported "
+        <> relation
+        <> " conjunct: "
+        <> registerAtomObstacle left right
+    )
+
+registerAtomObstacle :: Term rs ci ifs1 r -> Term rs ci ifs2 r -> String
+registerAtomObstacle left right =
+  case termRegisterObstacle left of
+    Just obstacle -> obstacle
+    Nothing -> case termRegisterObstacle right of
+      Just obstacle -> obstacle
+      Nothing -> case (left, right) of
+        (TReg _, TReg _) -> "register-to-register comparison"
+        (TLit _, TLit _) -> "literal-only comparison"
+        (TLit _, TOpaqueLit _) -> "literal-only comparison"
+        (TOpaqueLit _, TLit _) -> "literal-only comparison"
+        (TOpaqueLit _, TOpaqueLit _) -> "literal-only comparison"
+        _ -> "unknown term relationship"
+
+termRegisterObstacle :: Term rs ci ifs r -> Maybe String
+termRegisterObstacle (TInpCtorField _ _) = Just "input-field read (TInpCtorField)"
+termRegisterObstacle (TApp1 _ _) = Just "opaque unary application (TApp1)"
+termRegisterObstacle (TApp2 _ _ _) = Just "opaque binary application (TApp2)"
+termRegisterObstacle (TArith _ _ _) = Just "structural arithmetic (TArith)"
+termRegisterObstacle TFieldProj {} = Just "field projection (TFieldProj)"
+termRegisterObstacle _ = Nothing
+
+sameRegisterVariable :: RegisterVariable -> RegisterVariable -> Bool
+sameRegisterVariable left right =
+  left.registerVariablePosition == right.registerVariablePosition
+    && left.registerVariableType == right.registerVariableType
+
+registerComparisonVariable :: RegisterComparison -> RegisterVariable
+registerComparisonVariable (RegisterComparison variable _ _ _) = variable
+
+groupRegisterComparisons :: [RegisterComparison] -> [[RegisterComparison]]
+groupRegisterComparisons [] = []
+groupRegisterComparisons (comparison : rest) =
+  (comparison : sameVariable) : groupRegisterComparisons otherVariables
+  where
+    variable = registerComparisonVariable comparison
+    (sameVariable, otherVariables) =
+      partition
+        (sameRegisterVariable variable . registerComparisonVariable)
+        rest
+
+alignRegisterComparison ::
+  forall r. (Typeable r) => RegisterComparison -> Maybe (TypedPureComparison r)
+alignRegisterComparison
+  (RegisterComparison @other _ relation literalValue accepts) =
+    case eqTypeRep (typeRep @r) (typeRep @other) of
+      Just HRefl -> Just (TypedPureComparison relation literalValue accepts)
+      Nothing -> Nothing
+
+registerComparisonGroupVerdict :: [RegisterComparison] -> RegisterConstraintVerdict
+registerComparisonGroupVerdict [] = RegisterConstraintsSatisfiable
+registerComparisonGroupVerdict
+  (RegisterComparison @r _ relation literalValue accepts : rest) =
+    case traverse (alignRegisterComparison @r) rest of
+      Nothing -> RegisterConstraintsUnknown
+      Just alignedRest ->
+        let comparisons =
+              TypedPureComparison relation literalValue accepts : alignedRest
+         in case discoverIntegralDomain @r of
+              Nothing -> RegisterConstraintsUnknown
+              Just domain
+                | integralComparisonsSatisfiable domain comparisons ->
+                    RegisterConstraintsSatisfiable
+                | otherwise -> RegisterConstraintsUnsatisfiable
+
+registerPositionTypeMismatch :: [RegisterComparison] -> Maybe String
+registerPositionTypeMismatch comparisons =
+  case [ (leftVariable, rightVariable)
+       | left <- comparisons,
+         right <- comparisons,
+         let leftVariable = registerComparisonVariable left,
+         let rightVariable = registerComparisonVariable right,
+         leftVariable.registerVariablePosition == rightVariable.registerVariablePosition,
+         leftVariable.registerVariableType /= rightVariable.registerVariableType
+       ] of
+    (leftVariable, rightVariable) : _ ->
+      Just
+        ( "register type alignment failed at position "
+            <> show leftVariable.registerVariablePosition
+            <> ": "
+            <> show leftVariable.registerVariableType
+            <> " versus "
+            <> show rightVariable.registerVariableType
+        )
+    [] -> Nothing
+
+duplicateRegisterLabelDetail :: [RegisterComparison] -> Maybe String
+duplicateRegisterLabelDetail comparisons =
+  case [ (label, positions)
+       | label <- nub (map registerVariableLabel variables),
+         let positions =
+               nub
+                 [ variable.registerVariablePosition
+                 | variable <- variables,
+                   variable.registerVariableLabel == label
+                 ],
+         length positions > 1
+       ] of
+    (label, positions) : _ ->
+      Just
+        ( "shared-register conditions are satisfiable across distinct positions "
+            <> show positions
+            <> " carrying duplicate label \""
+            <> label
+            <> "\""
+        )
+    [] -> Nothing
+  where
+    variables = map registerComparisonVariable comparisons
+
+analyzeCandidateRegisterConstraints ::
+  HsPred rs ci ->
+  HsPred rs ci ->
+  CandidateRegisterAnalysis
+analyzeCandidateRegisterConstraints leftGuard rightGuard =
+  case verdict of
+    RegisterConstraintsUnsatisfiable ->
+      CandidateRegisterAnalysis
+        { candidateRegisterDisjointness = ProvenCandidateDisjoint,
+          candidateRegisterDetail =
+            "shared-register necessary conditions are unsatisfiable"
+        }
+    RegisterConstraintsSatisfiable ->
+      CandidateRegisterAnalysis
+        { candidateRegisterDisjointness = CandidateDisjointnessNotProven,
+          candidateRegisterDetail =
+            case duplicateRegisterLabelDetail comparisons of
+              Just detail -> detail
+              Nothing -> "shared-register necessary conditions are satisfiable"
+        }
+    RegisterConstraintsUnknown ->
+      CandidateRegisterAnalysis
+        { candidateRegisterDisjointness = CandidateDisjointnessNotProven,
+          candidateRegisterDetail =
+            case registerPositionTypeMismatch comparisons of
+              Just detail -> detail
+              Nothing -> case registerExtractionBlockers extraction of
+                blocker : _ -> "register proof blocked by " <> blocker
+                [] -> "register constraint verdict is unknown"
+        }
+  where
+    extraction =
+      mergeRegisterConstraintExtractions
+        (extractRegisterConstraints leftGuard)
+        (extractRegisterConstraints rightGuard)
+    comparisons = registerExtractionComparisons extraction
+    groupVerdicts =
+      map registerComparisonGroupVerdict (groupRegisterComparisons comparisons)
+    verdict
+      | registerExtractionIsBottom extraction = RegisterConstraintsUnsatisfiable
+      | RegisterConstraintsUnsatisfiable `elem` groupVerdicts =
+          RegisterConstraintsUnsatisfiable
+      | registerPositionTypeMismatch comparisons /= Nothing =
+          RegisterConstraintsUnknown
+      | RegisterConstraintsUnknown `elem` groupVerdicts = RegisterConstraintsUnknown
+      | not (null (registerExtractionBlockers extraction)) = RegisterConstraintsUnknown
+      | otherwise = RegisterConstraintsSatisfiable
 
 -- | One normalized @variable relation literal@ atom. The predicate closure
 -- captures the source constructor's real 'Eq' or 'Ord' dictionary for concrete

@@ -56,10 +56,16 @@ after the structural prerequisite is stable.
       ValidationReplayAlignmentSpec baseline grew from 18 to 23 examples with 0 failures; the
       disjoint pair still pinned the pre-implementation false-positive warning, while the overlap
       and duplicate-label controls produced concrete two-candidate replay failures.
-- [ ] Milestone 2: implement an internal necessary-condition extractor for exact integral
-      register-versus-literal conjuncts and an explicit conservative disjointness verdict.
-- [ ] Milestone 3: integrate the proof into default inversion warnings through Plan 87's final
-      head-relation helper, without changing replay or invoking the optional solver.
+- [x] (2026-08-04T21:39:42Z) Milestone 2: implemented the internal `PAnd`-spine extractor for exact
+      integral register-versus-literal equality and ordering, structural `(position, TypeRep)`
+      variables, explicit satisfiable/unsatisfiable/unknown verdicts, and fail-conservative
+      blocker diagnostics. Unsupported siblings are weakening-only and cannot supply proof.
+- [x] (2026-08-04T21:39:42Z) Milestone 3: integrated the proof through
+      `wireHeadsMayAliasForDefault`; only definite register UNSAT suppresses the warning, while
+      retained warnings name opaque applications, unsupported carriers, or duplicate positions.
+      ValidationReplayAlignmentSpec passed 24 examples, `validateTransducer` passed 32,
+      ReplayOnly passed 2 selected examples, and FullSymbolicReplayInversion passed 14, all with
+      0 failures. Runtime replay and the optional solver path were unchanged.
 - [ ] Milestone 4: add exhaustive and generated agreement tests against concrete replay candidate
       evaluation for the supported register-only fragment.
 - [ ] Milestone 5: update Haddocks, the changelog, IR status, and relevant ADRs; run Keiki gates and
@@ -91,6 +97,11 @@ after the structural prerequisite is stable.
   Evidence: the Milestone 1 `duplicateLabelFixture` replays `StepCompleted 7` from registers
   `(2, 1)` to `ReplayAmbiguousInversions` naming edges 0 and 1. Any proof key based only on the
   diagnostic label would suppress this real ambiguity unsoundly.
+
+- Observation: the plan's literal `--match=ReplayOnly` selector matches only two example names,
+  not the complete replay-only module whose top-level Hspec label is lower-case `replay-only`.
+  Evidence: the Milestone 3 command completed with 2 examples and 0 failures. Later focused proof
+  uses the module's lower-case label so the complete phase-selection group is exercised.
 
 
 ## Decision Log
@@ -164,6 +175,14 @@ after the structural prerequisite is stable.
   fragment. Enriching only the detail string keeps the change source-compatible and adds no
   validation option. Downstream tests asserting exact detail strings, if any exist, fall under
   the same allowlist-only downstream policy as suppressed warnings.
+  Date: 2026-08-04
+
+- Decision: Treat `PInCtor` as a benign dropped conjunct rather than the retained warning's
+  blocker, while `POr`, `PNot`, input-arm tests, input-field terms, applications, arithmetic, and
+  projections are precision blockers.
+  Rationale: Replay reconstructs one command independently per edge, so two constructor tests do
+  not constrain the shared register file and are expected in every well-guarded pair. Naming them
+  first would hide the actionable opaque or unsupported sibling that consumers can restructure.
   Date: 2026-08-04
 
 
