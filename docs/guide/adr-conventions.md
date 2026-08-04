@@ -1,8 +1,12 @@
 # Architecture Decision Records (ADRs)
 
-This directory holds **Architecture Decision Records**: short, durable
-notes that capture one significant decision, the context that forced it,
-and the consequences that follow.
+`docs/adr/` holds **Architecture Decision Records**: short, durable notes that
+capture one significant decision, the context that forced it, and the
+consequences that follow. The bundle is an [Open Knowledge Format
+(OKF)](https://github.com/shinzui/okf-profiles) bundle governed by
+`docs/adr/profile.dhall`, the shared `documentation.architectureDecisions`
+profile. See `docs/adr/index.md` for the generated list of every ADR and
+`docs/adr/log.md` for the bundle's change history.
 
 The goal is to make the *why* behind the codebase findable without
 reading every execution plan in `docs/plans/`.
@@ -12,8 +16,8 @@ reading every execution plan in `docs/plans/`.
 - **ExecPlans** (`docs/plans/`) are execution documents: living,
   step-by-step accounts of how a change was or will be implemented,
   with progress, surprises, and a running decision log.
-- **ADRs** (here) are decision documents: one stable decision per file,
-  written so a newcomer can understand a structural choice and its
+- **ADRs** (`docs/adr/`) are decision documents: one stable decision per
+  file, written so a newcomer can understand a structural choice and its
   trade-offs in a few minutes. An ADR can link back to the ExecPlan that
   carried it out, but it should stand on its own.
 
@@ -22,14 +26,24 @@ promote it to an ADR.
 
 ## Format
 
-Each ADR is one Markdown file named `NNNN-kebab-case-title.md`, where
-`NNNN` is a zero-padded sequence number. Use this template:
+Each ADR is one Markdown file at the bundle root with OKF frontmatter
+followed by the historical prose template:
 
 ```markdown
-# ADR-NNNN: <Title>
+---
+type: Architecture Decision Record
+title: <Title, without the ADR number>
+description: <One sentence summary of the decision>
+docId: ADR-<N>          # stable handle; allocate with `okf id next docs/adr --profile docs/adr/profile.dhall ADR`
+status: Accepted         # Proposed | Accepted | Superseded by ADR-<N> | Deprecated
+date: YYYY-MM-DD          # original decision date
+generated:
+  by: human:<your-id>    # or process:<id> / <producer>/<version>
+  at: YYYY-MM-DDTHH:MM:SSZ
+---
 
-- **Status:** Proposed | Accepted | Superseded by ADR-MMMM | Deprecated
-- **Date:** YYYY-MM-DD
+# ADR-<N>: <Title>
+
 - **Plan(s):** docs/plans/<N>-<slug>.md (optional)
 
 ## Context
@@ -42,22 +56,30 @@ What we chose, stated plainly.
 What becomes easier, what becomes harder, and the trade-offs/caveats accepted.
 ```
 
+New filenames may use whatever slug is convenient; the bundle-root path
+pattern does not encode the ID, so the `docId` frontmatter field—not the
+filename—is the canonical, rename-stable handle. Existing ADRs keep their
+historical `NNNN-kebab-case-title.md` filenames and `# ADR-NNNN: <Title>`
+headings; only their frontmatter carries the unpadded `ADR-N` handle.
+
 **Status lifecycle:** an ADR starts `Proposed`, becomes `Accepted` when
-adopted, and is marked `Superseded by ADR-MMMM` rather than deleted
-when a later ADR overrides it. Use `Deprecated` for a decision that no
-longer applies but was not replaced.
+adopted, and is marked `Superseded by ADR-N` rather than deleted when a
+later ADR overrides it. Use `Deprecated` for a decision that no longer
+applies but was not replaced.
 
 ADRs are append-only in spirit: correct small factual errors in place,
 but record a *change of decision* as a new ADR that supersedes the old
 one.
 
-## Index
+## Validation
 
-| ADR | Title | Status |
-|-----|-------|--------|
-| [0001](0001-structural-re-indexing-for-sound-replay.md) | Structural re-indexing of `Term`/`OutFields` for sound replay | Accepted |
-| [0002](0002-event-logs-must-reproduce-forward-state.md) | Event logs must reproduce forward state | Accepted |
-| [0003](0003-proof-gates-fail-conservatively.md) | Proof gates fail conservatively | Accepted |
-| [0004](0004-composition-uses-snapshot-updates-and-checked-boundaries.md) | Composition uses snapshot updates and checked boundaries | Accepted |
-| [0005](0005-persisted-wire-identities-are-explicit-and-versioned.md) | Persisted wire identities are explicit and versioned | Accepted |
-| [0006](0006-readable-business-semantics-are-the-primary-rendering-contract.md) | Readable business semantics are the primary rendering contract | Accepted |
+```bash
+okf validate docs/adr \
+  --profile docs/adr/profile.dhall \
+  --profile-enforce \
+  --log-enforce
+```
+
+Run this alongside the repository's other documentation checks (see
+`justfile`) before committing a new or amended ADR, and append an
+`okf log add docs/adr --kind ... --message ...` entry describing the change.

@@ -1,7 +1,19 @@
+---
+type: Architecture Decision Record
+title: "Structural re-indexing of `Term`/`OutFields` for sound replay"
+description: >-
+  Recover replay indices by type-level structural re-indexing of Term and OutFields schemas
+  instead of runtime coercion, eliminating unsound unsafeCoerce-based index recovery.
+docId: ADR-1
+status: Accepted
+date: 2026-05-23
+generated:
+  by: adopt-architecture-decisions/0.8.0
+  at: 2026-08-04T16:35:24Z
+---
+
 # ADR-0001: Structural re-indexing of `Term`/`OutFields` for sound replay
 
-- **Status:** Accepted
-- **Date:** 2026-05-23
 - **Plan(s):** `docs/plans/53-harden-inctor-identity-for-structural-replay.md`;
   follow-up `docs/plans/54-thread-input-field-schema-through-edgebuilder-to-remove-emit-s-coercion.md`
 - **Implementation:** commit `30c89fa` (`feat(core)!: re-index Term/OutFields by input

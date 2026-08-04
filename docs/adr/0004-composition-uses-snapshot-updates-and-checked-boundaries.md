@@ -1,7 +1,20 @@
+---
+type: Architecture Decision Record
+title: Composition uses snapshot updates and checked boundaries
+description: >-
+  Give UCombine parallel-assignment, entry-snapshot semantics and require composeChecked to
+  validate constructor, arity, and projection boundaries so composition matches sequential
+  execution.
+docId: ADR-4
+status: Accepted
+date: 2026-07-13
+generated:
+  by: adopt-architecture-decisions/0.8.0
+  at: 2026-08-04T16:35:24Z
+---
+
 # ADR-0004: Composition uses snapshot updates and checked boundaries
 
-- **Status:** Accepted
-- **Date:** 2026-07-13
 - **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`
 
 ## Context

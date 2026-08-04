@@ -1,7 +1,19 @@
+---
+type: Architecture Decision Record
+title: Persisted wire identities are explicit and versioned
+description: >-
+  Give persisted event and snapshot identities pinned, module-independent names and an
+  explicit versioned wire envelope so Haskell refactors do not silently change stored data.
+docId: ADR-5
+status: Accepted
+date: 2026-07-13
+generated:
+  by: adopt-architecture-decisions/0.8.0
+  at: 2026-08-04T16:35:24Z
+---
+
 # ADR-0005: Persisted wire identities are explicit and versioned
 
-- **Status:** Accepted
-- **Date:** 2026-07-13
 - **Plan(s):** `docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md`; `docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md`
 
 ## Context

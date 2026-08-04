@@ -1,7 +1,20 @@
+---
+type: Architecture Decision Record
+title: Proof gates fail conservatively
+description: >-
+  Treat only a definite solver Unsatisfiable result as proof of predicate emptiness, keeping
+  every proof gate, projection domain, and verification classification conservative under
+  solver or encoding uncertainty.
+docId: ADR-3
+status: Accepted
+date: 2026-07-13
+generated:
+  by: adopt-architecture-decisions/0.8.0
+  at: 2026-08-04T16:35:24Z
+---
+
 # ADR-0003: Proof gates fail conservatively
 
-- **Status:** Accepted
-- **Date:** 2026-07-13
 - **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`
 
 ## Context

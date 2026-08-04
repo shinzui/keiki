@@ -1,7 +1,20 @@
+---
+type: Architecture Decision Record
+title: Readable business semantics are the primary rendering contract
+description: >-
+  Make TLit carry Show evidence so primary Mermaid renderers show full guard and update
+  semantics by default, while TOpaqueLit and topology mode remain the explicit routes to
+  redact or omit them.
+docId: ADR-6
+status: Accepted
+date: 2026-08-02
+generated:
+  by: adopt-architecture-decisions/0.8.0
+  at: 2026-08-04T16:35:24Z
+---
+
 # ADR-0006: Readable business semantics are the primary rendering contract
 
-- **Status:** Accepted
-- **Date:** 2026-08-02
 - **Plan(s):** `docs/plans/84-preserve-readable-business-semantics-in-keiki-transducers-and-diagrams.md`
 
 ## Context

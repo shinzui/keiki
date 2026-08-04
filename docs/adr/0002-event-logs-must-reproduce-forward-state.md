@@ -1,7 +1,19 @@
+---
+type: Architecture Decision Record
+title: Event logs must reproduce forward state
+description: >-
+  Require that replaying any log accepted by default validation reproduces the same forward
+  vertex and register file, backed by structured replay APIs and default validation checks.
+docId: ADR-2
+status: Accepted
+date: 2026-07-13
+generated:
+  by: adopt-architecture-decisions/0.8.0
+  at: 2026-08-04T16:35:24Z
+---
+
 # ADR-0002: Event logs must reproduce forward state
 
-- **Status:** Accepted
-- **Date:** 2026-07-13
 - **Plan(s):** `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`; `docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md`; `docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md`; `docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`
 
 ## Context
