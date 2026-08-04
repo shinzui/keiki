@@ -8,6 +8,15 @@ created_at: 2026-05-23T04:34:53Z
 
 # Harden InCtor identity for structural replay
 
+> **Status: COMPLETE (2026-05-23), re-verified against the working tree 2026-08-04.**
+> Implemented in commit `30c89fa`. The durable outcome is recorded in
+> `docs/adr/0001-structural-re-indexing-for-sound-replay.md` (Status: Accepted).
+> The plan's one residual follow-up — removing `Builder.emit`'s
+> `reIndexPinnedInCtor` coercion — was closed by EP-70 on 2026-07-12
+> (see Outcomes & Retrospective). Nothing in this plan remains actionable;
+> it is retained as the historical record of the redesign and of the
+> abandoned runtime-`Typeable` approach.
+
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
 
@@ -155,6 +164,20 @@ Follow-up worth considering (out of scope here): thread the pinned
 `InCtor`'s `ifs` through `EdgeBuilder` so `emit` needs no
 `reIndexPinnedInCtor` — a fully-typed alternative to the one documented
 builder-side coercion. Correctness-neutral relative to this change.
+
+**Status of that follow-up (verified 2026-08-04): closed.** It was
+drafted as `docs/plans/54-thread-input-field-schema-through-edgebuilder-to-remove-emit-s-coercion.md`,
+which was never executed (all its milestones remain unchecked), and was
+instead delivered by
+`docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md`
+on 2026-07-12. EP-70 landed a refinement of EP-54's design: rather than a
+plain `ifs :: [Slot]` parameter, `EdgeBuilder` and `PartialEdge` carry a
+`pin :: Maybe [Slot]` (`src/Keiki/Builder.hs:280`, `:322`), which also
+accommodates `onEpsilon` blocks that pin no input constructor — the case
+EP-54's Surprises section had flagged as the main feasibility risk.
+`reIndexPinnedInCtor` is gone and `src/Keiki/Builder.hs` now contains no
+`unsafeCoerce`. `docs/adr/0001-structural-re-indexing-for-sound-replay.md`
+records this under "Completed follow-up" in its Consequences.
 
 Note: two unrelated docs files (`docs/guide/composition.md`,
 `docs/research/composition-combinators-design.md`) were found modified in
@@ -400,5 +423,7 @@ The exact names may differ, but the implementation must have that type-safety pr
 - 2026-05-23 — **Implementation complete.** Structural re-indexing landed in commit `30c89fa` (`feat(core)!: re-index Term/OutFields by input schema for sound replay`). All milestones M-A…M-J done; `cabal test all` green (279 + 96 + 40 + 7, 0 failures); no `unsafeCoerce` remains in `Keiki.Core`. Filled in Outcomes & Retrospective and checked off Progress. The collision hazard is now prevented at compile time.
 
 - 2026-05-23 — **Major pivot during implementation: runtime `Typeable` comparison → type-level structural re-indexing.** The runtime approach failed to compile because two polymorphic phantom `InCtor`s in `src/Keiki/Profunctor.hs` flow through fixed-signature `Profunctor`/`Strong`/`Arrow`/`Choice` instances that cannot carry a `Typeable` constraint, and forging the dictionary would be unsound. The plan's prior "exactly five construction sites / near-zero risk / no API churn" validation claim was therefore wrong (there are seven sites). When asked, the user chose the larger redesign that the earlier Decision Log had deferred. Updated Progress (new milestones M-A…M-J, old ones marked superseded), Surprises (the seven sites, the Profunctor instance wall, the unsoundness of forging `Typeable`, `TInpCtorField` being a general `Term`, the `firstSym`/`compose` mixing, and the no-`Typeable`/minimal-authoring-change payoff), Decision Log (abandon `Typeable`; adopt Design A-refined; keep `icName` as a diagnostic; rework `firstSym`), and the Plan of Work (revised narrative). Implementation in progress.
+
+- 2026-08-04 — **Relevance re-check (no implementation change).** Asked whether this plan is still relevant and whether it was implemented elsewhere. Verified against the working tree at `9ee8de0`: the implementation commit `30c89fa` is present; `Term`/`OutFields` still carry the `ifs` parameter (`src/Keiki/Core.hs:548`, `:562`, `:754`, `:790`); `rg -n "unsafeCoerce" src/Keiki/Core.hs` matches only Haddock prose (`:544`, `:2128`), never code; `gatherInpEntries` (`src/Keiki/Core.hs:2133`) is coercion-free; and the EP-53 regression test survives at `test/Keiki/CoreSpec.hs:500`. Conclusion: **the plan is complete, not stale, and nothing in it is actionable.** The one item it left open — `Builder.emit`'s `reIndexPinnedInCtor` — was drafted as EP-54 (never executed) and actually delivered by EP-70 on 2026-07-12, using a `pin :: Maybe [Slot]` parameter instead of EP-54's plain `ifs` so that `onEpsilon` blocks with no pinned constructor are covered; `src/Keiki/Builder.hs` now contains no `unsafeCoerce`. Added a status banner at the top of this plan and a "Status of that follow-up" paragraph to Outcomes & Retrospective. No milestones, acceptance criteria, or Decision Log entries changed.
 
 - 2026-05-23 — Softened the "alternative redesign" framing in both the Decision Log scoping entry and the Purpose section. An earlier draft of these called the alternative the "structurally cleaner fix" and described it as removing the redundant `InCtor` from `TInpCtorField`. That overstated it: a closer reading of the types shows both the `TInpCtorField`'s and the `OPack`'s `ifs` are existentially hidden, so dropping the field would remove the reconciliation witness without making the schemas line up — making the inversion more stuck, not less. The genuine alternative is to re-index `Term` / `OutFields` by `ifs`, which fights `Term`'s role as a shared InCtor-agnostic AST and is a substantial, unproven change. The wording now describes it as a larger re-parameterization to spike before committing, not a tidy refactor that is obviously better. No change to the implementation steps, milestones, or acceptance criteria.

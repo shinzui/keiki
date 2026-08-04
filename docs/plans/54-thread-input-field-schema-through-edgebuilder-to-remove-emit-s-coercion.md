@@ -8,6 +8,19 @@ created_at: 2026-05-23T13:49:41Z
 
 # Thread input field schema through EdgeBuilder to remove emit's coercion
 
+> **Status: SUPERSEDED (2026-08-04). Do not implement this plan.**
+> It was never executed — every milestone below is unchecked — but its
+> objective was achieved by
+> `docs/plans/70-builder-correctness-hardening-eager-finalize-validation-closing-the-emit-unsafecoerce-schema-hole-and-declaration-order-edge-merging.md`
+> (Milestone 2) on 2026-07-12, in commit `fc4349f`
+> (`feat(builder): pin input schemas in EdgeBuilder`). EP-70 reached
+> **outcome A** — `src/Keiki/Builder.hs` now contains no `unsafeCoerce`,
+> `reIndexPinnedInCtor` and `PeInCtor` are gone, and no aggregate author
+> changed a call site. It got there via a *refinement* of the design
+> proposed here; see the Decision Log entry dated 2026-08-04 and Outcomes
+> & Retrospective. This file is retained as the record of the question and
+> the pre-investigation that framed it.
+
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
 
@@ -47,6 +60,11 @@ coercion-free.
 
 
 ## Progress
+
+**None of these milestones were executed under this plan.** They are all
+superseded by EP-70 Milestone 2 (commit `fc4349f`, 2026-07-12), which delivered
+the same objective — see the status banner above. Left unchecked deliberately, to
+record accurately that this plan was never run rather than to imply outstanding work.
 
 - [ ] M1 (spike): add an `ifs :: [Slot]` parameter to `EdgeBuilder` and `PartialEdge`,
       replace the `PeInCtor` existential with a plain `Maybe (InCtor ci ifs)`, and rewrite
@@ -99,10 +117,48 @@ coercion-free.
   whole point of the plan; if it cannot be made to work cleanly, the answer is outcome B.
   Date: 2026-05-23
 
+- Decision: **Supersede this plan; the work was delivered by EP-70, not here.**
+  Rationale: A relevance audit of EP-53 on 2026-08-04 found that this plan was never
+  executed, yet its objective had already been met. EP-70 Milestone 2 (commit `fc4349f`,
+  `feat(builder): pin input schemas in EdgeBuilder`, 2026-07-12) threaded the input-schema
+  pin through `EdgeBuilder`, deleted `reIndexPinnedInCtor`, and removed the builder's
+  `Unsafe.Coerce` import. Re-running this plan would attempt work already in the tree.
+  Marking it superseded rather than deleting it preserves the pre-investigation evidence
+  (the "no explicit `EdgeBuilder` annotations" feasibility signal, and the `onEpsilon` +
+  multi-`emitWith` risk) that shaped how EP-70 approached the problem.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Superseded — this plan produced no code.** Its question was answered, and answered
+affirmatively (**outcome A**), by EP-70 Milestone 2 on 2026-07-12.
+
+What EP-70 landed, verified against the working tree at `9ee8de0` on 2026-08-04:
+
+- `EdgeBuilder` and `PartialEdge` carry the input schema as a type parameter
+  (`src/Keiki/Builder.hs:322`, `:280`).
+- `reIndexPinnedInCtor` and the `PeInCtor` existential no longer exist;
+  `rg -n "unsafeCoerce" src/Keiki/Builder.hs` returns nothing — the M1/M3 acceptance
+  criterion stated in this plan.
+- No aggregate author changed a call site, matching this plan's central feasibility
+  hypothesis (there were no explicit `EdgeBuilder` annotations in `jitsurei/` or `test/`).
+- `docs/adr/0001-structural-re-indexing-for-sound-replay.md` records the closure under
+  "Completed follow-up" in its Consequences — the M6 deliverable.
+
+**Where EP-70's design differed from this plan, and why it is better.** This plan proposed
+a plain `ifs :: [Slot]` parameter. EP-70 used `pin :: Maybe [Slot]` instead. The `Maybe`
+resolves exactly the hazard this plan's Surprises section had flagged as the main threat to
+outcome A: an `onEpsilon` block pins no input constructor, so it has no `ifs` to supply, and
+a mandatory `[Slot]` parameter would have forced an awkward answer there. Encoding
+"unpinned" in the type was the missing piece. The pre-investigation recorded here correctly
+identified the obstacle; EP-70 supplied the refinement that cleared it.
+
+Retrospective note: the gap between this plan being written (2026-05-23) and its objective
+being delivered elsewhere (2026-07-12) went unrecorded for roughly seven weeks, during which
+the file read as open work. An investigate-then-decide plan whose subject is a small residual
+cleanup is prone to this — the cleanup gets absorbed into a larger nearby plan. Worth
+cross-checking such plans against the tree before scheduling them.
 
 
 ## Context and Orientation
@@ -318,3 +374,22 @@ outcome A:
 
 At the end of outcome B: the interfaces are unchanged from EP-53, and the Decision Log
 explains why.
+
+> **Superseded note:** outcome A was reached by EP-70, but with `pin :: Maybe [Slot]` on
+> `EdgeBuilder`/`PartialEdge` rather than the `ifs :: [Slot]` / `peInCtor :: Maybe (InCtor
+> ci ifs)` shape sketched above. Read the tree (`src/Keiki/Builder.hs:280`, `:322`), not
+> this section, for the interfaces that actually landed.
+
+
+## Revision Notes
+
+- 2026-08-04 — **Marked SUPERSEDED.** A relevance audit of EP-53 (its parent, which flagged
+  this cleanup as its one residual follow-up) found this plan was never executed while its
+  objective had already been delivered by EP-70 Milestone 2 on 2026-07-12 (commit `fc4349f`).
+  Verified against the working tree at `9ee8de0`: `src/Keiki/Builder.hs` contains no
+  `unsafeCoerce`, and neither `reIndexPinnedInCtor` nor `PeInCtor` exists anywhere in `src/`.
+  Added a status banner, a Progress preamble explaining why the milestones remain unchecked,
+  a Decision Log entry recording the supersession, a filled-in Outcomes & Retrospective
+  crediting EP-70 and explaining why its `Maybe [Slot]` refinement beat this plan's proposed
+  `[Slot]` parameter, and a caveat on the Interfaces section. No milestone was retroactively
+  checked off — this plan produced no code, and the record should say so.
