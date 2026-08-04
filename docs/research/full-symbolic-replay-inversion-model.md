@@ -251,7 +251,74 @@ constraint, not a Keiki semantic failure.
 
 ## Prototype results
 
-To be completed by Milestones 2 and 3.
+The unsupported test-only prototype lives in `test/Keiki/InversionModelResearchSpec.hs` while the
+experiment is active. It defines a `DualCandidateEnv` with two register variables shared by both
+candidates and two `CandidateVars` records. Each candidate record owns its constructor tag, outer
+`Either` arm, two input fields, and an opaque atom. Every SBV label is prefixed by ownership and
+structural position; the two register variables deliberately share a human diagnostic suffix but
+remain distinct positions.
+
+The focused command is:
+
+```bash
+nix develop -c cabal test keiki-test \
+  --test-options='--match=replay-inversion' \
+  --test-show-details=direct
+```
+
+It passed 14 examples with zero failures in 0.1092 seconds of Hspec-reported example time. Solver
+process startup is included in the wall-clock command but not in that Hspec summary.
+
+### Dual-command result
+
+The correct separate-command formula constrains candidate A's constructor tag to `0` and candidate
+B's tag to `1`; z3 reports SAT. The negative control uses one shared tag and reports UNSAT for
+`tag == 0 && tag == 1`. The negative result is precisely the false disjointness proof a direct
+reuse of today's single `SymEnv` could manufacture.
+
+The shared-register fixture asks both candidate guards about the same scalar and proves
+`register < 0 && register >= 0` UNSAT. Enumeration over `[-3..3]` finds no concrete overlap.
+Same-constructor fields remain candidate-local, so A can satisfy `(a1 = a0 + 1, a0 = 3)` while B
+satisfies `(b1 = b0 + 1, b0 = 9)`. Separate outer arms and opaque occurrences are SAT, and two
+register positions carrying the same diagnostic label remain distinct and SAT at values `0` and
+`1`. Constructed `Unknown` and `ProofError` results both classify as inconclusive through
+`satResultIsProvablyUnsat`.
+
+### Shared observed-head result
+
+A generated/validated structural descriptor with one integer field permits one shared observed
+variable. Candidate A and B each reconstruct their own command field from that variable. Guards
+`a.value == 0` and `b.value == 1` make the conjunction UNSAT; guards `a.value == 0` and
+`b.value == 0` are SAT.
+
+The same shape is also built with real `Keiki.Core` values: two `InCtor` values, one `WireCtor`,
+two `OPack` heads, and input-field-only guards. Current `inversionAmbiguityWarnings` retains a
+warning because the head names match. A Plan-85-style register-only extraction must also retain it
+because neither guard contains a register conjunct. Concrete `solveOutput` candidacy over observed
+integers `[-3..3]` finds at most one candidate for the disjoint pair and exactly two candidates at
+observed `0` for the overlapping control.
+
+This is the required precision win in the hypothetical structurally witnessed fragment: the
+proof depends on both inversions sharing the same observed event field and cannot be obtained by
+sharing registers alone.
+
+### Unsupported and runtime-specific cases
+
+Two descriptors with equal `schemaDiagnosticName` but integer versus Boolean field carriers do not
+align. A descriptor marked dishonest or manual-but-unvalidated does not align. These controls
+represent the missing law evidence behind today's opaque `wcMatch`/`wcBuild` closures; the
+prototype never casts their existential tuples.
+
+Top-level command fields contribute equality with the shared observation. Exact arithmetic and a
+fully witnessed structural projection may contribute a derived equality. Opaque `TApp` and an
+unconstrained projection drop that equality and mark the translation conservative. `TReg` audit
+fields and output literals leave the observation unconstrained because that is exactly what
+`solveOutput` does: neither is recomputed during its final event equality check. “Supporting an
+exact literal” therefore means representing this exact absence of a literal constraint, not
+adding `observed == literal`.
+
+The multi-event control adds no tail constraint and remains SAT. This matches runtime order:
+head inversion selects an edge before `InFlight` compares its evaluated tail.
 
 
 ## Adversarial and performance results

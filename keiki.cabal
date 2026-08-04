@@ -133,6 +133,7 @@ test-suite keiki-test
     Keiki.Fixtures.SplitCoverage
     Keiki.Fixtures.UserRegistration
     Keiki.Generics.THSpec
+    Keiki.InversionModelResearchSpec
     Keiki.LawHelpers
     Keiki.NoThunksSpec
     Keiki.OperatorsQualifiedSpec

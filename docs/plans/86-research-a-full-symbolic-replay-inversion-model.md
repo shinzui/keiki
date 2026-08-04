@@ -46,10 +46,14 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
       baselines, and published the capability matrix in
       `docs/research/full-symbolic-replay-inversion-model.md`. Sequential focused baselines passed
       with 3, 5, and 9 examples respectively and zero failures.
-- [ ] Milestone 2: prototype two candidate-scoped command environments sharing one symbolic
-      register environment, and prove the dual-command semantics against finite concrete models.
-- [ ] Milestone 3: prototype shared observed-head constraints for a deliberately small structural
-      `OutTerm` fragment, including exact and conservative translation classifications.
+- [x] (2026-08-04T17:59:16Z) Milestone 2: added an unsupported test-only dual-candidate SBV
+      environment with shared structural register variables, candidate-scoped constructors,
+      fields, arms, and opaque atoms. The separate-command and finite concrete controls pass; the
+      intentionally wrong single-command control demonstrates false UNSAT.
+- [x] (2026-08-04T17:59:16Z) Milestone 3: added a typed one-field observed-head descriptor,
+      output-dependent disjoint and overlapping fixtures, real `solveOutput` candidate
+      enumeration, and fail-conservative mismatched-schema, dishonest-descriptor, derived,
+      projection, register-audit, and multi-event controls. The focused suite passes 14 examples.
 - [ ] Milestone 4: run adversarial soundness, precision, performance, and API/PVP experiments; then
       remove or retain prototype code according to the promotion criteria.
 - [ ] Milestone 5: finish the research report, record a go/no-go/prerequisite decision, distill
@@ -121,6 +125,12 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
 - Decision: Run all Cabal build and test commands sequentially for this plan.
   Rationale: Parallel invocations mutated the same `dist-newstyle` cache and produced spurious
   missing-file failures, obscuring the semantic evidence.
+  Date: 2026-08-04
+
+- Decision: Model literal and `TReg` output fields as exact absence of a verification constraint.
+  Rationale: `solveOutput` retains their observed values when rebuilding the event. Equating a
+  literal output to its term literal or a register output to the current register would be stricter
+  than runtime and could manufacture false UNSAT.
   Date: 2026-08-04
 
 
