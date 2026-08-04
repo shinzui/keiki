@@ -15,14 +15,20 @@
 * **Addition**: IR-6 requests typed structural identity for input constructors so composition
   substitution and symbolic `PInCtor` reasoning stop trusting `icName` string equality and the
   `unsafeCoerceTerm` it authorizes — the input-side twin of ExecPlan 87's output-head schemas.
-  Filed `planned`: implementation is specified by ExecPlan 88, sequenced inside the same
-  unpublished 0.9/0.11 line.
+  Filed `planned`: implementation is specified by ExecPlan 88 in the same local breaking-work
+  sequence; no release line or downstream migration is selected before all breaking ExecPlans
+  are complete.
 * **Addition**: IR-7 requests a researched, sanctioned event schema-evolution/upcasting path for
   long-lived logs, now that ExecPlan 87's structural matching removes the unsound custom-`Eq`
-  quotienting trick; research-first, targeting the release after the structural boundary.
+  quotienting trick; research-first, with release selection and migration explicitly deferred.
+* **Implementation prerequisite**: ExecPlan 87 delivered IR-7's structural starting point
+  locally. Schema-evolution research may now be planned without selecting a release line.
 * **Addition**: IR-8 requests a documented, copyable CI gate recipe for the opt-in symbolic
   inversion checker with an explicit missing-solver policy, so its precision is exercised by
   adopters and "not checked" can never read as "proved clean".
+* **Implementation prerequisite**: ExecPlan 87 delivered IR-8's opt-in checker API locally.
+  The consumer recipe remains proposed and does not trigger migration; a future user-authored
+  release plan will coordinate adopters after the remaining breaking ExecPlans are complete.
 
 ## 2026-08-01
 * **Status change**: IR-2 `planned` -> `implemented`. ExecPlan 81's detailed forward-success and

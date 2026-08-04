@@ -8,6 +8,7 @@ description: >-
 docId: ADR-4
 status: Accepted
 date: 2026-07-13
+timestamp: 2026-08-04T20:31:10Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -15,7 +16,7 @@ generated:
 
 # ADR-0004: Composition uses snapshot updates and checked boundaries
 
-- **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`
+- **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
 
 ## Context
 
@@ -49,6 +50,12 @@ forward-correct under that lowering, but symbolic precision is lost.
 `NonStructuralProjectionBoundary` warning, including pending-write cases
 in multi-event chains.
 
+Structural output-wire evidence follows the same checked-boundary rule. `leftWireCtor` and
+`rightWireCtor` prefix a trusted constructor path across their proven `Either` arms, and Builder
+emission preserves the supplied schema unchanged. Transformations that replace the matcher,
+change field meaning, or cannot prove the typed relationship—including identity, Strong/Arrow,
+and output-map paths—set the schema to unavailable rather than forwarding stale proof evidence.
+
 ## Consequences
 
 - Intra-edge updates cannot intentionally depend on a sibling write;
@@ -61,6 +68,8 @@ in multi-event chains.
 - Typed projections retain nominal symbolic identity only across
   structural boundaries; computed and pending-write owners require an
   explicit unchecked, forward-only choice.
+- Output-wire schemas survive only structure-preserving checked boundaries; lossy transformations
+  remain usable but cannot authorize cross-edge observed-field sharing.
 - `Category`, `Choice`, `Strong`, and `Arrow` claims are documented per
   forward and replay observations; some fragments remain partial or
   forward-only rather than unqualified lawful instances.

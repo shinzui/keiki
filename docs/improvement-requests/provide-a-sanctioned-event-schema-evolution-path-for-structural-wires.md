@@ -6,7 +6,7 @@ description: >-
   under an older event shape replay under the current transducer, now that ExecPlan 87's
   structural matching removes the (unsound) custom-Eq trick consumers could otherwise reach
   for.
-timestamp: 2026-08-04T20:00:00Z
+timestamp: 2026-08-04T20:41:34Z
 requestId: IR-7
 status: proposed
 origin: mori://shinzui/keiki
@@ -16,8 +16,9 @@ origin: mori://shinzui/keiki
 
 ## Status
 
-Proposed. Requires an ExecPlan-86-style research phase before implementation planning; it
-must not begin against the pre-ExecPlan-87 representation.
+Proposed. ExecPlan 87 delivered the structural prerequisite locally. An ExecPlan-86-style
+research phase may now be planned separately, without selecting a release line or starting
+adopter migration.
 
 ## Context
 
@@ -72,14 +73,14 @@ rather than stretching Keiki's core.
 
 - Weakening the trusted-schema boundary or the `wcMatch` honesty law.
 - General-purpose data migration tooling unrelated to event replay.
-- The 0.9/0.11 release line itself; this request targets the release after the structural
-  boundary is stable unless research finds a cheap documentation-only first step.
+- Version selection, publication, and adopter migration. A future user-authored release plan
+  owns those after all breaking Keiki ExecPlans are complete.
 
 ## Compatibility Baseline
 
-Filed against the local working tree at Keiki 0.8.0.0 (commit `6fbce40`) with ExecPlans 87
-and 85 accepted but not yet implemented. The request assumes the post-87 structural
-representation as its starting point.
+Filed against Keiki 0.8.0.0 before ExecPlan 87 implementation. Its assumed structural
+representation is now implemented locally but deliberately unreleased; Plan 85 and the
+input-side structural follow-up remain separate work.
 
 ## References
 

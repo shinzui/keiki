@@ -7,7 +7,7 @@ description: >-
 docId: ADR-5
 status: Accepted
 date: 2026-07-13
-timestamp: 2026-08-04T18:11:05Z
+timestamp: 2026-08-04T20:31:10Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -15,7 +15,7 @@ generated:
 
 # ADR-0005: Persisted wire identities are explicit and versioned
 
-- **Plan(s):** `docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md`; `docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`
+- **Plan(s):** `docs/plans/77-event-codec-schema-evolution-version-tags-wire-kind-pinning-and-default-on-missing-decoding.md`; `docs/plans/78-persistence-wire-format-hardening-golden-byte-fixtures-maybe-slot-coverage-and-stable-shape-hash-names.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
 
 ## Context
 
@@ -40,7 +40,7 @@ compile-time-complete sequence of one-envelope-to-one-envelope upcasters.
 One-to-many event migrations and semantic changes remain application
 boundary responsibilities.
 
-Persisted wire identity and a future symbolic structural descriptor serve different contracts.
+Persisted wire identity and `WireSchema` structural proof evidence serve different contracts.
 A wire kind identifies durable encoded data across versions; it does not prove Haskell field-type
 equality, matcher behavior, or ordered field correspondence between two `WireCtor` values. Full
 symbolic replay inversion must carry separate typed structural evidence and must not overload
@@ -59,5 +59,5 @@ symbolic replay inversion must carry separate typed structural evidence and must
   event envelopes against accidental drift.
 - Applications with an outer versioned envelope may keep the derived
   codec at version 1 and own migration entirely outside it.
-- A future structural replay descriptor may reuse the same generated schema source, but its typed
-  proof evidence remains distinct from the persisted discriminator and version envelope.
+- Structural replay evidence reuses Generic/TH schema derivation, but its typed proof remains
+  process-local and distinct from the persisted discriminator and version envelope.

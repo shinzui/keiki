@@ -57,9 +57,9 @@ schema representation.
       `WireCtor` record to explicit unavailability. Focused results: Generics 27 examples,
       TH 27, WireSchema 10, Composition 60, Profunctor 68, and Builder 32; all reported
       0 failures.
-- [ ] Post-review addendum (2026-08-04): the `DEPRECATED` pragmas landed with Milestone 4;
-      the foundations replay-verification page remains for Milestone 5 (recorded after
-      Milestones 1–2 completed; see Decision Log).
+- [x] (2026-08-04T20:40:48Z) Post-review addendum: the `DEPRECATED` pragmas landed with
+      Milestone 4 and the numbered replay-verification foundations page landed with Milestone 5
+      (recorded after Milestones 1–2 completed; see Decision Log).
 - [x] (2026-08-04) Milestone 3: implemented the detailed opt-in dual-candidate symbolic
       checker and fail-conservative compatibility projection. Candidate command tags, arms,
       fields, projections, and opaque values are independent; register and structurally aligned
@@ -71,8 +71,13 @@ schema representation.
       helpers, documented the unreleased breaking migration, and compiled all in-tree Keiki,
       codec, test-support, and jitsurei packages without editing versions, bounds, or dependent
       repositories. Focused WireSchema and TH results remained 10 and 27 examples, 0 failures.
-- [ ] Milestone 5: update local Haddocks, changelogs, IR/ADR records, and the future-release
-      handoff; run Keiki gates and hand the schema surface to Plans 85 and 88.
+- [x] (2026-08-04T20:40:48Z) Milestone 5: updated local Haddocks and user/foundations guidance,
+      amended ADR-0001/0003/0004/0005 through the strict workflow, refreshed IR-6/IR-7/IR-8 and their
+      future-release handoff, and completed every local gate. Final full-suite counts were
+      Keiki 681, codec 104, and jitsurei 127 examples (912 total), all with 0 failures;
+      replay-alignment and recompute/verify focused counts were 18 and 9, both with 0 failures.
+      `nix fmt`, `cabal build all`, `cabal haddock all`, `nix flake check`, `just adr-validate`,
+      and `git diff --check` passed.
 
 
 ## Surprises & Discoveries
@@ -125,6 +130,14 @@ schema representation.
   test execution. The stable module substring `FullSymbolicReplayInversion` selects the intended
   14 examples.
   Evidence: focused Milestone 3 execution on 2026-08-04.
+
+- Observation: the current Mori improvement-request validator cannot index this repository's
+  pinned ADR profile and rejects the established `planned`, `implemented`, and `released`
+  lifecycle statuses across pre-existing requests. The repository's strict ADR command remains
+  healthy and reports all six concepts valid.
+  Evidence: `mori improvement-requests validate --path /Users/shinzui/Keikaku/bokuno/keiki`
+  failed on the profile/schema mismatch and IR-1 through IR-6 statuses on 2026-08-04;
+  `just adr-validate` passed. IR-6 and IR-8 retain their existing legal repository statuses.
 
 
 ## Decision Log
@@ -264,7 +277,28 @@ schema representation.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Plan 87 delivered the structural prerequisite and the optional solver promised by Plan 86.
+`WireCtor` now carries nominally protected structural evidence; Generic and TH constructors are
+trusted, checked sum composition prefixes paths, and manual or meaning-changing transformations
+state that evidence is unavailable. Public code cannot forge a trusted schema, and diagnostic
+constructor or selector names never authorize field alignment.
+
+The opt-in detailed checker models independently reconstructed commands against shared
+pre-event registers and structurally aligned observed fields. It removes a compatibility warning
+only for definite UNSAT and reports why unsupported or unwitnessed relationships were omitted.
+The adversarial literal, register-audit, candidate-scope, duplicate-label, unsupported-term,
+nullary-sum, and finite-oracle fixtures make the conservative polarity executable. The existing
+pure validator and runtime replay path did not change.
+
+Documentation now distinguishes invertible fields retained from the observation from derived
+fields recomputed and verified, records the trusted/unavailable schema boundary in Haddocks and
+ADRs, and leaves explicit handoffs to Plan 85, Plan 88/IR-6, schema-evolution research, and the
+consumer CI recipe. The 100-pair benchmark completed in 0.315 CPU seconds, all 912 final test
+examples passed, Haddock and native flake checks passed, and strict ADR validation passed.
+
+No package version, dependency bound, release artifact, downstream repository, or adopter was
+changed. That separation is intentional: the user will author a release plan after all breaking
+Keiki ExecPlans are complete, then coordinate Keiki, Keiro, and application migration once.
 
 
 ## Context and Orientation

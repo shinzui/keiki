@@ -951,6 +951,17 @@ one it cannot prove syntactically). For exact, solver-backed answers call
 directly (these need `z3` on `PATH`); reserve them for a slower test group
 and keep `validateTransducer` as the always-on fast assertion.
 
+Replay inversion also has an explicit solver-backed refinement:
+`Keiki.Symbolic.checkInversionAmbiguitySymDetailed` reports the structural
+wire evidence, translation omissions, and solver result for each conservative
+`InversionAmbiguity` pair. The compatibility projection
+`checkInversionAmbiguitySym` removes a warning only after a definite
+unsatisfiability proof. Missing schemas, opaque functions, unsupported
+carriers, timeouts, and solver failures all retain the warning. Neither
+function is called by `validateTransducer`; use it in an opt-in z3 test group.
+See [Replay Verification and Trusted Events](../foundations/07-replay-verification-and-trusted-events.md)
+before interpreting an output expression as an event-integrity rule.
+
 ### Hidden-input warnings
 
 The hidden-input check above is also available on its own as
@@ -1106,7 +1117,7 @@ this guide and in the haddocks.
 | **`Update rs w ci`** | The register-update language. `UKeep`, `USet`, `UCombine`. The phantom `w :: [Symbol]` index records the slots written so far for the static distinct-targets check. |
 | **`combine`** | Concatenate two `Update`s under a `Disjoint` constraint. The constraint enforces no register is written by both halves. |
 | **`InCtor ci ifs`** | Reified evidence that `ci`'s value can be matched against a specific constructor and its payload reassembled as a `RegFile ifs`. Carries the constructor's name (`icName`), a matcher (`icMatch`), and a builder (`icBuild`). Produced by `deriveAggregateCtors`. |
-| **`WireCtor co fs`** | Reified evidence for an event constructor — the dual of `InCtor` for the output side. Carries a builder over a nested-pair tuple. Produced by `deriveWireCtors`. |
+| **`WireCtor co fs`** | Reified evidence for an event constructor — the dual of `InCtor` for the output side. Carries a builder over a nested-pair tuple and a `WireSchema`: trusted Generic/TH producers record the constructor path and ordered field types, while manual or meaning-changing paths state that structural evidence is unavailable. Produced by `deriveWireCtors`. |
 | **`OutFields rs ci ifs fs`** | A heterogeneous list of `Term`s, one per event-payload field, indexed by the same input schema as its enclosing `InCtor`. Built with `(*:)` / `oNil` or via the TH-emitted `<Ctor>TermFields` record. |
 | **`OutTerm rs ci co`** | A packaged output: `OPack ic wc fs`. Holds the input-side `InCtor` (so replay can recover the input), the wire-side `WireCtor`, and the field-term list. |
 | **`pack`** | Smart constructor for `OPack`. The argument shape `pack ic wc fs` is what `B.emit` produces under the hood. |
@@ -1114,8 +1125,9 @@ this guide and in the haddocks.
 | **`step`** | Forward atomic operation: `(s, RegFile, ci) -> Maybe (s, RegFile, [co])`. `delta` and `omega` paired. Prefer `stepEither` when a rejection reason matters. |
 | **`applyEvent`** | Letter-only inverse compatibility step: `(s, RegFile, co) -> Maybe (s, RegFile)`. For general replay use the `InFlight`-aware structured functions. |
 | **`reconstituteEither`** | Strict full-log replay from the initial state, returning a located `ReplayFailure` instead of collapsing failure to `Nothing`. `reconstitute` is its compatibility wrapper. |
-| **`solveOutput`** | The *runtime* inverter on the replay path (called by `applyEvent`/`applyEventStreaming`/`reconstitute`): recovers the command from an edge's invertible output fields and, since EP-47, *recomputes-and-verifies* any derived (`TApp`/`TArith`) fields forward (needs `Eq co`), so derived output fields round-trip too. The reason `applyEvent` exists at all without hand-written inverses. The full rule is the output-invertibility contract (`docs/guide/output-invertibility.md`); the relaxation is `docs/research/recompute-and-verify-derived-outputs.md`. |
+| **`solveOutput`** | The *runtime* inverter on the replay path (called by `applyEvent`/`applyEventStreaming`/`reconstitute`): recovers the command from an edge's invertible output fields and *recomputes-and-verifies* derived (`TApp`/`TArith`/`TFieldProj`) fields forward (needs `Eq co`). Invertible `TLit`/`TOpaqueLit`/`TReg` positions retain their observed values and are not event-integrity assertions. See `docs/guide/output-invertibility.md` and `docs/foundations/07-replay-verification-and-trusted-events.md`. |
 | **`checkHiddenInputs`** | Build-time analysis that flags edges whose update or guard reads an input field not present in the output term. Such edges can't be replayed from the event alone — it is the build-time net for the output-invertibility contract (`docs/guide/output-invertibility.md`). |
+| **`checkInversionAmbiguitySymDetailed`** | Opt-in z3-backed refinement of conservative inversion warnings. It models two independently reconstructed commands against shared registers and structurally aligned observed fields; only a definite UNSAT result proves the pair disjoint. Missing evidence or unsupported terms widen the formula and retain the warning. |
 | **`isSingleValuedSym`** | Symbolic single-valuedness check. For each vertex, asks `isBot` of every pairwise conjunction of outgoing-edge guards. Lives in `Keiki.Symbolic`. |
 | **`withSymPred`** | Adapter that re-tags every edge guard from `HsPred` to `SymPred`. Lets the SBV-backed `BoolAlg` instance fire without rewriting the aggregate. |
 | **B-presentation / B-view** | A per-vertex projection that exposes only the slots live in that vertex. Generated by `deriveView`. Opt-in; the transducer doesn't depend on it. |
@@ -1306,10 +1318,11 @@ guide already established.
   for the "what does this cost" reference.
 - **Know which events round-trip on replay.** `output-invertibility.md`.
   The exact rule for which output expression shapes `solveOutput` can
-  invert (literals, register reads, same-ctor command-field copies) and
-  which abort replay (opaque `TApp`, structural arithmetic), plus worked
-  recipes for events that store a derived value. Read it before you write
-  an audit/`previous*` field or a computed event payload.
+  use to recover a command and which derived terms it recomputes and verifies,
+  plus worked recipes for events that store a derived value. Pair it with
+  `../foundations/07-replay-verification-and-trusted-events.md` before you
+  treat an audit/`previous*` field or literal-looking output as an integrity
+  assertion.
 - **Drop down to the AST.** `ast-drop-down.md`. When the builder
   can't express what you need, hand-author `Edge` records against
   `Keiki.Core`. Reference templates: `userRegAST` and

@@ -5,7 +5,7 @@ description: >-
   Ship a documented, copyable CI gate recipe for ExecPlan 87's opt-in symbolic
   replay-inversion checker so its output-dependent precision is actually exercised by
   adopters, with explicit behavior when z3 is unavailable.
-timestamp: 2026-08-04T20:00:00Z
+timestamp: 2026-08-04T20:40:48Z
 requestId: IR-8
 status: proposed
 origin: mori://shinzui/keiki
@@ -15,8 +15,10 @@ origin: mori://shinzui/keiki
 
 ## Status
 
-Proposed. Blocked on ExecPlan 87 delivering `checkInversionAmbiguitySym`; the recipe work
-itself is small and should land in the first release after the 0.9/0.11 line.
+Proposed. ExecPlan 87 delivered `checkInversionAmbiguitySym` and its detailed result locally.
+The copyable gate recipe remains separate follow-up work and must not start a downstream
+migration; the user-authored release plan will coordinate adopters after all breaking Keiki
+ExecPlans are complete.
 
 ## Context
 
@@ -66,9 +68,9 @@ a hidden build dependency for every consumer.
 
 ## Compatibility Baseline
 
-Filed against the local working tree at Keiki 0.8.0.0 (commit `6fbce40`) with ExecPlan 87
-accepted but not yet implemented; the referenced checker API is that plan's pinned
-interface.
+Filed against Keiki 0.8.0.0 before ExecPlan 87 implementation. The structural wire schema and
+checker API are now implemented locally but deliberately unreleased; package versions, bounds,
+and adopter migration remain owned by a future user-authored release plan.
 
 ## References
 

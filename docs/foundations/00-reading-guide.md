@@ -30,9 +30,10 @@ Engineers who will use, contribute to, or review keiki. We assume:
 04-projections-and-deriving-event-sourcing.md    ~15 min
 05-data-carrying-alphabets.md                    ~15 min
 06-where-to-go-next.md                           ~5 min
+07-replay-verification-and-trusted-events.md     ~10 min
 ```
 
-Total commitment: about an hour.
+Total commitment: about 70 minutes.
 
 ## What you can skip
 
@@ -42,6 +43,9 @@ Total commitment: about an hour.
   decider pattern (`decide`/`evolve`).
 - **05** on a first pass if you're not going to touch the symbolic /
   SMT layer. Come back to it before reading the synthesis design note.
+- **07** until you work on replay safety, event integrity, or symbolic
+  ambiguity checks. Read it before treating an output expression as a replay
+  validation rule.
 
 ## After the foundations
 

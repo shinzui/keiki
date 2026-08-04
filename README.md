@@ -58,8 +58,10 @@ Symbolic Finite Transducers and Streaming String Transducers. From one
 - profunctor / `Category` / `Strong` / `Choice` / `Arrow` instances,
 - behavior-readable Mermaid and Markdown renderers, with explicit compact
   topology output,
-- eager builder validation, default-on replay-safety checks, and optional
-  single-valuedness checks via SBV + z3.
+- eager builder validation and default-on replay-safety checks, plus opt-in
+  SBV + z3 checks for single-valuedness and output-dependent replay inversion,
+- trusted Generic/TH wire schemas that align event fields structurally for
+  replay proofs without treating diagnostic constructor names as evidence.
 
 `delta` / `omega` / `applyEvent` use concrete predicate evaluation — no
 solver in the per-event hot path. Solver dispatch is reserved for

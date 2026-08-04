@@ -755,7 +755,10 @@ combine = UCombine
 
 -- | A wire-type tag for one constructor of the user's output sum @co@.
 -- The functions let 'solveOutput' pattern-match an observed @co@ and
--- 'evalOut' rebuild a @co@ from its fields.
+-- 'evalOut' rebuild a @co@ from its fields. 'wcSchema' is structural proof
+-- evidence, not a persisted identity: Generic/TH producers supply a trusted
+-- constructor path and typed field spine, while manual or meaning-changing
+-- construction must use 'wireSchemaUnavailable'. 'wcName' remains diagnostic.
 data WireCtor co fields = WireCtor
   { wcName :: String,
     wcSchema :: WireSchema co fields,
@@ -3162,6 +3165,12 @@ stateChangingEpsilonWarnings t =
 -- than inverts them. Different head constructor names are safe under the
 -- documented honesty law of 'wcMatch'. Literal-'PBot' guards are exempt because
 -- such an edge cannot participate in a successful inversion.
+--
+-- This pure compatibility check deliberately preserves its legacy name-based
+-- pair set. Call @Keiki.Symbolic.checkInversionAmbiguitySymDetailed@ explicitly
+-- to analyze two independently reconstructed candidates against shared
+-- registers and structurally aligned observed fields; only its definite UNSAT
+-- result may remove one of these warnings. Neither path changes runtime replay.
 inversionAmbiguityWarnings ::
   forall rs s ci co.
   (Bounded s, Enum s, Show s) =>

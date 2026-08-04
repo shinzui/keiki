@@ -790,7 +790,8 @@ rightInCtor InCtor {icName = n, icMatch = m, icBuild = b} =
 
 -- | Lift a 'WireCtor' from the left arm of an 'Either' output
 -- alphabet. Matches only on @Left _@ outputs; rebuilds via
--- @Left . wcBuild@.
+-- @Left . wcBuild@. Trusted schemas retain their field spine and receive a
+-- structural left-arm path prefix; unavailable evidence stays unavailable.
 leftWireCtor :: WireCtor co1 fs -> WireCtor (Either co1 co2) fs
 leftWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} =
   WireCtor
@@ -803,7 +804,8 @@ leftWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} 
     }
 
 -- | Lift a 'WireCtor' from the right arm of an 'Either' output
--- alphabet. Symmetric to 'leftWireCtor'.
+-- alphabet. Symmetric to 'leftWireCtor', including its preserve-or-drop schema
+-- rule.
 rightWireCtor :: WireCtor co2 fs -> WireCtor (Either co1 co2) fs
 rightWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} =
   WireCtor

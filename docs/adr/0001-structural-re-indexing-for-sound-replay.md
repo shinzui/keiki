@@ -7,7 +7,7 @@ description: >-
 docId: ADR-1
 status: Accepted
 date: 2026-05-23
-timestamp: 2026-08-04T18:11:05Z
+timestamp: 2026-08-04T20:31:10Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -17,7 +17,8 @@ generated:
 
 - **Plan(s):** `docs/plans/53-harden-inctor-identity-for-structural-replay.md`;
   follow-up `docs/plans/54-thread-input-field-schema-through-edgebuilder-to-remove-emit-s-coercion.md`;
-  research `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`
+  research `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`;
+  implementation `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
 - **Implementation:** commit `30c89fa` (`feat(core)!: re-index Term/OutFields by input
   schema for sound replay`)
 
@@ -77,10 +78,13 @@ Adopt the type-level re-indexing ("Design A-refined"):
 No `Typeable` is required anywhere, and the `Keiki.Profunctor` phantom `InCtor`s are
 untouched.
 
-This decision also governs future cross-edge inversion proofs: share observed fields only through
-a typed descriptor that proves constructor and ordered-field alignment. When a hand-written,
-composed, or mapped wire cannot preserve that evidence, symbolic inversion must mark the relation
-unavailable and retain the conservative ambiguity warning.
+This decision also governs cross-edge inversion proofs. Every `WireCtor` carries an abstract
+`WireSchema`; Generic and TH producers provide a trusted constructor path plus an ordered,
+typed field spine. The symbolic replay checker shares observed fields only after two trusted
+schemas prove equal paths and a position-by-position type alignment. Hand-written constructors
+state `wireSchemaUnavailable`; checked sum composition prefixes evidence, while mapped or
+meaning-changing wires drop it. Missing or prefix-related evidence retains the conservative
+ambiguity warning.
 
 ## Consequences
 
@@ -104,9 +108,10 @@ unavailable and retain the conservative ambiguity warning.
   different constructors that share both `icName` and field schema still compare equal; the
   `icName` check is a diagnostic, not proof of identity. Establishing unforgeable identity is
   out of scope.
-- The current public representation is intentionally insufficient for a full cross-edge symbolic
-  replay relation. Adding structural evidence to exported `WireCtor` construction is a separate,
-  source-breaking prerequisite; until then only narrower proofs may suppress warnings.
+- **Breaking record change:** `WireCtor` now requires `wcSchema`. Direct construction must state
+  unavailability, while `mkWireCtorVia`, `mkWireCtor0Via`, and TH derivation are the trusted paths.
+  Trusted constructors remain internal and schema roles are nominal so casts cannot mint proof
+  evidence.
 - **Residual `unsafeCoerce` outside the replay path** (current trust boundaries, not
   soundness holes in core inversion):
   - `Keiki.Composition.unsafeCoerceTerm` / `unsafeCoerceInCtor` — `compose`'s substitution

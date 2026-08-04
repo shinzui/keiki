@@ -5,7 +5,7 @@ description: >-
   Give InCtor typed structural identity so composition substitution and symbolic constructor
   reasoning stop trusting icName string equality and the unsafeCoerceTerm it currently
   authorizes, mirroring the trusted wire-schema evidence ExecPlan 87 adds for output heads.
-timestamp: 2026-08-04T20:00:00Z
+timestamp: 2026-08-04T20:40:48Z
 requestId: IR-6
 status: planned
 origin: mori://shinzui/keiki
@@ -17,8 +17,9 @@ origin: mori://shinzui/keiki
 
 Planned. Implementation is specified by ExecPlan 88
 (`docs/plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment.md`),
-sequenced after ExecPlans 87 and 85 inside the same unpublished Keiki 0.9 / Keiro 0.11
-compatibility line, so adopters still cross one structural API boundary.
+sequenced after ExecPlans 87 and 85. It lands locally without selecting a release line or
+migrating adopters; a future user-authored release plan owns that coordinated rollout after all
+breaking Keiki ExecPlans are complete.
 
 ## Context
 
@@ -48,8 +49,8 @@ as replay evidence, and
 requires composition to preserve proof evidence only at checked structural boundaries.
 ExecPlan 87 closes exactly this hazard class for output heads by adding non-forgeable
 `WireSchema` evidence to `WireCtor`; input constructors are the remaining name-trusting
-boundary. With two active application adopters today and twenty-plus planned, closing the
-input side inside the same unpublished 0.9 line avoids a second public migration.
+boundary. Closing the input side before any coordinated release lets adopters migrate once to
+the final structural surface chosen after all breaking ExecPlans are complete.
 
 ## Requested Change
 
@@ -84,8 +85,9 @@ abstraction should be reused from, not duplicated beside, ExecPlan 87's represen
 4. Unwitnessed constructors preserve current name-based behavior where it is conservative
    and lose it where it is not: no analysis suppresses a warning or authorizes a coercion
    from name equality alone.
-5. The source break lands inside the unpublished 0.9 line: consumers migrated by ExecPlan
-   87 receive incremental local edits, and no additional public break follows 0.9.
+5. The source break lands and is verified locally without changing package versions, bounds,
+   or dependent repositories; the future release plan migrates consumers only after the full
+   breaking surface is complete.
 
 ## Out of Scope
 

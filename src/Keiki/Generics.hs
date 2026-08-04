@@ -535,9 +535,10 @@ mkInCtorVia =
       icBuild = \rf -> to (gBuildCtor @name (to (gFromRegFile rf) :: d))
     }
 
--- | Build a 'WireCtor' from a constructor name alone. Mirrors
+-- | Build a trusted 'WireCtor' from a constructor name alone. Mirrors
 -- 'mkInCtorVia' on the wire side: the nested-pair field tuple comes
--- from the inferred payload's 'Generic' field metadata.
+-- from the inferred payload's 'Generic' field metadata, while the carrier's
+-- Generic sum path and ordered field types become its structural schema.
 --
 -- Example:
 --
