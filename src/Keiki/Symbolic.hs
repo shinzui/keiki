@@ -102,6 +102,13 @@ module Keiki.Symbolic
     DeadEdgeAnalysisDetail (..),
     checkDeadEdgesSymDetailed,
     checkDeadEdgesSym,
+    InversionCandidate (..),
+    InversionProofVerdict (..),
+    InversionSolverStatus (..),
+    InversionTranslationIssue (..),
+    InversionAnalysisDetail (..),
+    checkInversionAmbiguitySymDetailed,
+    checkInversionAmbiguitySym,
 
     -- * Re-exports
     module Keiki.Core,
@@ -144,9 +151,15 @@ import Keiki.Internal.SymbolicTypes
     discoverSymbolicType,
     symbolicTypeWholeCarrierExact,
   )
+import Keiki.Internal.WireSchema
+  ( WireFieldAlignment (..),
+    WireSchemaComparison (..),
+    compareWireSchemas,
+  )
 import Keiki.ProjectionDomain
 import Numeric.Natural (Natural)
 import System.IO.Unsafe (unsafePerformIO)
+import System.Timeout (timeout)
 import Type.Reflection (SomeTypeRep (..), eqTypeRep, typeRep, type (:~~:) (HRefl))
 
 -- * Symbolic representation -------------------------------------------------
@@ -1362,6 +1375,717 @@ symIsBot p = unsafePerformIO $ do
   pure $ case solved of
     Left _ -> False
     Right result -> satResultIsProvablyUnsat (predicateSolveResult result)
+
+-- * Full symbolic replay-inversion analysis -------------------------------
+
+-- | Which independently reconstructed replay candidate produced an issue.
+data InversionCandidate
+  = InversionCandidateA
+  | InversionCandidateB
+  deriving stock (Eq, Ord, Show)
+
+-- | Conservative proof verdict for one legacy inversion-warning pair.
+data InversionProofVerdict
+  = InversionProvedDisjoint
+  | InversionNotProvedDisjoint
+  deriving stock (Eq, Show)
+
+-- | Result of the optional solver query. Only
+-- 'InversionSolverUnsatisfiable' is proof-bearing.
+data InversionSolverStatus
+  = InversionSolverNotRun
+  | InversionSolverSatisfiable
+  | InversionSolverUnsatisfiable
+  | InversionSolverUnknown String
+  | InversionSolverTimedOut
+  | InversionSolverFailure String
+  deriving stock (Eq, Show)
+
+-- | A deterministic explanation for a relationship deliberately omitted
+-- from the replay-pair formula. Every omission widens the formula.
+data InversionTranslationIssue
+  = InversionWireSchemasUnwitnessed
+  | InversionUnsupportedObservedFieldCarrier Int SomeTypeRep
+  | InversionOpaqueDerivedOutput InversionCandidate Int
+  | InversionUnsupportedDerivedArithmetic InversionCandidate Int SomeTypeRep
+  | InversionUnsupportedDerivedProjection
+      InversionCandidate
+      Int
+      ProjectionDescriptor
+      String
+  | InversionGuardTranslationIssue InversionCandidate TranslationIssue
+  deriving stock (Eq, Show)
+
+-- | One same-source, same-phase pair from 'inversionAmbiguityWarnings', with
+-- its structural evidence and single opt-in solver result.
+data InversionAnalysisDetail s = InversionAnalysisDetail
+  { iadSource :: s,
+    iadLeftEdge :: EdgeRef s,
+    iadRightEdge :: EdgeRef s,
+    iadLeftSchemaAvailability :: WireSchemaAvailability,
+    iadRightSchemaAvailability :: WireSchemaAvailability,
+    iadHeadRelation :: WireHeadRelation,
+    iadVerdict :: InversionProofVerdict,
+    iadSolverStatus :: InversionSolverStatus,
+    iadTranslationIssues :: [InversionTranslationIssue]
+  }
+  deriving stock (Eq, Show)
+
+-- Existentials retained from the two head 'OPack's of one warning pair.
+data InversionCandidatePair rs ci co s where
+  InversionCandidatePair ::
+    s ->
+    Int ->
+    HsPred rs ci ->
+    InCtor ci leftInputFields ->
+    WireCtor co leftOutputFields ->
+    OutFields rs ci leftInputFields leftOutputFields ->
+    Int ->
+    HsPred rs ci ->
+    InCtor ci rightInputFields ->
+    WireCtor co rightOutputFields ->
+    OutFields rs ci rightInputFields rightOutputFields ->
+    InversionCandidatePair rs ci co s
+
+data InversionHead rs ci co where
+  InversionHead ::
+    InCtor ci inputFields ->
+    WireCtor co outputFields ->
+    OutFields rs ci inputFields outputFields ->
+    InversionHead rs ci co
+
+headInversionCandidate ::
+  Edge (HsPred rs ci) rs ci co s ->
+  Maybe (InversionHead rs ci co)
+headInversionCandidate Edge {output = OPack inputCtor wireCtor fields : _} =
+  Just (InversionHead inputCtor wireCtor fields)
+headInversionCandidate _ = Nothing
+
+-- Keep this enumeration intentionally isomorphic to
+-- 'inversionAmbiguityWarnings'. The compatibility projection zips its result
+-- with the warnings produced by that canonical pure function.
+inversionCandidatePairs ::
+  (Bounded s, Enum s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  [InversionCandidatePair rs ci co s]
+inversionCandidatePairs transducer =
+  [ InversionCandidatePair
+      source
+      leftIndex
+      (guard leftEdge)
+      leftInputCtor
+      leftWireCtor
+      leftFields
+      rightIndex
+      (guard rightEdge)
+      rightInputCtor
+      rightWireCtor
+      rightFields
+  | source <- [minBound .. maxBound],
+    let indexedEdges = zip [(0 :: Int) ..] (edgesOut transducer source),
+    (leftIndex, leftEdge) <- indexedEdges,
+    (rightIndex, rightEdge) <- indexedEdges,
+    leftIndex < rightIndex,
+    mode leftEdge == mode rightEdge,
+    not (isBot (guard leftEdge) || isBot (guard rightEdge)),
+    Just (InversionHead leftInputCtor leftWireCtor leftFields) <-
+      [headInversionCandidate leftEdge],
+    Just (InversionHead rightInputCtor rightWireCtor rightFields) <-
+      [headInversionCandidate rightEdge],
+    wcName leftWireCtor == wcName rightWireCtor
+  ]
+
+data ReplayVarKey
+  = ReplayRegisterVar Int SomeTypeRep
+  | ReplayInputVar String Int SomeTypeRep
+  | ReplayProjectionVar SymVarKey
+  deriving stock (Eq, Ord, Show)
+
+data ReplaySharedEnvironment = ReplaySharedEnvironment
+  { rseRegisterCache :: IORef (Map ReplayVarKey SomeSBV),
+    rseRegisterProjectionCache :: IORef (Map ReplayVarKey SomeSBV),
+    rseNextLabel :: IORef Int
+  }
+
+data ReplayCandidateEnvironment = ReplayCandidateEnvironment
+  { rceCandidate :: InversionCandidate,
+    rceInputCtor :: SBV.SBV String,
+    rceInputArm :: SBV.SBool,
+    rceCandidateCache :: IORef (Map ReplayVarKey SomeSBV),
+    rceShared :: ReplaySharedEnvironment,
+    rceIssues :: IORef [InversionTranslationIssue]
+  }
+
+newReplaySharedEnvironment :: SBV.Symbolic ReplaySharedEnvironment
+newReplaySharedEnvironment =
+  ReplaySharedEnvironment
+    <$> liftIO (newIORef Map.empty)
+    <*> liftIO (newIORef Map.empty)
+    <*> liftIO (newIORef 0)
+
+newReplayCandidateEnvironment ::
+  InversionCandidate ->
+  ReplaySharedEnvironment ->
+  IORef [InversionTranslationIssue] ->
+  SBV.Symbolic ReplayCandidateEnvironment
+newReplayCandidateEnvironment candidate shared issues = do
+  constructorTag <- SBV.free (candidateLabel candidate <> "/constructor")
+  inputArm <- SBV.free (candidateLabel candidate <> "/arm")
+  candidateCache <- liftIO (newIORef Map.empty)
+  pure
+    ReplayCandidateEnvironment
+      { rceCandidate = candidate,
+        rceInputCtor = constructorTag,
+        rceInputArm = inputArm,
+        rceCandidateCache = candidateCache,
+        rceShared = shared,
+        rceIssues = issues
+      }
+
+candidateLabel :: InversionCandidate -> String
+candidateLabel InversionCandidateA = "replay/candidate-a"
+candidateLabel InversionCandidateB = "replay/candidate-b"
+
+freshReplayLabel :: ReplaySharedEnvironment -> SBV.Symbolic String
+freshReplayLabel shared = liftIO $ do
+  ordinal <- readIORef (rseNextLabel shared)
+  modifyIORef' (rseNextLabel shared) (+ 1)
+  pure ("replay/value/" <> show ordinal)
+
+freshReplayFree ::
+  forall value.
+  (Sym value) =>
+  ReplaySharedEnvironment ->
+  SBV.Symbolic (SBV.SBV (SymRep value))
+freshReplayFree shared = freshReplayLabel shared >>= symFree @value
+
+freshReplayBool :: ReplayCandidateEnvironment -> SBV.Symbolic SBV.SBool
+freshReplayBool environment = do
+  label <- freshReplayLabel (rceShared environment)
+  SBV.free label
+
+memoReplayFree ::
+  forall value.
+  (Sym value) =>
+  ReplaySharedEnvironment ->
+  IORef (Map ReplayVarKey SomeSBV) ->
+  ReplayVarKey ->
+  SBV.Symbolic (SBV.SBV (SymRep value))
+memoReplayFree shared cache key = do
+  variables <- liftIO (readIORef cache)
+  case Map.lookup key variables of
+    Just (SomeSBV (variable :: SBV.SBV representation)) ->
+      case eqTypeRep (typeRep @(SymRep value)) (typeRep @representation) of
+        Just HRefl -> pure variable
+        Nothing ->
+          error ("memoReplayFree: type mismatch for structural key " <> show key)
+    Nothing -> do
+      variable <- freshReplayFree @value shared
+      liftIO (modifyIORef' cache (Map.insert key (SomeSBV variable)))
+      pure variable
+
+replayRegisterFree ::
+  forall value rs.
+  (Sym value) =>
+  ReplayCandidateEnvironment ->
+  Index rs value ->
+  SBV.Symbolic (SBV.SBV (SymRep value))
+replayRegisterFree environment index =
+  memoReplayFree @value
+    shared
+    (rseRegisterCache shared)
+    ( ReplayRegisterVar
+        (indexPosition index)
+        (SomeTypeRep (typeRep @value))
+    )
+  where
+    shared = rceShared environment
+
+replayInputFree ::
+  forall value ci inputFields.
+  (Sym value) =>
+  ReplayCandidateEnvironment ->
+  InCtor ci inputFields ->
+  Index inputFields value ->
+  SBV.Symbolic (SBV.SBV (SymRep value))
+replayInputFree environment inputCtor index =
+  memoReplayFree @value
+    shared
+    (rceCandidateCache environment)
+    ( ReplayInputVar
+        (icName inputCtor)
+        (indexPosition index)
+        (SomeTypeRep (typeRep @value))
+    )
+  where
+    shared = rceShared environment
+
+replayProjectionFree ::
+  forall projection rs ci inputFields.
+  ( Typeable projection,
+    Typeable (FieldOwner projection),
+    Sym (FieldResult projection)
+  ) =>
+  ReplayCandidateEnvironment ->
+  FieldWitness projection ->
+  ProjBase rs ci inputFields (FieldOwner projection) ->
+  SBV.Symbolic (SBV.SBV (SymRep (FieldResult projection)))
+replayProjectionFree environment witness base =
+  memoReplayFree @(FieldResult projection)
+    shared
+    cache
+    (ReplayProjectionVar (projectionVarKey witness base))
+  where
+    shared = rceShared environment
+    cache = case base of
+      PBReg {} -> rseRegisterProjectionCache shared
+      PBInp {} -> rceCandidateCache environment
+
+translateReplayTerm ::
+  forall rs ci inputFields value.
+  (Sym value) =>
+  ReplayCandidateEnvironment ->
+  Term rs ci inputFields value ->
+  SBV.Symbolic (SBV.SBV (SymRep value))
+translateReplayTerm _environment (TLit value) = pure (symLit value)
+translateReplayTerm _environment (TOpaqueLit value) = pure (symLit value)
+translateReplayTerm environment (TReg index) =
+  replayRegisterFree environment index
+translateReplayTerm environment (TInpCtorField inputCtor index) =
+  replayInputFree environment inputCtor index
+translateReplayTerm environment (TApp1 _function _argument) =
+  freshReplayFree @value (rceShared environment)
+translateReplayTerm environment (TApp2 _function _left _right) =
+  freshReplayFree @value (rceShared environment)
+translateReplayTerm environment (TArith operation left right) =
+  case discoverSymNum @value of
+    Nothing -> freshReplayFree @value (rceShared environment)
+    Just SymNumDict -> do
+      symbolicLeft <- translateReplayTerm environment left
+      symbolicRight <- translateReplayTerm environment right
+      case (discoverSymbolicType @value, operation) of
+        (Just SymbolicNatural, OpSub) ->
+          pure (SBV.ite (symbolicLeft SBV..>= symbolicRight) (symbolicLeft - symbolicRight) 0)
+        _ -> pure $ case operation of
+          OpAdd -> symbolicLeft + symbolicRight
+          OpSub -> symbolicLeft - symbolicRight
+          OpMul -> symbolicLeft * symbolicRight
+translateReplayTerm environment (TFieldProj witness base) = do
+  symbolic <- replayProjectionFree environment witness base
+  case fieldWitnessDomain witness of
+    Nothing -> pure ()
+    Just domain -> case compileProjectionDomain @value domain symbolic of
+      Left _unsupported -> pure ()
+      Right domainConstraint -> SBV.constrain domainConstraint
+  pure symbolic
+
+translateReplayPredicate ::
+  forall rs ci.
+  ReplayCandidateEnvironment ->
+  HsPred rs ci ->
+  SBV.Symbolic SBV.SBool
+translateReplayPredicate environment = go
+  where
+    go :: HsPred rs ci -> SBV.Symbolic SBV.SBool
+    go PTop = pure SBV.sTrue
+    go PBot = pure SBV.sFalse
+    go (PAnd left right) = (SBV..&&) <$> go left <*> go right
+    go (POr left right) = (SBV..||) <$> go left <*> go right
+    go (PNot predicate) = SBV.sNot <$> go predicate
+    go (PEq left right) = goEquality left right
+    go (PInCtor inputCtor) =
+      pure (rceInputCtor environment SBV..== SBV.literal (icName inputCtor))
+    go PLeftArm = pure (rceInputArm environment)
+    go PRightArm = pure (SBV.sNot (rceInputArm environment))
+    go (PCmp operation left right) = goOrdering operation left right
+
+    goEquality ::
+      forall value leftFields rightFields.
+      (Typeable value) =>
+      Term rs ci leftFields value ->
+      Term rs ci rightFields value ->
+      SBV.Symbolic SBV.SBool
+    goEquality left right = case discoverSym @value of
+      Nothing -> freshReplayBool environment
+      Just SymDict -> do
+        symbolicLeft <- translateReplayTerm environment left
+        symbolicRight <- translateReplayTerm environment right
+        pure (symbolicLeft SBV..== symbolicRight)
+
+    goOrdering ::
+      forall value leftFields rightFields.
+      (Typeable value) =>
+      Cmp ->
+      Term rs ci leftFields value ->
+      Term rs ci rightFields value ->
+      SBV.Symbolic SBV.SBool
+    goOrdering operation left right = case discoverSymOrd @value of
+      Nothing -> freshReplayBool environment
+      Just SymOrdDict -> do
+        symbolicLeft <- translateReplayTerm environment left
+        symbolicRight <- translateReplayTerm environment right
+        pure $ case operation of
+          CmpLt -> symbolicLeft SBV..< symbolicRight
+          CmpLe -> symbolicLeft SBV..<= symbolicRight
+          CmpGt -> symbolicLeft SBV..> symbolicRight
+          CmpGe -> symbolicLeft SBV..>= symbolicRight
+
+recordInversionIssue ::
+  ReplayCandidateEnvironment ->
+  InversionTranslationIssue ->
+  SBV.Symbolic ()
+recordInversionIssue environment issue =
+  liftIO (modifyIORef' (rceIssues environment) (++ [issue]))
+
+strictReplayDerivedTerm ::
+  forall rs ci inputFields value.
+  (Sym value) =>
+  ReplayCandidateEnvironment ->
+  Int ->
+  Term rs ci inputFields value ->
+  SBV.Symbolic (Maybe (SBV.SBV (SymRep value)))
+strictReplayDerivedTerm environment _position term@TLit {} =
+  Just <$> translateReplayTerm environment term
+strictReplayDerivedTerm environment _position term@TOpaqueLit {} =
+  Just <$> translateReplayTerm environment term
+strictReplayDerivedTerm environment _position term@TReg {} =
+  Just <$> translateReplayTerm environment term
+strictReplayDerivedTerm environment _position term@TInpCtorField {} =
+  Just <$> translateReplayTerm environment term
+strictReplayDerivedTerm environment position TApp1 {} = do
+  recordInversionIssue
+    environment
+    (InversionOpaqueDerivedOutput (rceCandidate environment) position)
+  pure Nothing
+strictReplayDerivedTerm environment position TApp2 {} = do
+  recordInversionIssue
+    environment
+    (InversionOpaqueDerivedOutput (rceCandidate environment) position)
+  pure Nothing
+strictReplayDerivedTerm environment position (TArith operation left right) =
+  case discoverSymNum @value of
+    Nothing -> do
+      recordInversionIssue
+        environment
+        ( InversionUnsupportedDerivedArithmetic
+            (rceCandidate environment)
+            position
+            (SomeTypeRep (typeRep @value))
+        )
+      pure Nothing
+    Just SymNumDict -> do
+      maybeLeft <- strictReplayDerivedTerm environment position left
+      maybeRight <- strictReplayDerivedTerm environment position right
+      pure $ do
+        symbolicLeft <- maybeLeft
+        symbolicRight <- maybeRight
+        pure $ case (discoverSymbolicType @value, operation) of
+          (Just SymbolicNatural, OpSub) ->
+            SBV.ite
+              (symbolicLeft SBV..>= symbolicRight)
+              (symbolicLeft - symbolicRight)
+              0
+          (_, OpAdd) -> symbolicLeft + symbolicRight
+          (_, OpSub) -> symbolicLeft - symbolicRight
+          (_, OpMul) -> symbolicLeft * symbolicRight
+strictReplayDerivedTerm environment position (TFieldProj witness base) = do
+  symbolic <- replayProjectionFree environment witness base
+  let descriptor = projectionDescriptor witness base
+      unsupported reason = do
+        recordInversionIssue
+          environment
+          ( InversionUnsupportedDerivedProjection
+              (rceCandidate environment)
+              position
+              descriptor
+              reason
+          )
+        pure Nothing
+  case fieldWitnessDomain witness of
+    Nothing -> unsupported "projection witness has no exact domain"
+    Just domain -> case compileProjectionDomain @value domain symbolic of
+      Left failure -> unsupported (show failure)
+      Right domainConstraint -> do
+        SBV.constrain domainConstraint
+        pure (Just symbolic)
+
+constrainReplayOutputField ::
+  forall rs ci inputFields value.
+  (Sym value) =>
+  ReplayCandidateEnvironment ->
+  InCtor ci inputFields ->
+  Int ->
+  Set Int ->
+  SBV.SBV (SymRep value) ->
+  Term rs ci inputFields value ->
+  SBV.Symbolic ()
+constrainReplayOutputField environment headInputCtor position recovered observed term =
+  case term of
+    TInpCtorField inputCtor index
+      | icName inputCtor == icName headInputCtor,
+        indexPosition index `Set.notMember` recovered -> do
+          candidateInput <- replayInputFree environment inputCtor index
+          SBV.constrain (observed SBV..== candidateInput)
+      | otherwise -> pure ()
+    TArith {} -> constrainDerived
+    TFieldProj {} -> constrainDerived
+    TApp1 {} ->
+      recordInversionIssue
+        environment
+        (InversionOpaqueDerivedOutput (rceCandidate environment) position)
+    TApp2 {} ->
+      recordInversionIssue
+        environment
+        (InversionOpaqueDerivedOutput (rceCandidate environment) position)
+    TLit {} -> pure ()
+    TOpaqueLit {} -> pure ()
+    TReg {} -> pure ()
+  where
+    constrainDerived = do
+      derived <- strictReplayDerivedTerm environment position term
+      case derived of
+        Nothing -> pure ()
+        Just symbolic -> SBV.constrain (observed SBV..== symbolic)
+
+recoveredInputPosition ::
+  InCtor ci inputFields ->
+  Set Int ->
+  Term rs ci inputFields value ->
+  Set Int
+recoveredInputPosition headInputCtor recovered (TInpCtorField inputCtor index)
+  | icName inputCtor == icName headInputCtor = Set.insert (indexPosition index) recovered
+recoveredInputPosition _ recovered _ = recovered
+
+constrainAlignedOutputFields ::
+  forall rs ci leftInputFields leftOutputFields rightInputFields rightOutputFields.
+  ReplayCandidateEnvironment ->
+  InCtor ci leftInputFields ->
+  OutFields rs ci leftInputFields leftOutputFields ->
+  ReplayCandidateEnvironment ->
+  InCtor ci rightInputFields ->
+  OutFields rs ci rightInputFields rightOutputFields ->
+  WireFieldAlignment leftOutputFields rightOutputFields ->
+  SBV.Symbolic ()
+constrainAlignedOutputFields leftEnvironment leftInputCtor leftFields rightEnvironment rightInputCtor rightFields alignment =
+  go 0 Set.empty Set.empty leftFields rightFields alignment
+  where
+    go ::
+      Int ->
+      Set Int ->
+      Set Int ->
+      OutFields rs ci leftInputFields leftFieldsRemaining ->
+      OutFields rs ci rightInputFields rightFieldsRemaining ->
+      WireFieldAlignment leftFieldsRemaining rightFieldsRemaining ->
+      SBV.Symbolic ()
+    go _position _leftRecovered _rightRecovered OFNil OFNil WireFieldsAlignedNil = pure ()
+    go _position _leftRecovered _rightRecovered OFNil (OFCons _ _) impossible =
+      case impossible of {}
+    go _position _leftRecovered _rightRecovered (OFCons _ _) OFNil impossible =
+      case impossible of {}
+    go
+      position
+      leftRecovered
+      rightRecovered
+      (OFCons (leftTerm :: Term rs ci leftInputFields field) leftRest)
+      (OFCons rightTerm rightRest)
+      (WireFieldsAlignedCons restAlignment) = do
+        case discoverSym @field of
+          Nothing ->
+            liftIO
+              ( modifyIORef'
+                  (rceIssues leftEnvironment)
+                  ( ++
+                      [ InversionUnsupportedObservedFieldCarrier
+                          position
+                          (SomeTypeRep (typeRep @field))
+                      ]
+                  )
+              )
+          Just SymDict -> do
+            observed <- freshReplayFree @field (rceShared leftEnvironment)
+            constrainReplayOutputField
+              leftEnvironment
+              leftInputCtor
+              position
+              leftRecovered
+              observed
+              leftTerm
+            constrainReplayOutputField
+              rightEnvironment
+              rightInputCtor
+              position
+              rightRecovered
+              observed
+              rightTerm
+        go
+          (position + 1)
+          (recoveredInputPosition leftInputCtor leftRecovered leftTerm)
+          (recoveredInputPosition rightInputCtor rightRecovered rightTerm)
+          leftRest
+          rightRest
+          restAlignment
+
+candidateRecoveryPossible ::
+  InCtor ci inputFields ->
+  OutFields rs ci inputFields outputFields ->
+  Bool
+candidateRecoveryPossible inputCtor fields =
+  namesAgree && recovered == Set.fromList [0 .. length (slotNamesOf inputCtor) - 1]
+  where
+    (namesAgree, recovered) = walk fields
+
+    walk :: OutFields rs ci inputFields remaining -> (Bool, Set Int)
+    walk OFNil = (True, Set.empty)
+    walk (OFCons term rest) =
+      let (restAgrees, restRecovered) = walk rest
+       in case term of
+            TInpCtorField termInputCtor index ->
+              ( icName termInputCtor == icName inputCtor && restAgrees,
+                Set.insert (indexPosition index) restRecovered
+              )
+            _ -> (restAgrees, restRecovered)
+
+guardInversionIssues ::
+  InversionCandidate ->
+  HsPred rs ci ->
+  [InversionTranslationIssue]
+guardInversionIssues candidate predicate =
+  case predicateTranslationReport predicate of
+    ExactTranslation -> []
+    ConservativeOverApproximation issues ->
+      InversionGuardTranslationIssue candidate <$> toList issues
+
+runInversionSolver ::
+  SBV.Symbolic SBV.SBool ->
+  IO InversionSolverStatus
+runInversionSolver query = do
+  attempt <- try @SomeException (timeout 10_000_000 (SBV.sat query))
+  pure $ case attempt of
+    Left failure -> InversionSolverFailure (displayException failure)
+    Right Nothing -> InversionSolverTimedOut
+    Right (Just (SBV.SatResult result)) -> case result of
+      SBV.Satisfiable {} -> InversionSolverSatisfiable
+      SBV.Unsatisfiable {} -> InversionSolverUnsatisfiable
+      SBV.Unknown {} -> InversionSolverUnknown "solver returned Unknown"
+      SBV.ProofError {} -> InversionSolverFailure "solver returned ProofError"
+      SBV.DeltaSat {} -> InversionSolverUnknown "solver returned DeltaSat"
+      SBV.SatExtField {} -> InversionSolverUnknown "solver returned SatExtField"
+
+inversionVerdict :: InversionSolverStatus -> InversionProofVerdict
+inversionVerdict InversionSolverUnsatisfiable = InversionProvedDisjoint
+inversionVerdict _ = InversionNotProvedDisjoint
+
+analyzeInversionCandidatePair ::
+  InversionCandidatePair rs ci co s ->
+  IO (InversionAnalysisDetail s)
+analyzeInversionCandidatePair
+  ( InversionCandidatePair
+      source
+      leftIndex
+      leftGuard
+      leftInputCtor
+      leftWireCtor
+      leftFields
+      rightIndex
+      rightGuard
+      rightInputCtor
+      rightWireCtor
+      rightFields
+    ) = do
+    let leftAvailability = wireSchemaAvailability (wcSchema leftWireCtor)
+        rightAvailability = wireSchemaAvailability (wcSchema rightWireCtor)
+        leftRef = EdgeRef source leftIndex
+        rightRef = EdgeRef source rightIndex
+        detail relation status issues =
+          InversionAnalysisDetail
+            { iadSource = source,
+              iadLeftEdge = leftRef,
+              iadRightEdge = rightRef,
+              iadLeftSchemaAvailability = leftAvailability,
+              iadRightSchemaAvailability = rightAvailability,
+              iadHeadRelation = relation,
+              iadVerdict = inversionVerdict status,
+              iadSolverStatus = status,
+              iadTranslationIssues = issues
+            }
+    case compareWireSchemas (wcSchema leftWireCtor) (wcSchema rightWireCtor) of
+      WireSchemasUnwitnessed ->
+        pure
+          ( detail
+              WireHeadsUnwitnessed
+              InversionSolverNotRun
+              [InversionWireSchemasUnwitnessed]
+          )
+      WireSchemasDifferent -> do
+        status <- runInversionSolver (pure SBV.sFalse)
+        pure (detail WireHeadsStructurallyDifferent status [])
+      WireSchemasEqual alignment -> do
+        issuesRef <-
+          newIORef
+            ( guardInversionIssues InversionCandidateA leftGuard
+                ++ guardInversionIssues InversionCandidateB rightGuard
+            )
+        status <- runInversionSolver $ do
+          shared <- newReplaySharedEnvironment
+          leftEnvironment <-
+            newReplayCandidateEnvironment InversionCandidateA shared issuesRef
+          rightEnvironment <-
+            newReplayCandidateEnvironment InversionCandidateB shared issuesRef
+          SBV.constrain
+            (rceInputCtor leftEnvironment SBV..== SBV.literal (icName leftInputCtor))
+          SBV.constrain
+            (rceInputCtor rightEnvironment SBV..== SBV.literal (icName rightInputCtor))
+          symbolicLeftGuard <- translateReplayPredicate leftEnvironment leftGuard
+          symbolicRightGuard <- translateReplayPredicate rightEnvironment rightGuard
+          constrainAlignedOutputFields
+            leftEnvironment
+            leftInputCtor
+            leftFields
+            rightEnvironment
+            rightInputCtor
+            rightFields
+            alignment
+          let leftRecovers = candidateRecoveryPossible leftInputCtor leftFields
+              rightRecovers = candidateRecoveryPossible rightInputCtor rightFields
+          pure
+            ( symbolicLeftGuard
+                SBV..&& symbolicRightGuard
+                SBV..&& if leftRecovers && rightRecovers then SBV.sTrue else SBV.sFalse
+            )
+        issues <- readIORef issuesRef
+        pure (detail WireHeadsStructurallyEqual status issues)
+
+-- | Run the opt-in dual-candidate replay analysis once for every pair emitted
+-- by 'inversionAmbiguityWarnings'. This is never called by default validation
+-- or runtime replay.
+checkInversionAmbiguitySymDetailed ::
+  forall s rs ci co.
+  (Bounded s, Enum s, Show s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  IO [InversionAnalysisDetail s]
+checkInversionAmbiguitySymDetailed transducer =
+  show (minBound @s) `seq`
+    traverse analyzeInversionCandidatePair (inversionCandidatePairs transducer)
+
+-- | Compatibility projection of 'checkInversionAmbiguitySymDetailed'. It
+-- returns the exact existing warning values, removing a pair only after a
+-- definite solver 'Unsatisfiable' result. Enumeration drift fails closed by
+-- retaining every warning.
+checkInversionAmbiguitySym ::
+  (Bounded s, Enum s, Show s) =>
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  IO [TransducerValidationWarning s]
+checkInversionAmbiguitySym transducer = do
+  let warnings = inversionAmbiguityWarnings transducer
+  details <- checkInversionAmbiguitySymDetailed transducer
+  pure $
+    if length warnings /= length details
+      then warnings
+      else
+        [ warning
+        | (warning, detail) <- zip warnings details,
+          iadVerdict detail /= InversionProvedDisjoint
+        ]
 
 -- * Single-valuedness ------------------------------------------------------
 

@@ -25,13 +25,12 @@ proved disjoint even when guard-only reasoning cannot distinguish it. Only a def
 `Unsatisfiable` result suppresses the compatibility warning; missing schemas, unsupported field
 types, opaque terms, timeouts, and solver failures keep the warning.
 
-The `WireCtor` record gains a schema field, so this is an intentional PVP-major Keiki change. The
-change is being made while Keiki and Keiro have only two active application adopters and before
-the planned twenty-plus-application rollout. This plan owns the complete source-migration boundary:
-the core descriptor, Generics and Template Haskell producers, composition/profunctor laws, the
-optional solver, Keiki sibling packages, Keiro's generated-code and conformance surface, and the
-two active applications. Consumers should cross this boundary once, not adopt an interim
-`WireCtor` shape and migrate again later.
+The `WireCtor` record gains a schema field, so this is an intentional PVP-major Keiki change. This
+plan lands and verifies that breaking work inside the Keiki repository only. It does not bump
+package versions, change downstream bounds, prepare a release, or migrate Keiro and application
+adopters. Plan 88 contains another public constructor-record change; after all breaking ExecPlans
+are complete, a separate user-authored Keiki release plan will choose versions and own the single
+coordinated downstream migration.
 
 The observable proof lives in `test/Keiki/FullSymbolicReplayInversionSpec.hs`: the witnessed
 output-dependent pair is `InversionProvedDisjoint`, the overlapping control is not proved
@@ -61,12 +60,17 @@ schema representation.
 - [ ] Post-review addendum (2026-08-04): add `DEPRECATED` pragmas to `mkWireCtor` and
       `mkWireCtor0` during Milestone 4's in-tree sweep, and the foundations replay-verification
       page during Milestone 5 (recorded after Milestones 1–2 completed; see Decision Log).
-- [ ] Milestone 3: implement the detailed opt-in dual-candidate symbolic checker and its
-      fail-conservative compatibility projection.
-- [ ] Milestone 4: migrate Keiki sibling packages, Keiro, and the two active application adopters
-      in one coordinated version boundary; rebuild every registered source reverse dependent.
-- [ ] Milestone 5: update Haddocks, changelogs, IR/ADR records, and release handoff; run all local
-      and downstream gates and hand the stable schema surface to Plan 85.
+- [x] (2026-08-04) Milestone 3: implemented the detailed opt-in dual-candidate symbolic
+      checker and fail-conservative compatibility projection. Candidate command tags, arms,
+      fields, projections, and opaque values are independent; register and structurally aligned
+      observed-field caches are shared. Focused FullSymbolicReplayInversion result: 14 examples,
+      0 failures; combined Symbolic result: 105 examples, 0 failures. The finite oracle found no
+      double candidate for the output-dependent UNSAT pair. The manual non-CI 100-pair benchmark
+      completed in 0.315 CPU seconds, below the Plan 86 per-pair baseline rather than a 3x regression.
+- [ ] Milestone 4: add the local deprecation guidance, compile every in-tree Keiki package and
+      fixture, and record the downstream inventory without editing versions or dependent repos.
+- [ ] Milestone 5: update local Haddocks, changelogs, IR/ADR records, and the future-release
+      handoff; run Keiki gates and hand the schema surface to Plans 85 and 88.
 
 
 ## Surprises & Discoveries
@@ -87,9 +91,9 @@ schema representation.
 - Observation: the Mori reverse-dependent result is broader than the actual application rollout.
   It currently reports twelve source projects, while the user reports two active applications and
   twenty-plus planned adopters.
-  Evidence: `mori registry dependents shinzui/keiki --packages --json` on 2026-08-04. Treat Mori as
-  the rebuild inventory, and record the two active application handles in Progress when execution
-  begins; do not infer them from repository names.
+  Evidence: `mori registry dependents shinzui/keiki --packages --json` on 2026-08-04. Preserve
+  Mori's result as future release-plan inventory; do not infer active handles or begin migration
+  from repository names in this plan.
 
 - Observation: runtime `solveOutput` never verifies invertible output fields. `recomputeDerivedFields`
   keeps `TLit`, `TOpaqueLit`, `TReg`, and `TInpCtorField` positions at their observed values, so the
@@ -114,11 +118,17 @@ schema representation.
   and final test gates must be used as the executable coverage rather than treating that empty
   selection as evidence.
 
+- Observation: Hspec options containing the plan's prose phrase `full symbolic replay inversion`
+  are split into separate arguments by this Cabal invocation, so the focused command fails before
+  test execution. The stable module substring `FullSymbolicReplayInversion` selects the intended
+  14 examples.
+  Evidence: focused Milestone 3 execution on 2026-08-04.
+
 
 ## Decision Log
 
-- Decision: Land the structural change now, before broad application adoption, and migrate the
-  current Keiki/Keiro consumers as part of this plan.
+- Superseded decision: Land the structural change now, before broad application adoption, and
+  migrate the current Keiki/Keiro consumers as part of this plan.
   Rationale: The public record change is unavoidable for sound observed-field alignment. Paying
   that cost with two application adopters prevents a second migration across twenty-plus future
   applications and lets all new consumers start on the stable representation.
@@ -167,19 +177,27 @@ schema representation.
   Date: 2026-08-04
 
 - Decision: Complete this plan before Plan 85. This plan owns the schema, head-relation helper,
-  output-dependent solver fixtures, PVP/version work, and consumer migration; Plan 85 owns only
+  and output-dependent solver fixtures; Plan 85 owns only
   pure shared-register necessary-condition extraction and its default-validator suppression.
   Rationale: Plan 85 can integrate once against the final head representation and avoids building
-  temporary name-based identity, duplicate output fixtures, a solver environment, or downstream
-  migrations that this plan replaces.
+  temporary name-based identity, duplicate output fixtures, or a solver environment.
   Date: 2026-08-04
 
-- Decision: Prepare one coordinated compatibility line: Keiki, `keiki-codec-json`, and
+- Superseded decision: Prepare one coordinated compatibility line: Keiki, `keiki-codec-json`, and
   `keiki-codec-json-test` move from 0.8 to 0.9; the released Keiro 0.10 packages move together to
   0.11 and depend on Keiki 0.9. Publication remains a separate explicitly authorized release.
   Rationale: `WireCtor` is a source-breaking Keiki API, and Keiro's DSL/generated-code contract is
   the adoption surface. Aligned bounds give future applications one unambiguous combination and
   avoid repeated bound-only releases.
+  Date: 2026-08-04
+
+- Decision: Defer every version change, release action, dependency-bound edit, and downstream
+  migration until all breaking Keiki ExecPlans are complete. Plan 87 and Plan 88 remain local to
+  the Keiki repository; a future user-authored Keiki release plan owns the coordinated Keiki,
+  Keiro, and application rollout.
+  Rationale: Plan 88 adds another public constructor-record boundary. Migrating adopters or
+  choosing the release line now would make them cross an avoidable interim API and would preempt
+  the release plan the user intends to write once all breaking work is known.
   Date: 2026-08-04
 
 - Decision: The symbolic model leaves `TLit`, `TOpaqueLit`, and `TReg` output positions
@@ -329,7 +347,7 @@ Mori identifies Keiki as `mori://shinzui/keiki/packages/keiki`, Keiro's main pac
 `mori://LeventErkok/sbv/packages/sbv`. On 2026-08-04, Hackage and upstream tags agree that Keiki
 0.8.0.0 (`v0.8.0.0`) and Keiro 0.10.0.0 (`keiro-0.10.0.0`) are current. Reverify those
 authoritative sources immediately before changing bounds or preparing a release; the local Mori
-corpus may lag.
+corpus may lag. That refresh belongs to the future release plan, not this implementation.
 
 
 ## Plan of Work
@@ -418,30 +436,13 @@ pair has no concrete double candidate. Keep a manual 100-pair benchmark outside 
 compare with the Plan 86 baseline; investigate a regression above 3x, but do not turn wall-clock
 noise into a flaky test.
 
-Milestone 4 performs the one-time source and version migration. In this repository, move `keiki`,
-`keiki-codec-json`, and `keiki-codec-json-test` to 0.9.0.0, update their mutual bounds to
-`^>=0.9`, and add migration notes to each changelog. The migration notes must state the nullary
-TH route's constraint change (`Eq co` to `Generic co` for matching; `Eq co` is still required by
-`solveOutput`) and that a custom quotienting `Eq` no longer influences `wcMatch` — an intentional
-tightening enforcing the documented honesty law. Compile all in-tree manual `WireCtor`
-construction and TH/golden fixtures. Do not publish packages in this plan.
-
-Use Mori to refresh the reverse-dependent list and identify the two active application adopters
-from the user-provided rollout inventory; record their canonical project URIs and exact gates in
-Progress before editing them. In `mori://shinzui/keiro/packages/keiro`, migrate the manual test
-records in `keiro/test/Main.hs`. In `mori://shinzui/keiro/packages/keiro-dsl`, keep generated
-`deriveWireCtorsAll` call sites stable, explicitly mark the intentionally dishonest conformance
-wire unavailable, and run every scaffolder/conformance snapshot so TH expansion is exercised.
-Move the released Keiro 0.10 package line to 0.11.0.0 and update Keiki/codec bounds to `>=0.9 &&
-<0.10`; keep internal Keiro bounds aligned. Use a temporary multi-package Cabal project that
-includes the local Keiki and Keiro checkouts so integration is proven before any Hackage release.
-
-Migrate the two active applications against those same local packages and run their native build
-and test gates. For every other project returned by Mori, distinguish a compilable source
-dependent from documentation or stale registry metadata, record the evidence, and run its native
-gate when it is a source dependent. Do not make speculative source edits to all twelve entries or
-rename unchanged generated files. Cross-repository commits reference this plan with the canonical
-trailer `ExecPlan: mori://shinzui/keiki/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion`.
+Milestone 4 completes only the local compatibility work. Attach the recorded `DEPRECATED`
+guidance to `mkWireCtor` and `mkWireCtor0`, compile every in-tree manual `WireCtor`, TH/golden
+fixture, sibling package, and example, and add an unreleased migration note stating the nullary TH
+route's constraint change (`Eq co` to `Generic co` for matching; `Eq co` is still required by
+`solveOutput`) and that a custom quotienting `Eq` no longer influences `wcMatch`. Refresh Mori's
+reverse-dependent inventory as release-planning input, but do not edit package versions, mutual
+bounds, Keiro, applications, or any other dependent repository.
 
 Milestone 5 updates durable explanations and closes the handoff. Update the `WireCtor`, Generic/TH,
 composition, profunctor, optional checker, and validation Haddocks. Add a numbered
@@ -449,18 +450,16 @@ composition, profunctor, optional checker, and validation Haddocks. Add a number
 their observed values and never re-verified, derived fields are recomputed and verified, and
 what that implies for trusting observed events versus the build-time gates — and update
 `docs/foundations/00-reading-guide.md`; cite the Decision Log entry and
-`docs/research/full-symbolic-replay-inversion-model.md`. Update `CHANGELOG.md`, the two
-codec changelogs, and the relevant Keiro changelogs. Update the implementing improvement request
+`docs/research/full-symbolic-replay-inversion-model.md`. Update the local unreleased changelogs.
+Update the implementing improvement request
 or create one only if no existing request owns the structural prerequisite; use the repository's
 profile and legal statuses. Amend ADR-0001, ADR-0003, ADR-0004, and ADR-0005 through the profiled
 ADR workflow and update `docs/adr/log.md` with `okf log add` when their timestamps change.
 
-Run every Keiki, Keiro, generated-conformance, and active-application gate against the same local
-package set. Record exact versions, commits, reverse-dependent outcomes, focused test counts, and
-benchmark numbers in Progress. Mark this plan complete before beginning Plan 85. Publication of
-the coordinated 0.9/0.11 line uses the `release` skills in their owning repositories as a separate
-explicitly authorized operation, after both plans are green; Plan 85 must not edit consumer source
-or change the stable `WireCtor` representation.
+Run every Keiki repository gate and record focused test counts and benchmark numbers in Progress.
+Mark this plan complete before beginning Plan 85. The future user-authored release plan—not this
+plan or Plan 88—will reverify versions, choose bounds, exercise downstream overlays, and migrate
+adopters after all breaking ExecPlans are green.
 
 
 ## Concrete Steps
@@ -481,9 +480,8 @@ git ls-remote --tags https://github.com/shinzui/keiki.git
 git ls-remote --tags https://github.com/shinzui/keiro.git
 ```
 
-Expected release facts at plan creation are Keiki 0.8.0.0 / `v0.8.0.0` and Keiro 0.10.0.0 /
-`keiro-0.10.0.0`. If they differ at implementation time, update Context, Decision Log, bounds,
-and the migration sequence before editing packages.
+Release facts are recorded only as future-release input. This plan must not update bounds or
+package versions even if an authoritative release changes while implementation is in progress.
 
 Locate all schema producers and direct constructors without traversing dependency stores:
 
@@ -501,7 +499,7 @@ nix develop -c cabal test keiki-test --test-options='--match=TH' --test-show-det
 nix develop -c cabal test keiki-test --test-options='--match=Composition' --test-show-details=direct
 nix develop -c cabal test keiki-test --test-options='--match=Profunctor' --test-show-details=direct
 nix develop -c cabal test keiki-test --test-options='--match=BuilderTypeErrors' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=full symbolic replay inversion' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-options='--match=FullSymbolicReplayInversion' --test-show-details=direct
 nix develop -c cabal test keiki-test --test-options='--match=ValidationReplayAlignmentSpec' --test-show-details=direct
 nix develop -c cabal test keiki-test --test-options='--match=RecomputeVerify' --test-show-details=direct
 ```
@@ -510,7 +508,7 @@ Plan 86 established that the active Hspec version does not interpret `|` as alte
 these commands sequential and separate. Each transcript must end with the actual count and
 `0 failures`; record the count in Progress.
 
-Run full Keiki gates after the PVP migration:
+Run full local Keiki gates:
 
 ```bash
 nix fmt -- --no-cache
@@ -522,42 +520,8 @@ just adr-validate
 git diff --check
 ```
 
-Run the Keiro migration from the path returned by `mori registry show shinzui/keiro --full`,
-currently `/Users/shinzui/Keikaku/bokuno/keiro`:
-
-```bash
-git status --short
-rg -n "WireCtor|deriveWireCtorsAll|keiki[[:space:]]*(>=|\^>=)" keiro keiro-core keiro-dsl jitsurei
-```
-
-Before building Keiro, create an uncommitted `cabal.project.ep87` beside `cabal.project` with
-`apply_patch`. Copy the committed project package list and source-repository stanza, then append
-the local packages `../keiki`, `../keiki/keiki-codec-json`, and
-`../keiki/keiki-codec-json-test`. Use it for the Cabal gates and remove only that exact temporary
-file after recording results. The commands are:
-
-```bash
-nix develop -c cabal --project-file=cabal.project.ep87 build all
-nix develop -c cabal --project-file=cabal.project.ep87 test keiro-test keiro-pgmq-test keiro-dsl jitsurei-test keiro-migrations-test --test-show-details=direct
-nix develop -c cabal --project-file=cabal.project.ep87 run jitsurei:exe:jitsurei-diagrams -- --check
-just process-compose-check
-just adr-validate
-just research-validate
-just extension-policy
-just generated-name-policy
-git diff --check
-```
-
-Until Keiki 0.9 exists on Hackage, the explicit local multi-package commands plus the non-Cabal
-`just` recipes above are the authoritative pre-release equivalent of `just verify`; plain
-`just verify` may resolve only the old release or fail the new bound. Record plain `just verify` as
-a release-skill gate after publication rather than making this implementation depend on its own
-future release.
-
-For each of the two active applications and every confirmed source dependent, create the same
-kind of temporary local-package overlay and run the repository's documented native gates. Add the
-canonical project URI, overlay path, exact commands, and result to Progress. Do not substitute a
-generic `cabal build` for a repository with a stricter `just`, Nix, or generated-code gate.
+Do not create downstream overlays or edit Keiro/application repositories. Preserve the Mori
+reverse-dependent result in the plan as inventory for the future release plan only.
 
 Use Conventional Commits. Keiki implementation commits carry:
 
@@ -565,9 +529,8 @@ Use Conventional Commits. Keiki implementation commits carry:
 ExecPlan: docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md
 ```
 
-Commits in Keiro or another repository carry the canonical cross-repository trailer shown in
-Milestone 4. Version commits may be prepared, but do not invoke Hackage upload, create/push tags,
-or publish a release without explicit user authorization.
+Do not prepare version or cross-repository commits, invoke Hackage upload, create/push tags, or
+publish a release in this plan.
 
 
 ## Validation and Acceptance
@@ -614,30 +577,22 @@ runtime replay results remain unchanged throughout this plan. Default validation
 `IO`, starts no z3 process, and works without z3 installed. `keiki.cabal` retains `sbv >=11.7 &&
 <15`; no new package dependency is added for the solver.
 
-All direct Keiki constructors, sibling packages, Keiro's manual fixtures, TH expansions,
-scaffolder snapshots, and conformance suites compile against the local Keiki 0.9 line. The two
-active applications compile and pass their native tests without an interim compatibility shim.
-Every other Mori reverse-dependent entry has a recorded build result or an evidence-backed reason
-that it is not a current source consumer.
-
-Keiki package versions and mutual bounds are aligned on 0.9. Keiro's released 0.10 packages and
-internal bounds are aligned on 0.11 / Keiki 0.9. Changelogs explain the manual migration and the
-trusted/unavailable distinction. No release is published by this plan. All commands in Concrete
-Steps pass, ADR validation is strict, and `git diff --check` is clean in every edited repository.
+All direct Keiki constructors, sibling packages, TH expansions, examples, and local conformance
+suites compile in this repository. Changelogs explain the future manual migration and the
+trusted/unavailable distinction without selecting a release version. No dependent repository,
+package bound, package version, or release artifact changes. All local commands in Concrete Steps
+pass, ADR validation is strict, and `git diff --check` is clean.
 
 
 ## Idempotence and Recovery
 
 Mori inspection, source searches, Cabal builds, tests, Haddocks, formatting, and solver queries
 are safe to rerun. The optional solver tests use deterministic formulas; keep timing outside the
-required CI assertion. Temporary multi-project files must have an exact narrow name such as
-`cabal.project.ep87`, must be confirmed untracked before removal, and must never replace the
-repository's committed `cabal.project`.
+required CI assertion.
 
 Inspect `git status --short` before every repository edit. Existing changes belong to the user;
 preserve them and use narrow `apply_patch` edits. Never use `git reset --hard`, a broad restore,
-or a recursive deletion to recover. Cross-repository migration commits should be independently
-green so a failed later consumer can be diagnosed without discarding earlier work.
+or a recursive deletion to recover.
 
 If the schema implementation needs `unsafeCoerce`, runtime equality of `wcName`, persisted wire
 kind, or an exported constructor that lets consumers forge trusted evidence, stop and record the
@@ -646,19 +601,13 @@ field, compile it through the unavailable manual path and retain warnings; do no
 field dictionary or add a global `Eq co` constraint.
 
 If the full formula becomes inconclusive, widen the relation and retain the warning. If z3 is
-missing, record the optional-gate failure and continue the default/build migration; do not weaken
+  missing, record the optional-gate failure and continue the local default/build gates; do not weaken
 the acceptance claim or make default validation depend on solver availability. Completion still
 requires rerunning the optional focused tests in an environment with the supported solver.
 
-If a registered dependent cannot build for reasons unrelated to this change, capture the exact
-command and failure in Progress, verify whether its authoritative dependency metadata actually
-includes Keiki, and leave its files untouched. A registry false positive is not a reason to edit a
-project. An active application's real migration failure is a blocker and must not be waived.
-
-Package publication and tags are deliberately excluded. If a prepared version must change because
-an authoritative release appeared during implementation, update bounds and all local overlays in
-one revision, rerun the full matrix, and document the change. Use the release skill only after
-explicit authorization and after Plan 85 is complete.
+Package publication, tags, versions, bounds, overlays, and dependent builds are deliberately
+excluded. The future user-authored release plan will refresh their authoritative state after all
+breaking ExecPlans are complete and use the release skill only with explicit authorization.
 
 
 ## Interfaces and Dependencies
@@ -783,9 +732,9 @@ pair set and removes only definite UNSAT details. Detailed `Eq`/`Show` data belo
 `Keiki.Internal.SymbolicTypes` when keeping functions out of derived values requires it.
 
 Use the existing SBV dependency through `mori://LeventErkok/sbv/packages/sbv`; do not change
-`>=11.7 && <15`. Use Mori-discovered source checkouts for Keiro and other dependents, and reverify
-Hackage/upstream tags before bounds change. Z3 is an optional execution dependency of the new
-checker, never a runtime or default-validation dependency.
+`>=11.7 && <15`. Z3 is an optional execution dependency of the new checker, never a runtime or
+default-validation dependency. Downstream source discovery and release-version verification are
+inputs to the future release plan.
 
 
 Plan revision note (2026-08-04): Initial plan created from Plan 86's completed research. The plan
@@ -812,5 +761,11 @@ already completed: `DEPRECATED` pragmas on the closure-taking `mkWireCtor`/`mkWi
 (executed with Milestone 4's in-tree sweep) and a numbered foundations page on replay
 verification semantics (executed in Milestone 5). Larger follow-ups identified by the same
 review are owned elsewhere: IR-6/Plan 88 (structural input-constructor identity, same
-unpublished 0.9/0.11 line), IR-7 (schema evolution research), and IR-8 (opt-in checker CI
-gate).
+unreleased breaking-work sequence), IR-7 (schema evolution research), and IR-8 (opt-in checker
+CI gate).
+
+Plan revision note (2026-08-04, fourth revision): At the user's direction, removed the premature
+version and adopter-migration milestone. Plans 87 and 88 now land breaking Keiki work locally
+without choosing release versions, changing bounds, or editing downstream repositories. A
+separate user-authored release plan, created after all breaking ExecPlans are complete, owns the
+coordinated Keiki/Keiro/application migration.

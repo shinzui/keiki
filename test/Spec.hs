@@ -21,6 +21,7 @@ import Keiki.CoreHiddenInputsGSMSpec qualified
 import Keiki.CoreInFlightSpec qualified
 import Keiki.CoreSpec qualified
 import Keiki.FieldProjSpec qualified
+import Keiki.FullSymbolicReplayInversionSpec qualified
 import Keiki.Generics.THSpec qualified
 import Keiki.NoThunksSpec qualified
 import Keiki.OperatorsQualifiedSpec qualified
@@ -63,6 +64,7 @@ main = hspec $ do
   describe "Keiki.Composition (stateful, EP-74)" Keiki.CompositionStatefulSpec.spec
   describe "Keiki.Core" Keiki.CoreSpec.spec
   describe "Keiki.FieldProj" Keiki.FieldProjSpec.spec
+  describe "Keiki.FullSymbolicReplayInversion" Keiki.FullSymbolicReplayInversionSpec.spec
   describe "Keiki.Core.stepEither (EP-55)" Keiki.StepEitherSpec.spec
   describe "Keiki.Core.applyEvents (EP-20 M2)" Keiki.CoreApplyEventsSpec.spec
   describe "Keiki.Core.InFlight / streaming (EP-19 M3)" Keiki.CoreInFlightSpec.spec

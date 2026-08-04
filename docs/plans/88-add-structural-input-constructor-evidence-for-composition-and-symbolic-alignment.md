@@ -36,8 +36,9 @@ This plan implements
 [IR-6](../improvement-requests/replace-name-based-input-constructor-identity-with-structural-evidence.md).
 It runs after Plan 87 and
 [Plan 85](85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md) are
-complete, inside the same unpublished Keiki 0.9 / Keiro 0.11 compatibility line, so the
-projected twenty-plus application adopters cross one structural API boundary, not two.
+complete. Like those plans, it lands breaking work locally without choosing versions or migrating
+adopters. After all breaking Keiki ExecPlans are complete, a separate user-authored release plan
+will choose the release line and coordinate Keiro and application adoption once.
 
 
 ## Progress
@@ -54,9 +55,8 @@ projected twenty-plus application adopters cross one structural API boundary, no
       transformations.
 - [ ] Milestone 4: derive symbolic `PInCtor` identity from structural evidence with a
       conservative name fallback for unwitnessed constructors.
-- [ ] Milestone 5: migrate in-tree consumers, Keiro, and the two active applications
-      incrementally on the unpublished 0.9/0.11 line; update Haddocks, changelogs, IR-6, and
-      ADRs; run all local and downstream gates.
+- [ ] Milestone 5: migrate in-tree consumers; update Haddocks, unreleased changelogs, IR-6, and
+      ADRs; run all local Keiki gates and record the future-release handoff.
 
 
 ## Surprises & Discoveries
@@ -85,12 +85,11 @@ projected twenty-plus application adopters cross one structural API boundary, no
 
 ## Decision Log
 
-- Decision: Execute this plan only after Plans 87 and 85 are complete, and land it inside the
-  same unpublished 0.9/0.11 compatibility line before any publication.
-  Rationale: `InCtor` is public, so adding evidence is a source break. Publication of the 0.9
-  line is a separate authorized step after all plans are green, so this break rides the same
-  public boundary; consumers migrated by Plan 87 receive incremental local edits and adopters
-  still cross one released migration.
+- Decision: Execute this plan only after Plans 87 and 85 are complete, but do not select a
+  release version, change bounds, or migrate dependent repositories here.
+  Rationale: `InCtor` is public, so adding evidence is a source break. The user will create a
+  separate Keiki release plan after every breaking ExecPlan is complete; that plan owns the one
+  coordinated Keiro and application migration.
   Date: 2026-08-04
 
 - Decision: Reuse Plan 87's structural-path and typed-spine machinery rather than introducing a
@@ -188,9 +187,8 @@ This plan was authored against Plan 87's pinned Interfaces contract before that 
 implemented. Milestone 1 revalidates every representation assumption against the landed code
 and corrects this document first. Mori identifies Keiki as `mori://shinzui/keiki/packages/keiki`
 and Keiro's packages as `mori://shinzui/keiro/packages/keiro`,
-`mori://shinzui/keiro/packages/keiro-core`, and `mori://shinzui/keiro/packages/keiro-dsl`. At
-plan creation the prepared (unpublished) line is Keiki 0.9.0.0 / Keiro 0.11.0.0 from Plan 87;
-Hackage still shows 0.8.0.0 / 0.10.0.0.
+`mori://shinzui/keiro/packages/keiro-core`, and `mori://shinzui/keiro/packages/keiro-dsl`.
+Those downstream identifiers are future release-plan inventory only.
 
 
 ## Plan of Work
@@ -236,16 +234,12 @@ same-name distinct trusted constructors are not conflated, that unwitnessed beha
 unchanged, and that no determinism, inversion, or reachability analysis suppresses a warning
 from name inequality of unwitnessed constructors alone.
 
-Milestone 5 migrates and documents. Update in-tree manual `InCtor` records, TH goldens, and
-examples; sweep `mori://shinzui/keiro/packages/keiro`, `keiro-core`, `keiro-dsl`, and the two
-active applications with the same temporary overlay approach as Plan 87 (a
-`cabal.project.ep88` naming the local Keiki packages), editing incrementally on top of the
-already-migrated unpublished 0.9 state. No package version changes: the 0.9/0.11 line prepared
-by Plan 87 absorbs this break before publication. Update Haddocks, `CHANGELOG.md` (extending
-the 0.9.0.0 entry), IR-6's status, and amend ADR-0004 with the checked input-side boundary
-through the profiled ADR workflow. Run all Keiki, Keiro, and application gates and record
-results in Progress. Publication remains a separate explicitly authorized release after this
-plan is green.
+Milestone 5 migrates and documents only the Keiki repository. Update in-tree manual `InCtor`
+records, TH goldens, and examples; update Haddocks and the unreleased `CHANGELOG.md`, IR-6's
+status, and amend ADR-0004 with the checked input-side boundary through the profiled ADR workflow.
+Run all local Keiki gates and record results in Progress. Do not edit versions, bounds, Keiro,
+applications, overlays, tags, or release artifacts; hand their inventory to the future
+user-authored release plan.
 
 
 ## Concrete Steps
@@ -294,19 +288,14 @@ just adr-validate
 git diff --check
 ```
 
-For Keiro and the applications, follow Plan 87's recorded overlay procedure with an
-uncommitted `cabal.project.ep88` naming the local Keiki checkout, run each repository's
-documented native gates, and remove only that exact temporary file after recording results.
 Keiki commits carry:
 
 ```text
 ExecPlan: docs/plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment.md
 ```
 
-Cross-repository commits carry the canonical trailer
-`ExecPlan: mori://shinzui/keiki/plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment`.
-Do not publish packages, create or push tags, or invoke any release without explicit user
-authorization.
+Do not make cross-repository or version commits, publish packages, create or push tags, or invoke
+any release.
 
 
 ## Validation and Acceptance
@@ -329,29 +318,24 @@ Correctly shaped compositions — including every existing composition, category
 profunctor, and multi-event law suite — behave identically, and runtime stepping and replay
 results are unchanged everywhere.
 
-All in-tree consumers, Keiro's packages, generated conformance suites, and the two active
-applications compile and pass their native gates against the unpublished 0.9/0.11 line with
-this change included. No package version, dependency bound, or persisted identity changes in
-this plan. All commands in Concrete Steps pass, ADR validation is strict, and
-`git diff --check` is clean in every edited repository.
+All in-tree consumers and generated conformance suites compile and pass their local gates with
+this change included. No package version, dependency bound, persisted identity, or dependent
+repository changes in this plan. All local commands in Concrete Steps pass, ADR validation is
+strict, and `git diff --check` is clean.
 
 
 ## Idempotence and Recovery
 
 Searches, builds, tests, Haddocks, and formatting are safe to rerun. Inspect
 `git status --short` before every repository edit; preserve user-owned changes; use narrow
-`apply_patch` edits; never use destructive resets or broad restores. Temporary overlay files
-use the exact name `cabal.project.ep88`, are confirmed untracked before removal, and never
-replace a committed `cabal.project`.
+`apply_patch` edits; never use destructive resets or broad restores.
 
 If checked structural alignment cannot be established for a case the current name check
 accepts, and analysis cannot prove the unwitnessed coercion safe, stop and record the
 counterexample in Surprises & Discoveries; prefer the loud diagnostic over preserving a
 coercion this plan cannot justify. If reusing Plan 87's path machinery requires changing its
 landed public surface, fix that under a recorded Decision here only if source-compatible;
-otherwise stop and consult the user, because the 0.9 boundary is already migrated. If a
-downstream repository fails for unrelated reasons, record the evidence and leave it untouched;
-an active application's real migration failure is a blocker and must not be waived.
+otherwise stop and consult the user. Downstream repositories are out of scope.
 
 
 ## Interfaces and Dependencies
@@ -393,3 +377,9 @@ identity mode per atom. `Keiki.Generics` keeps `mkInCtorVia` as the trusted prod
 no new public class surface beyond what schema derivation requires; `Keiki.Generics.TH` splice
 call sites remain textually stable. No new package dependency is permitted, no version or
 bound changes occur in this plan, and z3/SBV usage is untouched.
+
+
+Plan revision note (2026-08-04): At the user's direction, removed downstream migration and
+release-line assumptions. This plan now lands only local Keiki breaking work. A separate
+user-authored release plan, created after all breaking ExecPlans are complete, will choose
+versions and coordinate Keiro and application adoption.
