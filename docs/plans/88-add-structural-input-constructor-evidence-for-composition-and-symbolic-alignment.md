@@ -45,8 +45,12 @@ will choose the release line and coordinate Keiro and application adoption once.
 
 - [x] (2026-08-04) Plan created from the Plan 87 soundness review that identified input
       constructors as the remaining name-trusting boundary; IR-6 filed and marked planned.
-- [ ] Milestone 1: confirm the Plan 87/85 prerequisite state and revalidate this plan's
-      assumptions against the landed schema representation; record the actual shapes here.
+- [x] (2026-08-04T23:14:31Z) Milestone 1: confirmed Plans 87 and 85 complete with all recorded
+      gates passing; re-read the landed hidden `Keiki.Internal.WireSchema` representation;
+      refreshed Mori's 12-project reverse-dependent inventory; and verified Hackage still lists
+      `0.8.0.0` as the preferred Keiki release. The actual reusable pieces are the nominal
+      `WireCtorPath`, private three-way path comparison, and public trusted/unavailable pattern;
+      the wire field spine is tuple-indexed and therefore needs a slot-list-indexed input sibling.
 - [ ] Milestone 2: add abstract input-constructor structural evidence to `InCtor` in
       `src/Keiki/Core.hs` with trusted and unavailable construction paths, reusing Plan 87's
       path/spine machinery.
@@ -81,6 +85,22 @@ will choose the release line and coordinate Keiro and application adoption once.
   `src/Keiki/Profunctor.hs` is polymorphic with a phantom slot; profunctor rewrites poison
   `icBuild`. Plan 87's trusted/unavailable producer taxonomy therefore transfers directly.
   Evidence: `src/Keiki/Generics.hs`, `src/Keiki/Composition.hs`, `src/Keiki/Profunctor.hs`.
+
+- Observation: Plan 87 landed the evidence implementation in the hidden module
+  `src/Keiki/Internal/WireSchema.hs`, not directly in `src/Keiki/Core.hs`. Its reusable path is
+  `WireCtorPath carrier`; its output spine is `WireFieldSchema fields`, indexed by the nested-pair
+  tuple used by `OutFields`; and `WireFieldAlignment left right` proves equal tuple positions.
+  An input schema cannot reuse that spine verbatim because `InCtor` is indexed by a type-level
+  list of named slots rather than a tuple, so the implementation needs a slot-list-indexed sibling
+  while retaining the same hidden path and comparison algebra.
+  Evidence: `src/Keiki/Internal/WireSchema.hs` and `src/Keiki/Core.hs`, read 2026-08-04.
+
+- Observation: the mandatory dependency refresh found 12 registered reverse-dependent projects
+  (`danwa`, `kawa`, `keiro`, three Keiro runtime documentation/example projects, `kikan`,
+  `kioku`, `kizashi`, `kotei`, `meibo`, and `shikigami`). Hackage's authoritative preferred-version
+  document still reports `0.8.0.0` first. These facts do not expand this local-only plan.
+  Evidence: `mori registry dependents shinzui/keiki --packages --json` and Hackage
+  `preferred.json`, run 2026-08-04.
 
 
 ## Decision Log
@@ -127,6 +147,15 @@ will choose the release line and coordinate Keiro and application adoption once.
   on revalidation prevents drift from the landed form.
   Date: 2026-08-04
 
+- Decision: Extend the landed hidden schema module rather than moving proof constructors into
+  `Keiki.Core`. Retain one nominal constructor-path algebra, add a slot-list-indexed input field
+  spine and typed input-to-wire alignment beside the existing tuple-indexed wire spine, and
+  re-export only abstract schemas and availability observers from `Keiki.Core`.
+  Rationale: this is the landed Plan 87 non-forgeability boundary. The two field encodings have
+  different kinds, so pretending they are one GADT would obscure rather than prove the
+  composition correspondence; a hidden typed alignment can bridge them position by position.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
@@ -138,13 +167,16 @@ will choose the release line and coordinate Keiro and application adoption once.
 Keiki models an event-sourced state machine as `SymTransducer` in `src/Keiki/Core.hs`. An input
 command constructor is described by `InCtor ci ifs`: a GADT record carrying `AssembleRegFile`
 and `KnownSlotNames` constraints over the typed slot schema `ifs`, plus a diagnostic `icName`
-string and consumer-owned `icMatch`/`icBuild` closures. Nothing ties the name to the
-constructor the closures actually handle. After Plan 87, the output side's `WireCtor` carries a
-`WireSchema` — an abstract trusted Generic constructor path plus a typed field spine,
-non-forgeable through the public API, with an explicit `wireSchemaUnavailable` for manual
-construction and a three-valued path comparison (equal; diverging at a common index; prefix
-related, which is conservatively may-alias). This plan gives `InCtor` the equivalent evidence
-and consumes it at the two name-trusting boundaries.
+string and consumer-owned `icMatch`/`icBuild` closures. Nothing ties the name to the constructor
+the closures actually handle. Plan 87's landed output evidence lives in the hidden
+`src/Keiki/Internal/WireSchema.hs`: `WireSchema co fields` combines a nominal
+`WireCtorPath co` with `WireFieldSchema fields`, whose index is the nested-pair tuple used by
+`OutFields`; `WireSchemaAvailability` exposes only trusted versus unavailable; and
+`compareWireSchemas` distinguishes equal paths with typed field alignment, paths that diverge at
+a common index, and unavailable or proper-prefix relationships. `Keiki.Core` re-exports the
+schema abstractly. This plan gives `InCtor` the equivalent hidden evidence. Because `InCtor` is
+indexed by `ifs :: [Slot]`, its field spine is a separate slot-list-indexed GADT, while its path
+and three-valued comparison reuse the landed algebra exactly.
 
 Boundary one is composition. `Keiki.Composition` composes transducers through a shared mid
 alphabet. `substInputField` substitutes a t2-side input-field read with the corresponding
@@ -200,11 +232,12 @@ re-run the reverse-dependent inventory; and correct this plan's Context, Plan of
 Interfaces sections to the actual representation, recording every correction in the Decision
 Log. No source edit happens before this gate is recorded in Progress.
 
-Milestone 2 adds the evidence. In `src/Keiki/Core.hs`, give `InCtor` an evidence field of an
-abstract input-constructor schema type carrying a trusted Generic constructor path plus a typed
-slot spine, with a public unavailable value and availability observer, reusing (and if
-necessary generalizing) Plan 87's path and comparison machinery including its
-divergence-versus-prefix rule. Trusted constructors stay internal. In `src/Keiki/Generics.hs`,
+Milestone 2 adds the evidence. Extend the hidden `src/Keiki/Internal/WireSchema.hs` proof boundary
+with an abstract input-constructor schema carrying the existing nominal constructor path plus a
+new typed slot spine, typed input-to-input comparison, and typed input-to-wire alignment. Keep
+the existing private divergence-versus-prefix comparison and trusted constructors internal. In
+`src/Keiki/Core.hs`, add the abstract schema field to `InCtor` and re-export only the unavailable
+value and availability observer. In `src/Keiki/Generics.hs`,
 make `mkInCtorVia` the trusted producer; closure-taking `mkInCtor` and `mkInCtor0` become
 explicitly unavailable (matching their wire-side deprecation posture from Plan 87). Update
 `src/Keiki/Generics/TH.hs` so derived command bindings carry trusted evidence with textually
@@ -340,9 +373,7 @@ otherwise stop and consult the user. Downstream repositories are out of scope.
 
 ## Interfaces and Dependencies
 
-The conceptual final shape in `Keiki.Core`, subject to Milestone 1 revalidation against Plan
-87's landed representation; names may be adjusted only with a strictly equivalent naming
-adjustment recorded in the Decision Log:
+The revalidated public shape in `Keiki.Core` is:
 
 ```haskell
 data InCtorSchema ci (ifs :: [Slot])   -- constructors not exported
@@ -365,21 +396,29 @@ data InCtor ci (ifs :: [Slot]) where
     InCtor ci ifs
 ```
 
-The trusted representation reuses Plan 87's abstract constructor path (with its left/right
-prefixes and its three-valued comparison: equal; diverging at a common index; prefix-related,
-conservatively may-alias) and pairs it with a typed slot spine aligned to `ifs`. The internal
-alignment witness consumed by `Keiki.Composition` proves, without `unsafeCoerce` in the
-unwitnessed sense, that a t1 wire's field tuple and a t2 input constructor's slot schema
-correspond position by position; `substInputField` and `composeGuard` accept a substitution
-only through it (or through the explicitly analyzed unwitnessed-compatibility case recorded in
-Milestone 3). `Keiki.Symbolic` consumes the same evidence for `PInCtor` tags and records the
-identity mode per atom. `Keiki.Generics` keeps `mkInCtorVia` as the trusted producer and adds
-no new public class surface beyond what schema derivation requires; `Keiki.Generics.TH` splice
-call sites remain textually stable. No new package dependency is permitted, no version or
-bound changes occur in this plan, and z3/SBV usage is untouched.
+The hidden implementation remains in `Keiki.Internal.WireSchema`. It reuses Plan 87's nominal
+`WireCtorPath carrier` and its left/right prefixes, but pairs it with an input-specific spine
+indexed by `ifs :: [Slot]`; each cons cell retains the slot's field `Typeable` evidence. The
+existing path comparator remains the single definition of equal, divergent, and proper-prefix
+relations. An internal input-to-wire alignment witness proves position-by-position correspondence
+between the input slot list and the wire nested-pair tuple and lets `Keiki.Composition` select a
+field without a result-type cast; only the composite term's independently existential input schema
+may need the already documented local realignment after this witness exists. `substInputField` and
+`composeGuard` accept substitution only through this checked comparison. `Keiki.Symbolic` consumes
+the same hidden path steps for structural `PInCtor` constraints and records trusted versus fallback
+identity. `Keiki.Generics` keeps `mkInCtorVia` as the trusted producer by generalizing the private
+Generic path class and adding a private input-slot spine derivation; no new public class surface or
+package dependency is permitted. `Keiki.Generics.TH` record and nullary call sites both become
+trusted while remaining textually stable at their declarations. No version or bound changes occur,
+and z3/SBV usage remains within the existing dependency.
 
 
 Plan revision note (2026-08-04): At the user's direction, removed downstream migration and
 release-line assumptions. This plan now lands only local Keiki breaking work. A separate
 user-authored release plan, created after all breaking ExecPlans are complete, will choose
 versions and coordinate Keiro and application adoption.
+
+Plan revision note (2026-08-04): Milestone 1 revalidated the draft against Plan 87's landed
+hidden `Keiki.Internal.WireSchema` implementation. The plan now distinguishes the reusable
+nominal path from the tuple-indexed wire spine and specifies the slot-list-indexed input spine
+and typed input-to-wire alignment required by the actual code.
