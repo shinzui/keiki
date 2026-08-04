@@ -118,6 +118,10 @@ import Keiki.Composition
     withKnownSlots,
   )
 import Keiki.Core
+import Keiki.Internal.WireSchema
+  ( compositionOnlyInCtorSchema,
+    compositionOnlyWireSchema,
+  )
 import Unsafe.Coerce (unsafeCoerce)
 
 -- | Existential wrapper hiding @rs@ (register-file slot list) and
@@ -353,7 +357,7 @@ identityInCtor :: forall a. InCtor a '[ '("payload", a)]
 identityInCtor =
   InCtor
     { icName = "Identity",
-      icSchema = inCtorSchemaUnavailable,
+      icSchema = compositionOnlyInCtorSchema,
       icMatch = \a -> Just (RCons (Proxy @"payload") a RNil),
       icBuild = \(RCons _ a RNil) -> a
     }
@@ -367,7 +371,7 @@ identityWireCtor :: forall a. WireCtor a (a, ())
 identityWireCtor =
   WireCtor
     { wcName = "Identity",
-      wcSchema = wireSchemaUnavailable,
+      wcSchema = compositionOnlyWireSchema,
       wcMatch = \a -> Just (a, ()),
       wcBuild = \(a, ()) -> a
     }

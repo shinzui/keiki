@@ -115,7 +115,10 @@ import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
 import Keiki.Internal.WireSchema
-  ( prefixInCtorSchemaLeft,
+  ( InWireFieldAlignment (..),
+    InWireSchemaComparison (..),
+    compareInCtorWireSchemas,
+    prefixInCtorSchemaLeft,
     prefixInCtorSchemaRight,
     prefixWireSchemaLeft,
     prefixWireSchemaRight,
@@ -454,21 +457,17 @@ indexInt :: Index rs r -> Int
 indexInt ZIdx = 0
 indexInt (SIdx i) = 1 + indexInt i
 
--- | Existential wrapper around a 'Term' so 'nthTerm' can return one
--- without exposing the field's type at the call site.
-data SomeTerm rs ci where
-  SomeTerm :: Term rs ci ifs r -> SomeTerm rs ci
-
--- | Walk an 'OutFields' chain to position @n@. Returns @Nothing@
--- when @n@ overshoots the chain (a bug in the caller; the design's
--- structural-alignment assumption guarantees @n@ is in range when
--- the constructor names match).
-nthTerm :: Int -> OutFields rs ci ifs fs -> Maybe (SomeTerm rs ci)
-nthTerm _ OFNil = Nothing
-nthTerm 0 (OFCons t _) = Just (SomeTerm t)
-nthTerm n (OFCons _ rest)
-  | n > 0 = nthTerm (n - 1) rest
-  | otherwise = Nothing
+-- | Select the output term corresponding to one input slot. The alignment
+-- witness proves both arity and result type, so no result-type cast is needed.
+alignedInputField ::
+  InWireFieldAlignment inputFields wireFields ->
+  Index inputFields result ->
+  OutFields rs ci sourceInputFields wireFields ->
+  Term rs ci sourceInputFields result
+alignedInputField InWireFieldsAlignedNil index OFNil = case index of {}
+alignedInputField (InWireFieldsAlignedCons _) ZIdx (OFCons term _) = term
+alignedInputField (InWireFieldsAlignedCons rest) (SIdx index) (OFCons _ fields) =
+  alignedInputField rest index fields
 
 -- | A structurally inert term whose value raises only when demanded.
 -- Structural walkers see an opaque 'TApp1' over a harmless literal, so a
@@ -476,24 +475,33 @@ nthTerm n (OFCons _ rest)
 poisonTerm :: String -> Term rs ci ifs r
 poisonTerm message = TApp1 (\() -> error message) (TOpaqueLit ())
 
--- | Detect a field read for a constructor other than the mid constructor
--- produced by the t1 output currently being substituted.
-termHasCtorMismatch :: String -> Term rs ci ifs r -> Bool
+-- | Detect a field read that lacks definite structural alignment with the
+-- mid constructor produced by the upstream output.
+termHasCtorMismatch :: WireCtor mid fields -> Term rs mid ifs r -> Bool
 termHasCtorMismatch _ (TLit _) = False
 termHasCtorMismatch _ (TOpaqueLit _) = False
 termHasCtorMismatch _ (TReg _) = False
-termHasCtorMismatch expected (TInpCtorField ic _) = icName ic /= expected
+termHasCtorMismatch expected (TInpCtorField inputCtor _) =
+  not (inputCtorAlignsWire inputCtor expected)
 termHasCtorMismatch expected (TApp1 _ term) = termHasCtorMismatch expected term
 termHasCtorMismatch expected (TArith _ a b) =
   termHasCtorMismatch expected a || termHasCtorMismatch expected b
 termHasCtorMismatch expected (TApp2 _ a b) =
   termHasCtorMismatch expected a || termHasCtorMismatch expected b
 termHasCtorMismatch _ (TFieldProj _ (PBReg _)) = False
-termHasCtorMismatch expected (TFieldProj _ (PBInp ic _)) =
-  icName ic /= expected
+termHasCtorMismatch expected (TFieldProj _ (PBInp inputCtor _)) =
+  not (inputCtorAlignsWire inputCtor expected)
 
-outCtorName :: OutTerm rs ci co -> String
-outCtorName (OPack _ wc _) = wcName wc
+inputCtorAlignsWire :: InCtor carrier inputFields -> WireCtor carrier wireFields -> Bool
+inputCtorAlignsWire inputCtor wireCtor =
+  case compareInCtorWireSchemas inputCtor.icSchema wireCtor.wcSchema of
+    InWireSchemasEqual _ -> True
+    InWireSchemasDifferent -> False
+    InWireSchemasUnwitnessed -> False
+
+inputCtorAlignsOutTerm :: InCtor carrier inputFields -> OutTerm rs ci carrier -> Bool
+inputCtorAlignsOutTerm inputCtor (OPack _ wireCtor _) =
+  inputCtorAlignsWire inputCtor wireCtor
 
 -- | Substitute a t2-side 'Term' against t1's edge output. See the
 -- design note's "Substituting a Term" section for the rules.
@@ -535,39 +543,28 @@ substInputField ::
   Term (Append rs1 rs2) ci1 ifsR r
 substInputField ic2 ix2 o1 =
   case o1 of
-    OPack _ic1 wc1 of1
-      | icName ic2 == wcName wc1 ->
-          let n = indexInt ix2
-           in case nthTerm n of1 of
-                Just (SomeTerm tm) ->
-                  -- tm :: Term rs1 ci1 ifsTm r' (r' ~ r and ifsTm ~ ifsR
-                  -- structurally; the slot list of ic2 mirrors of1's tuple
-                  -- shape via the GRecord/GTuple Generic derivations, and
-                  -- of1's elements all read t1's input at the OPack's
-                  -- schema). 'unsafeCoerceTerm' realigns both the result
-                  -- type and the input field schema.
-                  weakenLTerm @rs1 @rs2 (unsafeCoerceTerm tm)
-                Nothing ->
-                  poisonTerm
-                    ( "Keiki.Composition.compose: nthTerm overflow at\
-                      \ position "
-                        <> show n
-                        <> " for InCtor "
-                        <> icName ic2
-                        <> " — t2 reads a field t1's OutFields doesn't expose.\
-                           \ This indicates a structural mismatch between\
-                           \ t1's wireCtor and t2's InCtor for the shared\
-                           \ mid type."
-                    )
-      | otherwise ->
+    OPack _ic1 wc1 of1 ->
+      case compareInCtorWireSchemas ic2.icSchema wc1.wcSchema of
+        InWireSchemasEqual alignment ->
+          weakenLTerm @rs1 @rs2
+            ( unsafeReindexTermInput
+                (alignedInputField alignment ix2 of1)
+            )
+        InWireSchemasDifferent ->
           poisonTerm
-            ( "Keiki.Composition.compose: t2-side guard, update, or output reads "
+            ( "Keiki.Composition.compose: structurally different input and wire constructors: t2 reads "
                 <> icName ic2
                 <> " while t1's edge carries "
                 <> wcName wc1
-                <> ". This composite edge cannot supply that constructor field;\
-                   \ its mismatched guard leaf should be unsatisfiable before\
-                   \ the value is demanded."
+                <> ". Diagnostic-name equality cannot authorize substitution."
+            )
+        InWireSchemasUnwitnessed ->
+          poisonTerm
+            ( "Keiki.Composition.compose: structural input/wire alignment is unavailable for t2 input "
+                <> icName ic2
+                <> " and t1 wire "
+                <> wcName wc1
+                <> ". Use Generic-derived trusted constructors before composing field reads."
             )
 
 projectThroughTerm ::
@@ -609,14 +606,18 @@ projectThroughTermWithStatus witness (TOpaqueLit owner) =
 projectThroughTermWithStatus witness ownerTerm =
   (TApp1 (fieldWitnessGet witness) ownerTerm, ProjectionLowered)
 
--- | Existentially-coerce a 'Term''s result type /and/ input field
--- schema. Unsound in general; justified here by the structural-
--- alignment invariant the design note documents: when
--- @icName ic2 == wcName wc1@, the slot list of @ic2@ and the field
--- tuple of @wc1@ are derived from the same 'Generic' representation, so
--- positional reads agree on type; and the substituted term reads t1's
--- input at t1's 'OPack' schema, which is the schema the composite
--- 'OPack' is rebuilt at (see 'substOut').
+-- | Re-index only a term's existential input schema after checked
+-- input-to-wire alignment has fixed its result type. The term comes from the
+-- upstream 'OPack', and 'substOut' rebuilds the composite at that same
+-- upstream input schema; this cast cannot alter a value type.
+unsafeReindexTermInput ::
+  forall rs ci inputFields inputFields' result.
+  Term rs ci inputFields' result ->
+  Term rs ci inputFields result
+unsafeReindexTermInput = unsafeCoerce
+
+-- | Existentially realign a pending term after a separately checked
+-- 'TypeRep' equality. This helper is not used by input/wire substitution.
 unsafeCoerceTerm ::
   forall rs ci ifs ifs' r r'. Term rs ci ifs' r' -> Term rs ci ifs r
 unsafeCoerceTerm = unsafeCoerce
@@ -641,26 +642,30 @@ substPred (POr p q) o1 =
     (substPred @rs1 @rs2 q o1)
 substPred (PNot p) o1 = PNot (substPred @rs1 @rs2 p o1)
 substPred (PEq a b) o1 =
-  if termHasCtorMismatch (outCtorName o1) a
-    || termHasCtorMismatch (outCtorName o1) b
-    then PBot
-    else
-      PEq
-        (substTerm @rs1 @rs2 a o1)
-        (substTerm @rs1 @rs2 b o1)
+  case o1 of
+    OPack _ wireCtor _ ->
+      if termHasCtorMismatch wireCtor a
+        || termHasCtorMismatch wireCtor b
+        then PBot
+        else
+          PEq
+            (substTerm @rs1 @rs2 a o1)
+            (substTerm @rs1 @rs2 b o1)
 substPred (PCmp op a b) o1 =
-  if termHasCtorMismatch (outCtorName o1) a
-    || termHasCtorMismatch (outCtorName o1) b
-    then PBot
-    else
-      PCmp
-        op
-        (substTerm @rs1 @rs2 a o1)
-        (substTerm @rs1 @rs2 b o1)
+  case o1 of
+    OPack _ wireCtor _ ->
+      if termHasCtorMismatch wireCtor a
+        || termHasCtorMismatch wireCtor b
+        then PBot
+        else
+          PCmp
+            op
+            (substTerm @rs1 @rs2 a o1)
+            (substTerm @rs1 @rs2 b o1)
 substPred (PInCtor ic2) o1 =
   case o1 of
     OPack _ wc1 _
-      | icName ic2 == wcName wc1 -> PTop
+      | inputCtorAlignsWire ic2 wc1 -> PTop
       | otherwise -> PBot
 substPred PLeftArm o1 = substLeftArmPred @rs1 @rs2 o1
 substPred PRightArm o1 = substRightArmPred @rs1 @rs2 o1
@@ -1232,6 +1237,18 @@ data ComposeAlignmentWarning s1 s2
         cawReadPosition :: Int,
         cawAvailableFields :: Int
       }
+  | StructurallyDifferentInputWire
+      { cawStructuralT1Edge :: EdgeRef s1,
+        cawStructuralT2Edge :: EdgeRef s2,
+        cawStructuralWireName :: String,
+        cawStructuralInCtorName :: String
+      }
+  | UnwitnessedInputWireAlignment
+      { cawUnwitnessedT1Edge :: EdgeRef s1,
+        cawUnwitnessedT2Edge :: EdgeRef s2,
+        cawUnwitnessedWireName :: String,
+        cawUnwitnessedInCtorName :: String
+      }
   | PoisonedNameInComposition
       { cawName :: String,
         cawSide :: String
@@ -1257,6 +1274,12 @@ data ExpectedName s = ExpectedName
     expectedPosition :: Maybe Int
   }
 
+data EmittedConstructor carrier s where
+  EmittedConstructor :: EdgeRef s -> WireCtor carrier fields -> EmittedConstructor carrier s
+
+data ExpectedConstructor carrier s where
+  ExpectedConstructor :: EdgeRef s -> InCtor carrier fields -> ExpectedConstructor carrier s
+
 outFieldsLength :: OutFields rs ci ifs fs -> Int
 outFieldsLength OFNil = 0
 outFieldsLength (OFCons _ rest) = 1 + outFieldsLength rest
@@ -1271,6 +1294,16 @@ edgeEmittedNames source edgeIx edge =
   | OPack _ wc fields <- output edge
   ]
 
+edgeEmittedConstructors ::
+  s ->
+  Int ->
+  Edge p rs ci carrier s ->
+  [EmittedConstructor carrier s]
+edgeEmittedConstructors source edgeIx edge =
+  [ EmittedConstructor (EdgeRef source edgeIx) wireCtor
+  | OPack _ wireCtor _ <- output edge
+  ]
+
 termExpectedReads :: Term rs ci ifs r -> [(String, Int)]
 termExpectedReads (TLit _) = []
 termExpectedReads (TOpaqueLit _) = []
@@ -1282,6 +1315,22 @@ termExpectedReads (TArith _ a b) = termExpectedReads a ++ termExpectedReads b
 termExpectedReads (TFieldProj _ (PBReg _)) = []
 termExpectedReads (TFieldProj _ (PBInp ic ix)) =
   [(icName ic, indexPosition ix)]
+
+termExpectedConstructors :: Term rs ci ifs result -> [SomeInCtor ci]
+termExpectedConstructors (TLit _) = []
+termExpectedConstructors (TOpaqueLit _) = []
+termExpectedConstructors (TReg _) = []
+termExpectedConstructors (TInpCtorField inputCtor _) = [SomeInCtor inputCtor]
+termExpectedConstructors (TApp1 _ term) = termExpectedConstructors term
+termExpectedConstructors (TApp2 _ left right) =
+  termExpectedConstructors left ++ termExpectedConstructors right
+termExpectedConstructors (TArith _ left right) =
+  termExpectedConstructors left ++ termExpectedConstructors right
+termExpectedConstructors (TFieldProj _ (PBReg _)) = []
+termExpectedConstructors (TFieldProj _ (PBInp inputCtor _)) = [SomeInCtor inputCtor]
+
+data SomeInCtor ci where
+  SomeInCtor :: InCtor ci fields -> SomeInCtor ci
 
 predCtorAtoms :: HsPred rs ci -> [String]
 predCtorAtoms PTop = []
@@ -1307,15 +1356,45 @@ predExpectedReads PLeftArm = []
 predExpectedReads PRightArm = []
 predExpectedReads (PCmp _ a b) = termExpectedReads a ++ termExpectedReads b
 
+predExpectedConstructors :: HsPred rs ci -> [SomeInCtor ci]
+predExpectedConstructors PTop = []
+predExpectedConstructors PBot = []
+predExpectedConstructors (PAnd left right) =
+  predExpectedConstructors left ++ predExpectedConstructors right
+predExpectedConstructors (POr left right) =
+  predExpectedConstructors left ++ predExpectedConstructors right
+predExpectedConstructors (PNot predicate) = predExpectedConstructors predicate
+predExpectedConstructors (PEq left right) =
+  termExpectedConstructors left ++ termExpectedConstructors right
+predExpectedConstructors (PInCtor inputCtor) = [SomeInCtor inputCtor]
+predExpectedConstructors PLeftArm = []
+predExpectedConstructors PRightArm = []
+predExpectedConstructors (PCmp _ left right) =
+  termExpectedConstructors left ++ termExpectedConstructors right
+
 updateExpectedReads :: Update rs w ci -> [(String, Int)]
 updateExpectedReads UKeep = []
 updateExpectedReads (USet _ term) = termExpectedReads term
 updateExpectedReads (UCombine a b) = updateExpectedReads a ++ updateExpectedReads b
 
+updateExpectedConstructors :: Update rs writes ci -> [SomeInCtor ci]
+updateExpectedConstructors UKeep = []
+updateExpectedConstructors (USet _ term) = termExpectedConstructors term
+updateExpectedConstructors (UCombine left right) =
+  updateExpectedConstructors left ++ updateExpectedConstructors right
+
 outFieldsExpectedReads :: OutFields rs ci ifs fs -> [(String, Int)]
 outFieldsExpectedReads OFNil = []
 outFieldsExpectedReads (OFCons term rest) =
   termExpectedReads term ++ outFieldsExpectedReads rest
+
+outFieldsExpectedConstructors :: OutFields rs ci ifs fields -> [SomeInCtor ci]
+outFieldsExpectedConstructors OFNil = []
+outFieldsExpectedConstructors (OFCons term rest) =
+  termExpectedConstructors term ++ outFieldsExpectedConstructors rest
+
+outTermExpectedConstructors :: OutTerm rs ci co -> [SomeInCtor ci]
+outTermExpectedConstructors (OPack _ _ fields) = outFieldsExpectedConstructors fields
 
 edgeExpectedNames :: s -> Int -> Edge (HsPred rs ci) rs ci co s -> [ExpectedName s]
 edgeExpectedNames source edgeIx Edge {guard = edgeGuard, update = edgeUpdate, output = edgeOutput} =
@@ -1328,6 +1407,19 @@ edgeExpectedNames source edgeIx Edge {guard = edgeGuard, update = edgeUpdate, ou
              ++ updateExpectedReads edgeUpdate
              ++ concatMap (\(OPack _ _ fields) -> outFieldsExpectedReads fields) edgeOutput
        ]
+
+edgeExpectedConstructors ::
+  s ->
+  Int ->
+  Edge (HsPred rs ci) rs ci co s ->
+  [ExpectedConstructor ci s]
+edgeExpectedConstructors source edgeIx Edge {guard = edgeGuard, update = edgeUpdate, output = edgeOutput} =
+  [ ExpectedConstructor (EdgeRef source edgeIx) inputCtor
+  | SomeInCtor inputCtor <-
+      predExpectedConstructors edgeGuard
+        ++ updateExpectedConstructors edgeUpdate
+        ++ concatMap outTermExpectedConstructors edgeOutput
+  ]
 
 edgeConsumesName :: String -> Edge (HsPred rs ci) rs ci co s -> Bool
 edgeConsumesName name edge =
@@ -1373,7 +1465,7 @@ upstreamProjectionWarnings edge1Ref edge2Ref midOutput = goPred
     goTerm (TFieldProj _ (PBReg _)) = []
     goTerm
       (TFieldProj (witness :: FieldWitness projection) base@(PBInp ic ix))
-        | icName ic /= outCtorName midOutput = []
+        | not (inputCtorAlignsOutTerm ic midOutput) = []
         | otherwise =
             let ownerTerm ::
                   Term
@@ -1486,12 +1578,16 @@ checkComposeAlignment t1 t2 = nub (concatMap warningsAt reachablePairs)
       ]
 
     warningsAt (v1, v2) =
-      unconsumed ++ unmatched ++ arity ++ poison ++ projection
+      unconsumed ++ unmatched ++ arity ++ structural ++ poison ++ projection
       where
         t1Edges = zip [0 ..] (edgesOut t1 v1)
         t2Edges = zip [0 ..] (edgesOut t2 v2)
         emissions = concatMap (uncurry (edgeEmittedNames v1)) t1Edges
         expectations = concatMap (uncurry (edgeExpectedNames v2)) t2Edges
+        emittedConstructors =
+          concatMap (uncurry (edgeEmittedConstructors v1)) t1Edges
+        expectedConstructors =
+          concatMap (uncurry (edgeExpectedConstructors v2)) t2Edges
         emittedNames = map emittedName emissions
         expectedNames = map expectedName expectations
 
@@ -1522,6 +1618,29 @@ checkComposeAlignment t1 t2 = nub (concatMap warningsAt reachablePairs)
             Just position <- [expectedPosition expectation],
             position >= emittedArity emission
           ]
+
+        structural =
+          concat
+            [ case compareInCtorWireSchemas inputCtor.icSchema wireCtor.wcSchema of
+                InWireSchemasEqual _ -> []
+                InWireSchemasDifferent ->
+                  [ StructurallyDifferentInputWire
+                      emittedRef
+                      expectedRef
+                      (wcName wireCtor)
+                      (icName inputCtor)
+                  ]
+                InWireSchemasUnwitnessed ->
+                  [ UnwitnessedInputWireAlignment
+                      emittedRef
+                      expectedRef
+                      (wcName wireCtor)
+                      (icName inputCtor)
+                  ]
+            | EmittedConstructor emittedRef wireCtor <- emittedConstructors,
+              ExpectedConstructor expectedRef inputCtor <- expectedConstructors,
+              wcName wireCtor == icName inputCtor
+            ]
 
         poison =
           [ PoisonedNameInComposition name side

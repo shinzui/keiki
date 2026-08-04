@@ -8,6 +8,7 @@
 module Keiki.CompositionMultiEventSpec (spec) where
 
 import Data.Proxy (Proxy (..))
+import GHC.Generics (Generic)
 import Keiki.Composition
   ( ComposeAlignmentWarning (..),
     Composite (..),
@@ -16,6 +17,12 @@ import Keiki.Composition
   )
 import Keiki.Core
 import Keiki.FieldProjSpec qualified as FieldProj
+import Keiki.Generics
+  ( mkInCtorRecordVia,
+    mkInCtorVia,
+    mkWireCtor0Via,
+    mkWireCtorRecordVia,
+  )
 import Test.Hspec
 
 -- * t1 ---------------------------------------------------------------------
@@ -34,51 +41,20 @@ inCtorT1Trigger =
     }
 
 -- | t1's mid (output) alphabet: two constructors A and B.
-data Mid = MidA Int | MidB Int deriving (Eq, Show)
+data Mid = MidA {a :: Int} | MidB {b :: Int}
+  deriving stock (Eq, Show, Generic)
 
 inCtorMidA :: InCtor Mid '[ '("a", Int)]
-inCtorMidA =
-  InCtor
-    { icName = "MidA",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        MidA n -> Just (RCons (Proxy @"a") n RNil)
-        _ -> Nothing,
-      icBuild = \(RCons _ n RNil) -> MidA n
-    }
+inCtorMidA = mkInCtorRecordVia @"MidA"
 
 inCtorMidB :: InCtor Mid '[ '("b", Int)]
-inCtorMidB =
-  InCtor
-    { icName = "MidB",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        MidB n -> Just (RCons (Proxy @"b") n RNil)
-        _ -> Nothing,
-      icBuild = \(RCons _ n RNil) -> MidB n
-    }
+inCtorMidB = mkInCtorRecordVia @"MidB"
 
 wcMidA :: WireCtor Mid (Int, ())
-wcMidA =
-  WireCtor
-    { wcName = "MidA",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
-        MidA n -> Just (n, ())
-        _ -> Nothing,
-      wcBuild = \(n, ()) -> MidA n
-    }
+wcMidA = mkWireCtorRecordVia @"MidA"
 
 wcMidB :: WireCtor Mid (Int, ())
-wcMidB =
-  WireCtor
-    { wcName = "MidB",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
-        MidB n -> Just (n, ())
-        _ -> Nothing,
-      wcBuild = \(n, ()) -> MidB n
-    }
+wcMidB = mkWireCtorRecordVia @"MidB"
 
 -- | t1's transducer: a single vertex Q with a self-loop edge that
 -- emits two mid-symbols ([MidA n, MidB n]) from one T1Trigger input.
@@ -214,47 +190,21 @@ pendingSourceCtor =
     }
 
 data PendingMid
-  = PendingLoad FieldProj.DocInfo
+  = PendingLoad {doc :: FieldProj.DocInfo}
   | PendingCheck
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Show, Generic)
 
 pendingLoadCtor :: InCtor PendingMid '[ '("doc", FieldProj.DocInfo)]
-pendingLoadCtor =
-  InCtor
-    { icName = "PendingLoad",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        PendingLoad doc -> Just (RCons (Proxy @"doc") doc RNil)
-        PendingCheck -> Nothing,
-      icBuild = \(RCons _ doc RNil) -> PendingLoad doc
-    }
+pendingLoadCtor = mkInCtorRecordVia @"PendingLoad"
 
 pendingCheckCtor :: InCtor PendingMid '[]
-pendingCheckCtor =
-  InCtor
-    { icName = "PendingCheck",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case PendingCheck -> Just RNil; PendingLoad _ -> Nothing,
-      icBuild = \RNil -> PendingCheck
-    }
+pendingCheckCtor = mkInCtorVia @"PendingCheck"
 
 pendingLoadWire :: WireCtor PendingMid (FieldProj.DocInfo, ())
-pendingLoadWire =
-  WireCtor
-    { wcName = "PendingLoad",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case PendingLoad doc -> Just (doc, ()); PendingCheck -> Nothing,
-      wcBuild = \(doc, ()) -> PendingLoad doc
-    }
+pendingLoadWire = mkWireCtorRecordVia @"PendingLoad"
 
 pendingCheckWire :: WireCtor PendingMid ()
-pendingCheckWire =
-  WireCtor
-    { wcName = "PendingCheck",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case PendingCheck -> Just (); PendingLoad _ -> Nothing,
-      wcBuild = \() -> PendingCheck
-    }
+pendingCheckWire = mkWireCtor0Via @"PendingCheck"
 
 pendingSource ::
   SymTransducer (HsPred '[] PendingSourceCmd) '[] Q PendingSourceCmd PendingMid

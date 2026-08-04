@@ -10,12 +10,14 @@ module Keiki.Generics
     mkInCtor,
     mkInCtor0,
     mkInCtorVia,
+    mkInCtorRecordVia,
 
     -- * Generic-derived WireCtor
     mkWireCtor,
     mkWireCtor0,
     mkWireCtorVia,
     mkWireCtor0Via,
+    mkWireCtorRecordVia,
     FieldsOf,
     FieldsOfRep,
 
@@ -559,6 +561,138 @@ instance (GHasCtor n r d) => GHasCtorIf 'False n l r d where
   gMatchCtorIf (R1 x) = gMatchCtor @n x
   gBuildCtorIf d = R1 (gBuildCtor @n d)
 
+-- | Direct-record counterpart of 'GHasCtor'. Instead of resolving one
+-- wrapped payload value, this class derives a 'RegFile' directly from the
+-- named constructor's own record fields.
+class
+  GRecordCtor
+    (name :: Symbol)
+    (rep :: Type -> Type)
+    (fields :: [Slot])
+    | name rep -> fields
+  where
+  gMatchRecordCtor :: rep a -> Maybe (RegFile fields)
+  gBuildRecordCtor :: RegFile fields -> rep a
+  gRecordCtorSchema :: InCtorFieldSchema fields
+
+instance
+  (GRecordCtor name inner fields) =>
+  GRecordCtor name (M1 D meta inner) fields
+  where
+  gMatchRecordCtor (M1 representation) = gMatchRecordCtor @name representation
+  gBuildRecordCtor fields = M1 (gBuildRecordCtor @name fields)
+  gRecordCtorSchema = gRecordCtorSchema @name @inner
+
+instance
+  ( GRecord inner fields,
+    GInCtorFieldSchema inner fields
+  ) =>
+  GRecordCtor name (M1 C ('MetaCons name fix lazy) inner) fields
+  where
+  gMatchRecordCtor (M1 representation) = Just (gToRegFile representation)
+  gBuildRecordCtor fields = M1 (gFromRegFile fields)
+  gRecordCtorSchema = gInCtorFieldSchema @inner
+
+instance
+  ( hasLeft ~ NameInRep name left,
+    GRecordCtorIf hasLeft name left right fields
+  ) =>
+  GRecordCtor name (left :+: right) fields
+  where
+  gMatchRecordCtor = gMatchRecordCtorIf @hasLeft @name
+  gBuildRecordCtor = gBuildRecordCtorIf @hasLeft @name
+  gRecordCtorSchema = gRecordCtorSchemaIf @hasLeft @name @left @right
+
+class
+  GRecordCtorIf
+    (hasLeft :: Bool)
+    (name :: Symbol)
+    (left :: Type -> Type)
+    (right :: Type -> Type)
+    (fields :: [Slot])
+    | hasLeft name left right -> fields
+  where
+  gMatchRecordCtorIf :: (left :+: right) a -> Maybe (RegFile fields)
+  gBuildRecordCtorIf :: RegFile fields -> (left :+: right) a
+  gRecordCtorSchemaIf :: InCtorFieldSchema fields
+
+instance (GRecordCtor name left fields) => GRecordCtorIf 'True name left right fields where
+  gMatchRecordCtorIf (L1 representation) = gMatchRecordCtor @name representation
+  gMatchRecordCtorIf (R1 _) = Nothing
+  gBuildRecordCtorIf fields = L1 (gBuildRecordCtor @name fields)
+  gRecordCtorSchemaIf = gRecordCtorSchema @name @left
+
+instance (GRecordCtor name right fields) => GRecordCtorIf 'False name left right fields where
+  gMatchRecordCtorIf (L1 _) = Nothing
+  gMatchRecordCtorIf (R1 representation) = gMatchRecordCtor @name representation
+  gBuildRecordCtorIf fields = R1 (gBuildRecordCtor @name fields)
+  gRecordCtorSchemaIf = gRecordCtorSchema @name @right
+
+-- | Direct-record wire counterpart of 'GRecordCtor'.
+class
+  GTupleCtor
+    (name :: Symbol)
+    (rep :: Type -> Type)
+    (fields :: Type)
+    | name rep -> fields
+  where
+  gMatchTupleCtor :: rep a -> Maybe fields
+  gBuildTupleCtor :: fields -> rep a
+  gTupleCtorSchema :: WireFieldSchema fields
+
+instance
+  (GTupleCtor name inner fields) =>
+  GTupleCtor name (M1 D meta inner) fields
+  where
+  gMatchTupleCtor (M1 representation) = gMatchTupleCtor @name representation
+  gBuildTupleCtor fields = M1 (gBuildTupleCtor @name fields)
+  gTupleCtorSchema = gTupleCtorSchema @name @inner
+
+instance
+  ( GTuple inner fields,
+    GWireFieldSchema inner fields
+  ) =>
+  GTupleCtor name (M1 C ('MetaCons name fix lazy) inner) fields
+  where
+  gMatchTupleCtor (M1 representation) = Just (gToTuple representation)
+  gBuildTupleCtor fields = M1 (gFromTuple fields)
+  gTupleCtorSchema = gWireFieldSchema @inner
+
+instance
+  ( hasLeft ~ NameInRep name left,
+    GTupleCtorIf hasLeft name left right fields
+  ) =>
+  GTupleCtor name (left :+: right) fields
+  where
+  gMatchTupleCtor = gMatchTupleCtorIf @hasLeft @name
+  gBuildTupleCtor = gBuildTupleCtorIf @hasLeft @name
+  gTupleCtorSchema = gTupleCtorSchemaIf @hasLeft @name @left @right
+
+class
+  GTupleCtorIf
+    (hasLeft :: Bool)
+    (name :: Symbol)
+    (left :: Type -> Type)
+    (right :: Type -> Type)
+    (fields :: Type)
+    | hasLeft name left right -> fields
+  where
+  gMatchTupleCtorIf :: (left :+: right) a -> Maybe fields
+  gBuildTupleCtorIf :: fields -> (left :+: right) a
+  gTupleCtorSchemaIf :: WireFieldSchema fields
+
+instance (GTupleCtor name left fields) => GTupleCtorIf 'True name left right fields where
+  gMatchTupleCtorIf (L1 representation) = gMatchTupleCtor @name representation
+  gMatchTupleCtorIf (R1 _) = Nothing
+  gBuildTupleCtorIf fields = L1 (gBuildTupleCtor @name fields)
+  gTupleCtorSchemaIf = gTupleCtorSchema @name @left
+
+instance (GTupleCtor name right fields) => GTupleCtorIf 'False name left right fields where
+  gMatchTupleCtorIf (L1 _) = Nothing
+  gMatchTupleCtorIf (R1 representation) = gMatchTupleCtor @name representation
+  gBuildTupleCtorIf fields = R1 (gBuildTupleCtor @name fields)
+  gTupleCtorSchemaIf = gTupleCtorSchema @name @right
+
 -- * Generic-derived InCtor / WireCtor (Via builders) ----------------------
 
 -- | Build an 'InCtor' from a constructor name alone. The sum-side
@@ -598,6 +732,30 @@ mkInCtorVia =
         Just d -> Just (gToRegFile (from d))
         Nothing -> Nothing,
       icBuild = \rf -> to (gBuildCtor @name (to (gFromRegFile rf) :: d))
+    }
+
+-- | Build a trusted 'InCtor' for a constructor whose payload fields are
+-- declared directly with record syntax. Use 'mkInCtorVia' when the sum
+-- constructor instead wraps a separate record value.
+mkInCtorRecordVia ::
+  forall (name :: Symbol) ci ifs.
+  ( KnownSymbol name,
+    Generic ci,
+    GRecordCtor name (Rep ci) ifs,
+    GWireCtorPath name (Rep ci),
+    AssembleRegFile ifs,
+    KnownSlotNames ifs
+  ) =>
+  InCtor ci ifs
+mkInCtorRecordVia =
+  InCtor
+    { icName = symbolVal (Proxy @name),
+      icSchema =
+        trustedInCtorSchema
+          (gWireCtorPath @name @(Rep ci))
+          (gRecordCtorSchema @name @(Rep ci)),
+      icMatch = gMatchRecordCtor @name . from,
+      icBuild = to . gBuildRecordCtor @name
     }
 
 -- | Build a trusted 'WireCtor' from a constructor name alone. Mirrors
@@ -646,3 +804,25 @@ mkWireCtor0Via ::
   ) =>
   WireCtor co ()
 mkWireCtor0Via = mkWireCtorVia @name @co @() @()
+
+-- | Build a trusted 'WireCtor' for a constructor whose fields are declared
+-- directly with record syntax. Use 'mkWireCtorVia' for a constructor that
+-- wraps a separate record value.
+mkWireCtorRecordVia ::
+  forall (name :: Symbol) co fields.
+  ( KnownSymbol name,
+    Generic co,
+    GTupleCtor name (Rep co) fields,
+    GWireCtorPath name (Rep co)
+  ) =>
+  WireCtor co fields
+mkWireCtorRecordVia =
+  WireCtor
+    { wcName = symbolVal (Proxy @name),
+      wcSchema =
+        trustedWireSchema
+          (gWireCtorPath @name @(Rep co))
+          (gTupleCtorSchema @name @(Rep co)),
+      wcMatch = gMatchTupleCtor @name . from,
+      wcBuild = to . gBuildTupleCtor @name
+    }

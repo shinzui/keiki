@@ -32,14 +32,19 @@ module Keiki.Fixtures.ComposeStateful
 where
 
 import Data.Proxy (Proxy (..))
+import GHC.Generics (Generic)
 import Keiki.Core
-import Keiki.Generics (Append)
+import Keiki.Generics
+  ( Append,
+    mkInCtorRecordVia,
+    mkWireCtorRecordVia,
+  )
 
 data SourceCmd = Tick
   deriving stock (Eq, Show)
 
-data MidVal = MidVal Int
-  deriving stock (Eq, Show)
+data MidVal = MidVal {v :: Int}
+  deriving stock (Eq, Show, Generic)
 
 data OutVal = OutVal Int
   deriving stock (Eq, Show)
@@ -53,8 +58,8 @@ data PairCmd = Go
 data M2SourceCmd = ProduceA
   deriving stock (Eq, Show)
 
-data Mid2 = M2A Int | M2B Int
-  deriving stock (Eq, Show)
+data Mid2 = M2A {a :: Int} | M2B {b :: Int}
+  deriving stock (Eq, Show, Generic)
 
 data WrongOut = SawA Int | SawB Int
   deriving stock (Eq, Show)
@@ -111,55 +116,19 @@ inCtorProduceA =
     }
 
 inCtorMidVal :: InCtor MidVal '[ '("v", Int)]
-inCtorMidVal =
-  InCtor
-    { icName = "MidVal",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case MidVal v -> Just (RCons (Proxy @"v") v RNil),
-      icBuild = \(RCons _ v RNil) -> MidVal v
-    }
+inCtorMidVal = mkInCtorRecordVia @"MidVal"
 
 inCtorM2A :: InCtor Mid2 '[ '("a", Int)]
-inCtorM2A =
-  InCtor
-    { icName = "M2A",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        M2A a -> Just (RCons (Proxy @"a") a RNil)
-        M2B _ -> Nothing,
-      icBuild = \(RCons _ a RNil) -> M2A a
-    }
+inCtorM2A = mkInCtorRecordVia @"M2A"
 
 inCtorM2B :: InCtor Mid2 '[ '("b", Int)]
-inCtorM2B =
-  InCtor
-    { icName = "M2B",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        M2A _ -> Nothing
-        M2B b -> Just (RCons (Proxy @"b") b RNil),
-      icBuild = \(RCons _ b RNil) -> M2B b
-    }
+inCtorM2B = mkInCtorRecordVia @"M2B"
 
 wireMidVal :: WireCtor MidVal (Int, ())
-wireMidVal =
-  WireCtor
-    { wcName = "MidVal",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case MidVal v -> Just (v, ()),
-      wcBuild = \(v, ()) -> MidVal v
-    }
+wireMidVal = mkWireCtorRecordVia @"MidVal"
 
 wireM2A :: WireCtor Mid2 (Int, ())
-wireM2A =
-  WireCtor
-    { wcName = "M2A",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
-        M2A a -> Just (a, ())
-        M2B _ -> Nothing,
-      wcBuild = \(a, ()) -> M2A a
-    }
+wireM2A = mkWireCtorRecordVia @"M2A"
 
 wireOutVal :: WireCtor OutVal (Int, ())
 wireOutVal =

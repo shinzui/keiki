@@ -2,11 +2,13 @@ module Keiki.CompositionAlignmentSpec (spec) where
 
 import Data.Proxy (Proxy (..))
 import Data.Text qualified as T
+import GHC.Generics (Generic)
 import Keiki.Composition
 import Keiki.Core
 import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Fixtures.ComposeStateful
 import Keiki.Fixtures.CounterPipeline
+import Keiki.Generics (mkInCtorRecordVia, mkWireCtorRecordVia)
 import Keiki.Profunctor (rmapCo)
 import Keiki.Render.Pretty (prettyPred, prettyTerm)
 import Test.Hspec
@@ -94,26 +96,14 @@ projectionSourceCtor =
       icBuild = \(RCons _ doc RNil) -> ProjectionSourceCmd doc
     }
 
-data ProjectionMid = ProjectionMid FieldProj.DocInfo
-  deriving stock (Eq, Show)
+data ProjectionMid = ProjectionMid {doc :: FieldProj.DocInfo}
+  deriving stock (Eq, Show, Generic)
 
 projectionMidCtor :: InCtor ProjectionMid '[ '("doc", FieldProj.DocInfo)]
-projectionMidCtor =
-  InCtor
-    { icName = "ProjectionMid",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \(ProjectionMid doc) -> Just (RCons (Proxy @"doc") doc RNil),
-      icBuild = \(RCons _ doc RNil) -> ProjectionMid doc
-    }
+projectionMidCtor = mkInCtorRecordVia @"ProjectionMid"
 
 projectionMidWire :: WireCtor ProjectionMid (FieldProj.DocInfo, ())
-projectionMidWire =
-  WireCtor
-    { wcName = "ProjectionMid",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \(ProjectionMid doc) -> Just (doc, ()),
-      wcBuild = \(doc, ()) -> ProjectionMid doc
-    }
+projectionMidWire = mkWireCtorRecordVia @"ProjectionMid"
 
 data ProjectionVertex = ProjectionVertex
   deriving stock (Eq, Ord, Show, Enum, Bounded)
@@ -175,6 +165,77 @@ projectionSink =
       isFinal = const True
     }
 
+data CollisionMid
+  = CollisionWire {wireValue :: Int}
+  | CollisionInput {inputValue :: Int}
+  deriving stock (Eq, Show, Generic)
+
+collisionWire :: WireCtor CollisionMid (Int, ())
+collisionWire =
+  (mkWireCtorRecordVia @"CollisionWire")
+    { wcName = "Collision"
+    }
+
+collisionInput :: InCtor CollisionMid '[ '("inputValue", Int)]
+collisionInput =
+  (mkInCtorRecordVia @"CollisionInput")
+    { icName = "Collision"
+    }
+
+collisionSource ::
+  SymTransducer
+    (HsPred '[] ProjectionSourceCmd)
+    '[]
+    ProjectionVertex
+    ProjectionSourceCmd
+    CollisionMid
+collisionSource =
+  SymTransducer
+    { edgesOut = \ProjectionVertex ->
+        [ Edge
+            { guard = matchInCtor projectionSourceCtor,
+              update = UKeep,
+              output =
+                [ pack
+                    projectionSourceCtor
+                    collisionWire
+                    (OFCons (TLit (1 :: Int)) OFNil)
+                ],
+              target = ProjectionVertex,
+              mode = Live
+            }
+        ],
+      initial = ProjectionVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
+collisionSink ::
+  SymTransducer
+    (HsPred '[] CollisionMid)
+    '[]
+    ProjectionVertex
+    CollisionMid
+    ()
+collisionSink =
+  SymTransducer
+    { edgesOut = \ProjectionVertex ->
+        [ Edge
+            { guard =
+                PAnd
+                  (matchInCtor collisionInput)
+                  (PEq (TInpCtorField collisionInput #inputValue) (TLit (1 :: Int))),
+              update = UKeep,
+              output = [],
+              target = ProjectionVertex,
+              mode = Live
+            }
+        ],
+      initial = ProjectionVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
 spec :: Spec
 spec = do
   describe "checkComposeAlignment" $ do
@@ -219,6 +280,25 @@ spec = do
 
     it "walks every symbol in a multi-event source chain" $
       checkComposeAlignment pairSource twoPhaseSink `shouldBe` []
+
+    it "rejects a same-name structurally different input/wire boundary" $ do
+      checkComposeAlignment collisionSource collisionSink
+        `shouldBe` [ StructurallyDifferentInputWire
+                       (EdgeRef ProjectionVertex 0)
+                       (EdgeRef ProjectionVertex 0)
+                       "Collision"
+                       "Collision"
+                   ]
+      case composeChecked collisionSource collisionSink of
+        Left warnings ->
+          warnings
+            `shouldContain` [ StructurallyDifferentInputWire
+                                (EdgeRef ProjectionVertex 0)
+                                (EdgeRef ProjectionVertex 0)
+                                "Collision"
+                                "Collision"
+                            ]
+        Right _ -> expectationFailure "same-name structural collision passed composeChecked"
 
   describe "typed field projection composition" $ do
     let matchingDoc = FieldProj.DocInfo "match" "title" []

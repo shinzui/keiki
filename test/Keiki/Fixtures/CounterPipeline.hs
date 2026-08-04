@@ -26,16 +26,18 @@ module Keiki.Fixtures.CounterPipeline
 where
 
 import Data.Proxy (Proxy (..))
+import GHC.Generics (Generic)
 import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
+import Keiki.Generics (mkInCtorRecordVia, mkWireCtorRecordVia)
 
-newtype MsgA = MsgA Int deriving stock (Eq, Show)
+newtype MsgA = MsgA {payload :: Int} deriving stock (Eq, Show, Generic)
 
-newtype MsgB = MsgB Int deriving stock (Eq, Show)
+newtype MsgB = MsgB {payload :: Int} deriving stock (Eq, Show, Generic)
 
-newtype MsgC = MsgC Int deriving stock (Eq, Show)
+newtype MsgC = MsgC {payload :: Int} deriving stock (Eq, Show, Generic)
 
-newtype MsgD = MsgD Int deriving stock (Eq, Show)
+newtype MsgD = MsgD {payload :: Int} deriving stock (Eq, Show, Generic)
 
 -- | Every stage is a one-vertex machine that loops on itself.
 data StageVertex = StageVertex deriving stock (Eq, Ord, Show, Bounded, Enum)
@@ -49,44 +51,26 @@ type CRegs = '[ '("regC", Int)]
 -- | One-field input schema shared by all pipeline messages.
 type PayloadSchema = '[ '("payload", Int)]
 
-mkInCtor :: String -> (msg -> Int) -> (Int -> msg) -> InCtor msg PayloadSchema
-mkInCtor name unwrap rebuild =
-  InCtor
-    { icName = name,
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \m -> Just (RCons (Proxy @"payload") (unwrap m) RNil),
-      icBuild = \(RCons _ n RNil) -> rebuild n
-    }
-
-mkWireCtor :: String -> (msg -> Int) -> (Int -> msg) -> WireCtor msg (Int, ())
-mkWireCtor name unwrap rebuild =
-  WireCtor
-    { wcName = name,
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \m -> Just (unwrap m, ()),
-      wcBuild = \(n, ()) -> rebuild n
-    }
-
 inMsgA :: InCtor MsgA PayloadSchema
-inMsgA = mkInCtor "MsgA" (\(MsgA n) -> n) MsgA
+inMsgA = mkInCtorRecordVia @"MsgA"
 
 inMsgB :: InCtor MsgB PayloadSchema
-inMsgB = mkInCtor "MsgB" (\(MsgB n) -> n) MsgB
+inMsgB = mkInCtorRecordVia @"MsgB"
 
 inMsgC :: InCtor MsgC PayloadSchema
-inMsgC = mkInCtor "MsgC" (\(MsgC n) -> n) MsgC
+inMsgC = mkInCtorRecordVia @"MsgC"
 
 inMsgD :: InCtor MsgD PayloadSchema
-inMsgD = mkInCtor "MsgD" (\(MsgD n) -> n) MsgD
+inMsgD = mkInCtorRecordVia @"MsgD"
 
 wireMsgB :: WireCtor MsgB (Int, ())
-wireMsgB = mkWireCtor "MsgB" (\(MsgB n) -> n) MsgB
+wireMsgB = mkWireCtorRecordVia @"MsgB"
 
 wireMsgC :: WireCtor MsgC (Int, ())
-wireMsgC = mkWireCtor "MsgC" (\(MsgC n) -> n) MsgC
+wireMsgC = mkWireCtorRecordVia @"MsgC"
 
 wireMsgD :: WireCtor MsgD (Int, ())
-wireMsgD = mkWireCtor "MsgD" (\(MsgD n) -> n) MsgD
+wireMsgD = mkWireCtorRecordVia @"MsgD"
 
 -- | Shared stage shape: guard reads the register (a real read, always
 -- satisfied for this fixture's inputs); update accumulates the input
@@ -152,5 +136,5 @@ stageConflict ::
 stageConflict =
   counterStage
     inMsgD
-    (mkWireCtor "MsgDOut" (\(MsgD n) -> n) MsgD)
+    (wireMsgD {wcName = "MsgDOut"})
     id

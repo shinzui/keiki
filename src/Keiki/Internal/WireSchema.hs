@@ -32,6 +32,8 @@ module Keiki.Internal.WireSchema
     inCtorSchemaAvailability,
     trustedWireSchema,
     trustedInCtorSchema,
+    compositionOnlyWireSchema,
+    compositionOnlyInCtorSchema,
     wireFieldsNil,
     wireFieldsCons,
     inCtorFieldsNil,
@@ -60,6 +62,7 @@ import Data.Kind (Type)
 import Data.Typeable (Typeable)
 import GHC.TypeLits (Symbol)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | One structural step through either a Generic sum or an explicitly
 -- checked 'Either' composition boundary.
@@ -124,6 +127,9 @@ type family
 -- | Structural evidence carried by one output wire constructor.
 data WireSchema co fields where
   UnavailableWireSchema :: WireSchema co fields
+  CompositionOnlyWireSchema ::
+    WireCtorPath co ->
+    WireSchema co (field, ())
   TrustedWireSchema ::
     WireCtorPath co ->
     WireFieldSchema fields ->
@@ -134,6 +140,9 @@ type role WireSchema nominal nominal
 -- | Structural evidence carried by one input constructor.
 data InCtorSchema ci (fields :: [(Symbol, Type)]) where
   UnavailableInCtorSchema :: InCtorSchema ci fields
+  CompositionOnlyInCtorSchema ::
+    WireCtorPath ci ->
+    InCtorSchema ci '[ '("payload", field)]
   TrustedInCtorSchema ::
     WireCtorPath ci ->
     InCtorFieldSchema fields ->
@@ -205,7 +214,6 @@ data InCtorSchemaComparison left right where
 data InWireFieldAlignment inputFields wireFields where
   InWireFieldsAlignedNil :: InWireFieldAlignment '[] ()
   InWireFieldsAlignedCons ::
-    (Typeable field) =>
     InWireFieldAlignment inputRest wireRest ->
     InWireFieldAlignment ('(name, field) ': inputRest) (field, wireRest)
 
@@ -225,6 +233,7 @@ wireSchemaUnavailable = UnavailableWireSchema
 -- | Observe whether a schema is trusted without exposing its evidence.
 wireSchemaAvailability :: WireSchema co fields -> WireSchemaAvailability
 wireSchemaAvailability UnavailableWireSchema = WireSchemaUnavailable
+wireSchemaAvailability CompositionOnlyWireSchema {} = WireSchemaUnavailable
 wireSchemaAvailability TrustedWireSchema {} = WireSchemaTrusted
 
 -- | Explicitly mark an input constructor as lacking structural evidence.
@@ -236,6 +245,7 @@ inCtorSchemaAvailability ::
   InCtorSchema ci fields ->
   InCtorSchemaAvailability
 inCtorSchemaAvailability UnavailableInCtorSchema = InCtorSchemaUnavailable
+inCtorSchemaAvailability CompositionOnlyInCtorSchema {} = InCtorSchemaUnavailable
 inCtorSchemaAvailability TrustedInCtorSchema {} = InCtorSchemaTrusted
 
 -- | Internal trusted-schema constructor used only by Generic derivation.
@@ -252,6 +262,17 @@ trustedInCtorSchema ::
   InCtorFieldSchema fields ->
   InCtorSchema ci fields
 trustedInCtorSchema = TrustedInCtorSchema
+
+-- | Hidden composition-only evidence for the polymorphic identity boundary.
+-- It aligns the one payload slot with the one wire field but deliberately
+-- remains unavailable to symbolic constructor-identity proofs.
+compositionOnlyInCtorSchema ::
+  InCtorSchema carrier '[ '("payload", carrier)]
+compositionOnlyInCtorSchema = CompositionOnlyInCtorSchema wireCtorPathRoot
+
+-- | Output-side half of 'compositionOnlyInCtorSchema'.
+compositionOnlyWireSchema :: WireSchema carrier (carrier, ())
+compositionOnlyWireSchema = CompositionOnlyWireSchema wireCtorPathRoot
 
 wireFieldsNil :: WireFieldSchema ()
 wireFieldsNil = WireFieldsNil
@@ -322,6 +343,8 @@ prefixWireSchemaLeft ::
   WireSchema co1 fields ->
   WireSchema (Either co1 co2) fields
 prefixWireSchemaLeft UnavailableWireSchema = UnavailableWireSchema
+prefixWireSchemaLeft (CompositionOnlyWireSchema path) =
+  CompositionOnlyWireSchema (prefixWireCtorPathLeft path)
 prefixWireSchemaLeft (TrustedWireSchema path fields) =
   TrustedWireSchema (prefixWireCtorPathLeft path) fields
 
@@ -330,6 +353,8 @@ prefixWireSchemaRight ::
   WireSchema co2 fields ->
   WireSchema (Either co1 co2) fields
 prefixWireSchemaRight UnavailableWireSchema = UnavailableWireSchema
+prefixWireSchemaRight (CompositionOnlyWireSchema path) =
+  CompositionOnlyWireSchema (prefixWireCtorPathRight path)
 prefixWireSchemaRight (TrustedWireSchema path fields) =
   TrustedWireSchema (prefixWireCtorPathRight path) fields
 
@@ -338,6 +363,8 @@ prefixInCtorSchemaLeft ::
   InCtorSchema ci1 fields ->
   InCtorSchema (Either ci1 ci2) fields
 prefixInCtorSchemaLeft UnavailableInCtorSchema = UnavailableInCtorSchema
+prefixInCtorSchemaLeft (CompositionOnlyInCtorSchema path) =
+  CompositionOnlyInCtorSchema (prefixWireCtorPathLeft path)
 prefixInCtorSchemaLeft (TrustedInCtorSchema path fields) =
   TrustedInCtorSchema (prefixWireCtorPathLeft path) fields
 
@@ -346,6 +373,8 @@ prefixInCtorSchemaRight ::
   InCtorSchema ci2 fields ->
   InCtorSchema (Either ci1 ci2) fields
 prefixInCtorSchemaRight UnavailableInCtorSchema = UnavailableInCtorSchema
+prefixInCtorSchemaRight (CompositionOnlyInCtorSchema path) =
+  CompositionOnlyInCtorSchema (prefixWireCtorPathRight path)
 prefixInCtorSchemaRight (TrustedInCtorSchema path fields) =
   TrustedInCtorSchema (prefixWireCtorPathRight path) fields
 
@@ -358,6 +387,8 @@ compareWireSchemas ::
   WireSchemaComparison left right
 compareWireSchemas UnavailableWireSchema _ = WireSchemasUnwitnessed
 compareWireSchemas _ UnavailableWireSchema = WireSchemasUnwitnessed
+compareWireSchemas CompositionOnlyWireSchema {} _ = WireSchemasUnwitnessed
+compareWireSchemas _ CompositionOnlyWireSchema {} = WireSchemasUnwitnessed
 compareWireSchemas
   (TrustedWireSchema (WireCtorPath leftPath) leftFields)
   (TrustedWireSchema (WireCtorPath rightPath) rightFields) =
@@ -377,6 +408,8 @@ compareInCtorSchemas ::
   InCtorSchemaComparison left right
 compareInCtorSchemas UnavailableInCtorSchema _ = InCtorSchemasUnwitnessed
 compareInCtorSchemas _ UnavailableInCtorSchema = InCtorSchemasUnwitnessed
+compareInCtorSchemas CompositionOnlyInCtorSchema {} _ = InCtorSchemasUnwitnessed
+compareInCtorSchemas _ CompositionOnlyInCtorSchema {} = InCtorSchemasUnwitnessed
 compareInCtorSchemas
   (TrustedInCtorSchema (WireCtorPath leftPath) leftFields)
   (TrustedInCtorSchema (WireCtorPath rightPath) rightFields) =
@@ -397,6 +430,26 @@ compareInCtorWireSchemas ::
 compareInCtorWireSchemas UnavailableInCtorSchema _ = InWireSchemasUnwitnessed
 compareInCtorWireSchemas _ UnavailableWireSchema = InWireSchemasUnwitnessed
 compareInCtorWireSchemas
+  (CompositionOnlyInCtorSchema (WireCtorPath inputPath))
+  (CompositionOnlyWireSchema (WireCtorPath wirePath)) =
+    case comparePaths inputPath wirePath of
+      -- Both schemas can only originate from the two polymorphic identity
+      -- constructors below. At the root their field is the carrier itself;
+      -- checked Either prefixes preserve that same field while recording its
+      -- arm. Equal paths therefore prove the two hidden field skolems equal,
+      -- even though no Typeable dictionary exists to communicate that fact
+      -- to GHC. The cast is confined to the alignment witness and never
+      -- consults a diagnostic name.
+      PathsEqual ->
+        InWireSchemasEqual
+          ( unsafeCoerce
+              (InWireFieldsAlignedCons InWireFieldsAlignedNil)
+          )
+      PathsDiverge -> InWireSchemasDifferent
+      PathsPrefixRelated -> InWireSchemasUnwitnessed
+compareInCtorWireSchemas CompositionOnlyInCtorSchema {} _ = InWireSchemasUnwitnessed
+compareInCtorWireSchemas _ CompositionOnlyWireSchema {} = InWireSchemasUnwitnessed
+compareInCtorWireSchemas
   (TrustedInCtorSchema (WireCtorPath inputPath) inputFields)
   (TrustedWireSchema (WireCtorPath wirePath) wireFields) =
     case comparePaths inputPath wirePath of
@@ -412,6 +465,7 @@ compareInCtorWireSchemas
 -- unavailable evidence remains on the conservative fallback path.
 inCtorSchemaPath :: InCtorSchema ci fields -> Maybe [Bool]
 inCtorSchemaPath UnavailableInCtorSchema = Nothing
+inCtorSchemaPath CompositionOnlyInCtorSchema {} = Nothing
 inCtorSchemaPath (TrustedInCtorSchema (WireCtorPath path) _) =
   Just (map stepIsLeft path)
   where

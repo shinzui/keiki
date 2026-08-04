@@ -58,9 +58,13 @@ will choose the release line and coordinate Keiro and application adoption once.
       closure-taking, identity, profunctor-poisoned, and meaning-changing paths are unavailable.
       InputSchema passed 9 examples and Generics/TH passed 29, both with 0 failures; the omitted
       `icSchema` fixture failed with `-Werror=missing-fields` at the intended field.
-- [ ] Milestone 3: replace name-authorized composition substitution with checked structural
-      alignment; propagate or deliberately drop evidence through composition and profunctor
-      transformations.
+- [x] (2026-08-04T23:41:59Z) Milestone 3: replaced name-authorized composition substitution
+      and guard rewriting with checked typed input-to-wire alignment. Structural mismatch and
+      unavailable evidence now produce explicit composition diagnostics or poison leaves; no
+      result-type cast remains on the substitution path. Added safe Generic producers for direct
+      record constructors and composition-only identity evidence that cannot become symbolic
+      identity. Composition passed 61 examples, Category 21, Choice 11, and the complete
+      Profunctor match 69, all with 0 failures.
 - [ ] Milestone 4: derive symbolic `PInCtor` identity from structural evidence with a
       conservative name fallback for unwitnessed constructors.
 - [ ] Milestone 5: migrate in-tree consumers; update Haddocks, unreleased changelogs, IR-6, and
@@ -111,6 +115,22 @@ will choose the release line and coordinate Keiro and application adoption once.
   instances already support nullary commands, so the generated binding can call
   `mkInCtorVia @"Constructor"` exactly like record commands without adding a new public helper.
   Evidence: `src/Keiki/Generics/TH.hs`; the focused TH suite passed 29 examples with 0 failures.
+
+- Observation: removing the unwitnessed composition fallback exposed 14 focused composition
+  failures, all from in-tree fixtures that manually constructed direct record constructors.
+  Those constructors were structurally honest but could not use the existing `mk*Via` helpers,
+  whose Generic contract expects a constructor wrapping a record payload. Safe direct-record
+  Generic producers made the evidence available without restoring name authorization.
+  Evidence: the initial focused Composition run failed 14 of 56 examples; after fixture migration
+  the expanded suite passed 61 examples with 0 failures.
+
+- Observation: categorical identity must compose at a polymorphic one-field boundary even though
+  its unconstrained constructor cannot supply ordinary trusted evidence. A hidden composition-only
+  schema can tie the root field to the carrier and survive checked `Either` prefixes, while its
+  public availability remains unavailable and it is excluded from ordinary input/input and
+  wire/wire identity comparisons.
+  Evidence: the first focused Choice run failed 2 of 11 examples under strict unwitnessed
+  rejection; the composition-only identity path restored all 11 without a name-based fallback.
 
 
 ## Decision Log
@@ -172,6 +192,22 @@ will choose the release line and coordinate Keiro and application adoption once.
   Rationale: closure-taking helpers must remain explicitly unwitnessed. The private class obtains
   `Typeable` evidence for each Generic record slot without adding methods to the exported
   `GRecord` class or letting consumers mint trusted schemas.
+  Date: 2026-08-04
+
+- Decision: Do not retain any name-authorized unwitnessed fallback in composition. Add
+  `mkInCtorRecordVia` and `mkWireCtorRecordVia` as safe Generic producers for constructors whose
+  fields are declared directly with record syntax, and migrate the affected in-tree fixtures.
+  Rationale: the 14 legacy failures identified missing producer coverage, not a soundness reason
+  to keep the coercion. The new helpers derive both the record value and structural schema from
+  the same selected Generic constructor.
+  Date: 2026-08-04
+
+- Decision: Give library-defined categorical identity a hidden composition-only input/wire
+  capability. Equal prefixed structural paths authorize a one-field alignment, but availability
+  remains unavailable and the capability never participates in symbolic constructor identity.
+  Rationale: identity's root field is definitionally its carrier, yet the polymorphic API cannot
+  manufacture ordinary `Typeable` evidence. Restricting the witness to the two library identity
+  constructors preserves lawful composition without widening the public trust boundary.
   Date: 2026-08-04
 
 
@@ -275,6 +311,11 @@ otherwise produce the loud structural diagnostic. Apply the same discipline to `
 `PTop` rewrite. Audit every path that copies, wraps, or rewrites an `InCtor` for the
 preserve-or-drop law, mirroring Plan 87's Milestone 2 audit. All composition, category, choice,
 profunctor, and alignment law suites must pass unchanged for correctly shaped programs.
+For direct record constructors, use the safe Generic `mkInCtorRecordVia` and
+`mkWireCtorRecordVia` producers rather than manual unavailable records. Categorical identity uses
+a hidden composition-only one-field capability: it is sufficient for checked input-to-wire
+alignment, remains unavailable through the public observer, and is not structural evidence for
+symbolic identity.
 
 Milestone 4 rebuilds symbolic identity. Where both constructors in scope carry trusted
 evidence, derive the solver tag from the structural path (distinct paths that diverge are
@@ -425,8 +466,9 @@ may need the already documented local realignment after this witness exists. `su
 `composeGuard` accept substitution only through this checked comparison. `Keiki.Symbolic` consumes
 the same hidden path steps for structural `PInCtor` constraints and records trusted versus fallback
 identity. `Keiki.Generics` keeps `mkInCtorVia` as the trusted producer by generalizing the private
-Generic path class and adding a private input-slot spine derivation; no new public class surface or
-package dependency is permitted. `Keiki.Generics.TH` record and nullary call sites both become
+Generic path class and adding a private input-slot spine derivation; public
+`mkInCtorRecordVia` and `mkWireCtorRecordVia` helpers cover direct record constructors without
+exporting their private classes or adding a package dependency. `Keiki.Generics.TH` record and nullary call sites both become
 trusted while remaining textually stable at their declarations. No version or bound changes occur,
 and z3/SBV usage remains within the existing dependency.
 
@@ -444,3 +486,8 @@ and typed input-to-wire alignment required by the actual code.
 Plan revision note (2026-08-04): Milestone 2 recorded the implemented private input-spine
 derivation and the TH nullary switch to trusted `mkInCtorVia`, plus focused and compile-failure
 evidence. These details resolve the producer choices left conceptual at plan creation.
+
+Plan revision note (2026-08-04): Milestone 3 records the strict no-fallback composition boundary,
+the safe direct-record Generic producers needed by legacy fixtures, and the deliberately narrower
+composition-only evidence used by categorical identity. Focused law-suite evidence is recorded in
+Progress.
