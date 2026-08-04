@@ -1,5 +1,11 @@
 # Bundle Update Log
 
+## 2026-08-04
+* **Addition**: IR-5 requests sound guard-aware inverse-candidate disjointness proofs so the
+  default inversion audit can omit a same-head warning only when overlap is impossible; opaque,
+  unsupported, and unproved pairs remain conservative warnings. Mori Workflow supplies the
+  motivating `openSteps > 1` versus `openSteps == 1` reproducer.
+
 ## 2026-08-01
 * **Status change**: IR-2 `planned` -> `implemented`. ExecPlan 81's detailed forward-success and
   replay-attribution APIs, laws, documentation, and performance evidence are integrated into public
