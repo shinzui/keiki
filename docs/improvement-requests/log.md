@@ -5,6 +5,24 @@
   default inversion audit can omit a same-head warning only when overlap is impossible; opaque,
   unsupported, and unproved pairs remain conservative warnings. Mori Workflow supplies the
   motivating `openSteps > 1` versus `openSteps == 1` reproducer.
+* **Status change**: IR-5 `proposed` -> `planned`. Implementation is specified by ExecPlan 85
+  (`docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`),
+  sequenced after ExecPlan 87's structural wire-schema prerequisite.
+* **Refinement**: IR-5 now also requests actionable retained-warning diagnostics: a warning kept
+  because the proof did not go through should name the blocking construct (opaque conjunct,
+  unsupported carrier, unknown verdict) in its detail string, without changing the warning
+  constructor's shape.
+* **Addition**: IR-6 requests typed structural identity for input constructors so composition
+  substitution and symbolic `PInCtor` reasoning stop trusting `icName` string equality and the
+  `unsafeCoerceTerm` it authorizes — the input-side twin of ExecPlan 87's output-head schemas.
+  Filed `planned`: implementation is specified by ExecPlan 88, sequenced inside the same
+  unpublished 0.9/0.11 line.
+* **Addition**: IR-7 requests a researched, sanctioned event schema-evolution/upcasting path for
+  long-lived logs, now that ExecPlan 87's structural matching removes the unsound custom-`Eq`
+  quotienting trick; research-first, targeting the release after the structural boundary.
+* **Addition**: IR-8 requests a documented, copyable CI gate recipe for the opt-in symbolic
+  inversion checker with an explicit missing-solver policy, so its precision is exercised by
+  adopters and "not checked" can never read as "proved clean".
 
 ## 2026-08-01
 * **Status change**: IR-2 `planned` -> `implemented`. ExecPlan 81's detailed forward-success and

@@ -7,7 +7,7 @@ description: >-
   warnings for opaque or unproved pairs.
 timestamp: 2026-08-04T16:24:05Z
 requestId: IR-5
-status: proposed
+status: planned
 origin: mori://shinzui/mori
 reviews:
   - kind: model
@@ -29,7 +29,9 @@ reviews:
 
 ## Status
 
-Proposed as a soundness-preserving precision improvement to Keiki's default validation.
+Planned. Implementation is specified by ExecPlan 85
+(`docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`),
+sequenced after ExecPlan 87's structural wire-schema prerequisite.
 
 ## Context
 
@@ -75,6 +77,12 @@ constructor guards can hold in their respective candidate evaluations.
 Preserve the existing live/replay-only phase distinction, literal-bottom exemption, head-only
 streaming inversion rule, and structured `InversionAmbiguity` diagnostic. If a new structured
 proof or uncertainty result is exposed, keep the existing validation API source-compatible.
+
+A warning that is retained because the proof did not go through should say why in its
+human-readable detail: which guard construct was opaque or unsupported, or that the verdict was
+unknown. The consumer-facing purpose is actionable guidance — a team seeing a retained warning
+should learn from the diagnostic which conjunct to restructure into the supported register
+fragment — without changing the warning constructor's shape or adding a validation option.
 
 ## Acceptance
 
