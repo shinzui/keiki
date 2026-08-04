@@ -82,6 +82,16 @@ schema representation.
   the rebuild inventory, and record the two active application handles in Progress when execution
   begins; do not infer them from repository names.
 
+- Observation: runtime `solveOutput` never verifies invertible output fields. `recomputeDerivedFields`
+  keeps `TLit`, `TOpaqueLit`, `TReg`, and `TInpCtorField` positions at their observed values, so the
+  rebuilt-equals-observed check passes for them unconditionally; only derived fields
+  (`TArith`/`TApp1`/`TApp2`/`TFieldProj`) are recomputed and compared.
+  Evidence: `src/Keiki/Core.hs` (`solveOutput` and `recomputeDerivedFields`), confirmed during the
+  2026-08-04 soundness review of this plan;
+  `docs/research/full-symbolic-replay-inversion-model.md` marks this absence of a constraint
+  load-bearing for the symbolic model. A model that asserts `observed == literal` or
+  `observed == currentRegister` is narrower than runtime candidacy and can prove falsely UNSAT.
+
 
 ## Decision Log
 
@@ -150,6 +160,38 @@ schema representation.
   avoid repeated bound-only releases.
   Date: 2026-08-04
 
+- Decision: The symbolic model leaves `TLit`, `TOpaqueLit`, and `TReg` output positions
+  unconstrained on the shared observed variable, exactly mirroring `recomputeDerivedFields`, and
+  the spec must contain adversarial fixtures that go falsely UNSAT under a model asserting
+  `observed == literal` or `observed == currentRegister`.
+  Rationale: Runtime candidacy never verifies invertible fields, so such an assertion is narrower
+  than runtime and could suppress a real ambiguity. Plan 86's research called this absence
+  load-bearing; review of this plan found the earlier "observed-value checks" wording ambiguous
+  and the hazard untested. The fixtures turn the over-constraint failure mode into a test failure
+  instead of a silent unsoundness.
+  Date: 2026-08-04
+
+- Decision: Two trusted `WireCtorPath`s witness `WireHeadsStructurallyDifferent` only when they
+  diverge at a common index. A path that is a proper prefix of the other never witnesses
+  difference; the pair stays may-alias.
+  Rationale: Once left/right composition prefixes exist, path inequality is not disjointness
+  evidence: a prefix-composed wire such as `leftWireCtor w` and a Generic-derived wire for the sum
+  carrier's own arm constructor have unequal paths yet overlapping match sets. Divergence at a
+  common index is genuine disjointness evidence and keeps this corner conservative without
+  weakening ordinary same-type constructor comparison.
+  Date: 2026-08-04
+
+- Decision: Moving TH's nullary route from `mkWireCtor0` to `mkWireCtor0Via` intentionally
+  replaces `Eq`-mediated matching with structural Generic matching, changing the generated
+  constraint from `Eq co` to `Generic co` plus nullary-constructor evidence. A quotienting custom
+  `Eq` that let a wire match a different constructor's value no longer matches; that behavior
+  violated the documented `wcMatch` honesty law and is tightened, not preserved.
+  Rationale: Trusted-schema disjointness claims are sound only if `wcMatch` is the structural
+  matcher. `Eq co` remains required by `solveOutput`, so consumers cannot drop it anyway; the only
+  migration cost is `deriving Generic` on all-nullary event sums, surfaced as a compile error at
+  the version boundary. Changelogs and golden expansions must record the change.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
@@ -166,9 +208,12 @@ term, but when two edges are unpacked independently their `fields` types are sep
 existentials. A string equality between their `wcName`s cannot eliminate those existentials.
 
 `solveOutput` in `src/Keiki/Core.hs` is the concrete inverse. It matches the observed event,
-checks or recomputes each output field, gathers top-level `TInpCtorField` values, reconstructs a
-candidate command through `InCtor.icBuild`, and later evaluates the guard against the same
-pre-event `RegFile`. `inversionAmbiguityWarnings` currently groups same-source, same-mode,
+gathers top-level `TInpCtorField` values, reconstructs a candidate command through
+`InCtor.icBuild`, recomputes and verifies only the derived fields
+(`TArith`/`TApp1`/`TApp2`/`TFieldProj`) while leaving invertible fields (`TLit`, `TOpaqueLit`,
+`TReg`, `TInpCtorField`) at their observed values, and later evaluates the guard against the same
+pre-event `RegFile`. Invertible positions therefore impose no candidacy constraint on the
+observed event; the symbolic model must reproduce that absence, not "fix" it. `inversionAmbiguityWarnings` currently groups same-source, same-mode,
 non-empty edges by equal `wcName` and emits `InversionAmbiguity` for every pair except literal
 `PBot`. `validateTransducer` calls that pure function by default. Neither default validation nor
 `applyEventKernel` may start a solver in this plan.
@@ -192,7 +237,11 @@ unavailable.
 `Keiki.Generics.TH` in `src/Keiki/Generics/TH.hs` generates event bindings through
 `deriveWireCtors`, `deriveWireCtorsAll`, and `deriveWireCtorsWith`. It already routes record payloads
 through `mkWireCtorVia`; change the nullary route from `mkWireCtor0` to `mkWireCtor0Via`. Generated
-call sites such as `$(deriveWireCtorsAll ''Event)` should remain textually stable. Golden and
+call sites such as `$(deriveWireCtorsAll ''Event)` should remain textually stable, but the
+expansions change (`mkWireCtor0 "C" C` becomes `mkWireCtor0Via @"C"`) and the generated matching
+constraint moves from `Eq co` to `Generic co`, so golden expansion snapshots must be updated and
+an all-nullary event sum now needs `deriving Generic` (`Eq co` is still required by
+`solveOutput`, so it cannot be dropped from event types). Golden and
 conformance tests must prove the expanded bindings contain trusted schemas; do not rewrite
 unchanged generated domain files merely because the library implementation changed.
 
@@ -247,11 +296,15 @@ by choosing the explicit unavailable value; they cannot mint trusted evidence fr
 
 In the same milestone add an internal three-way head classifier: structurally equal,
 structurally different, or unwitnessed. Equal means identical abstract constructor path and a
-typed field-spine alignment; different requires two trusted schemas with distinct paths;
-unwitnessed covers every unavailable case. The optional checker may share observed fields only in
+typed field-spine alignment. Different requires two trusted schemas whose paths diverge at a
+common index; a path that is a proper prefix of the other is never structural difference — the
+pair remains may-alias, because prefix-related match sets can overlap (for example
+`leftWireCtor w` against a trusted wire derived for the sum carrier's own arm constructor).
+Unwitnessed covers every unavailable case. The optional checker may share observed fields only in
 the equal case. Preserve the legacy `wcName` grouping inside `inversionAmbiguityWarnings` for now,
 so default validation behavior does not change in this plan. Add tests for zero, one, and multiple
-fields; equal labels at distinct positions; distinct constructors with the same short name; and
+fields; equal labels at distinct positions; distinct constructors with the same short name;
+a prefix-related trusted pair that must not classify as structurally different; and
 manual unavailable records. Add a compile-failure fixture proving an omitted `wcSchema` is the
 expected PVP break. Milestone 1 is complete when `Keiki.Core` compiles, trusted constructors
 cannot be forged through the public API, and schema alignment uses no `unsafeCoerce` or
@@ -279,9 +332,13 @@ candidate scope (`A`/`B`), one register variable cache shared by both candidates
 command tag/arm/field and opaque caches per candidate, and a shared observed-head cache allocated
 only through an aligned trusted schema. Traverse paired `OutFields` together with the aligned
 field spine. Reproduce `solveOutput` semantics exactly for supported structural terms:
-top-level `TInpCtorField` assembles the candidate's command; `TArith` and exact structural
-projections constrain the observed field; literal and register outputs remain observed-value
-checks rather than command relations. Drop, rather than approximate inward, any equality whose
+top-level `TInpCtorField` assembles the candidate's command from the shared observed field;
+`TArith` and exact structural projections constrain the observed field because runtime recomputes
+and verifies them; `TLit`, `TOpaqueLit`, and `TReg` output positions leave the shared observed
+variable unconstrained, exactly as `recomputeDerivedFields` keeps invertible fields at their
+observed values. The model must never assert `observed == literal` or
+`observed == currentRegister`: either assertion is narrower than runtime candidacy and could
+manufacture a false disjointness proof. Drop, rather than approximate inward, any equality whose
 carrier or term is unsupported. `TApp1`/`TApp2`, unsupported projections, missing schemas, and
 unavailable symbolic carriers add a translation issue and widen the formula.
 
@@ -297,7 +354,13 @@ Create `test/Keiki/FullSymbolicReplayInversionSpec.hs` from the semantic fixture
 Plan 86, not by copying its temporary descriptor. It must cover the output-dependent UNSAT pair,
 the real-overlap control, a guard-only disjoint pair, missing/poisoned schema, unsupported field
 carrier, unsupported `TApp`, distinct candidate commands, duplicate diagnostic labels, live and
-replay-only modes, and structurally different heads with identical short names. For a finite
+replay-only modes, and structurally different heads with identical short names. It must also
+cover the two over-constraint adversarial fixtures: a same-constructor pair whose only difference
+is distinct `TLit` values at one field position, and a pair whose distinguishing field is a
+`TReg` audit output — both are concretely double-candidate at runtime, go falsely UNSAT under a
+model that constrains invertible output positions, and must remain not proved disjoint. Add an
+all-nullary Generic event sum whose trusted nullary wires classify pairwise structurally
+different. For a finite
 fixture domain, enumerate concrete `solveOutput` plus `models` and assert that every solver UNSAT
 pair has no concrete double candidate. Keep a manual 100-pair benchmark outside default CI and
 compare with the Plan 86 baseline; investigate a regression above 3x, but do not turn wall-clock
@@ -305,7 +368,10 @@ noise into a flaky test.
 
 Milestone 4 performs the one-time source and version migration. In this repository, move `keiki`,
 `keiki-codec-json`, and `keiki-codec-json-test` to 0.9.0.0, update their mutual bounds to
-`^>=0.9`, and add migration notes to each changelog. Compile all in-tree manual `WireCtor`
+`^>=0.9`, and add migration notes to each changelog. The migration notes must state the nullary
+TH route's constraint change (`Eq co` to `Generic co` for matching; `Eq co` is still required by
+`solveOutput`) and that a custom quotienting `Eq` no longer influences `wcMatch` — an intentional
+tightening enforcing the documented honesty law. Compile all in-tree manual `WireCtor`
 construction and TH/golden fixtures. Do not publish packages in this plan.
 
 Use Mori to refresh the reverse-dependent list and identify the two active application adopters
@@ -452,9 +518,13 @@ or publish a release without explicit user authorization.
 The plan is acceptable only when the following behavior is demonstrated.
 
 A `deriveWireCtorsAll` binding for a record event exposes a trusted schema with the constructor's
-Generic sum path and every field in source order. A nullary TH binding is also trusted. Two
+Generic sum path and every field in source order. A nullary TH binding is also trusted, matches
+structurally rather than through `Eq`, and an all-nullary Generic event sum derives trusted wires
+that classify pairwise structurally different. Two
 bindings for the same constructor align without names or casts; two different constructors with
-the same short name are structurally different. Selector labels are never used as variable
+the same short name are structurally different. A trusted path that is a proper prefix of another
+trusted path is never reported structurally different — the pair stays may-alias. Selector labels
+are never used as variable
 identity. Direct record construction must state `wcSchema = wireSchemaUnavailable`, and public
 code cannot construct a trusted schema directly.
 
@@ -472,7 +542,10 @@ double candidate for every pair reported UNSAT.
 Candidate A and B use the same symbolic registers and observed fields but different reconstructed
 command tags, fields, input arms, and opaque variables. An adversarial fixture becomes falsely
 UNSAT if command variables are accidentally shared and therefore must remain not-proved-disjoint.
-The test should fail under that incorrect implementation.
+The test should fail under that incorrect implementation. Symmetrically, `TLit`, `TOpaqueLit`,
+and `TReg` output positions leave the observed variable unconstrained: the distinct-literal pair
+and the `TReg`-audit-output pair both remain not proved disjoint, and both tests must fail under
+an implementation that asserts `observed == literal` or `observed == currentRegister`.
 
 Removing a trusted schema, using an unsupported observed-field carrier, inserting `TApp1` or
 `TApp2`, producing a solver `Unknown`, timing out, or running without z3 retains the warning and
@@ -577,7 +650,11 @@ data WireSchema co fields where
 `WireCtorPath` is an abstract Generic constructor-ordinal path with structural left/right
 composition prefixes. It is not a constructor name, `wcName`, persisted wire kind, hash, or
 consumer-supplied token. An internal comparison returns a typed alignment only after both the path
-and every field position/type agree. Selector names are optional diagnostics.
+and every field position/type agree. Path comparison for `classifyWireHeads` is three-valued:
+equal paths may align; paths that diverge at a common index are structurally different; a path
+that is a proper prefix of the other is neither equal nor different — the pair is treated as
+may-alias, because a prefix-composed wire and a wire derived for the sum carrier's own arm
+constructor can match the same observed event. Selector names are optional diagnostics.
 
 `Keiki.Core` also supplies the final private head relation consumed by Plan 85:
 
@@ -592,8 +669,11 @@ wireHeadsMayAliasForDefault :: WireCtor co fa -> WireCtor co fb -> Bool
 ```
 
 `wireHeadsMayAliasForDefault` is `True` for structurally equal heads, `False` for structurally
-different trusted heads, and preserves legacy equal-`wcName` grouping only in the unwitnessed
-case. The fallback is compatibility policy, not typed field evidence; the opt-in solver may share
+different trusted heads, and preserves legacy equal-`wcName` grouping only when a schema is
+unavailable. A prefix-related trusted pair is unconditionally `True` regardless of names: both
+schemas are trusted, so the legacy name fallback does not apply, and there is positive structural
+evidence that their match sets can overlap. The fallback is compatibility policy, not typed field
+evidence; the opt-in solver may share
 observed variables only for `WireHeadsStructurallyEqual`.
 
 `Keiki.Generics` retains its current helpers and adds:
@@ -654,3 +734,17 @@ checker, never a runtime or default-validation dependency.
 Plan revision note (2026-08-04): Initial plan created from Plan 86's completed research. The plan
 intentionally combines the structural PVP boundary, optional solver, and current consumer
 migration so Keiki/Keiro adopters cross one stable API boundary before the projected rollout.
+
+Plan revision note (2026-08-04, second revision): Amended after a soundness review, with three new
+Decision Log entries. First, the symbolic checker's treatment of invertible output positions is
+now explicit: `TLit`, `TOpaqueLit`, and `TReg` output fields leave the shared observed variable
+unconstrained, mirroring `recomputeDerivedFields`, and two adversarial fixtures (distinct-literal
+pair, `TReg`-audit pair) must fail under an over-constrained model — the earlier "observed-value
+checks" wording was ambiguous and the hazard untested. Second, trusted-path difference is defined
+as divergence at a common index; a proper-prefix relation is conservatively may-alias
+(unconditionally, never via the name fallback), closing a false-disjointness corner between
+prefix-composed wires and wires derived for a sum carrier's own arm constructor. Third, the
+nullary TH route's `Eq co` to `Generic co` constraint change, the intentional custom-`Eq`
+matching tightening, golden-expansion updates, and an all-nullary event fixture are recorded in
+Milestones 2–4 and Validation. Plan 85 remains consistent: it consumes
+`wireHeadsMayAliasForDefault` as policy and is unaffected by these refinements.
