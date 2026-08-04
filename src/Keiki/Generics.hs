@@ -277,6 +277,7 @@ type family RegFieldsOfRep (rep :: Type -> Type) :: [Slot] where
 -- > wireRegistrationStarted = mkWireCtor "RegistrationStarted"
 -- >   (\case RegistrationStarted d -> Just d; _ -> Nothing)
 -- >   RegistrationStarted
+{-# DEPRECATED mkWireCtor "Use mkWireCtorVia for Generic constructors, or construct WireCtor explicitly with wcSchema = wireSchemaUnavailable." #-}
 mkWireCtor ::
   forall co d fs.
   ( Generic d,
@@ -308,6 +309,7 @@ mkWireCtor name match wrap =
 --
 -- > wireOpened :: WireCtor DoorEvent ()
 -- > wireOpened = mkWireCtor0 "Opened" Opened
+{-# DEPRECATED mkWireCtor0 "Use mkWireCtor0Via for Generic nullary constructors, or construct WireCtor explicitly with wcSchema = wireSchemaUnavailable." #-}
 mkWireCtor0 :: forall co. (Eq co) => String -> co -> WireCtor co ()
 mkWireCtor0 name singleton =
   WireCtor

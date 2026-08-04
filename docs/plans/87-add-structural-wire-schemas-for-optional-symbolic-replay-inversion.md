@@ -57,9 +57,9 @@ schema representation.
       `WireCtor` record to explicit unavailability. Focused results: Generics 27 examples,
       TH 27, WireSchema 10, Composition 60, Profunctor 68, and Builder 32; all reported
       0 failures.
-- [ ] Post-review addendum (2026-08-04): add `DEPRECATED` pragmas to `mkWireCtor` and
-      `mkWireCtor0` during Milestone 4's in-tree sweep, and the foundations replay-verification
-      page during Milestone 5 (recorded after Milestones 1–2 completed; see Decision Log).
+- [ ] Post-review addendum (2026-08-04): the `DEPRECATED` pragmas landed with Milestone 4;
+      the foundations replay-verification page remains for Milestone 5 (recorded after
+      Milestones 1–2 completed; see Decision Log).
 - [x] (2026-08-04) Milestone 3: implemented the detailed opt-in dual-candidate symbolic
       checker and fail-conservative compatibility projection. Candidate command tags, arms,
       fields, projections, and opaque values are independent; register and structurally aligned
@@ -67,8 +67,10 @@ schema representation.
       0 failures; combined Symbolic result: 105 examples, 0 failures. The finite oracle found no
       double candidate for the output-dependent UNSAT pair. The manual non-CI 100-pair benchmark
       completed in 0.315 CPU seconds, below the Plan 86 per-pair baseline rather than a 3x regression.
-- [ ] Milestone 4: add the local deprecation guidance, compile every in-tree Keiki package and
-      fixture, and record the downstream inventory without editing versions or dependent repos.
+- [x] (2026-08-04) Milestone 4: added local `DEPRECATED` guidance to the closure-taking wire
+      helpers, documented the unreleased breaking migration, and compiled all in-tree Keiki,
+      codec, test-support, and jitsurei packages without editing versions, bounds, or dependent
+      repositories. Focused WireSchema and TH results remained 10 and 27 examples, 0 failures.
 - [ ] Milestone 5: update local Haddocks, changelogs, IR/ADR records, and the future-release
       handoff; run Keiki gates and hand the schema surface to Plans 85 and 88.
 

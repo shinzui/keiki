@@ -8,6 +8,38 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `WireCtor` values can carry abstract, Generic-derived structural schemas for
+  their constructor path and ordered field types. `classifyWireHeads` exposes a
+  proof-safe equal/different/unwitnessed classification without using diagnostic
+  names.
+- `checkInversionAmbiguitySymDetailed` and
+  `checkInversionAmbiguitySym` provide an opt-in SBV analysis of two replay
+  candidates against shared registers and a structurally aligned observed head.
+  Only definite `Unsatisfiable` results remove compatibility warnings.
+
+### Changed
+
+- **Breaking:** `WireCtor` adds `wcSchema`. Direct records must state
+  `wireSchemaUnavailable`; Generic `mkWireCtorVia` and TH-derived wires provide
+  trusted evidence. Schema-preserving composition retains evidence, while
+  meaning-changing profunctor transformations drop it.
+- **Breaking:** nullary TH-derived wires now use structural Generic matching via
+  `mkWireCtor0Via`. Matching therefore requires `Generic co` instead of using
+  `Eq co`; `solveOutput` still requires `Eq co`. A quotienting custom `Eq`
+  instance no longer changes `wcMatch` behavior.
+- `mkWireCtor` and `mkWireCtor0` are deprecated because their closure-taking
+  interfaces cannot establish trusted evidence. Use their `Via` counterparts or
+  an explicit `WireCtor` record with `wireSchemaUnavailable`.
+
+### Migration
+
+- Add `wcSchema = wireSchemaUnavailable` to intentional manual constructors, or
+  move honest Generic bindings to `mkWireCtorVia` / `mkWireCtor0Via`. Version,
+  bound, release, and downstream migration work is deliberately deferred until
+  the remaining breaking Keiki ExecPlans are complete.
+
 
 ## [0.8.0.0] — 2026-08-02
 

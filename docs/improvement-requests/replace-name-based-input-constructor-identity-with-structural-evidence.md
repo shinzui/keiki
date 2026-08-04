@@ -89,19 +89,19 @@ abstraction should be reused from, not duplicated beside, ExecPlan 87's represen
 
 ## Out of Scope
 
-- The output-head `WireCtor`/`WireSchema` representation, solver, and consumer migration
-  (owned by ExecPlan 87).
+- The output-head `WireCtor`/`WireSchema` representation and solver (owned by ExecPlan 87).
 - The pure shared-register disjointness proof (owned by ExecPlan 85 / IR-5).
 - Persisted wire identities and codec-level naming
   ([ADR-0005](../adr/0005-persisted-wire-identities-are-explicit-and-versioned.md)).
-- Keiro DSL surface changes beyond regenerating against the new Keiki line.
+- Version selection, Keiro/application migration, and release work (owned by the future
+  user-authored Keiki release plan after all breaking ExecPlans are complete).
 
 ## Compatibility Baseline
 
 Verified against the local working tree at Keiki 0.8.0.0 (commit `6fbce40`) and the
 matching Hackage 0.8.0.0 release. `InCtor` is a public record-syntax GADT, so adding
-evidence is a source-breaking change; it is deliberately targeted at the unpublished
-0.9 boundary prepared by ExecPlan 87 rather than a later release.
+evidence is a source-breaking change. No release version is selected here; the future release
+plan will choose one after all breaking ExecPlans are complete.
 
 ## References
 
