@@ -67,6 +67,9 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
       prerequisite`, completed the report and bounded follow-up scope, revised ADR-1/ADR-3/ADR-5,
       and validated the documentation-only final tree. Formatting, build, all four test suites,
       Haddock, flake checks, the profiled ADR bundle, and `git diff --check` pass.
+- [x] (2026-08-04) Created the bounded production follow-up as
+      [Plan 87](87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md) and
+      resequenced Plan 85 after its structural migration so consumers adopt one final wire shape.
 
 
 ## Surprises & Discoveries
@@ -82,6 +85,12 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
   failure; every subsequent Cabal command must run sequentially.
   Evidence: the failed parallel baseline named `package.cache` and `package.cache.lock` paths,
   while the same tests passed sequentially.
+
+- Follow-up design made one prototype assumption more precise: categorical `identityWireCtor` is
+  polymorphic in its field carrier and cannot obtain the descriptor's per-field `Typeable`
+  evidence without changing the `Category` interface.
+  Evidence: Plan 87 marks unconstrained identity wires unavailable and the research report's PVP
+  table now records that conservative boundary.
 
 - Mori's local SBV corpus is on an unreleased 14.6 `master`, while Hackage, upstream tags, and
   Keiki's resolved build agree on released 14.5. The corpus remains useful for source discovery
@@ -172,8 +181,12 @@ existential `OutFields` values cannot prove that two edges expose the same obser
 and ordered field tuple. Equal diagnostic or persisted names are not type evidence. The selected
 outcome is therefore `Proceed after structural wire-schema prerequisite`, with a PVP-major typed
 descriptor, generation and composition laws, and a conservative optional solver entry point
-named as the bounded scope of a future ExecPlan in the report. The bounded reverse-dependent audit
-found no broader confirmed false-positive family that would justify weakening this prerequisite.
+implemented by
+[Plan 87](87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md). The bounded
+reverse-dependent audit found no broader confirmed false-positive family that would justify
+weakening this prerequisite. Plan 87 owns the structural/version/consumer boundary; the revised
+[Plan 85](85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md) follows
+with only the pure default-validation optimization.
 
 The unsupported test module was checkpointed, measured, and removed. Commits `fd63b32` and
 `c315db7` retain its executable evidence; the permanent result is the research report plus durable
@@ -579,3 +592,8 @@ External codebases are evidence sources, not build dependencies. Refer to SBV as
 registered projects through their exact Mori handles. Read dependency source only from paths
 returned by `mori registry show --full` and verify release state through authoritative Hackage and
 upstream tags before making compatibility claims.
+
+
+Plan revision note (2026-08-04): Linked the completed research to its concrete production
+follow-up, Plan 87, and recorded the sequencing decision that Plan 85 consumes the final structural
+wire representation instead of creating an interim identity layer.

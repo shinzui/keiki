@@ -395,7 +395,7 @@ requirements, and `inversionAmbiguityWarnings` deliberately has no solver or `Eq
 | Generics | `FieldsOf` already preserves ordered payload types but not selector names. Generic builders can derive positional evidence; adding it changes generated binding construction. |
 | Generics/TH | `deriveWireCtorsAll` sees constructor identity, selector order, and field types, so it is the lowest-maintenance producer. Generated declarations and golden source fixtures change; downstream regeneration is required. |
 | Composition | `leftWireCtor`/`rightWireCtor` can preserve a descriptor with a sum-path prefix. Arbitrary or name-aligned composition must drop it when field identity cannot be proved. |
-| Profunctor | `mapWireCtor`, `firstWireCtor`, and `arrWc` deliberately poison inversion with `wcMatch = const Nothing`; they must also mark structural inversion unavailable. `identityWireCtor` can supply a descriptor. |
+| Profunctor | `mapWireCtor`, `firstWireCtor`, and `arrWc` deliberately poison inversion with `wcMatch = const Nothing`; they must also mark structural inversion unavailable. The categorical `identityWireCtor` is unconstrained in its field carrier and therefore cannot supply the per-field `Typeable` evidence required by this design; it must remain unavailable unless a separate typed helper can preserve real evidence. |
 | Generated downstream code | `mori://shinzui/danwa`, `mori://shinzui/keiro-runtime-jitsurei`, `mori://shinzui/kizashi`, and `mori://shinzui/kotei` visibly generate or consume wire bindings. Regeneration is broad even if most `B.emit` call sites remain textually unchanged. |
 
 The production checker would need per-field symbolic dictionaries and `Typeable` evidence in the
