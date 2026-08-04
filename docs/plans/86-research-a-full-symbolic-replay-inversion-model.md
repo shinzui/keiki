@@ -4,6 +4,7 @@ slug: research-a-full-symbolic-replay-inversion-model
 title: "Research a full symbolic replay-inversion model"
 kind: exec-plan
 created_at: 2026-08-04T17:28:38Z
+intention: intention_01kz6xycp7ebttv8tj6w4kz77n
 ---
 
 # Research a full symbolic replay-inversion model
@@ -37,8 +38,14 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
 
 ## Progress
 
-- [ ] Milestone 1: formalize concrete replay candidacy, inventory current symbolic and structural
-      evidence, verify SBV and reverse-dependency baselines, and publish the capability matrix.
+- [x] (2026-08-04T17:44:15Z) Created and attached active intention
+      `intention_01kz6xycp7ebttv8tj6w4kz77n`; completed the ExecPlan/ADR preflight and confirmed a
+      clean starting worktree.
+- [x] (2026-08-04T17:51:31Z) Milestone 1: formalized concrete replay candidacy, inventoried
+      current symbolic and structural evidence, verified the released SBV and reverse-dependency
+      baselines, and published the capability matrix in
+      `docs/research/full-symbolic-replay-inversion-model.md`. Sequential focused baselines passed
+      with 3, 5, and 9 examples respectively and zero failures.
 - [ ] Milestone 2: prototype two candidate-scoped command environments sharing one symbolic
       register environment, and prove the dual-command semantics against finite concrete models.
 - [ ] Milestone 3: prototype shared observed-head constraints for a deliberately small structural
@@ -51,7 +58,28 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The plan's combined Hspec `--match` alternation selected zero examples in the active Hspec
+  version. Stable substrings run sequentially selected 3 `satResultIsProvablyUnsat`, 5 ambiguity,
+  and 9 EP-47 examples, all passing.
+  Evidence: focused test transcripts recorded in
+  `docs/research/full-symbolic-replay-inversion-model.md`.
+
+- Concurrent Cabal test invocations race on the shared `dist-newstyle` package cache and produced
+  missing cache/lock-file errors. This is a command-reproducibility constraint, not a semantic
+  failure; every subsequent Cabal command must run sequentially.
+  Evidence: the failed parallel baseline named `package.cache` and `package.cache.lock` paths,
+  while the same tests passed sequentially.
+
+- Mori's local SBV corpus is on an unreleased 14.6 `master`, while Hackage, upstream tags, and
+  Keiki's resolved build agree on released 14.5. The corpus remains useful for source discovery
+  but cannot justify a released-version compatibility claim by itself.
+  Evidence: corpus commit `62aa7532f714368696456e50026581cdf611721f` declares 14.6; Hackage and
+  tag `v14.5` identify the current release, and `dist-newstyle/cache/plan.json` resolves 14.5.
+
+- Mori's `--packages --json` reverse-dependent query currently returned project-level entries
+  with null package fields. The bounded source audit found extensive generated wire-schema use but
+  no confirmed non-Mori same-source/same-head output-dependent false positive.
+  Evidence: the audit and canonical project references are recorded in the research report.
 
 
 ## Decision Log
@@ -81,6 +109,18 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
   Rationale: Dropping unsupported constraints is sound for proving unsatisfiability, yet treating
   the two edges' observed fields as independent collapses the model back to guard-only reasoning.
   The research must state exactly which replay constraints are shared and which are widened.
+  Date: 2026-08-04
+
+- Decision: Prototype shared observed fields only behind a small typed structural descriptor and
+  use adversarial controls to falsify the public-types-unchanged alternative.
+  Rationale: Equal `wcName` values and two independently unpacked `OutFields` do not prove that
+  opaque matchers expose the same field tuple. The typed descriptor tests feasibility without
+  changing `WireCtor` or relying on a cast during research.
+  Date: 2026-08-04
+
+- Decision: Run all Cabal build and test commands sequentially for this plan.
+  Rationale: Parallel invocations mutated the same `dist-newstyle` cache and produced spurious
+  missing-file failures, obscuring the semantic evidence.
   Date: 2026-08-04
 
 
