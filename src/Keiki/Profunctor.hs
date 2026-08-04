@@ -366,6 +366,7 @@ identityWireCtor :: forall a. WireCtor a (a, ())
 identityWireCtor =
   WireCtor
     { wcName = "Identity",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \a -> Just (a, ()),
       wcBuild = \(a, ()) -> a
     }
@@ -720,6 +721,7 @@ firstSym t =
     firstWireCtor WireCtor {wcName = n, wcBuild = b} =
       WireCtor
         { wcName = n <> "_first",
+          wcSchema = wireSchemaUnavailable,
           wcMatch = \_ -> Nothing,
           wcBuild = \(cv, fs) -> (b fs, cv)
         }
@@ -874,6 +876,7 @@ arrTransducer f =
     arrWc =
       WireCtor
         { wcName = "arr",
+          wcSchema = wireSchemaUnavailable,
           wcMatch = \_ -> Nothing,
           wcBuild = \(a, ()) -> f a
         }
@@ -946,6 +949,7 @@ mapWireCtor :: (co -> co') -> WireCtor co fs -> WireCtor co' fs
 mapWireCtor g WireCtor {wcName = n, wcBuild = b} =
   WireCtor
     { wcName = n <> "#rmapped",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \_co' -> Nothing,
       wcBuild = g . b
     }

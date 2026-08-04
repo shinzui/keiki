@@ -50,6 +50,7 @@ import Keiki.Core
     WireCtor (..),
     opaqueLit,
     pack,
+    wireSchemaUnavailable,
   )
 import Keiki.Fixtures.CounterPipeline (stageB)
 import Keiki.Fixtures.EmailDelivery (emailDelivery)
@@ -715,6 +716,7 @@ wireTick :: WireCtor Tick ()
 wireTick =
   WireCtor
     { wcName = "Tick",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \Tick -> Just (),
       wcBuild = \() -> Tick
     }
@@ -866,6 +868,7 @@ secretWireCtor :: WireCtor SecretEvt ()
 secretWireCtor =
   WireCtor
     { wcName = "SecretSet",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \SecretSet -> Just (),
       wcBuild = \() -> SecretSet
     }
@@ -916,6 +919,7 @@ specialWireCtor :: WireCtor SpecialEvt ()
 specialWireCtor =
   WireCtor
     { wcName = "Event",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \SpecialEvt -> Just (),
       wcBuild = \() -> SpecialEvt
     }
@@ -991,18 +995,21 @@ wireMA, wireMB, wireMC :: WireCtor MEvt ()
 wireMA =
   WireCtor
     { wcName = "A",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case MA -> Just (); _ -> Nothing,
       wcBuild = \() -> MA
     }
 wireMB =
   WireCtor
     { wcName = "B",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case MB -> Just (); _ -> Nothing,
       wcBuild = \() -> MB
     }
 wireMC =
   WireCtor
     { wcName = "C",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case MC -> Just (); _ -> Nothing,
       wcBuild = \() -> MC
     }

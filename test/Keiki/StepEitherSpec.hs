@@ -57,6 +57,7 @@ chosenWire :: WireCtor IdentityEvent ()
 chosenWire =
   WireCtor
     { wcName = "Chosen",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Chosen -> Just (),
       wcBuild = \() -> Chosen
     }

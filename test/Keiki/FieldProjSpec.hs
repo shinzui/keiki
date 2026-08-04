@@ -156,6 +156,7 @@ docAcceptedWire :: WireCtor DocEvent (DocInfo, ())
 docAcceptedWire =
   WireCtor
     { wcName = "DocAccepted",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case DocAccepted doc -> Just (doc, ()),
       wcBuild = \(doc, ()) -> DocAccepted doc
     }

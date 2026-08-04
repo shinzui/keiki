@@ -42,6 +42,7 @@ wireConfirmed :: WireCtor DivertEvent (Bool, ())
 wireConfirmed =
   WireCtor
     { wcName = "ReservationConfirmed",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         ReservationConfirmed b -> Just (b, ()),
       wcBuild = \(b, ()) -> ReservationConfirmed b

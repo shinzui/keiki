@@ -61,6 +61,7 @@ mkWireCtor :: String -> (msg -> Int) -> (Int -> msg) -> WireCtor msg (Int, ())
 mkWireCtor name unwrap rebuild =
   WireCtor
     { wcName = name,
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \m -> Just (unwrap m, ()),
       wcBuild = \(n, ()) -> rebuild n
     }

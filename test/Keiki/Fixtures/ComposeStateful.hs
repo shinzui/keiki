@@ -139,6 +139,7 @@ wireMidVal :: WireCtor MidVal (Int, ())
 wireMidVal =
   WireCtor
     { wcName = "MidVal",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case MidVal v -> Just (v, ()),
       wcBuild = \(v, ()) -> MidVal v
     }
@@ -147,6 +148,7 @@ wireM2A :: WireCtor Mid2 (Int, ())
 wireM2A =
   WireCtor
     { wcName = "M2A",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         M2A a -> Just (a, ())
         M2B _ -> Nothing,
@@ -157,6 +159,7 @@ wireOutVal :: WireCtor OutVal (Int, ())
 wireOutVal =
   WireCtor
     { wcName = "OutVal",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case OutVal v -> Just (v, ()),
       wcBuild = \(v, ()) -> OutVal v
     }
@@ -165,6 +168,7 @@ wireStage1 :: WireCtor StageOut (Int, ())
 wireStage1 =
   WireCtor
     { wcName = "Stage1",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         Stage1 v -> Just (v, ())
         Stage2 _ -> Nothing,
@@ -175,6 +179,7 @@ wireStage2 :: WireCtor StageOut (Int, ())
 wireStage2 =
   WireCtor
     { wcName = "Stage2",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         Stage1 _ -> Nothing
         Stage2 v -> Just (v, ()),
@@ -185,6 +190,7 @@ wireSawA :: WireCtor WrongOut (Int, ())
 wireSawA =
   WireCtor
     { wcName = "SawA",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         SawA v -> Just (v, ())
         SawB _ -> Nothing,
@@ -195,6 +201,7 @@ wireSawB :: WireCtor WrongOut (Int, ())
 wireSawB =
   WireCtor
     { wcName = "SawB",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         SawA _ -> Nothing
         SawB v -> Just (v, ()),

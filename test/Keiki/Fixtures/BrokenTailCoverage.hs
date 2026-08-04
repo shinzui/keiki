@@ -66,6 +66,7 @@ wireOwnerRecorded :: WireCtor BrokenEvent (Text, ())
 wireOwnerRecorded =
   WireCtor
     { wcName = "OwnerRecorded",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         OwnerRecorded OwnerRecordedData {owner} -> Just (owner, ())
         _ -> Nothing,
@@ -76,6 +77,7 @@ wireQuotaAssigned :: WireCtor BrokenEvent (Int, ())
 wireQuotaAssigned =
   WireCtor
     { wcName = "QuotaAssigned",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         QuotaAssigned QuotaAssignedData {quota} -> Just (quota, ())
         _ -> Nothing,

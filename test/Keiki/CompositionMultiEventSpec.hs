@@ -59,6 +59,7 @@ wcMidA :: WireCtor Mid (Int, ())
 wcMidA =
   WireCtor
     { wcName = "MidA",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         MidA n -> Just (n, ())
         _ -> Nothing,
@@ -69,6 +70,7 @@ wcMidB :: WireCtor Mid (Int, ())
 wcMidB =
   WireCtor
     { wcName = "MidB",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         MidB n -> Just (n, ())
         _ -> Nothing,
@@ -126,6 +128,7 @@ wcEchoA :: WireCtor Echo (Int, ())
 wcEchoA =
   WireCtor
     { wcName = "EchoA",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         EchoA n -> Just (n, ())
         _ -> Nothing,
@@ -136,6 +139,7 @@ wcEchoB :: WireCtor Echo (Int, ())
 wcEchoB =
   WireCtor
     { wcName = "EchoB",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         EchoB n -> Just (n, ())
         _ -> Nothing,
@@ -232,6 +236,7 @@ pendingLoadWire :: WireCtor PendingMid (FieldProj.DocInfo, ())
 pendingLoadWire =
   WireCtor
     { wcName = "PendingLoad",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case PendingLoad doc -> Just (doc, ()); PendingCheck -> Nothing,
       wcBuild = \(doc, ()) -> PendingLoad doc
     }
@@ -240,6 +245,7 @@ pendingCheckWire :: WireCtor PendingMid ()
 pendingCheckWire =
   WireCtor
     { wcName = "PendingCheck",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case PendingCheck -> Just (); PendingLoad _ -> Nothing,
       wcBuild = \() -> PendingCheck
     }

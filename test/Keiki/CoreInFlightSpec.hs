@@ -24,6 +24,7 @@ wcStarted :: WireCtor MultiOutput (Int, ())
 wcStarted =
   WireCtor
     { wcName = "Started",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         Started n -> Just (n, ())
         _ -> Nothing,
@@ -34,6 +35,7 @@ wcEchoed :: WireCtor MultiOutput (Int, ())
 wcEchoed =
   WireCtor
     { wcName = "Echoed",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case
         Echoed n -> Just (n, ())
         _ -> Nothing,

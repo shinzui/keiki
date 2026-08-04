@@ -233,11 +233,19 @@ spec = do
   describe "deriveWireCtorsAll (no spec list)" $ do
     it "discovers the record-payload event and rebuilds it" $ do
       wcName wireWidgetMade `shouldBe` "WidgetMade"
+      wireSchemaAvailability wireWidgetMade.wcSchema
+        `shouldBe` WireSchemaTrusted
       wcBuild wireWidgetMade (7, ()) `shouldBe` WidgetMade (GadgetData 7)
 
     it "discovers the singleton event and rebuilds it" $ do
       wcName wireSwept `shouldBe` "Swept"
+      wireSchemaAvailability wireSwept.wcSchema
+        `shouldBe` WireSchemaTrusted
       wcBuild wireSwept () `shouldBe` Swept
+
+    it "classifies record and nullary constructors structurally" $
+      classifyWireHeads wireWidgetMade wireSwept
+        `shouldBe` WireHeadsStructurallyDifferent
 
   describe "deriveAggregate (fused command + event)" $ do
     it "generates the command-side InCtor" $ do
@@ -250,6 +258,8 @@ spec = do
 
     it "generates the event-side WireCtor" $ do
       wcName wireFizzed `shouldBe` "Fizzed"
+      wireSchemaAvailability wireFizzed.wcSchema
+        `shouldBe` WireSchemaTrusted
       wcBuild wireFizzed (13, ()) `shouldBe` Fizzed (FizzData 13)
 
   describe "deriveAggregateCtorsWith (overrides + excludes)" $ do

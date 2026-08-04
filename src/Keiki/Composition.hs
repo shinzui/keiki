@@ -114,6 +114,10 @@ import Data.Typeable (Typeable)
 import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
+import Keiki.Internal.WireSchema
+  ( prefixWireSchemaLeft,
+    prefixWireSchemaRight,
+  )
 import NoThunks.Class (NoThunks (..), allNoThunks)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -788,9 +792,10 @@ rightInCtor InCtor {icName = n, icMatch = m, icBuild = b} =
 -- alphabet. Matches only on @Left _@ outputs; rebuilds via
 -- @Left . wcBuild@.
 leftWireCtor :: WireCtor co1 fs -> WireCtor (Either co1 co2) fs
-leftWireCtor WireCtor {wcName = n, wcMatch = m, wcBuild = b} =
+leftWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} =
   WireCtor
     { wcName = n,
+      wcSchema = prefixWireSchemaLeft schema,
       wcMatch = \case
         Left c1 -> m c1
         Right _ -> Nothing,
@@ -800,9 +805,10 @@ leftWireCtor WireCtor {wcName = n, wcMatch = m, wcBuild = b} =
 -- | Lift a 'WireCtor' from the right arm of an 'Either' output
 -- alphabet. Symmetric to 'leftWireCtor'.
 rightWireCtor :: WireCtor co2 fs -> WireCtor (Either co1 co2) fs
-rightWireCtor WireCtor {wcName = n, wcMatch = m, wcBuild = b} =
+rightWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} =
   WireCtor
     { wcName = n,
+      wcSchema = prefixWireSchemaRight schema,
       wcMatch = \case
         Left _ -> Nothing
         Right c2 -> m c2,

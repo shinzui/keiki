@@ -90,6 +90,11 @@ module Keiki.Core
 
     -- * Output term language
     WireCtor (..),
+    WireSchema,
+    WireFieldSchema,
+    WireSchemaAvailability (..),
+    wireSchemaUnavailable,
+    wireSchemaAvailability,
     OutFields (..),
     (*:),
     oNil,
@@ -187,6 +192,9 @@ module Keiki.Core
     hiddenInputWarnings,
     headRecoverabilityWarnings,
     inversionAmbiguityWarnings,
+    WireHeadRelation (..),
+    classifyWireHeads,
+    wireHeadsMayAliasForDefault,
     guardImpliesInputReadWarnings,
     predicateImpliesInCtor,
     stateChangingEpsilonWarnings,
@@ -214,6 +222,7 @@ module Keiki.Core
     fieldWitnessReconstruct,
     fieldWitnessGet,
     indexPosition,
+    wireSchemaPrefixRelationForTesting,
   )
 where
 
@@ -239,6 +248,17 @@ import Keiki.Internal.SymbolicTypes
     symbolicTypeSupportsEquality,
     symbolicTypeSupportsNumeric,
     symbolicTypeSupportsOrdering,
+  )
+import Keiki.Internal.WireSchema
+  ( WireFieldSchema,
+    WireHeadRelation (..),
+    WireSchema,
+    WireSchemaAvailability (..),
+    WireSchemaComparison (..),
+    compareWireSchemas,
+    wireSchemaAvailability,
+    wireSchemaPrefixRelationForTesting,
+    wireSchemaUnavailable,
   )
 import Keiki.ProjectionDomain
   ( ProjectionDomain,
@@ -738,9 +758,30 @@ combine = UCombine
 -- 'evalOut' rebuild a @co@ from its fields.
 data WireCtor co fields = WireCtor
   { wcName :: String,
+    wcSchema :: WireSchema co fields,
     wcMatch :: co -> Maybe fields,
     wcBuild :: fields -> co
   }
+
+-- | Compare two output heads using only trusted structural evidence.
+-- Constructor names are diagnostics and never participate in this proof.
+classifyWireHeads :: WireCtor co left -> WireCtor co right -> WireHeadRelation
+classifyWireHeads left right =
+  case compareWireSchemas left.wcSchema right.wcSchema of
+    WireSchemasEqual _ -> WireHeadsStructurallyEqual
+    WireSchemasDifferent -> WireHeadsStructurallyDifferent
+    WireSchemasUnwitnessed -> WireHeadsUnwitnessed
+
+-- | Conservative may-alias policy for the future default replay check.
+-- Trusted prefix-related or field-misaligned paths stay may-alias. The
+-- legacy diagnostic-name fallback is used only when either schema is
+-- unavailable.
+wireHeadsMayAliasForDefault :: WireCtor co left -> WireCtor co right -> Bool
+wireHeadsMayAliasForDefault left right =
+  case (wireSchemaAvailability left.wcSchema, wireSchemaAvailability right.wcSchema) of
+    (WireSchemaTrusted, WireSchemaTrusted) ->
+      classifyWireHeads left right /= WireHeadsStructurallyDifferent
+    _ -> left.wcName == right.wcName
 
 -- | An HList of 'Term's, one per field of the wire constructor. The
 -- field-tuple type @fs@ is built up nested-pair style so that

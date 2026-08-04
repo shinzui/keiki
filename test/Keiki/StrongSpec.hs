@@ -105,6 +105,18 @@ spec = do
             (FieldProj.NewDoc doc, requestId)
             `shouldBe` [(FieldProj.DocAccepted doc, requestId)]
 
+    it "drops wire evidence when the matcher is poisoned" $
+      case first' someEmail ::
+             SomeSymTransducer (EmailCmd, RequestId) (EmailEvent, RequestId) of
+        SomeSymTransducer transducer ->
+          case edgesOut transducer (initial transducer) of
+            (edge : _) -> case output edge of
+              (OPack _ wire _ : _) ->
+                wireSchemaAvailability wire.wcSchema
+                  `shouldBe` WireSchemaUnavailable
+              _ -> expectationFailure "expected a structural output"
+            _ -> expectationFailure "expected a generated edge"
+
   describe "second'" $ do
     it "threads an unrelated RequestId through emailDelivery on the second slot" $ do
       let routed :: SomeSymTransducer (RequestId, EmailCmd) (RequestId, EmailEvent)

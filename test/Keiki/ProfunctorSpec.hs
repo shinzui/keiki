@@ -89,6 +89,15 @@ fireOutputsOnly ::
   [[co]]
 fireOutputsOnly t ci = map snd (fireFromInitial t ci)
 
+firstWireAvailability ::
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  Maybe WireSchemaAvailability
+firstWireAvailability t = case edgesOut t (initial t) of
+  [] -> Nothing
+  (edge : _) -> case output edge of
+    [] -> Nothing
+    (OPack _ wire _ : _) -> Just (wireSchemaAvailability wire.wcSchema)
+
 spec :: Spec
 spec = do
   describe "lmapCi" $ do
@@ -175,9 +184,22 @@ spec = do
           solveOutput o (initialRegs rmapped) wrappedEvent
             `shouldBe` (Nothing :: Maybe EmailCmd)
 
+    it "drops structural wire evidence when wcMatch is poisoned" $
+      firstWireAvailability (rmapCo WrappedEvent emailDelivery)
+        `shouldBe` Just WireSchemaUnavailable
+
     it "preserves isSingleValuedSym" $ do
       isSingleValuedSym (withSymPred (rmapCo WrappedEvent emailDelivery))
         `shouldBe` True
+
+  describe "non-invertible categorical wires" $ do
+    it "marks the unconstrained identity wire unavailable" $
+      firstWireAvailability (identityTransducer @Int)
+        `shouldBe` Just WireSchemaUnavailable
+
+    it "marks arr output evidence unavailable" $
+      firstWireAvailability (arrTransducer ((+ 1) :: Int -> Int))
+        `shouldBe` Just WireSchemaUnavailable
 
   describe "dimapTransducer" $ do
     it "agrees with rmapCo . lmapCi on forward output" $ do

@@ -37,6 +37,7 @@ wireFooed :: WireCtor VEvent ()
 wireFooed =
   WireCtor
     { wcName = "Fooed",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Fooed -> Just (); _ -> Nothing,
       wcBuild = \() -> Fooed
     }
@@ -45,6 +46,7 @@ wireBared :: WireCtor VEvent ()
 wireBared =
   WireCtor
     { wcName = "Bared",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Bared -> Just (); _ -> Nothing,
       wcBuild = \() -> Bared
     }
@@ -213,6 +215,7 @@ wcAB :: WireCtor MultiOutput (Int, (Int, ()))
 wcAB =
   WireCtor
     { wcName = "OutAB",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case OutAB a b -> Just (a, (b, ())),
       wcBuild = \(a, (b, ())) -> OutAB a b
     }
@@ -586,6 +589,7 @@ spec = do
       let projectedWire =
             WireCtor
               { wcName = "ProjectedHash",
+                wcSchema = wireSchemaUnavailable,
                 wcMatch = \case
                   FieldProj.DocAccepted doc -> Just (FieldProj.diHash doc, ()),
                 wcBuild = \(hash, ()) ->

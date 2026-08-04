@@ -48,10 +48,16 @@ schema representation.
 - [x] (2026-08-04) Created the follow-up from Plan 86's research result, verified the current
       Keiki/Keiro release and reverse-dependent baselines, and fixed the ownership boundary with
       Plan 85.
-- [ ] Milestone 1: add the abstract structural wire-schema types and the source-breaking
-      `WireCtor.wcSchema` field, with trusted and unavailable construction paths.
-- [ ] Milestone 2: propagate or deliberately drop schemas through Generics, TH, Builder,
-      composition, profunctor, and generated/golden paths; prove the preserve-or-drop laws.
+- [x] (2026-08-04T20:03:12Z) Milestone 1: added nominally protected abstract structural
+      wire-schema types, the source-breaking `WireCtor.wcSchema` field, three-way head
+      classification, explicit trusted/unavailable paths, a proper-prefix regression observer,
+      and the compile-failure fixture `test/compile-fail/OmittedWireSchema.hs`.
+- [x] (2026-08-04T20:03:12Z) Milestone 2: made Generic and TH record/nullary producers trusted,
+      preserved schemas through checked `Either` composition and Builder emission, dropped them
+      through identity/Strong/Arrow/output-map profunctor paths, and migrated every in-tree manual
+      `WireCtor` record to explicit unavailability. Focused results: Generics 27 examples,
+      TH 27, WireSchema 10, Composition 60, Profunctor 68, and Builder 32; all reported
+      0 failures.
 - [ ] Milestone 3: implement the detailed opt-in dual-candidate symbolic checker and its
       fail-conservative compatibility projection.
 - [ ] Milestone 4: migrate Keiki sibling packages, Keiro, and the two active application adopters
@@ -91,6 +97,19 @@ schema representation.
   `docs/research/full-symbolic-replay-inversion-model.md` marks this absence of a constraint
   load-bearing for the symbolic model. A model that asserts `observed == literal` or
   `observed == currentRegister` is narrower than runtime candidacy and can prove falsely UNSAT.
+
+- Observation: an abstract data constructor is not sufficient to seal trusted evidence when its
+  parameters retain permissive roles or its Generic traversal classes remain consumer-instantiable.
+  Evidence: the first implementation review found that `WireSchema co fields` could otherwise be
+  coerced across phantom carriers and that the previously exported `GHasCtor` methods could admit
+  an orphan dishonest matcher. The implementation adds nominal role annotations and keeps the
+  sum-path and field-spine classes out of the `Keiki.Generics` export list.
+
+- Observation: the plan's literal `--match=BuilderTypeErrors` command selects zero Hspec examples
+  because `test/Spec.hs` registers that module under the human label `Keiki.Builder type errors
+  (EP-70)`. Evidence: the command completed with `0 examples, 0 failures`; the full Builder-focused
+  and final test gates must be used as the executable coverage rather than treating that empty
+  selection as evidence.
 
 
 ## Decision Log
@@ -190,6 +209,14 @@ schema representation.
   matcher. `Eq co` remains required by `solveOutput`, so consumers cannot drop it anyway; the only
   migration cost is `deriving Generic` on all-nullary event sums, surfaced as a compile error at
   the version boundary. Changelogs and golden expansions must record the change.
+  Date: 2026-08-04
+
+- Decision: Give `WireCtorPath`, `WireFieldSchema`, and `WireSchema` nominal roles and stop
+  exporting the Generic sum-walking classes that participate in trusted construction.
+  Rationale: Hidden constructors alone do not prevent `coerce` across phantom parameters or
+  consumer-authored orphan class instances from manufacturing proof evidence. Ordinary
+  `mkInCtorVia`, `mkWireCtorVia`, and TH call sites continue to resolve the sealed instances
+  without naming those constraints.
   Date: 2026-08-04
 
 

@@ -65,6 +65,7 @@ wireOpened :: WireCtor RegisterEvent (Text, ())
 wireOpened =
   WireCtor
     { wcName = "Opened",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Opened owner -> Just (owner, ()); _ -> Nothing,
       wcBuild = \(owner, ()) -> Opened owner
     }
@@ -73,6 +74,7 @@ wireAdded :: WireCtor RegisterEvent (Int, (Text, ()))
 wireAdded =
   WireCtor
     { wcName = "Added",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Added amount owner -> Just (amount, (owner, ())); _ -> Nothing,
       wcBuild = \(amount, (owner, ())) -> Added amount owner
     }
@@ -81,6 +83,7 @@ wireClosed :: WireCtor RegisterEvent (Text, ())
 wireClosed =
   WireCtor
     { wcName = "Closed",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Closed owner -> Just (owner, ()); _ -> Nothing,
       wcBuild = \(owner, ()) -> Closed owner
     }
@@ -89,6 +92,7 @@ wireArchived :: WireCtor RegisterEvent (Text, ())
 wireArchived =
   WireCtor
     { wcName = "Archived",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Archived owner -> Just (owner, ()); _ -> Nothing,
       wcBuild = \(owner, ()) -> Archived owner
     }

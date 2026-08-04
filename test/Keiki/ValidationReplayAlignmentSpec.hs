@@ -54,6 +54,7 @@ wireLogged :: WireCtor AmbiguousEvent (Int, ())
 wireLogged =
   WireCtor
     { wcName = "Logged",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case Logged value -> Just (value, ()); _ -> Nothing,
       wcBuild = \(value, ()) -> Logged value
     }
@@ -62,6 +63,7 @@ wireLoggedY :: WireCtor AmbiguousEvent (Int, ())
 wireLoggedY =
   WireCtor
     { wcName = "LoggedY",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \case LoggedY value -> Just (value, ()); _ -> Nothing,
       wcBuild = \(value, ()) -> LoggedY value
     }

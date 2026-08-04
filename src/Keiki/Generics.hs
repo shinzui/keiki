@@ -15,6 +15,7 @@ module Keiki.Generics
     mkWireCtor,
     mkWireCtor0,
     mkWireCtorVia,
+    mkWireCtor0Via,
     FieldsOf,
     FieldsOfRep,
 
@@ -24,11 +25,6 @@ module Keiki.Generics
 
     -- * Empty register file
     EmptyRegFile (..),
-
-    -- * Sum-walking machinery
-    GHasCtor (..),
-    GHasCtorIf (..),
-    NameInRep,
 
     -- * Internals
     GRecord (..),
@@ -44,9 +40,21 @@ where
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 import Data.Type.Bool (type (||))
+import Data.Typeable (Typeable)
 import GHC.Generics
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Keiki.Core
+import Keiki.Internal.WireSchema
+  ( AppendWireFields,
+    WireCtorPath,
+    appendWireFieldSchema,
+    genericPrefixWireCtorPathLeft,
+    genericPrefixWireCtorPathRight,
+    trustedWireSchema,
+    wireCtorPathRoot,
+    wireFieldsCons,
+    wireFieldsNil,
+  )
 
 -- | Walk a 'GHC.Generics' record representation to/from a 'RegFile'.
 -- Slot lists are derived from the record's field metadata: every
@@ -207,9 +215,7 @@ instance
     (lt, rt) -> gFromTuple lt :*: gFromTuple rt
 
 -- | Type-level concat for nested-pair tuples. @ConcatT (f1, (f2, ())) (f3, ()) ~ (f1, (f2, (f3, ())))@.
-type family ConcatT (a :: Type) (b :: Type) :: Type where
-  ConcatT () b = b
-  ConcatT (x, xs) b = (x, ConcatT xs b)
+type ConcatT (a :: Type) (b :: Type) = AppendWireFields a b
 
 -- | Split a concatenated nested-pair tuple back into its halves; also
 -- the inverse direction (append).
@@ -283,6 +289,7 @@ mkWireCtor ::
 mkWireCtor name match wrap =
   WireCtor
     { wcName = name,
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \co -> case match co of
         Just d -> Just (gToTuple (from d))
         Nothing -> Nothing,
@@ -305,6 +312,7 @@ mkWireCtor0 :: forall co. (Eq co) => String -> co -> WireCtor co ()
 mkWireCtor0 name singleton =
   WireCtor
     { wcName = name,
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \co -> if co == singleton then Just () else Nothing,
       wcBuild = \() -> singleton
     }
@@ -365,6 +373,81 @@ class
   where
   gMatchCtor :: rep a -> Maybe d
   gBuildCtor :: d -> rep a
+
+-- | Derive the ordinal sum path of a named constructor. This class is kept
+-- private so consumers cannot supply a dishonest path instance.
+class GWireCtorPath (name :: Symbol) (rep :: Type -> Type) where
+  gWireCtorPath :: WireCtorPath carrier
+
+instance (GWireCtorPath name inner) => GWireCtorPath name (M1 D meta inner) where
+  gWireCtorPath = gWireCtorPath @name @inner
+
+instance GWireCtorPath name (M1 C ('MetaCons name fix lazy) payload) where
+  gWireCtorPath = wireCtorPathRoot
+
+instance
+  ( hasLeft ~ NameInRep name left,
+    GWireCtorPathIf hasLeft name left right
+  ) =>
+  GWireCtorPath name (left :+: right)
+  where
+  gWireCtorPath = gWireCtorPathIf @hasLeft @name @left @right
+
+class
+  GWireCtorPathIf
+    (hasLeft :: Bool)
+    (name :: Symbol)
+    (left :: Type -> Type)
+    (right :: Type -> Type)
+  where
+  gWireCtorPathIf :: WireCtorPath carrier
+
+instance (GWireCtorPath name left) => GWireCtorPathIf 'True name left right where
+  gWireCtorPathIf =
+    genericPrefixWireCtorPathLeft (gWireCtorPath @name @left)
+
+instance (GWireCtorPath name right) => GWireCtorPathIf 'False name left right where
+  gWireCtorPathIf =
+    genericPrefixWireCtorPathRight (gWireCtorPath @name @right)
+
+-- | Derive a typed, source-ordered field spine from a payload's Generic
+-- representation. Like 'GWireCtorPath', this class is private so only the
+-- library's Generic instances can mint trusted evidence.
+class GWireFieldSchema (rep :: Type -> Type) (fields :: Type) | rep -> fields where
+  gWireFieldSchema :: WireFieldSchema fields
+
+instance (GWireFieldSchema inner fields) => GWireFieldSchema (M1 D meta inner) fields where
+  gWireFieldSchema = gWireFieldSchema @inner
+
+instance (GWireFieldSchema inner fields) => GWireFieldSchema (M1 C meta inner) fields where
+  gWireFieldSchema = gWireFieldSchema @inner
+
+instance
+  (Typeable field, Selector meta) =>
+  GWireFieldSchema (M1 S meta (K1 r field)) (field, ())
+  where
+  gWireFieldSchema =
+    wireFieldsCons selectorLabel wireFieldsNil
+    where
+      selectorText = selName (undefined :: M1 S meta (K1 r field) ())
+      selectorLabel
+        | null selectorText = Nothing
+        | otherwise = Just selectorText
+
+instance GWireFieldSchema U1 () where
+  gWireFieldSchema = wireFieldsNil
+
+instance
+  ( GWireFieldSchema left leftFields,
+    GWireFieldSchema right rightFields,
+    ConcatT leftFields rightFields ~ fields
+  ) =>
+  GWireFieldSchema (left :*: right) fields
+  where
+  gWireFieldSchema =
+    appendWireFieldSchema
+      (gWireFieldSchema @left)
+      (gWireFieldSchema @right)
 
 -- Pass through the data-type wrapper.
 instance (GHasCtor n inner d) => GHasCtor n (M1 D meta inner) d where
@@ -464,15 +547,34 @@ mkWireCtorVia ::
   ( KnownSymbol name,
     Generic co,
     GHasCtor name (Rep co) d,
+    GWireCtorPath name (Rep co),
     Generic d,
-    GTuple (Rep d) fs
+    GTuple (Rep d) fs,
+    GWireFieldSchema (Rep d) fs
   ) =>
   WireCtor co fs
 mkWireCtorVia =
   WireCtor
     { wcName = symbolVal (Proxy @name),
+      wcSchema =
+        trustedWireSchema
+          (gWireCtorPath @name @(Rep co))
+          (gWireFieldSchema @(Rep d)),
       wcMatch = \co -> case gMatchCtor @name (from co) of
         Just d -> Just (gToTuple (from d))
         Nothing -> Nothing,
       wcBuild = \fs -> to (gBuildCtor @name (to (gFromTuple fs) :: d))
     }
+
+-- | Build a trusted 'WireCtor' for a named no-payload constructor using
+-- structural Generic matching. Unlike 'mkWireCtor0', matching is not
+-- mediated by the carrier's 'Eq' instance.
+mkWireCtor0Via ::
+  forall (name :: Symbol) co.
+  ( KnownSymbol name,
+    Generic co,
+    GHasCtor name (Rep co) (),
+    GWireCtorPath name (Rep co)
+  ) =>
+  WireCtor co ()
+mkWireCtor0Via = mkWireCtorVia @name @co @() @()

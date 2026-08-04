@@ -106,6 +106,7 @@ projectionMidWire :: WireCtor ProjectionMid (FieldProj.DocInfo, ())
 projectionMidWire =
   WireCtor
     { wcName = "ProjectionMid",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \(ProjectionMid doc) -> Just (doc, ()),
       wcBuild = \(doc, ()) -> ProjectionMid doc
     }

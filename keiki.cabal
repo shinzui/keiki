@@ -84,6 +84,7 @@ library
   other-modules:
     Keiki.Internal.ProjectionDomain
     Keiki.Internal.SymbolicTypes
+    Keiki.Internal.WireSchema
 
   hs-source-dirs:  src
   build-depends:
@@ -155,6 +156,7 @@ test-suite keiki-test
     Keiki.SymbolicSpec
     Keiki.ValidationReplayAlignmentSpec
     Keiki.ValidationSpec
+    Keiki.WireSchemaSpec
 
   build-depends:
     , base         ^>=4.21

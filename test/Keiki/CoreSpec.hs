@@ -40,6 +40,7 @@ literalLedgerWireCtor :: WireCtor LiteralLedgerEvent (ThrowingShowValue, ())
 literalLedgerWireCtor =
   WireCtor
     { wcName = "LiteralLedgerEvent",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \(LiteralLedgerEvent value) -> Just (value, ()),
       wcBuild = \(value, ()) -> LiteralLedgerEvent value
     }
@@ -107,6 +108,7 @@ noShowWireCtor :: WireCtor NoShowEvent (NoShowValue, ())
 noShowWireCtor =
   WireCtor
     { wcName = "NoShowEvent",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \(NoShowEvent value) -> Just (value, ()),
       wcBuild = \(value, ()) -> NoShowEvent value
     }
@@ -189,6 +191,7 @@ wcStringTrue :: WireCtor String ()
 wcStringTrue =
   WireCtor
     { wcName = "True",
+      wcSchema = wireSchemaUnavailable,
       wcMatch = \s -> if s == "true" then Just () else Nothing,
       wcBuild = \() -> "true"
     }
@@ -414,6 +417,7 @@ spec = do
         wireTinyFoo =
           WireCtor
             { wcName = "TinyFooOut",
+              wcSchema = wireSchemaUnavailable,
               wcMatch = \(TinyFooOut a b) -> Just (a, (b, ())),
               wcBuild = \(a, (b, ())) -> TinyFooOut a b
             }

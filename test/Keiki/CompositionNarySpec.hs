@@ -39,8 +39,12 @@ import Keiki.Core
     OutTerm,
     RegFile (..),
     WireCtor (..),
+    WireHeadRelation (..),
+    WireSchemaAvailability (..),
+    classifyWireHeads,
     pack,
     solveOutput,
+    wireSchemaAvailability,
   )
 import Keiki.Generics (FieldsOf, RegFieldsOf, mkWireCtor0)
 import Keiki.Generics.TH (deriveAggregateCtors, deriveWireCtors)
@@ -172,6 +176,14 @@ spec = do
       wcMatch wireDoorOpened DoorOpened `shouldBe` Just ()
       isNothing (wcMatch wireDoorOpened DoorClosed) `shouldBe` True
       wcBuild wireDoorOpened () `shouldBe` DoorOpened
+
+    it "derives trusted, pairwise-different nullary schemas" $ do
+      wireSchemaAvailability wireDoorOpened.wcSchema
+        `shouldBe` WireSchemaTrusted
+      wireSchemaAvailability wireDoorClosed.wcSchema
+        `shouldBe` WireSchemaTrusted
+      classifyWireHeads wireDoorOpened wireDoorClosed
+        `shouldBe` WireHeadsStructurallyDifferent
 
     it "solveOutput inverts a singleton event to its singleton command" $
       solveOutput (pack inCtorOpenDoor wireDoorOpened OFNil) RNil DoorOpened

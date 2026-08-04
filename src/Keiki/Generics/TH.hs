@@ -117,7 +117,7 @@ import Keiki.Generics
     RegFieldsOf,
     mkInCtor0,
     mkInCtorVia,
-    mkWireCtor0,
+    mkWireCtor0Via,
     mkWireCtorVia,
   )
 import Language.Haskell.TH
@@ -841,10 +841,10 @@ genWire evtName ctorMap (ctorStr, shortStr) =
         pure ([wireSig, wireDef] ++ termRecDecs)
       Just Nothing ->
         -- Zero-arg (singleton) event: emit only the wire<Short> binding
-        -- via mkWireCtor0 (no payload, so no <Short>TermFields record).
-        -- Mirrors the command side's singletonDecls/mkInCtor0.
+        -- via structural Generic matching (no payload, so no
+        -- <Short>TermFields record).
         case conNames con of
-          (cn : _) -> do
+          (_ : _) -> do
             let wireN = mkName ("wire" <> shortStr)
             wireSig <-
               sigD
@@ -856,11 +856,10 @@ genWire evtName ctorMap (ctorStr, shortStr) =
                 [ clause
                     []
                     ( normalB
-                        [|
-                          mkWireCtor0
-                            $(litE (stringL ctorStr))
-                            $(conE cn)
-                          |]
+                        ( appTypeE
+                            [|mkWireCtor0Via|]
+                            (litT (strTyLit ctorStr))
+                        )
                     )
                     []
                 ]

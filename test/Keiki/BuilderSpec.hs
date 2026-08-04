@@ -136,6 +136,20 @@ spec = do
         Just (_, regs) -> regs K.! (#counter :: Index Regs Int) `shouldBe` 42
         Nothing -> expectationFailure "delta returned Nothing"
 
+    it "passes a trusted wire schema through emit unchanged" $ do
+      let tr = B.buildTransducer A emptyR (const False) do
+            B.from A do
+              B.onCmd inCtorTick $ \d -> B.do
+                B.emit wireTicked (OFCons d.count OFNil)
+                B.goto B
+      case edgesOut tr A of
+        [edge] -> case output edge of
+          [K.OPack _ wire _] ->
+            K.wireSchemaAvailability wire.wcSchema
+              `shouldBe` K.WireSchemaTrusted
+          _ -> expectationFailure "expected one structural output"
+        _ -> expectationFailure "expected one edge"
+
     -- Case 2: sequential (.=) to distinct slots agrees with the
     -- composite reference. Use a 2-slot register file inline.
     it "case 2: sequential (.=) to distinct slots writes both" $ do
