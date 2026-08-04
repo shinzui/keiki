@@ -9,6 +9,26 @@ intention: "intention_01ks6h02qkeywtcgvec3d1wm60"
 
 # Structural pretty-printer for guards, updates, and terms
 
+> **Status: SUPERSEDED (2026-08-04). Do not implement this plan as written.**
+> It was never executed under its own number, but its substance was delivered
+> by later plans: **M1** (the printer) by EP-61, **M3** (the consumption
+> surface) by EP-62 plus EP-61. **M2** (self-describing `TApp` labels) was
+> *not* built, and half of the problem it targeted was solved by a better
+> route in EP-84 / ADR-0006.
+>
+> **This plan is actively unsafe to follow now.** Its Decision Log entry dated
+> 2026-05-22 — "fuller labels live only in an opt-in surface, never in the
+> default Mermaid label" — was **reversed** by
+> `docs/adr/0006-readable-business-semantics-are-the-primary-rendering-contract.md`
+> (Accepted 2026-08-02). Readable guards are now the *primary* contract:
+> `toMermaid` shows guards and complete updates, and the compact guard-free
+> policy moved to the explicitly-selected `toTopologyMermaid`. Following M3's
+> instruction to pin a golden asserting the default `toMermaid` is guard-free
+> would now assert the opposite of the intended behavior.
+>
+> See Outcomes & Retrospective for the milestone-by-milestone mapping and for
+> the one idea here that remains genuinely open.
+
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
 
@@ -63,9 +83,17 @@ carry an optional human-written label.
 
 ## Progress
 
-Use a checklist to summarize granular steps. Every stopping point must be documented here,
-even if it requires splitting a partially completed task into two ("done" vs. "remaining").
-This section must always reflect the actual current state of the work.
+**None of these milestones were executed under this plan**, and they are left unchecked to
+record that accurately. Their substance was delivered elsewhere (verified against the working
+tree at `9ee8de0` on 2026-08-04):
+
+| Milestone | Fate |
+| --- | --- |
+| M1 — printer core | **Delivered by EP-61.** `src/Keiki/Render/Pretty.hs` exports `prettyTerm`, `prettyPred`, `prettyUpdate`. Design differs from the sketch below — see Surprises. |
+| M1 — tests | **Delivered by EP-61.** `test/Keiki/Render/PrettySpec.hs` exists. |
+| M2 — self-describing `TApp` | **Not built.** `TApp1`/`TApp2` carry no label field (`src/Keiki/Core.hs:563`, `:567`); no `tapp1Named`/`tapp2Named`. The *literal* half of the motivation was solved differently by EP-84 / ADR-0006; the *function* half is still open. See Outcomes. |
+| M2 — tests | Not built (M2 was not built). |
+| M3 — consumption surface | **Delivered by EP-62 (option a) and EP-61.** `src/Keiki/Render/Inspector.hs` + `test/Keiki/Render/InspectorSpec.hs`; Mermaid guard rendering landed in EP-61. Its golden-test instruction is now **wrong** — see the status banner. |
 
 - [ ] **M1 — structural pretty-printer core.** Create `src/Keiki/Render/Pretty.hs` with
   `prettyTerm`, `prettyPred`, `prettyUpdate`, and `prettyOutTerm`, all returning
@@ -93,10 +121,41 @@ This section must always reflect the actual current state of the work.
 
 ## Surprises & Discoveries
 
-Document unexpected behaviors, bugs, optimizations, or insights discovered during
-implementation. Provide concise evidence.
+This plan was never implemented, so nothing was discovered *during implementation*. The
+entries below come from the 2026-08-04 supersession audit, comparing this plan's design
+against what EP-61 actually shipped. They are recorded because the deltas are the useful
+part of the file.
 
-(None yet.)
+- **`prettyOutTerm` was never added.** This plan specified four entry points; EP-61 shipped
+  three. EP-61 explicitly deferred the fourth (its line 982: "optional `prettyOutTerm ::
+  OutTerm rs ci co -> Text` could be added later for the inspector"). The inspector instead
+  walks the `OutFields` HList itself through a private `prettyOutFields`
+  (`src/Keiki/Render/Inspector.hs:185-187`), so the *capability* exists without the public
+  entry point. Nothing is missing in behavior.
+
+- **The placeholder characters changed from this plan's design.** This plan chose the single
+  guillemets `‹fn›` / `‹lit›` (U+2039/U+203A) on the reasoning that non-ASCII was already
+  established practice. EP-61 shipped ASCII `<fn>` / `<lit>` instead
+  (`src/Keiki/Render/Pretty.hs:52`, `:56-58`). ADR-0006 records why: Mermaid edge labels cross
+  a *parser* boundary, so angle brackets must be entity-encoded on the Mermaid path — a
+  constraint this plan did not anticipate because it predates guards appearing in diagrams
+  at all.
+
+- **`TInpCtorField` renders as `ctor.field`, not the bare field name.** This plan offered
+  both and recommended the bare name; EP-61 took the fuller form
+  (`src/Keiki/Render/Pretty.hs:54-55`). `TArith` is also parenthesized, which this plan's
+  sketch was not. Any test written from this plan's worked examples would fail.
+
+- **`indexName` is exported, not private.** This plan argued for copying it in as a private
+  helper to avoid depending on `Keiki.Symbolic` (and dragging in SBV). EP-61 kept the
+  no-SBV-dependency reasoning but exported the helper from `Keiki.Render.Pretty`.
+
+- **Two `Term` constructors now exist that this plan never saw:** `TOpaqueLit`
+  (`src/Keiki/Core.hs:554`) and `TFieldProj` (`:598`). Both have printer cases. A walker
+  written from this plan's constructor list would be non-exhaustive.
+
+- **The plan's central UX constraint has since been reversed.** See the Decision Log entry
+  dated 2026-08-04.
 
 
 ## Decision Log
@@ -131,6 +190,8 @@ Record every decision made while working on the plan.
 
 - Decision: Fuller guard/update/output labels live only in an opt-in or detail surface
   (Milestone 3), never in the default Mermaid topology label.
+  **⚠ REVERSED 2026-08-02 by EP-84 / ADR-0006 — do not act on this entry. See the
+  2026-08-04 entry at the end of this log.**
   Rationale: Two checked-in documents pin this. `docs/guide/deriving-lifecycle-transitions.md`
   teaches a bug-spotting technique that depends on the renderer "deliberately omitting the
   guard" (its words): a missing return arrow is glaring precisely because guards are not
@@ -144,13 +205,73 @@ Record every decision made while working on the plan.
   full labels out of the default label and offering them only on an opt-in/detail surface.
   Date: 2026-05-22
 
+- Decision: **Supersede this plan. Its "no guards in the default label" decision above is
+  reversed and must not be acted on.**
+  Rationale: A 2026-08-04 audit found this plan unexecuted while its substance had shipped
+  via EP-61 (printer) and EP-62 (inspector). More importantly, its governing UX constraint no
+  longer holds. ADR-0006 (Accepted 2026-08-02, from EP-84) makes readable business semantics
+  the *primary* rendering contract: "`toMermaid` and every no-options shape renderer use
+  readable guards, complete updates, multiline labels, and no semantic truncation.
+  `toTopologyMermaid` and `topologyMermaidOptions` explicitly select the compact Keiki 0.7
+  policy." Both documents this plan cited as pinning the constraint have moved with it —
+  `docs/guide/deriving-lifecycle-transitions.md:42-43` now reads "The *topology view*
+  intentionally hides the guard … primary `toMermaid` output also shows the two distinct
+  guard expressions", which is the opposite of the sentence this plan quoted. The teaching
+  technique survived by migrating to `toTopologyMermaid` rather than by holding the default
+  renderer back. Acting on M3 today would pin a golden asserting the default `toMermaid` is
+  guard-free — now a false assertion that would fail or, worse, be "fixed" by regressing
+  ADR-0006.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
-Compare the result against the original purpose.
+**Superseded — this plan produced no code.** Verified against the working tree at `9ee8de0`
+on 2026-08-04. Milestone-by-milestone:
 
-(To be filled during and after implementation.)
+**M1 (printer core) — delivered by EP-61.** `src/Keiki/Render/Pretty.hs` exists and exports
+`prettyTerm`, `prettyPred`, `prettyUpdate` (plus `indexName`), with
+`test/Keiki/Render/PrettySpec.hs` alongside. The high-value core this plan argued for is
+real. Its *details* all differ from the sketch here — placeholder characters, the
+`ctor.field` rendering, `TArith` parenthesization, the exported-vs-private `indexName`, and
+the missing `prettyOutTerm`. Every difference is documented in Surprises above, and each was
+a defensible improvement, not a drift.
+
+**M2 (self-describing `TApp` labels) — not built; half the motivation is obsolete, half is
+still live.** This plan's premise was that *both* opaque literals and opaque functions force
+a placeholder. The literal half was solved on a better route than M2 proposed: rather than
+letting authors attach an arbitrary display label, EP-84 / ADR-0006 gave `TLit` real `Show`
+evidence so renderers derive text from the stored executable value, and added a separate
+`TOpaqueLit` for deliberate opacity. ADR-0006 is explicit that "callers cannot attach an
+unrelated display label" — which is precisely what M2's `Maybe Label` would have permitted,
+and it would have let the label drift from the value it claims to describe. M2's design is
+therefore rejected for literals on principle, not merely overtaken.
+
+The *function* half remains genuinely open. `TApp1`/`TApp2` still carry no label
+(`src/Keiki/Core.hs:563`, `:567`) and still render `<fn>(...)`. This plan's motivating
+example is intact in the tree: `jitsurei/src/Jitsurei/OrderCart.hs:412` uses `TApp1 (+ 1)`
+and `:424` uses `TApp1 (subtract 1)`, and both print `<fn>(itemCount)` — a rendered diagram
+still cannot distinguish incrementing from decrementing. Anyone picking this up should note
+that ADR-0006's reasoning argues *against* a free-text label and toward deriving text from
+structure — e.g. extending `TArith`-style structural coverage, which is how `tadd`/`tsub`
+already avoid the problem. The honest framing is that `TApp` is the escape hatch and terms
+that want to be readable should avoid it.
+
+**M3 (consumption surface) — delivered by EP-62 (option a) and EP-61.**
+`src/Keiki/Render/Inspector.hs` + `test/Keiki/Render/InspectorSpec.hs` are the edge inspector
+this plan anticipated; `src/Keiki/Render/Markdown.hs` and `Validate.hs` are further siblings
+this plan did not foresee. But M3's *acceptance criterion* is now inverted — see the Decision
+Log entry dated 2026-08-04.
+
+**Retrospective.** The lesson differs from an ordinary superseded plan. This file was not
+merely overtaken; its most confidently-argued decision — buttressed by two document citations
+and a teaching-technique rationale — was reversed roughly ten weeks later. The reversal was
+not a reversal of the *reasoning* (the technique that depended on guard-free diagrams still
+exists) but of *where that reasoning binds*: it moved to `toTopologyMermaid` and freed the
+default renderer. A plan that cites checked-in documents as fixed constraints inherits their
+mutability, and a stale plan carrying a confident, well-cited, now-false constraint is more
+dangerous than one that is merely out of date — it reads as authoritative. Marking the
+reversal inline at the decision itself, not only in a banner, is the mitigation applied here.
 
 
 ## Context and Orientation
@@ -813,3 +934,25 @@ The test module is `test/Keiki/Render/PrettySpec.hs`, exporting `spec :: Test.Hs
 registered in `keiki.cabal`'s test stanza `other-modules` and wired into `test/Spec.hs`
 (both the `import qualified` and the `describe … spec` line). The test suite name is
 `keiki-test`; the only test framework dependency is `hspec` (version `^>= 2.11`).
+
+> **Superseded note:** the interfaces above are the *proposed* ones. What shipped (via
+> EP-61) is `Keiki.Render.Pretty` exporting `indexName`, `prettyTerm`, `prettyPred`, and
+> `prettyUpdate` — no `prettyOutTerm`, and the `TApp1`/`TApp2` label field and
+> `tapp1Named`/`tapp2Named` smart constructors do not exist. Read
+> `src/Keiki/Render/Pretty.hs` and `src/Keiki/Render/Inspector.hs`, not this section.
+
+
+## Revision Notes
+
+- 2026-08-04 — **Marked SUPERSEDED.** Audited alongside EP-53 and EP-54 after the same
+  pattern was suspected. Verified against the working tree at `9ee8de0`: `Pretty.hs`,
+  `Inspector.hs`, `Markdown.hs`, and `Validate.hs` all exist under `src/Keiki/Render/` with
+  matching specs, so M1 and M3 shipped (EP-61, EP-62); `TApp1`/`TApp2` carry no label field,
+  so M2 did not. Recorded the reversal of this plan's central UX decision by EP-84 /
+  ADR-0006 — the most consequential finding, since M3's golden-test instruction now asserts
+  the opposite of intended behavior. Added a status banner, a Progress fate table, six
+  Surprises entries capturing how EP-61's design differs from this plan's sketch, an inline
+  ⚠ marker on the reversed 2026-05-22 decision, a supersession Decision Log entry, a filled
+  Outcomes & Retrospective distinguishing the obsolete half of M2 from the still-open half,
+  a caveat on Interfaces, and this section (the file had none). No milestone was
+  retroactively checked off — this plan produced no code.
