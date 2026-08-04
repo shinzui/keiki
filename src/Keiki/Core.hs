@@ -2529,9 +2529,12 @@ data TransducerValidationWarning s
         tvwTailOnlySlots :: [String],
         tvwDetail :: String
       }
-  | -- | Two outgoing edges use the same wire constructor for their first
-    --       event. Replay requires a unique inverting edge, so the observed
-    --       event may reconstruct commands for both edges and become ambiguous.
+  | -- | Two same-mode outgoing edges have first-event wire heads that may
+    --       alias, and Keiki could not prove their replay candidates disjoint.
+    --       Replay requires one unique inverting edge, so the observed event
+    --       may reconstruct commands for both edges and become ambiguous. The
+    --       human-readable detail names the construct that blocked the cheap
+    --       shared-register proof when one is known.
     InversionAmbiguity
       { tvwSource :: s,
         tvwEdgeA :: Int,
@@ -2633,8 +2636,9 @@ data ValidationOptions = ValidationOptions
     -- | require the first emitted event to recover every command field used
     --     by replay
     checkHeadRecoverability :: Bool,
-    -- | conservatively flag outgoing edge pairs with the same head wire
-    --     constructor
+    -- | conservatively flag outgoing same-mode edge pairs whose head wires may
+    --     alias, except when exact shared-register conditions prove the replay
+    --     candidates disjoint
     checkInversionAmbiguity :: Bool,
     -- | require every input-field read to be protected by an earlier matching
     --     constructor guard
@@ -2683,10 +2687,18 @@ defaultValidationOptions =
 -- negation, arithmetic, opaque terms, variable-versus-variable comparisons, and
 -- non-integral strict-bound density remain unknown and produce no pure warning.
 -- The pass therefore has no false positives but can miss overlaps outside that
--- fragment. The dead-edge component is structural reachability plus a literal-
--- 'PBot' check. For the exact, solver-backed answers use
+-- fragment. The inversion component classifies head wires through trusted
+-- structural schemas (with the legacy name fallback for unavailable schemas),
+-- then suppresses a same-mode warning only when exact integral
+-- register-versus-literal conjuncts are jointly unsatisfiable. Opaque or
+-- unsupported conjuncts are dropped as weakening and can never supply proof;
+-- retained warnings name the first precision blocker in 'tvwDetail'. The
+-- dead-edge component is structural reachability plus a literal-'PBot' check.
+-- For the exact, solver-backed answers use
 -- 'Keiki.Symbolic.checkTransitionDeterminismSym' and
--- 'Keiki.Symbolic.checkDeadEdgesSym' directly.
+-- 'Keiki.Symbolic.checkDeadEdgesSym' directly, and use
+-- @Keiki.Symbolic.checkInversionAmbiguitySymDetailed@ for output-dependent
+-- replay-inversion pairs.
 validateTransducer ::
   (Bounded s, Enum s, Ord s, Show s) =>
   ValidationOptions ->
@@ -3151,26 +3163,32 @@ stateChangingEpsilonWarnings t =
 
 -- ** Replay inversion diagnostics
 
--- | Conservatively flag pairs of outgoing edges whose first emitted events
--- use the same 'WireCtor' name. Replay selects an edge by inverting one observed
--- head event, so both edges may reconstruct their own commands and satisfy their
--- own guards even when forward command dispatch is deterministic.
+-- | Conservatively flag same-mode outgoing edge pairs whose first emitted
+-- events may alias and whose replay candidates are not proved disjoint. Replay
+-- selects an edge by inverting one observed head event, so both edges may
+-- reconstruct their own commands and satisfy their own guards even when
+-- forward command dispatch is deterministic.
 --
--- This structural check intentionally over-approximates ambiguity. It cannot
--- prove semantic guard disjointness over recovered values or registers; it
--- cannot compare differing literal values without the 'Eq' or 'Typeable'
--- evidence supplied by a predicate constructor; and it does not predict
--- derived-field verification in
--- 'solveOutput'. It ignores tail events because replay equality-checks rather
--- than inverts them. Different head constructor names are safe under the
--- documented honesty law of 'wcMatch'. Literal-'PBot' guards are exempt because
--- such an edge cannot participate in a successful inversion.
+-- Head aliasing uses 'wireHeadsMayAliasForDefault': trusted structural schemas
+-- can prove constructor paths different, while unavailable evidence retains
+-- the legacy equal-'wcName' fallback. For a pair that may alias, the cheap pure
+-- proof recursively extracts exact integral @TReg relation literal@ conjuncts
+-- through 'PAnd'. Register variables are keyed by zero-based position and
+-- runtime type; labels are diagnostic only. Unsupported sibling conjuncts are
+-- dropped as weakening, so they cannot manufacture disjointness and a supported
+-- contradiction may still prove the full candidates disjoint. The warning is
+-- suppressed only when the combined necessary register conditions are
+-- definitely unsatisfiable. Satisfiable, unsupported, type-inconsistent, and
+-- otherwise unknown cases retain the warning, whose 'tvwDetail' names the first
+-- precision blocker.
 --
--- This pure compatibility check deliberately preserves its legacy name-based
--- pair set. Call @Keiki.Symbolic.checkInversionAmbiguitySymDetailed@ explicitly
--- to analyze two independently reconstructed candidates against shared
--- registers and structurally aligned observed fields; only its definite UNSAT
--- result may remove one of these warnings. Neither path changes runtime replay.
+-- The proof intentionally does not enter 'POr' or 'PNot', model output fields,
+-- or infer disjointness from different reconstructed command constructors. It
+-- ignores tail events because replay equality-checks rather than inverts them.
+-- Literal-'PBot' guards remain exempt. Call
+-- @Keiki.Symbolic.checkInversionAmbiguitySymDetailed@ explicitly for the
+-- optional output-dependent solver analysis. Default validation starts no
+-- solver, and neither analysis changes runtime replay.
 inversionAmbiguityWarnings ::
   forall rs s ci co.
   (Bounded s, Enum s, Show s) =>

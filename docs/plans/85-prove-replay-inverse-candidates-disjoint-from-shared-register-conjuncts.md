@@ -74,8 +74,13 @@ after the structural prerequisite is stable.
       complete lower-case `replay-only` selection passed 26, both with 0 failures. The Plan 87
       output-dependent fixture now explicitly asserts that pure default validation retains one
       warning; FullSymbolicReplayInversion passed 14 examples with 0 failures.
-- [ ] Milestone 5: update Haddocks, the changelog, IR status, and relevant ADRs; run Keiki gates and
-      only the downstream warning-allowlist checks justified by Plan 87's recorded audit.
+- [x] (2026-08-04T21:58:11Z) Milestone 5: updated the public validation Haddocks, changelog,
+      IR-5 status, ADR-0002, ADR-0003, and the profiled ADR log. Formatting, `cabal build all`,
+      `cabal haddock all`, `nix flake check`, and strict ADR validation passed. The complete test
+      run passed 692 Keiki, 104 JSON-codec, 13 JSON-codec-test, and 127 Jitsurei examples (936
+      total), all with 0 failures. The only downstream allowlist was Mori's current Keiki 0.8
+      fixture; its focused 5-example gate passed without an edit because adoption is deferred to
+      the coordinated release migration.
 
 
 ## Surprises & Discoveries
@@ -108,6 +113,31 @@ after the structural prerequisite is stable.
   not the complete replay-only module whose top-level Hspec label is lower-case `replay-only`.
   Evidence: the Milestone 3 command completed with 2 examples and 0 failures. Later focused proof
   uses the module's lower-case label so the complete phase-selection group is exercised.
+
+- Observation: the dependent audit found one exact warning allowlist, in
+  `mori://shinzui/mori/repos/mori` at
+  `mori-core/test/Mori/Modules/Workflow/Domain/TransducerSpec.hs`, plus the matching runtime
+  override at `mori-core/src/Mori/Modules/Workflow/Domain/Transducer.hs`. Mori remains pinned to
+  released Keiki 0.8, before Plan 87's deferred structural migration, so the two expected warnings
+  are not stale in that build.
+  Evidence: the focused native `Workflow.Domain.Transducer` gate passed all 5 tests on 2026-08-04,
+  including its reviewed two-warning assertion. No other registered source checkout contained an
+  exact `InversionAmbiguity` allowlist.
+
+- Observation: `okf log add` wrote the requested profiled ADR log entries but warned that it could
+  not resolve the ADR concepts from its local index; the authoritative profiled validators still
+  accepted the resulting bundle.
+  Evidence: both `just adr-validate` and
+  `okf validate docs/adr --strict --profile docs/adr/profile.dhall --profile-enforce
+  --log-enforce` passed after the ADR and log changes.
+
+- Observation: Mori's improvement-request wrapper still disagrees with Keiki's established OKF
+  status vocabulary and rejects pre-existing `implemented`, `released`, and `planned` concepts,
+  including IR-5 after its implementation transition.
+  Evidence: `mori improvement-requests validate --path
+  /Users/shinzui/Keikaku/bokuno/keiki` reported the same profile/status mismatch already recorded
+  by Plan 87 for IR-2, IR-3, IR-4, IR-5, and IR-6. This is not an ADR validation failure and no
+  profile was weakened.
 
 
 ## Decision Log
@@ -198,10 +228,36 @@ after the structural prerequisite is stable.
   polarity without turning private extraction types into supported API.
   Date: 2026-08-04
 
+- Decision: Do not edit Mori's Workflow warning assertion or validation override in this plan.
+  Rationale: Those lines are correct for Mori's current released Keiki dependency. They become
+  stale only when the future coordinated release plan performs Plan 87's source migration and
+  adopts the Keiki version containing this proof; that release plan must remove both together and
+  rerun the same focused gate. Editing them now would make Mori's current native gate fail and
+  would cross this plan's explicit no-version/no-migration boundary.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Keiki's default replay-inversion validator now suppresses a same-mode, possibly same-head warning
+only when an internal pure analysis proves the two guards' shared-register necessary conditions
+unsatisfiable. The implementation handles exact integral register/literal equality and ordering
+through conjunctions, keys variables by structural position and type, treats unsupported siblings
+as weakening, and preserves the warning with an actionable blocker whenever proof is unavailable.
+It reuses Plan 87's structural head classifier and leaves runtime replay, the opt-in symbolic
+solver, public warning shapes, validation options, and package versions unchanged.
+
+The proof's polarity is backed by forward/replay fixtures, concrete ambiguity witnesses, bounded
+exhaustive enumeration in both replay phases, 100 generated interval-boundary cases, adversarial
+unsupported syntax and duplicate-label schemas, and a pure-versus-full-symbolic boundary check.
+All 936 repository examples and the build, Haddock, formatter, flake, and strict ADR gates pass.
+
+ADR-0002 now records the register contradiction as a durable sufficient replay-disjointness rule;
+ADR-0003 records the fail-conservative proof polarity and safe weakening rule. IR-5 is implemented,
+with publication intentionally left to a separately authorized release. The dependent audit found
+no currently stale consumer expectation: Mori's exact warning assertion and matching override
+remain correct while it is pinned to released Keiki 0.8 and must be removed together during the
+future Plan 87/85 adoption migration.
 
 
 ## Context and Orientation

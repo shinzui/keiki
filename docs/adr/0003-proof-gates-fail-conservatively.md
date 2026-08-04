@@ -8,7 +8,7 @@ description: >-
 docId: ADR-3
 status: Accepted
 date: 2026-07-13
-timestamp: 2026-08-04T20:31:10Z
+timestamp: 2026-08-04T21:47:25Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -16,7 +16,7 @@ generated:
 
 # ADR-0003: Proof gates fail conservatively
 
-- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
+- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`; `docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
 
 ## Context
 
@@ -41,6 +41,15 @@ relationships, and absent or untrusted wire evidence makes the full event relati
 Only definite UNSAT over this conservative formula may suppress an ambiguity warning. The opt-in
 checker obtains cross-edge field alignment from trusted `WireSchema` evidence and does not run
 from default validation or runtime replay.
+
+The default solver-free replay check has the same proof polarity. It extracts only exact integral
+register-versus-literal conjuncts that every real candidate must satisfy, keys a register by its
+structural position and value type, and suppresses a warning only when exact interval intersection
+returns unsatisfiable. Unsupported carriers, type-alignment failures, disjunction, negation,
+arithmetic, projections, input-field relationships, and opaque applications are unknown and
+retain the warning. Dropping an unsupported sibling from a conjunction is a safe weakening: it
+may reduce precision but cannot manufacture unsatisfiability. A contradiction among other
+supported siblings remains a valid sufficient proof.
 
 Fixed-width integer types use their exact SBV bit-vector widths. Platform-sized
 `Int` remains modeled as unbounded `Integer`; models whose truth depends on
@@ -153,3 +162,6 @@ emit conformance tests exercising the owner-side law.
 - Full symbolic replay inversion is an available optional proof gate. Its compatibility projection
   removes only pairs whose single detailed result is definitely UNSAT; missing schemas, unsupported
   relations, timeouts, and solver failures preserve the existing warning.
+- Default replay inversion remains solver-free and removes only warnings backed by an exact
+  shared-register necessary-condition contradiction. Every other verdict retains an actionable
+  warning rather than blessing the pair.

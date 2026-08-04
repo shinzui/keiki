@@ -5,9 +5,9 @@ description: >-
   Make inversion-ambiguity validation suppress a same-head warning only when Keiki can soundly
   prove that the reconstructed candidates' guards cannot both hold, while retaining conservative
   warnings for opaque or unproved pairs.
-timestamp: 2026-08-04T16:24:05Z
+timestamp: 2026-08-04T21:47:25Z
 requestId: IR-5
-status: planned
+status: implemented
 origin: mori://shinzui/mori
 reviews:
   - kind: model
@@ -29,9 +29,10 @@ reviews:
 
 ## Status
 
-Planned. Implementation is specified by ExecPlan 85
-(`docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`),
-sequenced after ExecPlan 87's structural wire-schema prerequisite.
+Implemented by ExecPlan 85
+(`docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`)
+after ExecPlan 87 supplied the structural wire-schema prerequisite. Publication remains pending a
+separate release plan, so acceptance item 8 is intentionally not complete yet.
 
 ## Context
 

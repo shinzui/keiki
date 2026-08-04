@@ -1,6 +1,8 @@
 # Bundle Update Log
 
 ## 2026-08-04
+* **Update**: ADR-3: apply fail-conservative proof polarity to default replay inversion
+* **Update**: ADR-2: record solver-free shared-register disjointness for default replay validation
 * **Update**: ADR-5: distinguish implemented WireSchema proof evidence from persisted identity
 * **Update**: ADR-4: apply preserve-or-drop evidence rules to composed output wires
 * **Update**: ADR-3: record the opt-in fail-conservative symbolic replay-inversion checker

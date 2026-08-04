@@ -7,6 +7,7 @@ description: >-
 docId: ADR-2
 status: Accepted
 date: 2026-07-13
+timestamp: 2026-08-04T21:47:25Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -14,7 +15,7 @@ generated:
 
 # ADR-0002: Event logs must reproduce forward state
 
-- **Plan(s):** `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`; `docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md`; `docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md`; `docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`
+- **Plan(s):** `docs/plans/71-align-build-time-validation-with-replay-head-recoverability-cross-edge-inversion-ambiguity-and-guard-implies-input-read-checks.md`; `docs/plans/72-structured-replay-diagnostics-reconstituteeither-strict-evolve-policy-and-multi-event-outputacceptor.md`; `docs/plans/73-decide-replay-round-trip-property-harness-across-all-fixtures.md`; `docs/plans/81-expose-detailed-step-success-and-replay-attribution-traces.md`; `docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`
 
 ## Context
 
@@ -42,6 +43,14 @@ determinism, and reachability. The first emitted event of a multi-event
 edge must recover every required command field; tail events only verify
 the already selected edge. An output-free edge may not change persisted
 state.
+
+Default inversion validation may suppress a same-head, same-mode warning when a pure necessary-
+condition proof shows that the two candidates cannot both satisfy their shared pre-event
+register file. The supported fragment contains exact integral register-versus-literal equality
+and ordering reached only through conjunction. Register identity is structural position plus
+value type; labels are diagnostic. Unsupported command, output, arithmetic, projection,
+disjunction, negation, and opaque relationships never supply evidence, though a supported
+register contradiction remains sufficient when such conjuncts appear as siblings.
 
 The primary replay API is structured and `InFlight`-aware:
 `applyEventStreamingEither`, `replayEvents`, `applyEventsEither`, and

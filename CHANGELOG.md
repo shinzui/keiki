@@ -21,6 +21,12 @@ and this project adheres to the
 
 ### Changed
 
+- Default `inversionAmbiguityWarnings` now uses structural head classification
+  and suppresses a same-mode warning only when exact integral
+  register-versus-literal conjuncts prove the two replay candidates disjoint.
+  Unsupported and opaque guards remain conservative warnings, and their
+  `tvwDetail` identifies the construct that blocked the cheap proof. Runtime
+  replay and the opt-in symbolic checker are unchanged.
 - **Breaking:** `WireCtor` adds `wcSchema`. Direct records must state
   `wireSchemaUnavailable`; Generic `mkWireCtorVia` and TH-derived wires provide
   trusted evidence. Schema-preserving composition retains evidence, while
