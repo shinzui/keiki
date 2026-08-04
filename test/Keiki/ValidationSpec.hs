@@ -4,33 +4,23 @@ import Control.Monad (forM_)
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy (..))
 import Data.Word (Word8)
+import GHC.Generics (Generic)
 import Keiki.Core
 import Keiki.FieldProjSpec qualified as FieldProj
+import Keiki.Generics (mkInCtorVia)
 import Keiki.Symbolic (checkDeadEdgesSym, checkTransitionDeterminismSym)
 import Numeric.Natural (Natural)
 import Test.Hspec
 
 -- A tiny two-constructor command for guards.
 data Cmd = Foo | Bar
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Show, Generic)
 
 inCtorFoo :: InCtor Cmd '[]
-inCtorFoo =
-  InCtor
-    { icName = "Foo",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Foo -> Just RNil; _ -> Nothing,
-      icBuild = \RNil -> Foo
-    }
+inCtorFoo = mkInCtorVia @"Foo"
 
 inCtorBar :: InCtor Cmd '[]
-inCtorBar =
-  InCtor
-    { icName = "Bar",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Bar -> Just RNil; _ -> Nothing,
-      icBuild = \RNil -> Bar
-    }
+inCtorBar = mkInCtorVia @"Bar"
 
 data VEvent = Fooed | Bared
   deriving stock (Eq, Show)

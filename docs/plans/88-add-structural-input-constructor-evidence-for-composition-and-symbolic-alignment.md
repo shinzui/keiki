@@ -65,8 +65,12 @@ will choose the release line and coordinate Keiro and application adoption once.
       record constructors and composition-only identity evidence that cannot become symbolic
       identity. Composition passed 61 examples, Category 21, Choice 11, and the complete
       Profunctor match 69, all with 0 failures.
-- [ ] Milestone 4: derive symbolic `PInCtor` identity from structural evidence with a
-      conservative name fallback for unwitnessed constructors.
+- [x] (2026-08-04T23:53:18Z) Milestone 4: encoded trusted `PInCtor` atoms as shared
+      Boolean constructor-path decisions in both ordinary and replay-candidate translation.
+      Unwitnessed names now key independent fallback atoms and record a conservative translation
+      issue, so unequal names cannot prove exclusion; model reconstruction uses a separate stable
+      constructor ordinal. The Symbolic match passed 107 examples, ValidationReplayAlignmentSpec
+      27, and the cross-suite PInCtor match 10, all with 0 failures.
 - [ ] Milestone 5: migrate in-tree consumers; update Haddocks, unreleased changelogs, IR-6, and
       ADRs; run all local Keiki gates and record the future-release handoff.
 
@@ -132,6 +136,15 @@ will choose the release line and coordinate Keiro and application adoption once.
   Evidence: the first focused Choice run failed 2 of 11 examples under strict unwitnessed
   rejection; the composition-only identity path restored all 11 without a name-based fallback.
 
+- Observation: existing symbolic mutual-exclusion fixtures manually constructed unavailable
+  `InCtor`s and therefore encoded the very name-only assumption this milestone removes. The
+  general Symbolic fixture now distinguishes the conservative fallback from trusted structural
+  exclusion, while Validation's intentionally well-shaped nullary `Foo`/`Bar` fixture derives
+  trusted Generic evidence.
+  Evidence: the first Symbolic run after the translator change had 2 expected-value failures out
+  of 107, and the first cross-suite PInCtor run found 1 stale Validation expectation out of 10;
+  the corrected focused runs passed 107 and 10 respectively with 0 failures.
+
 
 ## Decision Log
 
@@ -158,14 +171,23 @@ will choose the release line and coordinate Keiro and application adoption once.
   Date: 2026-08-04
 
 - Decision: Symbolic `PInCtor` identity uses structural evidence when both constructors carry
-  it and falls back to the name string only when evidence is unavailable, preserving
-  conservative polarity: the fallback may conflate (widening satisfiability, retaining
-  warnings) but must never manufacture mutual exclusion or disjointness that suppresses one.
+  it and falls back to name-keyed Boolean atoms only when evidence is unavailable, preserving
+  conservative polarity: equal names share an atom, while unequal names remain independent.
+  The fallback may conflate or widen satisfiability but must never manufacture mutual exclusion
+  or disjointness that suppresses a warning.
   Rationale: [ADR-0003](../adr/0003-proof-gates-fail-conservatively.md). Conflation of
-  unwitnessed constructors over-approximates overlap, which keeps warnings; treating unequal
-  names as proof of exclusion is the direction that could hide a real problem and is confined
-  to today's behavior for unwitnessed values only where analysis of the consuming checks shows
-  it cannot suppress a warning; otherwise it is removed.
+  unwitnessed constructors over-approximates overlap, which keeps warnings. Treating unequal
+  names as proof of exclusion could hide a real problem, so that legacy behavior is removed.
+  Date: 2026-08-04
+
+- Decision: Encode trusted constructor paths as shared Boolean decisions by path depth, and keep
+  the `symSatExt` model selector separate as the stable ordinal in `KnownInCtors` order. Apply the
+  same path formula independently inside each replay candidate environment and record every
+  unwitnessed atom or replay head as a translation issue.
+  Rationale: path conjunction gives the required algebra directly: equal paths are identical,
+  divergent paths contradict at their first differing step, and a proper prefix remains
+  satisfiable with its extension. Separating witness selection prevents diagnostic names from
+  re-entering proof identity while still reconstructing the exact same-named trusted constructor.
   Date: 2026-08-04
 
 - Decision: This plan is written before Plan 87 is implemented, against Plan 87's pinned
@@ -318,9 +340,10 @@ alignment, remains unavailable through the public observer, and is not structura
 symbolic identity.
 
 Milestone 4 rebuilds symbolic identity. Where both constructors in scope carry trusted
-evidence, derive the solver tag from the structural path (distinct paths that diverge are
-mutually exclusive; equal paths are the same tag; prefix-related paths are treated as possibly
-overlapping). Unwitnessed constructors keep the name-string tag, and the translation records
+evidence, derive the solver constraint from the structural path (distinct paths that diverge are
+mutually exclusive; equal paths are the same constraint; prefix-related paths are treated as
+possibly overlapping). Unwitnessed constructors use name-keyed fallback atoms: equal names share
+one atom, but unequal names are independent rather than exclusive. The translation records
 which identity mode each atom used so analyses can stay conservative. Verify with fixtures that
 same-name distinct trusted constructors are not conflated, that unwitnessed behavior is
 unchanged, and that no determinism, inversion, or reachability analysis suppresses a warning
@@ -400,8 +423,8 @@ public API and manual `InCtor` records state unavailability explicitly.
 Two distinct trusted input constructors with equal diagnostic names are not conflated by the
 symbolic translator: their `PInCtor` conjunction is unsatisfiable and determinism analysis
 treats them as distinct. Prefix-related trusted paths are never treated as mutually exclusive.
-Unwitnessed constructors preserve current name-tag behavior, and no analysis suppresses a
-warning from name evidence of unwitnessed constructors alone.
+Unwitnessed constructors preserve equal-name conflation, while unequal names remain independent;
+no analysis suppresses a warning from name evidence of unwitnessed constructors alone.
 
 A composition whose t2-side `InCtor` name-collides with a structurally different t1 wire
 produces a structural diagnostic instead of a silently coerced term; the fixture must fail
@@ -491,3 +514,8 @@ Plan revision note (2026-08-04): Milestone 3 records the strict no-fallback comp
 the safe direct-record Generic producers needed by legacy fixtures, and the deliberately narrower
 composition-only evidence used by categorical identity. Focused law-suite evidence is recorded in
 Progress.
+
+Plan revision note (2026-08-04): Milestone 4 replaces the draft's ambiguous "name-string
+fallback" with the implemented conservative rule: equal unwitnessed names share an atom and
+unequal names remain independent. It also records the separate ordinal witness selector and the
+same structural encoding in replay-candidate translation.

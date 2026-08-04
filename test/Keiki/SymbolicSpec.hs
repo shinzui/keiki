@@ -3,6 +3,7 @@ module Keiki.SymbolicSpec (spec) where
 import Control.Monad (forM_)
 import Data.Int (Int32, Int64)
 import Data.Kind (Type)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (isJust, isNothing)
 import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
@@ -11,13 +12,66 @@ import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
+import GHC.Generics (Generic)
 import Keiki.FieldProjSpec qualified as FieldProj
+import Keiki.Generics (mkInCtorVia)
 import Keiki.Symbolic
 import Numeric.Natural (Natural)
 import Test.Hspec
 
 -- | A two-constructor input symbol for the 'PInCtor' tests.
 data TinyCmd = TinyFoo Int | TinyBar Int deriving (Eq, Show)
+
+data StructuralFooFields = StructuralFooFields
+  { structuralFooValue :: Int
+  }
+  deriving stock (Eq, Show, Generic)
+
+data StructuralBarFields = StructuralBarFields
+  { structuralBarValue :: Int
+  }
+  deriving stock (Eq, Show, Generic)
+
+data StructuralCmd
+  = StructuralFoo StructuralFooFields
+  | StructuralBar StructuralBarFields
+  deriving stock (Eq, Show, Generic)
+
+inCtorStructuralFoo :: InCtor StructuralCmd '[ '("structuralFooValue", Int)]
+inCtorStructuralFoo =
+  (mkInCtorVia @"StructuralFoo") {icName = "Same diagnostic name"}
+
+inCtorStructuralBar :: InCtor StructuralCmd '[ '("structuralBarValue", Int)]
+inCtorStructuralBar =
+  (mkInCtorVia @"StructuralBar") {icName = "Same diagnostic name"}
+
+instance KnownInCtors StructuralCmd where
+  allInCtors =
+    [ SomeInCtor inCtorStructuralFoo,
+      SomeInCtor inCtorStructuralBar
+    ]
+
+data ConstructorIdentityState
+  = ConstructorIdentityStart
+  | ConstructorIdentityDone
+  deriving stock (Bounded, Enum, Eq, Show)
+
+constructorIdentityFixture ::
+  InCtor ci leftFields ->
+  InCtor ci rightFields ->
+  SymTransducer (HsPred '[] ci) '[] ConstructorIdentityState ci ()
+constructorIdentityFixture left right =
+  SymTransducer
+    { edgesOut = \case
+        ConstructorIdentityStart ->
+          [ Edge (PInCtor left) UKeep [] ConstructorIdentityDone Live,
+            Edge (PInCtor right) UKeep [] ConstructorIdentityDone Live
+          ]
+        ConstructorIdentityDone -> [],
+      initial = ConstructorIdentityStart,
+      initialRegs = RNil,
+      isFinal = (== ConstructorIdentityDone)
+    }
 
 data OpaqueCarrier = OpaqueLeft | OpaqueRight deriving (Eq, Show)
 
@@ -749,14 +803,53 @@ spec = do
     it "PInCtor inCtorTinyFoo is satisfiable in isolation" $ do
       satP (PInCtor inCtorTinyFoo :: HsPred '[] TinyCmd)
         `shouldReturn` True
-    it "PInCtor inCtorTinyFoo AND PInCtor inCtorTinyBar is unsatisfiable" $ do
+
+    it "does not derive exclusion from unequal names without structural evidence" $ do
       satP
         ( PAnd
             (PInCtor inCtorTinyFoo)
             (PInCtor inCtorTinyBar) ::
             HsPred '[] TinyCmd
         )
+        `shouldReturn` True
+
+      predicateTranslationReport (PInCtor inCtorTinyFoo :: HsPred '[] TinyCmd)
+        `shouldBe` ConservativeOverApproximation
+          (UnwitnessedInputConstructorIdentity "TinyFoo" :| [])
+
+      checkTransitionDeterminismSym
+        (constructorIdentityFixture inCtorTinyFoo inCtorTinyBar)
+        `shouldSatisfy` (not . null)
+
+    it "retains name-keyed conflation on the unwitnessed fallback" $ do
+      let sameNamedBar = inCtorTinyBar {icName = "TinyFoo"}
+      satP
+        ( PAnd
+            (PInCtor inCtorTinyFoo)
+            (PNot (PInCtor sameNamedBar)) ::
+            HsPred '[] TinyCmd
+        )
         `shouldReturn` False
+
+    it "separates same-named trusted constructors by structural path" $ do
+      let conjunction =
+            PAnd
+              (PInCtor inCtorStructuralFoo)
+              (PInCtor inCtorStructuralBar) ::
+              HsPred '[] StructuralCmd
+      predicateTranslationReport conjunction `shouldBe` ExactTranslation
+      satP conjunction `shouldReturn` False
+      verifyPredicate conjunction `shouldReturn` VerifiedUnsatisfiable
+      checkTransitionDeterminismSym
+        (constructorIdentityFixture inCtorStructuralFoo inCtorStructuralBar)
+        `shouldBe` []
+
+      case symSatExt (PInCtor inCtorStructuralBar :: HsPred '[] StructuralCmd) of
+        Just (RNil, StructuralBar _) -> pure ()
+        Just (_, command) ->
+          expectationFailure ("reconstructed wrong same-named constructor: " <> show command)
+        Nothing -> expectationFailure "failed to reconstruct trusted constructor"
+
     it "PInCtor inCtorTinyFoo AND PInCtor inCtorTinyFoo is satisfiable" $ do
       satP
         ( PAnd
@@ -798,14 +891,14 @@ spec = do
     it "isBot (PEq lit5 lit5) is False (SBV sat)" $
       isBot (SymPred (PEq (TLit (5 :: Int)) (TLit 5)) :: SymPred '[] ())
         `shouldBe` False
-    it "isBot (PInCtor TinyFoo AND PInCtor TinyBar) is True (constructor mutex)" $
+    it "isBot trusts structurally divergent constructors, even with equal names" $
       isBot
         ( SymPred
             ( PAnd
-                (PInCtor inCtorTinyFoo)
-                (PInCtor inCtorTinyBar)
+                (PInCtor inCtorStructuralFoo)
+                (PInCtor inCtorStructuralBar)
             ) ::
-            SymPred '[] TinyCmd
+            SymPred '[] StructuralCmd
         )
         `shouldBe` True
     it "sat top is Just _" $ do
@@ -869,7 +962,7 @@ spec = do
         Just (_, c) -> c `shouldBe` ()
 
   describe "isSingleValuedSym (M6)" $ do
-    it "synthetic 2-edge with constructor-mutex guards is single-valued" $
+    it "synthetic 2-edge with structurally exclusive guards is single-valued" $
       isSingleValuedSym synth2Mutex `shouldBe` True
     it "synthetic 2-edge with overlapping guards is not single-valued" $
       isSingleValuedSym synth2Overlap `shouldBe` False
@@ -896,23 +989,23 @@ isPNot (PNot _) = True; isPNot _ = False
 -- * Synthetic transducers for isSingleValuedSym tests --------------------
 
 -- | A two-edge transducer from @False@ whose guards are mutually
--- exclusive ('PInCtor TinyFoo' vs. 'PInCtor TinyBar'). The vertex
+-- exclusive despite their equal diagnostic names. The vertex
 -- 'True' has no outgoing edges. The expected verdict is
 -- 'isSingleValuedSym == True'.
-synth2Mutex :: SymTransducer (SymPred '[] TinyCmd) '[] Bool TinyCmd ()
+synth2Mutex :: SymTransducer (SymPred '[] StructuralCmd) '[] Bool StructuralCmd ()
 synth2Mutex =
   SymTransducer
     { edgesOut = \case
         False ->
           [ Edge
-              { guard = SymPred (PInCtor inCtorTinyFoo),
+              { guard = SymPred (PInCtor inCtorStructuralFoo),
                 update = UKeep,
                 output = [],
                 target = True,
                 mode = Live
               },
             Edge
-              { guard = SymPred (PInCtor inCtorTinyBar),
+              { guard = SymPred (PInCtor inCtorStructuralBar),
                 update = UKeep,
                 output = [],
                 target = True,

@@ -22,7 +22,8 @@
 --     'Word16' \/ 'Word32' \/ 'Word64' \/ 'Int32' \/ 'Int64' (the
 --     last group added by EP-41 so money and count registers are
 --     solver-visible).
---   * 'SymEnv' carrying the shared symbolic input-constructor tag and
+--   * 'SymEnv' carrying shared structural input-constructor path decisions and
+--     conservative fallback atoms, plus
 --     (since EP-42 of MasterPlan 12) an 'IORef' memo cache that shares
 --     one SBV variable per register slot, input field, or nominal typed field
 --     projection across repeated reads, so @proj #x .== proj #x@ and repeated
@@ -152,9 +153,12 @@ import Keiki.Internal.SymbolicTypes
     symbolicTypeWholeCarrierExact,
   )
 import Keiki.Internal.WireSchema
-  ( WireFieldAlignment (..),
+  ( InCtorSchemaComparison (..),
+    WireFieldAlignment (..),
     WireSchemaComparison (..),
+    compareInCtorSchemas,
     compareWireSchemas,
+    inCtorSchemaPath,
   )
 import Keiki.ProjectionDomain
 import Numeric.Natural (Natural)
@@ -416,16 +420,17 @@ symFree label = do
 -- * Translation environment -------------------------------------------------
 
 -- | Translation context: shared symbolic state that must be threaded
--- through a single predicate's walk so that, for example, two
--- 'PInCtor' atoms over distinct constructors agree they cannot both
--- be true, and two reads of the same register (or input field) share
--- one solver variable.
+-- through a single predicate's walk so that, for example, two trusted
+-- 'PInCtor' atoms with divergent structural paths cannot both be true, and two
+-- reads of the same register (or input field) share one solver variable.
 --
--- Three pieces of state are shared:
+-- The principal pieces of state are:
 --
---   * 'seInputCtor' — the symbolic input-constructor tag, so 'PInCtor'
---     atoms over distinct constructors are recognized as mutually
---     unsatisfiable.
+--   * 'seInputPathCache' and 'seInputFallbackCache' — trusted constructors
+--     constrain shared Generic path decisions; unwitnessed constructors use
+--     name-keyed atoms whose unequal names remain independent.
+--   * 'seInputCtor' — a separate ordinal selector used only for concrete model
+--     reconstruction by 'symSatExt'.
 --   * 'seInputArm' — an independent discriminator for 'PLeftArm' and
 --     'PRightArm'. It is separate from constructor names so both facts can
 --     be asserted by the same guard.
@@ -494,6 +499,7 @@ data TranslationIssue
   | ConflictingProjectionViews ProjectionBaseDescriptor
   | DirectAndProjectedOwnerRead ProjectionBaseDescriptor
   | UnguardedProjectionInputRead ProjectionDescriptor
+  | UnwitnessedInputConstructorIdentity String
   deriving stock (Eq, Show)
 
 data SymVarKey
@@ -507,13 +513,23 @@ data SymVarKey
   deriving stock (Eq, Ord, Show)
 
 data SymEnv = SymEnv
-  { -- | The shared symbolic input constructor tag. 'PInCtor' atoms
-    --     assert @seInputCtor .== literal (icName ic)@; the solver
-    --     recognizes that two such constraints with distinct names are
-    --     mutually unsatisfiable.
+  { -- | Model-only selector used by 'symSatExt' to reconstruct one known
+    --     constructor. Predicate identity is encoded independently from
+    --     trusted structural paths or conservative fallback atoms.
     seInputCtor :: SBV.SBV String,
     -- | @True@ denotes the outer 'Left' arm; @False@ denotes 'Right'.
     seInputArm :: SBV.SBool,
+    -- | One shared Boolean decision per Generic constructor-path position.
+    --     @True@ is left and @False@ is right. Equal paths share the same
+    --     constraint, divergent paths contradict, and proper prefixes overlap.
+    seInputPathCache :: IORef (Map Int SBV.SBool),
+    -- | Name-keyed fallback atoms for constructors without trusted evidence.
+    --     Different names remain independent, so name inequality cannot prove
+    --     mutual exclusion; equal names retain the legacy conflation.
+    seInputFallbackCache :: IORef (Map String SBV.SBool),
+    -- | Internal label source for fallback atoms. Diagnostic constructor names
+    --     never become SBV identifiers.
+    seInputFallbackOrdinal :: IORef Int,
     -- | Memo cache: maps a deterministic variable name ("reg/\<slot\>"
     --     or "inp/\<ctor\>/\<field\>") to the single SBV variable allocated
     --     for it during this predicate translation. Lazily populated on
@@ -566,6 +582,9 @@ mkSymEnv :: SBV.Symbolic SymEnv
 mkSymEnv = do
   ctor <- SBV.free "inputCtor"
   arm <- SBV.free "inputArm"
+  inputPaths <- liftIO (newIORef Map.empty)
+  inputFallbacks <- liftIO (newIORef Map.empty)
+  inputFallbackOrdinal <- liftIO (newIORef 0)
   cache <- liftIO (newIORef Map.empty)
   labels <- liftIO (newIORef Map.empty)
   projectionOrder <- liftIO (newIORef [])
@@ -576,6 +595,9 @@ mkSymEnv = do
     ( SymEnv
         ctor
         arm
+        inputPaths
+        inputFallbacks
+        inputFallbackOrdinal
         cache
         labels
         projectionOrder
@@ -583,6 +605,78 @@ mkSymEnv = do
         projectionBindings
         projectionOrdinal
     )
+
+memoInputPathDecision :: SymEnv -> Int -> SBV.Symbolic SBV.SBool
+memoInputPathDecision environment position = do
+  decisions <- liftIO (readIORef (seInputPathCache environment))
+  case Map.lookup position decisions of
+    Just decision -> pure decision
+    Nothing -> do
+      decision <- SBV.free ("inputCtor/path/" <> show position)
+      liftIO
+        ( modifyIORef'
+            (seInputPathCache environment)
+            (Map.insert position decision)
+        )
+      pure decision
+
+memoInputFallback :: SymEnv -> String -> SBV.Symbolic SBV.SBool
+memoInputFallback environment diagnosticName = do
+  fallbacks <- liftIO (readIORef (seInputFallbackCache environment))
+  case Map.lookup diagnosticName fallbacks of
+    Just fallback -> pure fallback
+    Nothing -> do
+      ordinal <- liftIO (readIORef (seInputFallbackOrdinal environment))
+      liftIO (modifyIORef' (seInputFallbackOrdinal environment) (+ 1))
+      fallback <- SBV.free ("inputCtor/fallback/" <> show ordinal)
+      liftIO
+        ( modifyIORef'
+            (seInputFallbackCache environment)
+            (Map.insert diagnosticName fallback)
+        )
+      pure fallback
+
+-- | Encode one input constructor without consulting its diagnostic name when
+-- trusted evidence exists. Proper-prefix paths deliberately overlap because
+-- the shorter path contributes no contradictory decision at the extra depth.
+inputCtorConstraint :: SymEnv -> InCtor ci fields -> SBV.Symbolic SBV.SBool
+inputCtorConstraint environment inputCtor =
+  case inCtorSchemaPath inputCtor.icSchema of
+    Just path -> do
+      constraints <- traverse constrainStep (zip [0 ..] path)
+      pure (foldr (SBV..&&) SBV.sTrue constraints)
+    Nothing -> memoInputFallback environment (icName inputCtor)
+  where
+    constrainStep (position, isLeft) = do
+      decision <- memoInputPathDecision environment position
+      pure (if isLeft then decision else SBV.sNot decision)
+
+inputCtorsDefinitelySame :: InCtor ci leftFields -> InCtor ci rightFields -> Bool
+inputCtorsDefinitelySame left right =
+  case compareInCtorSchemas left.icSchema right.icSchema of
+    InCtorSchemasEqual _ -> True
+    InCtorSchemasDifferent -> False
+    InCtorSchemasUnwitnessed ->
+      case (inCtorSchemaPath left.icSchema, inCtorSchemaPath right.icSchema) of
+        (Nothing, Nothing) -> icName left == icName right
+        _ -> False
+
+predicateStructurallyImpliesInCtor ::
+  InCtor ci expectedFields ->
+  HsPred rs ci ->
+  Bool
+predicateStructurallyImpliesInCtor expected = go
+  where
+    go PTop = False
+    go PBot = True
+    go (PAnd left right) = go left || go right
+    go (POr left right) = go left && go right
+    go (PNot _) = False
+    go (PEq _ _) = False
+    go (PInCtor actual) = inputCtorsDefinitelySame expected actual
+    go PLeftArm = False
+    go PRightArm = False
+    go (PCmp _ _ _) = False
 
 -- * Translation -------------------------------------------------------------
 
@@ -845,9 +939,9 @@ indexName (SIdx i) = indexName i
 --   * 'PEq' tries 'discoverSym' on its operand type; on a hit it
 --     emits '(.==)' between the two translated terms; on a miss it
 --     emits a fresh 'SBool' (the equality is opaque to the solver).
---   * 'PInCtor' emits @seInputCtor .== literal (icName ic)@; the
---     shared 'seInputCtor' makes constructor-mutual-exclusion
---     decidable.
+--   * 'PInCtor' emits constraints over shared structural path decisions when
+--     evidence is trusted. Unwitnessed constructors use name-keyed independent
+--     fallback atoms, so unequal diagnostic names cannot prove exclusion.
 --   * 'PLeftArm' / 'PRightArm' assert the independent 'seInputArm'
 --     discriminator.
 --   * 'PCmp' tries 'discoverSymOrd' on its operand type; on a hit it
@@ -865,7 +959,7 @@ translatePred env = go
     go (POr p q) = (SBV..||) <$> go p <*> go q
     go (PNot p) = SBV.sNot <$> go p
     go (PEq a b) = goEq a b
-    go (PInCtor ic) = pure (seInputCtor env SBV..== SBV.literal (icName ic))
+    go (PInCtor ic) = inputCtorConstraint env ic
     go PLeftArm = pure (seInputArm env)
     go PRightArm = pure (SBV.sNot (seInputArm env))
     go (PCmp op a b) = goCmp op a b
@@ -1033,7 +1127,13 @@ predicateReportEvents root = go
       equalitySupport @r
         ++ termReportEvents root ProjectionEqualityOperand a
         ++ termReportEvents root ProjectionEqualityOperand b
-    go (PInCtor _) = []
+    go (PInCtor inputCtor) =
+      case inCtorSchemaPath inputCtor.icSchema of
+        Just _ -> []
+        Nothing ->
+          [ TranslationIssueEvent
+              (UnwitnessedInputConstructorIdentity (icName inputCtor))
+          ]
     go PLeftArm = []
     go PRightArm = []
     go (PCmp _ (a :: Term rs ci ifs1 r) b) =
@@ -1102,17 +1202,12 @@ termReportEvents
               ( [TranslationIssueEvent (UnsupportedProjectionDomain descriptor reason)],
                 False
               )
-      inputGuardIssue = case projectionDescriptorBase descriptor of
-        ProjectionBaseDescriptor {projectionBaseKind = ProjectionRegisterOwner} -> []
-        ProjectionBaseDescriptor
-          { projectionBaseKind = ProjectionInputOwner,
-            projectionBaseConstructorName = Just ctorName
-          }
-            | predicateImpliesInCtor ctorName root -> []
-            | otherwise ->
-                [TranslationIssueEvent (UnguardedProjectionInputRead descriptor)]
-        ProjectionBaseDescriptor {projectionBaseKind = ProjectionInputOwner} ->
-          [TranslationIssueEvent (UnguardedProjectionInputRead descriptor)]
+      inputGuardIssue = case base of
+        PBReg {} -> []
+        PBInp inputCtor _
+          | predicateStructurallyImpliesInCtor inputCtor root -> []
+          | otherwise ->
+              [TranslationIssueEvent (UnguardedProjectionInputRead descriptor)]
 
 projectionDomainSupport ::
   forall r.
@@ -1413,6 +1508,7 @@ data InversionTranslationIssue
       Int
       ProjectionDescriptor
       String
+  | InversionInputConstructorIdentityUnwitnessed InversionCandidate String
   | InversionGuardTranslationIssue InversionCandidate TranslationIssue
   deriving stock (Eq, Show)
 
@@ -1509,8 +1605,10 @@ data ReplaySharedEnvironment = ReplaySharedEnvironment
 
 data ReplayCandidateEnvironment = ReplayCandidateEnvironment
   { rceCandidate :: InversionCandidate,
-    rceInputCtor :: SBV.SBV String,
     rceInputArm :: SBV.SBool,
+    rceInputPathCache :: IORef (Map Int SBV.SBool),
+    rceInputFallbackCache :: IORef (Map String SBV.SBool),
+    rceInputFallbackOrdinal :: IORef Int,
     rceCandidateCache :: IORef (Map ReplayVarKey SomeSBV),
     rceShared :: ReplaySharedEnvironment,
     rceIssues :: IORef [InversionTranslationIssue]
@@ -1529,14 +1627,18 @@ newReplayCandidateEnvironment ::
   IORef [InversionTranslationIssue] ->
   SBV.Symbolic ReplayCandidateEnvironment
 newReplayCandidateEnvironment candidate shared issues = do
-  constructorTag <- SBV.free (candidateLabel candidate <> "/constructor")
   inputArm <- SBV.free (candidateLabel candidate <> "/arm")
+  inputPaths <- liftIO (newIORef Map.empty)
+  inputFallbacks <- liftIO (newIORef Map.empty)
+  inputFallbackOrdinal <- liftIO (newIORef 0)
   candidateCache <- liftIO (newIORef Map.empty)
   pure
     ReplayCandidateEnvironment
       { rceCandidate = candidate,
-        rceInputCtor = constructorTag,
         rceInputArm = inputArm,
+        rceInputPathCache = inputPaths,
+        rceInputFallbackCache = inputFallbacks,
+        rceInputFallbackOrdinal = inputFallbackOrdinal,
         rceCandidateCache = candidateCache,
         rceShared = shared,
         rceIssues = issues
@@ -1545,6 +1647,61 @@ newReplayCandidateEnvironment candidate shared issues = do
 candidateLabel :: InversionCandidate -> String
 candidateLabel InversionCandidateA = "replay/candidate-a"
 candidateLabel InversionCandidateB = "replay/candidate-b"
+
+memoReplayInputPathDecision ::
+  ReplayCandidateEnvironment ->
+  Int ->
+  SBV.Symbolic SBV.SBool
+memoReplayInputPathDecision environment position = do
+  decisions <- liftIO (readIORef (rceInputPathCache environment))
+  case Map.lookup position decisions of
+    Just decision -> pure decision
+    Nothing -> do
+      decision <-
+        SBV.free
+          (candidateLabel (rceCandidate environment) <> "/constructor/path/" <> show position)
+      liftIO
+        ( modifyIORef'
+            (rceInputPathCache environment)
+            (Map.insert position decision)
+        )
+      pure decision
+
+memoReplayInputFallback ::
+  ReplayCandidateEnvironment ->
+  String ->
+  SBV.Symbolic SBV.SBool
+memoReplayInputFallback environment diagnosticName = do
+  fallbacks <- liftIO (readIORef (rceInputFallbackCache environment))
+  case Map.lookup diagnosticName fallbacks of
+    Just fallback -> pure fallback
+    Nothing -> do
+      ordinal <- liftIO (readIORef (rceInputFallbackOrdinal environment))
+      liftIO (modifyIORef' (rceInputFallbackOrdinal environment) (+ 1))
+      fallback <-
+        SBV.free
+          (candidateLabel (rceCandidate environment) <> "/constructor/fallback/" <> show ordinal)
+      liftIO
+        ( modifyIORef'
+            (rceInputFallbackCache environment)
+            (Map.insert diagnosticName fallback)
+        )
+      pure fallback
+
+replayInputCtorConstraint ::
+  ReplayCandidateEnvironment ->
+  InCtor ci fields ->
+  SBV.Symbolic SBV.SBool
+replayInputCtorConstraint environment inputCtor =
+  case inCtorSchemaPath inputCtor.icSchema of
+    Just path -> do
+      constraints <- traverse constrainStep (zip [0 ..] path)
+      pure (foldr (SBV..&&) SBV.sTrue constraints)
+    Nothing -> memoReplayInputFallback environment (icName inputCtor)
+  where
+    constrainStep (position, isLeft) = do
+      decision <- memoReplayInputPathDecision environment position
+      pure (if isLeft then decision else SBV.sNot decision)
 
 freshReplayLabel :: ReplaySharedEnvironment -> SBV.Symbolic String
 freshReplayLabel shared = liftIO $ do
@@ -1693,8 +1850,7 @@ translateReplayPredicate environment = go
     go (POr left right) = (SBV..||) <$> go left <*> go right
     go (PNot predicate) = SBV.sNot <$> go predicate
     go (PEq left right) = goEquality left right
-    go (PInCtor inputCtor) =
-      pure (rceInputCtor environment SBV..== SBV.literal (icName inputCtor))
+    go (PInCtor inputCtor) = replayInputCtorConstraint environment inputCtor
     go PLeftArm = pure (rceInputArm environment)
     go PRightArm = pure (SBV.sNot (rceInputArm environment))
     go (PCmp operation left right) = goOrdering operation left right
@@ -1822,7 +1978,7 @@ constrainReplayOutputField ::
 constrainReplayOutputField environment headInputCtor position recovered observed term =
   case term of
     TInpCtorField inputCtor index
-      | icName inputCtor == icName headInputCtor,
+      | inputCtorsDefinitelySame inputCtor headInputCtor,
         indexPosition index `Set.notMember` recovered -> do
           candidateInput <- replayInputFree environment inputCtor index
           SBV.constrain (observed SBV..== candidateInput)
@@ -1853,7 +2009,7 @@ recoveredInputPosition ::
   Term rs ci inputFields value ->
   Set Int
 recoveredInputPosition headInputCtor recovered (TInpCtorField inputCtor index)
-  | icName inputCtor == icName headInputCtor = Set.insert (indexPosition index) recovered
+  | inputCtorsDefinitelySame inputCtor headInputCtor = Set.insert (indexPosition index) recovered
 recoveredInputPosition _ recovered _ = recovered
 
 constrainAlignedOutputFields ::
@@ -1926,6 +2082,7 @@ constrainAlignedOutputFields leftEnvironment leftInputCtor leftFields rightEnvir
           restAlignment
 
 candidateRecoveryPossible ::
+  forall ci inputFields rs outputFields.
   InCtor ci inputFields ->
   OutFields rs ci inputFields outputFields ->
   Bool
@@ -1934,13 +2091,13 @@ candidateRecoveryPossible inputCtor fields =
   where
     (namesAgree, recovered) = walk fields
 
-    walk :: OutFields rs ci inputFields remaining -> (Bool, Set Int)
+    walk :: forall remaining. OutFields rs ci inputFields remaining -> (Bool, Set Int)
     walk OFNil = (True, Set.empty)
     walk (OFCons term rest) =
       let (restAgrees, restRecovered) = walk rest
        in case term of
             TInpCtorField termInputCtor index ->
-              ( icName termInputCtor == icName inputCtor && restAgrees,
+              ( inputCtorsDefinitelySame termInputCtor inputCtor && restAgrees,
                 Set.insert (indexPosition index) restRecovered
               )
             _ -> (restAgrees, restRecovered)
@@ -1954,6 +2111,19 @@ guardInversionIssues candidate predicate =
     ExactTranslation -> []
     ConservativeOverApproximation issues ->
       InversionGuardTranslationIssue candidate <$> toList issues
+
+headInputIdentityIssues ::
+  InversionCandidate ->
+  InCtor ci fields ->
+  [InversionTranslationIssue]
+headInputIdentityIssues candidate inputCtor =
+  case inCtorSchemaPath inputCtor.icSchema of
+    Just _ -> []
+    Nothing ->
+      [ InversionInputConstructorIdentityUnwitnessed
+          candidate
+          (icName inputCtor)
+      ]
 
 runInversionSolver ::
   SBV.Symbolic SBV.SBool ->
@@ -2024,6 +2194,8 @@ analyzeInversionCandidatePair
           newIORef
             ( guardInversionIssues InversionCandidateA leftGuard
                 ++ guardInversionIssues InversionCandidateB rightGuard
+                ++ headInputIdentityIssues InversionCandidateA leftInputCtor
+                ++ headInputIdentityIssues InversionCandidateB rightInputCtor
             )
         status <- runInversionSolver $ do
           shared <- newReplaySharedEnvironment
@@ -2031,10 +2203,10 @@ analyzeInversionCandidatePair
             newReplayCandidateEnvironment InversionCandidateA shared issuesRef
           rightEnvironment <-
             newReplayCandidateEnvironment InversionCandidateB shared issuesRef
-          SBV.constrain
-            (rceInputCtor leftEnvironment SBV..== SBV.literal (icName leftInputCtor))
-          SBV.constrain
-            (rceInputCtor rightEnvironment SBV..== SBV.literal (icName rightInputCtor))
+          leftInputIdentity <- replayInputCtorConstraint leftEnvironment leftInputCtor
+          rightInputIdentity <- replayInputCtorConstraint rightEnvironment rightInputCtor
+          SBV.constrain leftInputIdentity
+          SBV.constrain rightInputIdentity
           symbolicLeftGuard <- translateReplayPredicate leftEnvironment leftGuard
           symbolicRightGuard <- translateReplayPredicate rightEnvironment rightGuard
           constrainAlignedOutputFields
@@ -2477,13 +2649,15 @@ symSatExt p = unsafePerformIO $ do
       | otherwise -> pure Nothing
   where
     constrainKnownConstructors environment = do
-      let ctorNames = [icName ic | SomeInCtor ic <- allInCtors @ci]
-      when (not (null ctorNames)) $
-        SBV.constrain $
-          SBV.sOr
-            [ seInputCtor environment SBV..== SBV.literal name
-            | name <- ctorNames
-            ]
+      let constructors = zip [(0 :: Int) ..] (allInCtors @ci)
+      when (not (null constructors)) $ do
+        branches <- forM constructors $ \(ordinal, SomeInCtor inputCtor) -> do
+          identity <- inputCtorConstraint environment inputCtor
+          pure
+            ( (seInputCtor environment SBV..== SBV.literal (show ordinal))
+                SBV..&& identity
+            )
+        SBV.constrain (SBV.sOr branches)
 
 projectionOwnerOverride ::
   forall r.
@@ -2522,25 +2696,23 @@ readModel res name =
     Just rep -> fromSym rep
     Nothing -> symDefault
 
--- | Walk the 'allInCtors' list, find the entry whose 'icName'
--- matches the model's input-constructor tag, then 'extractRegFile'
+-- | Walk the 'allInCtors' list, find the entry whose stable list ordinal
+-- matches the model's input-constructor selector, then 'extractRegFile'
 -- over the matched 'InCtor''s field list and call 'icBuild' to
--- assemble a @ci@. Returns 'Nothing' when no entry matches the tag
--- — this is the case when the predicate over-allocated the
--- @"inputCtor"@ slot (the solver picked a string that isn't any
--- known constructor name, which can happen if the predicate
--- doesn't include any 'PInCtor' atom).
+-- assemble a @ci@. Returns 'Nothing' only if model decoding violates the
+-- ordinal domain constrained by 'symSatExt'.
 pickCi ::
   forall ci.
   (KnownInCtors ci) =>
   String ->
   (forall r. (Sym r) => String -> Int -> String -> r) ->
   Maybe ci
-pickCi tag readField = go (allInCtors @ci)
+pickCi tag readField = go 0 (allInCtors @ci)
   where
-    go [] = Nothing
-    go (SomeInCtor ic@InCtor {} : rest)
-      | icName ic == tag =
+    go :: Int -> [SomeInCtor ci] -> Maybe ci
+    go _ [] = Nothing
+    go ordinal (SomeInCtor ic@InCtor {} : rest)
+      | show ordinal == tag =
           let regs = extractRegFileAt 0 (readField (icName ic))
            in Just (icBuild ic regs)
-      | otherwise = go rest
+      | otherwise = go (ordinal + 1) rest
