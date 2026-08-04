@@ -14,6 +14,7 @@ import Data.Proxy (Proxy (..))
 import Keiki.Builder ((.=))
 import Keiki.Builder qualified as B
 import Keiki.Core
+import Numeric.Natural (Natural)
 import Test.Hspec
 
 -- * Fixture: the black-acuity scenario at the keiki level ------------------
@@ -51,10 +52,10 @@ wireConfirmed =
 initialDivertRegs :: RegFile DivertRegs
 initialDivertRegs = RCons (Proxy @"wasBlack") False RNil
 
-acuityRead :: Term DivertRegs DivertCmd '[ '("acuityBlack", Bool)] Bool
+acuityRead :: Term rs DivertCmd '[ '("acuityBlack", Bool)] Bool
 acuityRead = inpCtor inCtorConfirm ZIdx
 
-confirmOut :: OutTerm DivertRegs DivertCmd DivertEvent
+confirmOut :: OutTerm rs DivertCmd DivertEvent
 confirmOut = pack inCtorConfirm wireConfirmed (OFCons acuityRead OFNil)
 
 recordAcuity :: Update DivertRegs '["wasBlack"] DivertCmd
@@ -138,6 +139,41 @@ machineTwinClash =
     [ confirmEdge oldGuard ReplayOnly,
       confirmEdge oldGuard ReplayOnly
     ]
+
+type ReplayCountRegs = '[ '("remaining", Natural)]
+
+remainingRead :: Term ReplayCountRegs DivertCmd ifs Natural
+remainingRead = TReg (#remaining :: Index ReplayCountRegs Natural)
+
+replayOnlyRegisterDisjoint ::
+  Natural ->
+  SymTransducer
+    (HsPred ReplayCountRegs DivertCmd)
+    ReplayCountRegs
+    DivertVertex
+    DivertCmd
+    DivertEvent
+replayOnlyRegisterDisjoint initialRemaining =
+  SymTransducer
+    { edgesOut = \case
+        Held ->
+          [ replayCountEdge (PCmp CmpGt remainingRead (TLit 1)),
+            replayCountEdge (PEq remainingRead (TLit 1))
+          ]
+        Confirmed -> [],
+      initial = Held,
+      initialRegs = RCons (Proxy @"remaining") initialRemaining RNil,
+      isFinal = (== Confirmed)
+    }
+  where
+    replayCountEdge registerCondition =
+      Edge
+        { guard = PAnd (PInCtor inCtorConfirm) registerCondition,
+          update = UKeep,
+          output = [confirmOut],
+          target = Confirmed,
+          mode = ReplayOnly
+        }
 
 -- | Both overlap edges live: the pre-existing checks must still flag.
 machineLiveClash :: SymTransducer (HsPred DivertRegs DivertCmd) DivertRegs DivertVertex DivertCmd DivertEvent
@@ -307,6 +343,21 @@ spec = do
         Right result ->
           expectationFailure ("expected ambiguity failure, got " <> show (fst result))
 
+    it "selects one same-mode replay-only edge when shared registers prove the pair disjoint" $ do
+      mapM_
+        ( \initialRemaining ->
+            case reconstituteDetailedEither
+              (replayOnlyRegisterDisjoint initialRemaining)
+              [ReservationConfirmed True] of
+              Right success -> do
+                replaySuccessState success `shouldBe` Confirmed
+                map (edgeIndex . replayAttributionEdge) (replaySuccessTrace success)
+                  `shouldBe` [if initialRemaining > 1 then 0 else 1]
+              Left failure ->
+                expectationFailure ("register-disjoint replay-only pair failed: " <> show failure)
+        )
+        [2, 1]
+
     it "applies the same two-phase preference in letter-only applyEvent" $ do
       case applyEvent machineBBad Held initialDivertRegs (ReservationConfirmed True) of
         Nothing -> pure ()
@@ -328,6 +379,9 @@ spec = do
       case inversionAmbiguityWarnings machineTwinClash of
         [InversionAmbiguity {tvwSource = Held, tvwEdgeA = 0, tvwEdgeB = 1}] -> pure ()
         other -> expectationFailure ("expected one same-mode warning, got " <> show other)
+
+    it "suppresses a same-mode replay-only pair proved register-disjoint" $
+      inversionAmbiguityWarnings (replayOnlyRegisterDisjoint 2) `shouldBe` []
 
     it "does not flag a live/replay-only guard overlap as nondeterminism" $
       checkTransitionDeterminismPure machineOverlap `shouldBe` []

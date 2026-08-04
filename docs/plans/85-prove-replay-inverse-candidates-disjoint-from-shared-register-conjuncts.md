@@ -66,8 +66,14 @@ after the structural prerequisite is stable.
       ValidationReplayAlignmentSpec passed 24 examples, `validateTransducer` passed 32,
       ReplayOnly passed 2 selected examples, and FullSymbolicReplayInversion passed 14, all with
       0 failures. Runtime replay and the optional solver path were unchanged.
-- [ ] Milestone 4: add exhaustive and generated agreement tests against concrete replay candidate
-      evaluation for the supported register-only fragment.
+- [x] (2026-08-04T21:46:18Z) Milestone 4: added a concrete candidate counter following
+      mode eligibility, `solveOutput`, and `models`; exhaustive Natural-register/event coverage
+      for both modes; 100 generated strict/inclusive/equality boundary cases; and conservative
+      disjunction, negation, arithmetic, projection, input-field, application, unsupported-carrier,
+      and duplicate-label controls. ValidationReplayAlignmentSpec passed 27 examples and the
+      complete lower-case `replay-only` selection passed 26, both with 0 failures. The Plan 87
+      output-dependent fixture now explicitly asserts that pure default validation retains one
+      warning; FullSymbolicReplayInversion passed 14 examples with 0 failures.
 - [ ] Milestone 5: update Haddocks, the changelog, IR status, and relevant ADRs; run Keiki gates and
       only the downstream warning-allowlist checks justified by Plan 87's recorded audit.
 
@@ -183,6 +189,13 @@ after the structural prerequisite is stable.
   Rationale: Replay reconstructs one command independently per edge, so two constructor tests do
   not constrain the shared register file and are expected in every well-guarded pair. Naming them
   first would hide the actionable opaque or unsupported sibling that consumers can restructure.
+  Date: 2026-08-04
+
+- Decision: Test the private proof through the public warning boundary and concrete replay
+  candidacy rather than export an internal verdict solely for tests.
+  Rationale: The observable contract is warning suppression, and the candidate counter exercises
+  the runtime recipe independently. Generated agreement at that boundary proves the required
+  polarity without turning private extraction types into supported API.
   Date: 2026-08-04
 
 

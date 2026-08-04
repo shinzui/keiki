@@ -3,7 +3,7 @@
 module Keiki.ValidationReplayAlignmentSpec (spec) where
 
 import Control.Exception (evaluate)
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_)
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
@@ -16,6 +16,7 @@ import Keiki.Fixtures.UserRegistration
 import Keiki.Generics (FieldsOf, RegFieldsOf, mkInCtorVia, mkWireCtorVia)
 import Numeric.Natural (Natural)
 import Test.Hspec
+import Test.QuickCheck (property)
 
 runCommands ::
   (BoolAlg phi (RegFile rs, ci)) =>
@@ -161,15 +162,6 @@ opaqueCommandIdentity inputCtor =
     )
     (TInpCtorField inputCtor (#completionId :: Index ReplayCompletionFields Int))
 
-registerReplayGuard ::
-  InCtor RegisterReplayCmd ReplayCompletionFields ->
-  HsPred rs RegisterReplayCmd ->
-  HsPred rs RegisterReplayCmd
-registerReplayGuard inputCtor registerCondition =
-  PAnd
-    (PInCtor inputCtor)
-    (PAnd (opaqueCommandIdentity inputCtor) registerCondition)
-
 registerReplayOutput ::
   InCtor RegisterReplayCmd ReplayCompletionFields ->
   OutTerm rs RegisterReplayCmd RegisterReplayEvent
@@ -190,8 +182,24 @@ registerReplayEdge ::
     RegisterReplayEvent
     Bool
 registerReplayEdge edgeMode inputCtor registerCondition =
+  customRegisterReplayEdge
+    edgeMode
+    inputCtor
+    (PAnd (opaqueCommandIdentity inputCtor) registerCondition)
+
+customRegisterReplayEdge ::
+  EdgeMode ->
+  InCtor RegisterReplayCmd ReplayCompletionFields ->
+  HsPred RegisterReplayRegs RegisterReplayCmd ->
   Edge
-    { guard = registerReplayGuard inputCtor registerCondition,
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    RegisterReplayCmd
+    RegisterReplayEvent
+    Bool
+customRegisterReplayEdge edgeMode inputCtor condition =
+  Edge
+    { guard = PAnd (PInCtor inputCtor) condition,
       update =
         USet
           (#openSteps :: IndexN "openSteps" RegisterReplayRegs Natural)
@@ -263,6 +271,92 @@ opaqueOnlyFixture ::
     RegisterReplayCmd
     RegisterReplayEvent
 opaqueOnlyFixture = registerReplayFixture 2 Live PTop PTop
+
+type RegisterReplayCondition =
+  InCtor RegisterReplayCmd ReplayCompletionFields ->
+  HsPred RegisterReplayRegs RegisterReplayCmd
+
+customRegisterReplayFixture ::
+  Natural ->
+  EdgeMode ->
+  RegisterReplayCondition ->
+  RegisterReplayCondition ->
+  SymTransducer
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+customRegisterReplayFixture initialOpenSteps edgeMode nonFinalCondition finalCondition =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ customRegisterReplayEdge edgeMode inCompleteNonFinal (nonFinalCondition inCompleteNonFinal),
+            customRegisterReplayEdge edgeMode inCompleteFinal (finalCondition inCompleteFinal)
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = registerReplayRegs initialOpenSteps,
+      isFinal = id
+    }
+
+registerReplayRegs :: Natural -> RegFile RegisterReplayRegs
+registerReplayRegs value = RCons (Proxy @"openSteps") value RNil
+
+data OpenStepsIdentity
+
+instance FieldProjection OpenStepsIdentity where
+  type FieldName OpenStepsIdentity = "value"
+  type FieldOwner OpenStepsIdentity = Natural
+  type FieldResult OpenStepsIdentity = Natural
+  fieldShapeId _ = "natural/identity"
+  projectFieldValue _ = id
+
+openStepsProjection :: Term RegisterReplayRegs RegisterReplayCmd ifs Natural
+openStepsProjection =
+  regProj
+    (fieldWitness @OpenStepsIdentity)
+    (#openSteps :: Index RegisterReplayRegs Natural)
+
+unsupportedRegisterConditions :: [(String, String, RegisterReplayCondition)]
+unsupportedRegisterConditions =
+  [ ( "disjunction",
+      "POr",
+      const
+        ( POr
+            (PCmp CmpGt openSteps (TLit 1))
+            (PEq openSteps (TLit 1))
+        )
+    ),
+    ( "negation",
+      "PNot",
+      const (PNot (PCmp CmpGt openSteps (TLit 1)))
+    ),
+    ( "arithmetic",
+      "TArith",
+      const
+        ( PCmp
+            CmpGt
+            (TArith OpAdd openSteps (TLit 1))
+            (TLit 0)
+        )
+    ),
+    ( "projection",
+      "TFieldProj",
+      const (PCmp CmpGt openStepsProjection (TLit 0))
+    ),
+    ( "input field",
+      "TInpCtorField",
+      \inputCtor ->
+        PEq
+          (TInpCtorField inputCtor (#completionId :: Index ReplayCompletionFields Int))
+          (TLit 7)
+    ),
+    ( "opaque application",
+      "TApp1",
+      const (PEq (TApp1 id openSteps) openSteps)
+    )
+  ]
 
 type UnsupportedCarrierRegs = '[ '("enabled", Bool)]
 
@@ -357,6 +451,81 @@ duplicateLabelFixture =
           target = True,
           mode = Live
         }
+
+concreteReplayCandidateCount ::
+  (Eq co) =>
+  EdgeMode ->
+  SymTransducer (HsPred rs ci) rs s ci co ->
+  s ->
+  RegFile rs ->
+  co ->
+  Int
+concreteReplayCandidateCount candidateMode transducer source registers observed =
+  length
+    [ ()
+    | edge <- edgesOut transducer source,
+      mode edge == candidateMode,
+      headOutput : _ <- [output edge],
+      Just command <- [solveOutput headOutput registers observed],
+      models (guard edge) (registers, command)
+    ]
+
+data LowerBoundary = LowerStrict | LowerInclusive | LowerEquality
+
+data UpperBoundary = UpperStrict | UpperInclusive | UpperEquality
+
+lowerBoundaryFrom :: Int -> LowerBoundary
+lowerBoundaryFrom raw = case abs (toInteger raw) `mod` 3 of
+  0 -> LowerStrict
+  1 -> LowerInclusive
+  _ -> LowerEquality
+
+upperBoundaryFrom :: Int -> UpperBoundary
+upperBoundaryFrom raw = case abs (toInteger raw) `mod` 3 of
+  0 -> UpperStrict
+  1 -> UpperInclusive
+  _ -> UpperEquality
+
+boundedNatural :: Int -> Natural
+boundedNatural raw = fromInteger (abs (toInteger raw) `mod` 11)
+
+lowerBoundaryPredicate :: LowerBoundary -> Natural -> HsPred RegisterReplayRegs RegisterReplayCmd
+lowerBoundaryPredicate LowerStrict value = PCmp CmpGt openSteps (TLit value)
+lowerBoundaryPredicate LowerInclusive value = PCmp CmpGe openSteps (TLit value)
+lowerBoundaryPredicate LowerEquality value = PEq openSteps (TLit value)
+
+upperBoundaryPredicate :: UpperBoundary -> Natural -> HsPred RegisterReplayRegs RegisterReplayCmd
+upperBoundaryPredicate UpperStrict value = PCmp CmpLt openSteps (TLit value)
+upperBoundaryPredicate UpperInclusive value = PCmp CmpLe openSteps (TLit value)
+upperBoundaryPredicate UpperEquality value = PEq openSteps (TLit value)
+
+intervalAgreementProperty :: Int -> Int -> Int -> Int -> Bool
+intervalAgreementProperty rawLower rawUpper rawLowerKind rawUpperKind =
+  warningSuppressed == not concreteOverlapExists
+  where
+    lower = boundedNatural rawLower
+    upper = boundedNatural rawUpper
+    leftPredicate = lowerBoundaryPredicate (lowerBoundaryFrom rawLowerKind) lower
+    rightPredicate = upperBoundaryPredicate (upperBoundaryFrom rawUpperKind) upper
+    transducer =
+      customRegisterReplayFixture
+        0
+        Live
+        (const leftPredicate)
+        (const rightPredicate)
+    warningSuppressed = null (inversionAmbiguityWarnings transducer)
+    concreteOverlapExists =
+      any
+        ( \registerValue ->
+            concreteReplayCandidateCount
+              Live
+              transducer
+              False
+              (registerReplayRegs registerValue)
+              (StepCompleted (ReplayCompletionData 7))
+              == 2
+        )
+        [0 .. 12]
 
 type ReadRegs = '[ '("seen", Int)]
 
@@ -584,6 +753,24 @@ spec = do
         )
         cases
 
+    it "bounds every concrete candidate count for the suppressed pair across registers, events, and modes" $ do
+      forM_ [Live, ReplayOnly] $ \candidateMode ->
+        forM_ [0 .. 5] $ \registerValue -> do
+          let transducer = registerDisjointFixture registerValue candidateMode
+              registers = registerReplayRegs registerValue
+          inversionAmbiguityWarnings transducer `shouldBe` []
+          forM_ [-2 .. 2] $ \observedId ->
+            concreteReplayCandidateCount
+              candidateMode
+              transducer
+              False
+              registers
+              (StepCompleted (ReplayCompletionData observedId))
+              `shouldSatisfy` (<= 1)
+
+    it "agrees with concrete candidates for generated strict, inclusive, and equality boundaries" $
+      property intervalAgreementProperty
+
     it "retains the overlapping warning with its opaque precision blocker and exhibits two concrete candidates" $ do
       case inversionAmbiguityWarnings registerOverlappingFixture of
         [InversionAmbiguity {tvwDetail = detail}] -> detail `shouldContain` "TApp1"
@@ -599,6 +786,13 @@ spec = do
               expectationFailure ("expected ReplayAmbiguousInversions, got " <> show other)
         Right result ->
           expectationFailure ("expected ambiguous replay, got " <> show (fst result))
+      concreteReplayCandidateCount
+        Live
+        registerOverlappingFixture
+        False
+        (registerReplayRegs 2)
+        (StepCompleted (ReplayCompletionData 7))
+        `shouldBe` 2
 
     it "names the opaque conjunct when only command-dependent conditions remain" $
       case inversionAmbiguityWarnings opaqueOnlyFixture of
@@ -611,6 +805,32 @@ spec = do
           detail `shouldContain` "unsupported register carrier"
           detail `shouldContain` "Bool"
         other -> expectationFailure ("expected one unsupported-carrier warning, got " <> show other)
+
+    it "retains every unsupported guard shape unless a supported sibling proves disjointness" $ do
+      forM_ unsupportedRegisterConditions $ \(label, expectedBlocker, condition) -> do
+        let blockedFixture = customRegisterReplayFixture 2 Live condition condition
+        case inversionAmbiguityWarnings blockedFixture of
+          [InversionAmbiguity {tvwDetail = detail}] ->
+            detail `shouldContain` expectedBlocker
+          other ->
+            expectationFailure
+              ("expected one " <> label <> " warning, got " <> show other)
+
+        let contradictedFixture =
+              customRegisterReplayFixture
+                2
+                Live
+                ( \inputCtor ->
+                    PAnd
+                      (condition inputCtor)
+                      (PCmp CmpGt openSteps (TLit 1))
+                )
+                ( \inputCtor ->
+                    PAnd
+                      (condition inputCtor)
+                      (PEq openSteps (TLit 1))
+                )
+        inversionAmbiguityWarnings contradictedFixture `shouldBe` []
 
     it "does not merge distinct duplicate-labelled register positions" $ do
       case inversionAmbiguityWarnings duplicateLabelFixture of

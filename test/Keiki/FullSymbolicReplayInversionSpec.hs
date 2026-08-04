@@ -180,6 +180,7 @@ spec = describe "full symbolic replay inversion" $ do
             [ edge Live (PInCtor inSubmit) (recordedPlus 0),
               edge Live (PInCtor inSubmit) (recordedPlus 1)
             ]
+    length (inversionAmbiguityWarnings transducer) `shouldBe` 1
     detail <- onlyDetail <$> checkInversionAmbiguitySymDetailed transducer
     iadHeadRelation detail `shouldBe` WireHeadsStructurallyEqual
     iadSolverStatus detail `shouldBe` InversionSolverUnsatisfiable
