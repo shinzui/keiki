@@ -323,12 +323,82 @@ head inversion selects an edge before `InFlight` compares its evaluated tail.
 
 ## Adversarial and performance results
 
-To be completed by Milestone 4.
+The adversarial suite establishes the conservative boundary before measuring it. Different
+candidate constructors, same constructors with different correlated field values, different
+`Either` arms, and separate opaque atoms all remain satisfiable. Duplicate diagnostic register
+labels do not merge positions. Equal wire display names with different field carriers, unvalidated
+manual descriptors, and deliberately dishonest descriptors never acquire a shared observation.
+Opaque applications, unconstrained projections, `Unknown`, and `ProofError` never become a
+disjointness proof. A `TReg` audit field is not related to the current register, and a tail event is
+not related to head selection.
+
+Measurements ran on 2026-08-04 on an Apple M1 Max with 64 GiB RAM, Darwin 25.5.0, GHC 9.12.4,
+SBV 14.5, and Z3 4.16.0. Each row uses five wall-clock samples. The full-model action runs one
+fresh solver query per pair, as a detailed optional inversion checker would. The guard-only action
+uses `checkTransitionDeterminismSymDetailed` over transducers partitioned to contain exactly the
+same number of live edge pairs. “SMT bytes” is the generated single-pair SMT-LIB script size times
+the pair count, so it measures aggregate query traffic rather than claiming one batched query.
+
+| Same-head pairs | Full SMT bytes | Guard SMT bytes | Full median ms | Full worst ms | Guard median ms | Guard worst ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1,814 | 758 | 9.338 | 28.123 | 8.299 | 8.798 |
+| 10 | 18,140 | 7,580 | 88.797 | 97.119 | 84.957 | 86.410 |
+| 50 | 90,700 | 37,900 | 444.774 | 451.971 | 424.646 | 435.534 |
+| 100 | 181,400 | 75,800 | 894.728 | 933.640 | 864.075 | 910.476 |
+
+At 100 pairs the full-model median is about 1.04 times the guard-only median, comfortably within
+the plan's five-times gate. The result is not a production forecast: the prototype uses one
+integer observed field, and richer derived expressions or string theories can cost more. It does
+show that candidate scoping and two shared-field equalities do not by themselves make the model
+prohibitively slow.
+
+Generated SMT-LIB declares distinct variables for A's input field, B's input field, and the shared
+observed field:
+
+```text
+(declare-fun s4 () Int)  ; candidate-a/field/0
+(declare-fun s9 () Int)  ; candidate-b/field/0
+(declare-fun s12 () Int) ; observed-head/field/0
+```
+
+The disjoint query is UNSAT while changing B's literal guard to A's value makes the otherwise
+identical query SAT. Together with the declarations, this checks the intended topology: candidate
+fields are independent allocations linked only through one shared observation. No register is
+duplicated between candidates and no command cache is shared.
 
 
 ## API and PVP assessment
 
-To be completed by Milestone 4.
+The viable model is optional solver-backed validation after a structural wire-schema prerequisite.
+It does not belong in default validation: starting z3 there would change performance and deployment
+requirements, and `inversionAmbiguityWarnings` deliberately has no solver or `Eq co` constraint.
+
+| Surface | Impact of a viable structural descriptor design |
+| --- | --- |
+| `WireCtor` | Adding schema/constructor evidence to the exported record is source-breaking for direct construction and record patterns, therefore a PVP major change. This is the prerequisite. |
+| `InCtor` | Candidate scoping needs no public change. Existing constructor-name honesty can be retained conditionally; an implementation must drop constructor relations it cannot justify rather than strengthen them by name. An unforgeable input identity could be a later hardening, not this prerequisite. |
+| `Term` | No new constructor or type parameter is required. Existing `Typeable`/`Sym` discovery can classify terms. |
+| `OutFields` | The ordered typed list can remain unchanged. It consumes descriptor field positions but cannot supply cross-edge alignment by itself. |
+| Builder | `B.emit` call sites can remain inference-driven when the passed wire binding already carries the descriptor. Builder internals and any explicit `WireCtor` annotations recompile. |
+| Generics | `FieldsOf` already preserves ordered payload types but not selector names. Generic builders can derive positional evidence; adding it changes generated binding construction. |
+| Generics/TH | `deriveWireCtorsAll` sees constructor identity, selector order, and field types, so it is the lowest-maintenance producer. Generated declarations and golden source fixtures change; downstream regeneration is required. |
+| Composition | `leftWireCtor`/`rightWireCtor` can preserve a descriptor with a sum-path prefix. Arbitrary or name-aligned composition must drop it when field identity cannot be proved. |
+| Profunctor | `mapWireCtor`, `firstWireCtor`, and `arrWc` deliberately poison inversion with `wcMatch = const Nothing`; they must also mark structural inversion unavailable. `identityWireCtor` can supply a descriptor. |
+| Generated downstream code | Danwa, Keiro Runtime Jitsurei, Kizashi, and Kotei visibly generate or consume wire bindings. Regeneration is broad even if most `B.emit` call sites remain textually unchanged. |
+
+The production checker would need per-field symbolic dictionaries and `Typeable` evidence in the
+descriptor, or an equivalent closed existential eliminator. It need not add `Eq co`: exact derived
+field equality can be expressed structurally, and unsupported event equality is widened. It need
+not add `Eq ci`. It may require a schema-witness constraint on a future detailed entry point if
+evidence is stored in a typeclass rather than directly in each `WireCtor`.
+
+No dependency bound changes are justified. SBV 14.5 already provides the required API under
+Keiki's current `>=11.7 && <15` range. Z3 remains required only when the optional detailed checker
+runs. Default validation and runtime replay keep their current dependency and performance profile.
+
+The reverse-dependent registry lists twelve projects. Because several entries lack package
+metadata, a production migration plan must rerun Mori after registry enrichment and compile every
+registered source consumer; in-tree tests alone cannot establish source compatibility.
 
 
 ## Final decision and bounded next action

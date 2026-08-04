@@ -2,10 +2,13 @@
 -- evidence, not a production API or a proposed public naming scheme.
 module Keiki.InversionModelResearchSpec (spec) where
 
+import Control.Monad (forM, forM_, replicateM)
+import Data.List (isInfixOf, sort)
 import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
+import Data.Time.Clock (diffUTCTime, getCurrentTime)
 import Keiki.Core
-import Keiki.Symbolic (satResultIsProvablyUnsat)
+import Keiki.Symbolic (checkTransitionDeterminismSymDetailed, satResultIsProvablyUnsat)
 import Test.Hspec
 
 data CandidateScope = CandidateA | CandidateB
@@ -308,6 +311,141 @@ actualCandidateCount expectedB observed =
       models (guard edge) (RNil, command)
     ]
 
+data BenchmarkVertex = Benchmark0 | Benchmark1 | Benchmark2 | Benchmark3
+  deriving stock (Bounded, Enum, Eq, Show)
+
+type BenchmarkRegisters = '[ '("value", Integer)]
+
+benchmarkPartitions :: Int -> [Int]
+benchmarkPartitions 1 = [2, 0, 0, 0]
+benchmarkPartitions 10 = [5, 0, 0, 0]
+benchmarkPartitions 50 = [10, 3, 2, 2]
+benchmarkPartitions 100 = [14, 4, 3, 0]
+benchmarkPartitions count = error ("unsupported research pair count: " <> show count)
+
+benchmarkEdgeCount :: [Int] -> BenchmarkVertex -> Int
+benchmarkEdgeCount counts vertex = counts !! fromEnum vertex
+
+benchmarkPairCount :: [Int] -> Int
+benchmarkPairCount = sum . map (\edgeCount -> edgeCount * (edgeCount - 1) `div` 2)
+
+benchmarkTransducer :: Int -> SymTransducer (HsPred BenchmarkRegisters ()) BenchmarkRegisters BenchmarkVertex () ()
+benchmarkTransducer requestedPairCount =
+  let partitions = benchmarkPartitions requestedPairCount
+   in if benchmarkPairCount partitions /= requestedPairCount
+        then error "research benchmark partition does not produce the requested pair count"
+        else
+          SymTransducer
+            { edgesOut = \vertex ->
+                [ Edge
+                    (PEq (TReg ZIdx) (TLit (toInteger literalValue)))
+                    UKeep
+                    []
+                    vertex
+                    Live
+                | literalValue <- [0 .. benchmarkEdgeCount partitions vertex - 1]
+                ],
+              initial = Benchmark0,
+              initialRegs = RCons (Proxy @"value") 0 RNil,
+              isFinal = const False
+            }
+
+guardOnlyPairQuery :: SBV.Symbolic SBV.SBool
+guardOnlyPairQuery = do
+  register <- SBV.free "register/0"
+  pure (register SBV..== (0 :: SBV.SInteger) SBV..&& register SBV..== 1)
+
+timeMillis :: IO a -> IO Double
+timeMillis action = do
+  started <- getCurrentTime
+  _ <- action
+  finished <- getCurrentTime
+  pure (realToFrac (diffUTCTime finished started) * 1000)
+
+median :: [Double] -> Double
+median values = sort values !! (length values `div` 2)
+
+measureSamples :: Int -> IO () -> IO (Double, Double)
+measureSamples sampleCount action = do
+  samples <- replicateM sampleCount (timeMillis action)
+  pure (median samples, maximum samples)
+
+runFullModelPairs :: Int -> IO ()
+runFullModelPairs pairCount = do
+  verdicts <- replicateM pairCount (solveVerdict (sharedObservedHeadQuery 0 1))
+  unlessAllProved verdicts
+  where
+    unlessAllProved verdicts
+      | all (== InversionProvedDisjoint) verdicts = pure ()
+      | otherwise = error ("full-model research benchmark changed verdict: " <> show verdicts)
+
+runGuardOnlyPairs :: Int -> IO ()
+runGuardOnlyPairs pairCount = do
+  details <- checkTransitionDeterminismSymDetailed (benchmarkTransducer pairCount)
+  if length details == pairCount
+    then pure ()
+    else
+      error
+        ( "guard-only benchmark produced "
+            <> show (length details)
+            <> " details for "
+            <> show pairCount
+            <> " pairs"
+        )
+
+printSmtEvidence :: String -> IO ()
+printSmtEvidence script = do
+  let evidenceLines =
+        take
+          12
+          [ line
+          | line <- lines script,
+            "field/0" `isInfixOf` line
+              || "observed-head" `isInfixOf` line
+              || "(assert" `isInfixOf` line
+          ]
+  putStrLn "RESEARCH-SMT-EVIDENCE-BEGIN"
+  mapM_ putStrLn evidenceLines
+  putStrLn "RESEARCH-SMT-EVIDENCE-END"
+
+runResearchMeasurements :: IO ()
+runResearchMeasurements = do
+  let sampleCount = 5
+      pairCounts = [1, 10, 50, 100]
+  fullScript <- SBV.generateSMTBenchmarkSat (sharedObservedHeadQuery 0 1)
+  guardScript <- SBV.generateSMTBenchmarkSat guardOnlyPairQuery
+  printSmtEvidence fullScript
+  rows <- forM pairCounts $ \pairCount -> do
+    (fullMedian, fullWorst) <- measureSamples sampleCount (runFullModelPairs pairCount)
+    (guardMedian, guardWorst) <- measureSamples sampleCount (runGuardOnlyPairs pairCount)
+    pure
+      ( pairCount,
+        length fullScript * pairCount,
+        length guardScript * pairCount,
+        fullMedian,
+        fullWorst,
+        guardMedian,
+        guardWorst
+      )
+  forM_ rows $ \(pairCount, fullBytes, guardBytes, fullMedian, fullWorst, guardMedian, guardWorst) ->
+    putStrLn $
+      "RESEARCH-MEASUREMENT pairs="
+        <> show pairCount
+        <> " samples="
+        <> show sampleCount
+        <> " full_smt_bytes="
+        <> show fullBytes
+        <> " guard_smt_bytes="
+        <> show guardBytes
+        <> " full_median_ms="
+        <> show fullMedian
+        <> " full_worst_ms="
+        <> show fullWorst
+        <> " guard_median_ms="
+        <> show guardMedian
+        <> " guard_worst_ms="
+        <> show guardWorst
+
 spec :: Spec
 spec = describe "full symbolic replay-inversion research" $ do
   describe "two candidate-scoped commands with shared registers" $ do
@@ -390,3 +528,6 @@ spec = describe "full symbolic replay-inversion research" $ do
 
     it "keeps a head-overlapping pair satisfiable even when tails would differ" $
       solveVerdict headOnlyTailControl `shouldReturn` InversionSatisfiable
+
+  describe "research-measurement (temporary, no timing assertion)" $ do
+    it "measures 1, 10, 50, and 100 same-head pairs" runResearchMeasurements

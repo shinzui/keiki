@@ -54,8 +54,13 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
       output-dependent disjoint and overlapping fixtures, real `solveOutput` candidate
       enumeration, and fail-conservative mismatched-schema, dishonest-descriptor, derived,
       projection, register-audit, and multi-event controls. The focused suite passes 14 examples.
-- [ ] Milestone 4: run adversarial soundness, precision, performance, and API/PVP experiments; then
-      remove or retain prototype code according to the promotion criteria.
+- [x] (2026-08-04T18:05:49Z) Milestone 4 measurement and audit: ran adversarial classification,
+      inspected generated SMT variable ownership, measured five samples at 1, 10, 50, and 100
+      pairs against `checkTransitionDeterminismSymDetailed`, and completed the source/PVP audit.
+      The 100-pair full-model median was 894.728 ms versus 864.075 ms guard-only (about 1.04x).
+- [ ] Milestone 4 remaining: checkpoint the reproducible measurement prototype, then remove its
+      test module and registrations because the selected structural-prerequisite result does not
+      leave a reusable internal production foundation.
 - [ ] Milestone 5: finish the research report, record a go/no-go/prerequisite decision, distill
       durable conclusions into the relevant ADRs, and validate all surviving repository changes.
 
@@ -131,6 +136,20 @@ if justified, requires a subsequent ExecPlan based on the selected design and mi
   Rationale: `solveOutput` retains their observed values when rebuilding the event. Equating a
   literal output to its term literal or a register output to the current register would be stricter
   than runtime and could manufacture false UNSAT.
+  Date: 2026-08-04
+
+- Decision: Select `Proceed after structural wire-schema prerequisite` for the final report.
+  Rationale: A typed descriptor produces the required output-dependent precision with acceptable
+  measured cost, but current `WireCtor` closures and `OutFields` existentials cannot safely align
+  observed fields across edges. Equal names and casts are rejected, and the bounded consumer audit
+  found no broader real false-positive set that would justify bypassing the prerequisite.
+  Date: 2026-08-04
+
+- Decision: Remove the research test module after checkpointing its measurement evidence.
+  Rationale: The module duplicates a hypothetical descriptor and solver driver rather than forming
+  a reusable internal boundary against today's public types. Its ongoing maintenance cost is not
+  justified before the structural prerequisite exists; the report and Git history preserve the
+  experiment.
   Date: 2026-08-04
 
 
