@@ -4,6 +4,7 @@ slug: prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts
 title: "Prove replay inverse candidates disjoint from shared-register conjuncts"
 kind: exec-plan
 created_at: 2026-08-04T17:28:34Z
+intention: intention_01kz7att76e2trqcrrz3n2vetr
 ---
 
 # Prove replay inverse candidates disjoint from shared-register conjuncts
@@ -50,8 +51,11 @@ after the structural prerequisite is stable.
 - [x] (2026-08-04) Revised the plan after Plan 86 completed: sequenced it after Plan 87 and removed
       structural-schema, output-inversion, solver, versioning, and consumer-migration work now
       owned by that follow-up.
-- [ ] Milestone 1: add only the same-head register-disjoint, register-overlapping, opaque-only,
-      and duplicate-register-label fixtures, pinning the current false-positive warning.
+- [x] (2026-08-04T21:32:43Z) Milestone 1: added the same trusted-head register-disjoint,
+      register-overlapping, opaque-only, and duplicate-register-label fixtures. The focused
+      ValidationReplayAlignmentSpec baseline grew from 18 to 23 examples with 0 failures; the
+      disjoint pair still pinned the pre-implementation false-positive warning, while the overlap
+      and duplicate-label controls produced concrete two-candidate replay failures.
 - [ ] Milestone 2: implement an internal necessary-condition extractor for exact integral
       register-versus-literal conjuncts and an explicit conservative disjointness verdict.
 - [ ] Milestone 3: integrate the proof into default inversion warnings through Plan 87's final
@@ -80,6 +84,13 @@ after the structural prerequisite is stable.
   Evidence: every real candidate implies its complete guard on the shared pre-event `RegFile`.
   Unsatisfiability of weakened register-only necessary conditions therefore proves disjointness
   regardless of command reconstruction or output inversion.
+
+- Observation: two structurally distinct register positions with the same label can satisfy
+  `position 0 > 1` and `position 1 == 1` simultaneously, and concrete replay then selects both
+  candidates.
+  Evidence: the Milestone 1 `duplicateLabelFixture` replays `StepCompleted 7` from registers
+  `(2, 1)` to `ReplayAmbiguousInversions` naming edges 0 and 1. Any proof key based only on the
+  diagnostic label would suppress this real ambiguity unsoundly.
 
 
 ## Decision Log

@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Keiki.ValidationReplayAlignmentSpec (spec) where
 
 import Control.Exception (evaluate)
@@ -5,11 +7,14 @@ import Control.Monad (foldM)
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
+import GHC.Generics (Generic)
 import Keiki.Core
 import Keiki.Fixtures.EmailDelivery
 import Keiki.Fixtures.RegisterEmission
 import Keiki.Fixtures.SplitCoverage
 import Keiki.Fixtures.UserRegistration
+import Keiki.Generics (FieldsOf, RegFieldsOf, mkInCtorVia, mkWireCtorVia)
+import Numeric.Natural (Natural)
 import Test.Hspec
 
 runCommands ::
@@ -111,6 +116,210 @@ ambiguousTransducer = ambiguousTransducerWith wireLogged
 
 distinctHeadTransducer :: SymTransducer (HsPred '[] AmbiguousCmd) '[] Bool AmbiguousCmd AmbiguousEvent
 distinctHeadTransducer = ambiguousTransducerWith wireLoggedY
+
+data ReplayCompletionData = ReplayCompletionData
+  { completionId :: Int
+  }
+  deriving stock (Eq, Show, Generic)
+
+data RegisterReplayCmd
+  = CompleteNonFinal ReplayCompletionData
+  | CompleteFinal ReplayCompletionData
+  deriving stock (Eq, Show, Generic)
+
+data RegisterReplayEvent = StepCompleted ReplayCompletionData
+  deriving stock (Eq, Show, Generic)
+
+commandCompletionId :: RegisterReplayCmd -> Int
+commandCompletionId (CompleteNonFinal value) = value.completionId
+commandCompletionId (CompleteFinal value) = value.completionId
+
+type ReplayCompletionFields = RegFieldsOf ReplayCompletionData
+
+type RegisterReplayRegs = '[ '("openSteps", Natural)]
+
+inCompleteNonFinal :: InCtor RegisterReplayCmd ReplayCompletionFields
+inCompleteNonFinal = mkInCtorVia @"CompleteNonFinal"
+
+inCompleteFinal :: InCtor RegisterReplayCmd ReplayCompletionFields
+inCompleteFinal = mkInCtorVia @"CompleteFinal"
+
+wireStepCompleted :: WireCtor RegisterReplayEvent (FieldsOf ReplayCompletionData)
+wireStepCompleted = mkWireCtorVia @"StepCompleted"
+
+openSteps :: Term RegisterReplayRegs RegisterReplayCmd ifs Natural
+openSteps = TReg (#openSteps :: Index RegisterReplayRegs Natural)
+
+opaqueCommandIdentity ::
+  InCtor RegisterReplayCmd ReplayCompletionFields ->
+  HsPred RegisterReplayRegs RegisterReplayCmd
+opaqueCommandIdentity inputCtor =
+  PEq
+    ( TApp1
+        id
+        (TInpCtorField inputCtor (#completionId :: Index ReplayCompletionFields Int))
+    )
+    (TInpCtorField inputCtor (#completionId :: Index ReplayCompletionFields Int))
+
+registerReplayGuard ::
+  InCtor RegisterReplayCmd ReplayCompletionFields ->
+  HsPred RegisterReplayRegs RegisterReplayCmd ->
+  HsPred RegisterReplayRegs RegisterReplayCmd
+registerReplayGuard inputCtor registerCondition =
+  PAnd
+    (PInCtor inputCtor)
+    (PAnd (opaqueCommandIdentity inputCtor) registerCondition)
+
+registerReplayOutput ::
+  InCtor RegisterReplayCmd ReplayCompletionFields ->
+  OutTerm RegisterReplayRegs RegisterReplayCmd RegisterReplayEvent
+registerReplayOutput inputCtor =
+  pack
+    inputCtor
+    wireStepCompleted
+    (TInpCtorField inputCtor (#completionId :: Index ReplayCompletionFields Int) *: oNil)
+
+registerReplayEdge ::
+  EdgeMode ->
+  InCtor RegisterReplayCmd ReplayCompletionFields ->
+  HsPred RegisterReplayRegs RegisterReplayCmd ->
+  Edge
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    RegisterReplayCmd
+    RegisterReplayEvent
+    Bool
+registerReplayEdge edgeMode inputCtor registerCondition =
+  Edge
+    { guard = registerReplayGuard inputCtor registerCondition,
+      update =
+        USet
+          (#openSteps :: IndexN "openSteps" RegisterReplayRegs Natural)
+          (TLit 0),
+      output = [registerReplayOutput inputCtor],
+      target = True,
+      mode = edgeMode
+    }
+
+registerReplayFixture ::
+  Natural ->
+  EdgeMode ->
+  HsPred RegisterReplayRegs RegisterReplayCmd ->
+  HsPred RegisterReplayRegs RegisterReplayCmd ->
+  SymTransducer
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+registerReplayFixture initialOpenSteps edgeMode nonFinalCondition finalCondition =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ registerReplayEdge edgeMode inCompleteNonFinal nonFinalCondition,
+            registerReplayEdge edgeMode inCompleteFinal finalCondition
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"openSteps") initialOpenSteps RNil,
+      isFinal = id
+    }
+
+registerDisjointFixture ::
+  Natural ->
+  EdgeMode ->
+  SymTransducer
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+registerDisjointFixture initialOpenSteps edgeMode =
+  registerReplayFixture
+    initialOpenSteps
+    edgeMode
+    (PCmp CmpGt openSteps (TLit 1))
+    (PEq openSteps (TLit 1))
+
+registerOverlappingFixture ::
+  SymTransducer
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+registerOverlappingFixture =
+  registerReplayFixture
+    2
+    Live
+    (PCmp CmpGt openSteps (TLit 1))
+    (PCmp CmpGt openSteps (TLit 0))
+
+opaqueOnlyFixture ::
+  SymTransducer
+    (HsPred RegisterReplayRegs RegisterReplayCmd)
+    RegisterReplayRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+opaqueOnlyFixture = registerReplayFixture 2 Live PTop PTop
+
+type DuplicateLabelRegs =
+  '[ '("openSteps", Natural),
+     '("openSteps", Natural)
+   ]
+
+firstDuplicateOpenSteps :: Term DuplicateLabelRegs RegisterReplayCmd ifs Natural
+firstDuplicateOpenSteps = TReg ZIdx
+
+secondDuplicateOpenSteps :: Term DuplicateLabelRegs RegisterReplayCmd ifs Natural
+secondDuplicateOpenSteps = TReg (SIdx ZIdx)
+
+duplicateLabelFixture ::
+  SymTransducer
+    (HsPred DuplicateLabelRegs RegisterReplayCmd)
+    DuplicateLabelRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+duplicateLabelFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ duplicateEdge
+              inCompleteNonFinal
+              (PCmp CmpGt firstDuplicateOpenSteps (TLit 1)),
+            duplicateEdge
+              inCompleteFinal
+              (PEq secondDuplicateOpenSteps (TLit 1))
+          ]
+        True -> [],
+      initial = False,
+      initialRegs =
+        RCons
+          (Proxy @"openSteps")
+          2
+          (RCons (Proxy @"openSteps") 1 RNil),
+      isFinal = id
+    }
+  where
+    duplicateEdge inputCtor registerCondition =
+      Edge
+        { guard = PAnd (PInCtor inputCtor) registerCondition,
+          update = UKeep,
+          output =
+            [ pack
+                inputCtor
+                wireStepCompleted
+                ( TInpCtorField
+                    inputCtor
+                    (#completionId :: Index ReplayCompletionFields Int)
+                    *: oNil
+                )
+            ],
+          target = True,
+          mode = Live
+        }
 
 type ReadRegs = '[ '("seen", Int)]
 
@@ -310,6 +519,75 @@ spec = do
       case reconstitute distinctHeadTransducer emitted of
         Just (True, RNil) -> pure ()
         _ -> expectationFailure "distinct-head transducer did not replay"
+
+  describe "shared-register replay candidate disjointness" $ do
+    it "pins the current false-positive warning for openSteps > 1 versus openSteps == 1" $ do
+      let warnings = inversionAmbiguityWarnings (registerDisjointFixture 2 Live)
+      case warnings of
+        [ InversionAmbiguity
+            { tvwSource = False,
+              tvwEdgeA = 0,
+              tvwEdgeB = 1,
+              tvwWireCtor = "StepCompleted"
+            }
+          ] -> pure ()
+        other -> expectationFailure ("expected the current false positive, got " <> show other)
+
+    it "preserves forward/replay agreement for both non-final and final register paths" $ do
+      let cases =
+            [ (2, CompleteNonFinal (ReplayCompletionData 7)),
+              (1, CompleteFinal (ReplayCompletionData 9))
+            ]
+      mapM_
+        ( \(initialOpenSteps, command) -> do
+            let transducer = registerDisjointFixture initialOpenSteps Live
+            case runCommands transducer [command] of
+              Just (forwardVertex, forwardRegs, emitted) -> do
+                emitted
+                  `shouldBe` [StepCompleted (ReplayCompletionData (commandCompletionId command))]
+                case reconstitute transducer emitted of
+                  Just (replayVertex, replayRegs) -> do
+                    replayVertex `shouldBe` forwardVertex
+                    replayRegs ! (#openSteps :: Index RegisterReplayRegs Natural)
+                      `shouldBe` (forwardRegs ! (#openSteps :: Index RegisterReplayRegs Natural))
+                  Nothing -> expectationFailure "register-disjoint fixture did not replay"
+              Nothing -> expectationFailure "register-disjoint fixture did not step"
+        )
+        cases
+
+    it "retains the overlapping warning and exhibits two concrete candidates" $ do
+      inversionAmbiguityWarnings registerOverlappingFixture
+        `shouldSatisfy` (not . null)
+      case reconstituteEither
+        registerOverlappingFixture
+        [StepCompleted (ReplayCompletionData 7)] of
+        Left failure ->
+          case replayFailureReason failure of
+            ReplayEventFailed (ReplayAmbiguousInversions False matchedEdges) ->
+              map (edgeIndex . matchedEdge) matchedEdges `shouldBe` [0, 1]
+            other ->
+              expectationFailure ("expected ReplayAmbiguousInversions, got " <> show other)
+        Right result ->
+          expectationFailure ("expected ambiguous replay, got " <> show (fst result))
+
+    it "retains a warning when only opaque command-dependent conjuncts remain" $
+      inversionAmbiguityWarnings opaqueOnlyFixture
+        `shouldSatisfy` (not . null)
+
+    it "does not merge distinct duplicate-labelled register positions" $ do
+      inversionAmbiguityWarnings duplicateLabelFixture
+        `shouldSatisfy` (not . null)
+      case reconstituteEither
+        duplicateLabelFixture
+        [StepCompleted (ReplayCompletionData 7)] of
+        Left failure ->
+          case replayFailureReason failure of
+            ReplayEventFailed (ReplayAmbiguousInversions False matchedEdges) ->
+              map (edgeIndex . matchedEdge) matchedEdges `shouldBe` [0, 1]
+            other ->
+              expectationFailure ("expected duplicate-label ambiguity, got " <> show other)
+        Right result ->
+          expectationFailure ("expected duplicate-label ambiguity, got " <> show (fst result))
 
   describe "guard implies input reads" $ do
     let isUnguarded
