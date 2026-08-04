@@ -58,6 +58,9 @@ schema representation.
       `WireCtor` record to explicit unavailability. Focused results: Generics 27 examples,
       TH 27, WireSchema 10, Composition 60, Profunctor 68, and Builder 32; all reported
       0 failures.
+- [ ] Post-review addendum (2026-08-04): add `DEPRECATED` pragmas to `mkWireCtor` and
+      `mkWireCtor0` during Milestone 4's in-tree sweep, and the foundations replay-verification
+      page during Milestone 5 (recorded after Milestones 1–2 completed; see Decision Log).
 - [ ] Milestone 3: implement the detailed opt-in dual-candidate symbolic checker and its
       fail-conservative compatibility projection.
 - [ ] Milestone 4: migrate Keiki sibling packages, Keiro, and the two active application adopters
@@ -219,6 +222,25 @@ schema representation.
   without naming those constraints.
   Date: 2026-08-04
 
+- Decision: Attach `DEPRECATED` pragmas to the closure-taking `mkWireCtor` and `mkWireCtor0`,
+  pointing at the trusted `Via` functions and at explicit record construction with
+  `wireSchemaUnavailable`. Because Milestone 2 completed before this amendment was recorded, the
+  pragmas are executed with Milestone 4's in-tree compile sweep.
+  Rationale: The helpers hide their evidence-free result, so they are the accidental path for the
+  twenty-plus planned adopters; explicit record construction remains the sanctioned manual route
+  because it states `wcSchema = wireSchemaUnavailable` visibly. Deliberate in-tree uses, if any
+  remain, silence the warning locally rather than weakening the signal for consumers.
+  Date: 2026-08-04
+
+- Decision: Ship a numbered `docs/foundations/` page on replay verification semantics in
+  Milestone 5: invertible output fields (`TLit`, `TOpaqueLit`, `TReg`, `TInpCtorField`) are not
+  re-verified on replay, derived fields are recomputed and verified, and what that implies for
+  trusting observed events; update `docs/foundations/00-reading-guide.md` accordingly.
+  Rationale: This semantic nearly caused an unsound checker through ambiguous plan wording and
+  will surprise adopters the same way; onboarding documentation is the cheapest place to prevent
+  that, and a Haddock aside is not discoverable enough for application teams.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
@@ -339,7 +361,10 @@ cannot be forged through the public API, and schema alignment uses no `unsafeCoe
 
 Milestone 2 makes every producer and transformer explicit. In `src/Keiki/Generics.hs`, add the
 Generic classes that derive constructor paths and `WireFieldSchema`, make `mkWireCtorVia` trusted,
-add trusted `mkWireCtor0Via`, and make `mkWireCtor`/`mkWireCtor0` unavailable. Update
+add trusted `mkWireCtor0Via`, and make `mkWireCtor`/`mkWireCtor0` unavailable. Attach
+`DEPRECATED` pragmas to `mkWireCtor` and `mkWireCtor0` directing consumers to the `Via`
+functions or explicit record construction with `wireSchemaUnavailable` (amendment recorded
+after this milestone first completed; execute with Milestone 4's in-tree sweep). Update
 `src/Keiki/Generics/TH.hs` to use the trusted via functions for record and nullary constructors.
 Update direct Keiki test/example `WireCtor` records with either a trusted Generic binding or
 `wireSchemaUnavailable`; do not assign proof power to test-only hand-written closures.
@@ -419,7 +444,12 @@ rename unchanged generated files. Cross-repository commits reference this plan w
 trailer `ExecPlan: mori://shinzui/keiki/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion`.
 
 Milestone 5 updates durable explanations and closes the handoff. Update the `WireCtor`, Generic/TH,
-composition, profunctor, optional checker, and validation Haddocks. Update `CHANGELOG.md`, the two
+composition, profunctor, optional checker, and validation Haddocks. Add a numbered
+`docs/foundations/` page on replay verification semantics — invertible output fields are kept at
+their observed values and never re-verified, derived fields are recomputed and verified, and
+what that implies for trusting observed events versus the build-time gates — and update
+`docs/foundations/00-reading-guide.md`; cite the Decision Log entry and
+`docs/research/full-symbolic-replay-inversion-model.md`. Update `CHANGELOG.md`, the two
 codec changelogs, and the relevant Keiro changelogs. Update the implementing improvement request
 or create one only if no existing request owns the structural prerequisite; use the repository's
 profile and legal statuses. Amend ADR-0001, ADR-0003, ADR-0004, and ADR-0005 through the profiled
@@ -775,3 +805,12 @@ nullary TH route's `Eq co` to `Generic co` constraint change, the intentional cu
 matching tightening, golden-expansion updates, and an all-nullary event fixture are recorded in
 Milestones 2–4 and Validation. Plan 85 remains consistent: it consumes
 `wireHeadsMayAliasForDefault` as policy and is unaffected by these refinements.
+
+Plan revision note (2026-08-04, third revision): Folded in two follow-ups from the release-scope
+review, recorded as Decision Log entries and a Progress addendum because Milestones 1–2 had
+already completed: `DEPRECATED` pragmas on the closure-taking `mkWireCtor`/`mkWireCtor0`
+(executed with Milestone 4's in-tree sweep) and a numbered foundations page on replay
+verification semantics (executed in Milestone 5). Larger follow-ups identified by the same
+review are owned elsewhere: IR-6/Plan 88 (structural input-constructor identity, same
+unpublished 0.9/0.11 line), IR-7 (schema evolution research), and IR-8 (opt-in checker CI
+gate).

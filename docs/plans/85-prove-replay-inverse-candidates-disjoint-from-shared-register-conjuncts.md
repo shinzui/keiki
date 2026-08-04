@@ -142,6 +142,19 @@ after the structural prerequisite is stable.
   migrated earlier; all `WireCtor`, TH, bounds, and generated-code changes belong to Plan 87.
   Date: 2026-08-04
 
+- Decision: A retained warning names the blocking construct in its human-readable `tvwDetail`
+  string — the first opaque or unsupported top-level conjunct kind, an unsupported carrier, a
+  type-alignment failure, or an unknown verdict — while the `InversionAmbiguity` constructor
+  shape, fields, and every structured payload stay unchanged. "Preserve warning payload"
+  elsewhere in this plan means the constructor and structured fields; the detail prose may be
+  enriched.
+  Rationale: IR-5's 2026-08-04 refinement requests actionable diagnostics: a team seeing a
+  retained warning should learn which conjunct to restructure into the supported register
+  fragment. Enriching only the detail string keeps the change source-compatible and adds no
+  validation option. Downstream tests asserting exact detail strings, if any exist, fall under
+  the same allowlist-only downstream policy as suppressed warnings.
+  Date: 2026-08-04
+
 
 ## Outcomes & Retrospective
 
@@ -279,8 +292,13 @@ wireHeadsMayAliasForDefault :: WireCtor co fa -> WireCtor co fb -> Bool
 The helper returns `True` for structurally equal heads, `False` for structurally different trusted
 heads, and uses legacy equal `wcName` only for unwitnessed schemas. This plan must call it rather
 than inspect `wcSchema` or compare `wcName` itself. For pairs that may alias, emit the existing
-warning unless shared-register disjointness is `ProvenCandidateDisjoint`. Preserve source, mode,
-literal-bottom, non-empty-output, pair order, phase selection, warning payload, and pure signature.
+warning unless shared-register disjointness is `ProvenCandidateDisjoint`. When the warning is
+retained, append the blocking reason to its `tvwDetail` string — the first opaque or unsupported
+top-level conjunct kind, unsupported carrier, type-alignment failure, or unknown verdict — so the
+diagnostic tells the consumer which construct to restructure into the supported register
+fragment. Preserve source, mode,
+literal-bottom, non-empty-output, pair order, phase selection, the warning constructor's shape
+and structured fields, and the pure signature; only the detail prose is enriched.
 Do not call `checkInversionAmbiguitySym`, add an option, or change runtime replay.
 
 Milestone 4 makes the proof polarity executable. Add a local candidate counter that follows the
@@ -301,7 +319,8 @@ Milestone 5 updates the Haddock above `inversionAmbiguityWarnings`, the
 `InversionAmbiguity` constructor, `validateTransducer`, `CHANGELOG.md`, and
 [IR-5](../improvement-requests/prove-inverse-candidates-disjoint-before-reporting-ambiguity.md).
 Explain that structural head classification comes from Plan 87, while this plan suppresses only a
-shared-register necessary-condition contradiction. Update ADR-0002 and ADR-0003 through the
+shared-register necessary-condition contradiction, and that a retained warning's detail string
+names the construct that blocked the proof so consumers know what to restructure. Update ADR-0002 and ADR-0003 through the
 profiled workflow and update `docs/adr/log.md` when timestamps change. Do not reopen Plan 87's
 wire-schema ADR text unless implementation finds a real schema defect.
 
@@ -384,6 +403,13 @@ unsupported carrier, or internal unknown verdict never supplies proof. A support
 contradiction may still suppress with opaque sibling conjuncts because those siblings were dropped
 only as weakening. Different command constructors alone never suppress.
 
+Every retained warning's `tvwDetail` names the blocking construct, and focused tests assert the
+named reason for representative fixtures: the opaque-only pair names its opaque conjunct, the
+unsupported-carrier fixture names the carrier, and the duplicate-register-label fixture reports
+its type-alignment or position outcome rather than a generic message. The
+`InversionAmbiguity` constructor shape and structured fields are unchanged and the enrichment
+is source-compatible.
+
 Structurally different trusted heads are filtered by Plan 87's helper. Structurally equal heads are
 analyzed. Unwitnessed manual wires preserve the legacy equal-name fallback and remain conservative.
 This plan contains no independent field alignment, schema constructors, or `wcName` comparison.
@@ -460,3 +486,10 @@ Removed temporary head-identity work, output-dependent fixtures, symbolic modeli
 changes, Keiro/generated-code migration, and broad consumer rebuilds. Plan 85 now implements only
 the pure shared-register proof against Plan 87's stable structural helper, with downstream work
 limited to warning expectations this proof actually changes.
+
+Plan revision note (2026-08-04, second revision): Added actionable retained-warning diagnostics
+per IR-5's refinement of the same date: retained warnings name the blocking construct in the
+`tvwDetail` string, the constructor shape and structured fields stay unchanged, and focused
+tests assert the named reason for representative fixtures. Recorded in the Decision Log with the
+clarified meaning of "preserve warning payload"; Milestones 3 and 5 and Validation updated
+accordingly.
