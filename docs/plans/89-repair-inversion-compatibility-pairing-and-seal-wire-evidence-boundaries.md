@@ -61,7 +61,11 @@ implementing a new consumer-facing request.
       Symbolic passed 109 examples, WireSchema 11, and InputSchema 10, all with 0 failures; the
       trusted-wire update fixture failed as required at `wcMatch` with GHC-16444, and importing
       the trusted capability failed as a hidden module with GHC-87110.
-- [ ] Milestone 3: replace the composition-only alignment coercion with a typed prefix spine.
+- [x] (2026-08-05T02:17:39Z) Milestone 3: replaced the composition-only alignment coercion
+      with a typed prefix spine and lockstep GADT comparison. `cabal build keiki` passed; focused
+      alignment coverage passed `checkComposeAlignment` with 6 examples, typed field projection
+      composition with 4, Category laws with 4, `preserves Cat.id` with 4, `lmapCi` with 5, and
+      Cat/Arrow interplay with 2, all with 0 failures; `unsafeCoerce` is absent from the module.
 - [ ] Milestone 4: sweep the minor review findings (Haddocks, unwitnessed-composition test,
       compile-fail automation).
 - [ ] Milestone 5: update changelog, plan/ADR records, and run all gates.
@@ -113,6 +117,13 @@ implementing a new consumer-facing request.
   missing `HasField` instance. Explicit `HasField` instances over the read-only selectors restore
   dotted selection without enabling update; GHC 9.12.4 then rejected the trusted-wire record
   update as a non-bidirectional pattern synonym use (GHC-16444).
+
+- Observation: the planned Hspec filter `CompositionAlignment` matched no examples because the
+  suite describes the group as `Keiki.Composition alignment (EP-75)`, while the direct alignment
+  law is named `checkComposeAlignment` and the related laws live under several other groups.
+  Evidence: the original filter exited successfully with 0 examples; the six targeted filters
+  listed in Milestone 3 above ran 25 examples with 0 failures. Focused filters must use actual
+  Hspec description fragments and must be rejected as evidence when their example count is zero.
 
 
 ## Decision Log

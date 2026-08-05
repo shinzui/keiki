@@ -62,7 +62,6 @@ import Data.Kind (Type)
 import Data.Typeable (Typeable)
 import GHC.TypeLits (Symbol)
 import Type.Reflection (eqTypeRep, typeRep, type (:~~:) (HRefl))
-import Unsafe.Coerce (unsafeCoerce)
 
 -- | One structural step through either a Generic sum or an explicitly
 -- checked 'Either' composition boundary.
@@ -105,6 +104,22 @@ data InCtorFieldSchema (fields :: [(Symbol, Type)]) where
 
 type role InCtorFieldSchema nominal
 
+-- | Typed path from an outer composition carrier back to the one payload type
+-- introduced by the polymorphic identity boundary. The root pins payload and
+-- carrier to the same type; each prefix records which 'Either' arm preserved
+-- that payload. Lockstep comparison can therefore recover payload equality
+-- from equal spines without a cast or a 'Typeable' dictionary.
+data CompositionOnlySpine carrier payload where
+  CompositionOnlyRoot :: CompositionOnlySpine carrier carrier
+  CompositionOnlyLeft ::
+    CompositionOnlySpine carrier payload ->
+    CompositionOnlySpine (Either carrier other) payload
+  CompositionOnlyRight ::
+    CompositionOnlySpine carrier payload ->
+    CompositionOnlySpine (Either other carrier) payload
+
+type role CompositionOnlySpine nominal nominal
+
 -- | Type-level append for the nested-pair field encoding.
 type family AppendWireFields (left :: Type) (right :: Type) :: Type where
   AppendWireFields () right = right
@@ -128,7 +143,7 @@ type family
 data WireSchema co fields where
   UnavailableWireSchema :: WireSchema co fields
   CompositionOnlyWireSchema ::
-    WireCtorPath co ->
+    CompositionOnlySpine co field ->
     WireSchema co (field, ())
   TrustedWireSchema ::
     WireCtorPath co ->
@@ -141,7 +156,7 @@ type role WireSchema nominal nominal
 data InCtorSchema ci (fields :: [(Symbol, Type)]) where
   UnavailableInCtorSchema :: InCtorSchema ci fields
   CompositionOnlyInCtorSchema ::
-    WireCtorPath ci ->
+    CompositionOnlySpine ci field ->
     InCtorSchema ci '[ '("payload", field)]
   TrustedInCtorSchema ::
     WireCtorPath ci ->
@@ -268,11 +283,11 @@ trustedInCtorSchema = TrustedInCtorSchema
 -- remains unavailable to symbolic constructor-identity proofs.
 compositionOnlyInCtorSchema ::
   InCtorSchema carrier '[ '("payload", carrier)]
-compositionOnlyInCtorSchema = CompositionOnlyInCtorSchema wireCtorPathRoot
+compositionOnlyInCtorSchema = CompositionOnlyInCtorSchema CompositionOnlyRoot
 
 -- | Output-side half of 'compositionOnlyInCtorSchema'.
 compositionOnlyWireSchema :: WireSchema carrier (carrier, ())
-compositionOnlyWireSchema = CompositionOnlyWireSchema wireCtorPathRoot
+compositionOnlyWireSchema = CompositionOnlyWireSchema CompositionOnlyRoot
 
 wireFieldsNil :: WireFieldSchema ()
 wireFieldsNil = WireFieldsNil
@@ -343,8 +358,8 @@ prefixWireSchemaLeft ::
   WireSchema co1 fields ->
   WireSchema (Either co1 co2) fields
 prefixWireSchemaLeft UnavailableWireSchema = UnavailableWireSchema
-prefixWireSchemaLeft (CompositionOnlyWireSchema path) =
-  CompositionOnlyWireSchema (prefixWireCtorPathLeft path)
+prefixWireSchemaLeft (CompositionOnlyWireSchema spine) =
+  CompositionOnlyWireSchema (CompositionOnlyLeft spine)
 prefixWireSchemaLeft (TrustedWireSchema path fields) =
   TrustedWireSchema (prefixWireCtorPathLeft path) fields
 
@@ -353,8 +368,8 @@ prefixWireSchemaRight ::
   WireSchema co2 fields ->
   WireSchema (Either co1 co2) fields
 prefixWireSchemaRight UnavailableWireSchema = UnavailableWireSchema
-prefixWireSchemaRight (CompositionOnlyWireSchema path) =
-  CompositionOnlyWireSchema (prefixWireCtorPathRight path)
+prefixWireSchemaRight (CompositionOnlyWireSchema spine) =
+  CompositionOnlyWireSchema (CompositionOnlyRight spine)
 prefixWireSchemaRight (TrustedWireSchema path fields) =
   TrustedWireSchema (prefixWireCtorPathRight path) fields
 
@@ -363,8 +378,8 @@ prefixInCtorSchemaLeft ::
   InCtorSchema ci1 fields ->
   InCtorSchema (Either ci1 ci2) fields
 prefixInCtorSchemaLeft UnavailableInCtorSchema = UnavailableInCtorSchema
-prefixInCtorSchemaLeft (CompositionOnlyInCtorSchema path) =
-  CompositionOnlyInCtorSchema (prefixWireCtorPathLeft path)
+prefixInCtorSchemaLeft (CompositionOnlyInCtorSchema spine) =
+  CompositionOnlyInCtorSchema (CompositionOnlyLeft spine)
 prefixInCtorSchemaLeft (TrustedInCtorSchema path fields) =
   TrustedInCtorSchema (prefixWireCtorPathLeft path) fields
 
@@ -373,8 +388,8 @@ prefixInCtorSchemaRight ::
   InCtorSchema ci2 fields ->
   InCtorSchema (Either ci1 ci2) fields
 prefixInCtorSchemaRight UnavailableInCtorSchema = UnavailableInCtorSchema
-prefixInCtorSchemaRight (CompositionOnlyInCtorSchema path) =
-  CompositionOnlyInCtorSchema (prefixWireCtorPathRight path)
+prefixInCtorSchemaRight (CompositionOnlyInCtorSchema spine) =
+  CompositionOnlyInCtorSchema (CompositionOnlyRight spine)
 prefixInCtorSchemaRight (TrustedInCtorSchema path fields) =
   TrustedInCtorSchema (prefixWireCtorPathRight path) fields
 
@@ -430,23 +445,9 @@ compareInCtorWireSchemas ::
 compareInCtorWireSchemas UnavailableInCtorSchema _ = InWireSchemasUnwitnessed
 compareInCtorWireSchemas _ UnavailableWireSchema = InWireSchemasUnwitnessed
 compareInCtorWireSchemas
-  (CompositionOnlyInCtorSchema (WireCtorPath inputPath))
-  (CompositionOnlyWireSchema (WireCtorPath wirePath)) =
-    case comparePaths inputPath wirePath of
-      -- Both schemas can only originate from the two polymorphic identity
-      -- constructors below. At the root their field is the carrier itself;
-      -- checked Either prefixes preserve that same field while recording its
-      -- arm. Equal paths therefore prove the two hidden field skolems equal,
-      -- even though no Typeable dictionary exists to communicate that fact
-      -- to GHC. The cast is confined to the alignment witness and never
-      -- consults a diagnostic name.
-      PathsEqual ->
-        InWireSchemasEqual
-          ( unsafeCoerce
-              (InWireFieldsAlignedCons InWireFieldsAlignedNil)
-          )
-      PathsDiverge -> InWireSchemasDifferent
-      PathsPrefixRelated -> InWireSchemasUnwitnessed
+  (CompositionOnlyInCtorSchema inputSpine)
+  (CompositionOnlyWireSchema wireSpine) =
+    compareCompositionOnlySpines inputSpine wireSpine
 compareInCtorWireSchemas CompositionOnlyInCtorSchema {} _ = InWireSchemasUnwitnessed
 compareInCtorWireSchemas _ CompositionOnlyWireSchema {} = InWireSchemasUnwitnessed
 compareInCtorWireSchemas
@@ -460,6 +461,33 @@ compareInCtorWireSchemas
           (alignInWireFields inputFields wireFields)
       PathsDiverge -> InWireSchemasDifferent
       PathsPrefixRelated -> InWireSchemasUnwitnessed
+
+compareCompositionOnlySpines ::
+  CompositionOnlySpine carrier inputField ->
+  CompositionOnlySpine carrier wireField ->
+  InWireSchemaComparison '[ '("payload", inputField)] (wireField, ())
+compareCompositionOnlySpines CompositionOnlyRoot CompositionOnlyRoot =
+  InWireSchemasEqual (InWireFieldsAlignedCons InWireFieldsAlignedNil)
+compareCompositionOnlySpines CompositionOnlyRoot CompositionOnlyLeft {} =
+  InWireSchemasUnwitnessed
+compareCompositionOnlySpines CompositionOnlyRoot CompositionOnlyRight {} =
+  InWireSchemasUnwitnessed
+compareCompositionOnlySpines CompositionOnlyLeft {} CompositionOnlyRoot =
+  InWireSchemasUnwitnessed
+compareCompositionOnlySpines CompositionOnlyRight {} CompositionOnlyRoot =
+  InWireSchemasUnwitnessed
+compareCompositionOnlySpines
+  (CompositionOnlyLeft inputRest)
+  (CompositionOnlyLeft wireRest) =
+    compareCompositionOnlySpines inputRest wireRest
+compareCompositionOnlySpines CompositionOnlyLeft {} CompositionOnlyRight {} =
+  InWireSchemasDifferent
+compareCompositionOnlySpines CompositionOnlyRight {} CompositionOnlyLeft {} =
+  InWireSchemasDifferent
+compareCompositionOnlySpines
+  (CompositionOnlyRight inputRest)
+  (CompositionOnlyRight wireRest) =
+    compareCompositionOnlySpines inputRest wireRest
 
 -- | Hidden symbolic identity: trusted paths become prefix constraints;
 -- unavailable evidence remains on the conservative fallback path.
