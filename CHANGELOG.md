@@ -14,6 +14,11 @@ and this project adheres to the
   their constructor path and ordered field types. `classifyWireHeads` exposes a
   proof-safe equal/different/unwitnessed classification without using diagnostic
   names.
+- `InCtor` values now carry the input-side counterpart: an abstract constructor
+  path and typed slot spine. `classifyInputHeads` exposes structural
+  equal/different/unwitnessed classification, and `mkInCtorRecordVia` /
+  `mkWireCtorRecordVia` safely derive schemas for constructors whose fields are
+  declared directly with record syntax.
 - `checkInversionAmbiguitySymDetailed` and
   `checkInversionAmbiguitySym` provide an opt-in SBV analysis of two replay
   candidates against shared registers and a structurally aligned observed head.
@@ -38,6 +43,20 @@ and this project adheres to the
 - `mkWireCtor` and `mkWireCtor0` are deprecated because their closure-taking
   interfaces cannot establish trusted evidence. Use their `Via` counterparts or
   an explicit `WireCtor` record with `wireSchemaUnavailable`.
+- **Breaking:** `InCtor` adds `icSchema`. Direct records must state
+  `inCtorSchemaUnavailable`; Generic `mkInCtorVia`, direct-record Via producers,
+  and TH-derived constructors provide trusted evidence. `mkInCtor` and
+  `mkInCtor0` are deprecated because closure-taking APIs cannot establish it.
+- Sequential composition now substitutes mid-side fields and discharges
+  constructor guards only through typed input-to-wire alignment. Structural
+  mismatch and unavailable evidence produce `StructurallyDifferentInputWire` or
+  `UnwitnessedInputWireAlignment` diagnostics instead of authorizing a
+  result-type coercion from equal names.
+- Symbolic `PInCtor` translation now uses shared structural constructor-path
+  decisions. Same-named trusted constructors remain distinct; unwitnessed equal
+  names share a conservative fallback atom, while unequal names remain
+  independent and therefore cannot manufacture mutual exclusion. Witness
+  reconstruction uses a separate stable `KnownInCtors` ordinal.
 
 ### Migration
 
@@ -45,6 +64,11 @@ and this project adheres to the
   move honest Generic bindings to `mkWireCtorVia` / `mkWireCtor0Via`. Version,
   bound, release, and downstream migration work is deliberately deferred until
   the remaining breaking Keiki ExecPlans are complete.
+- Add `icSchema = inCtorSchemaUnavailable` to intentional manual input
+  constructors. Prefer `mkInCtorVia` for constructors wrapping record payloads,
+  `mkInCtorRecordVia` for direct record constructors, and TH derivation where
+  applicable. Use trusted producers on every boundary passed to `composeChecked`
+  or relied on for symbolic constructor exclusion.
 
 
 ## [0.8.0.0] — 2026-08-02

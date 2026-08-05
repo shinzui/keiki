@@ -1214,7 +1214,8 @@ data PartialPath rs1 rs2 ci1 co s2
 -- * compose ----------------------------------------------------------------
 
 -- | A conservative structural fact discovered at a composition boundary.
--- The checker reports concrete name/position mismatches. Its reachability scan
+-- Constructor names in these warnings are diagnostic only: substitution and
+-- guard discharge require typed input-to-wire schema alignment. Its reachability scan
 -- is conservative, so exotic Boolean guards can produce warnings on a
 -- semantically unreachable path or hide an expectation the structural walker
 -- cannot expose. Every warning is a reviewable structural fact, but an empty
@@ -1694,8 +1695,12 @@ checkComposeAlignment t1 t2 = nub (concatMap warningsAt reachablePairs)
             | (edge2Ix, edge2) <- zip [0 ..] (edgesOut t2 vertex)
             ]
 
--- | Checked entry point for validated aggregate pipelines. The unchecked
--- 'compose' primitive remains available for internal/experimental use.
+-- | Checked entry point for validated aggregate pipelines. In addition to
+-- name/arity and projection diagnostics, this requires every reachable mid-side
+-- constructor use to have trusted, equal input-to-wire schemas. A diagnostic
+-- name collision cannot authorize substitution. The unchecked 'compose'
+-- primitive remains available for internal/experimental use, but a mismatched
+-- or unwitnessed field read becomes a loud poison term if demanded.
 composeChecked ::
   forall rs1 rs2 s1 s2 ci1 mid co.
   ( WeakenR rs1,

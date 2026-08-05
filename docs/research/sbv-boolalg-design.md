@@ -256,11 +256,17 @@ since EP-17 of MasterPlan 6 retired `PMatchC` (2026-05-02).
 ### Translation environment
 
 *Implemented in EP-42 of MasterPlan 12* (per-slot / per-input-field
-memoization). The translation needs:
+memoization), with structural constructor identity added by ExecPlan 88. The
+translation needs:
 
-- A symbolic input constructor tag: one fresh `SString`. Used to encode
-  `PInCtor` (see below) and to permit constructor-mutual-exclusion to
-  be discharged by the solver.
+- Shared Boolean decisions for each position in the trusted Generic input
+  constructor path. Equal paths share constraints, divergent paths contradict
+  at their first differing decision, and proper-prefix paths can overlap.
+- Name-keyed fallback Boolean atoms for input constructors without trusted
+  evidence. Equal names share an atom; unequal names are independent rather
+  than exclusive, so diagnostic text cannot suppress an overlap warning.
+- A separate `SString` ordinal selector used only by `symSatExt` to reconstruct
+  one entry from `KnownInCtors`. It does not define `PInCtor` identity.
 - A memo cache so that two reads of the same register slot, or of the
   same `(InCtor, field)` pair, translate to the *same* SBV variable.
   Without it, `proj #x .== proj #x` compares two independent values and
@@ -280,7 +286,11 @@ rather than pre-allocated:
 
     data SymEnv = SymEnv
       { seInputCtor :: SBV.SBV String
-        -- ^ One fresh tag for the input constructor name.
+        -- ^ Model-only KnownInCtors ordinal selector.
+      , seInputPathCache :: IORef (Map Int SBool)
+        -- ^ Shared trusted constructor-path decisions.
+      , seInputFallbackCache :: IORef (Map String SBool)
+        -- ^ Conservative name-keyed atoms for unwitnessed constructors.
       , seVarCache  :: IORef (Map String SomeSBV)
         -- ^ Name-keyed memo cache: "reg/<slot>" or "inp/<ctor>/<field>"
         --   maps to the single SBV var allocated for it in this walk.
@@ -350,7 +360,10 @@ The current `HsPred rs ci` set:
 - `PEq a b` — translate both terms. If both translations succeed, emit
   `(.==)`. If either has a non-`Sym`-able type, fall back to a fresh
   `SBool` (lose precision).
-- `PInCtor ic` → `seInputCtor .== literal (icName ic)`.
+- `PInCtor ic` → the conjunction of shared left/right decisions in
+  `icSchema`'s trusted constructor path. If the schema is unavailable, use its
+  name-keyed fallback atom and record
+  `UnwitnessedInputConstructorIdentity` in the translation report.
 
 ### Historical: the PMatchC fallback (retired by EP-17 of MP-6, 2026-05-02)
 
@@ -368,10 +381,12 @@ constructor mutual exclusion symbolically:
     isGdpr     = matchInCtor inCtorGdpr
     isContinue = matchInCtor inCtorContinue
 
-Translation: `PInCtor ic` → `seInputCtor .== literal (icName ic)`. The
-conjunction `isConfirm AND isResend` translates to
-`seInputCtor == "ConfirmAccount" AND seInputCtor == "ResendConfirmation"`,
-which SBV's z3 dispatches and recognizes as unsat in microseconds. ✓
+Historically, `PInCtor ic` translated to
+`seInputCtor .== literal (icName ic)`. ExecPlan 88 replaced that name-based tag:
+trusted constructors now translate to their shared path decisions, so
+`isConfirm AND isResend` is unsatisfiable because the paths diverge even if the
+two diagnostic names are equal. Unwitnessed constructors remain conservative
+and cannot derive exclusion from unequal names.
 
 EP-2 deferred *retirement* of `PMatchC` to MasterPlan 6, where it
 would have remained available as a v1-grandfathered escape hatch
@@ -483,9 +498,10 @@ User Registration: `Sym Text`, `Sym UTCTime`. Both are provided by
 > constraint, so the split has no call-site cost. `unsafeWitness` and the
 > witness-free `symSat` are retired. `not . symIsBot` means only “not
 > proved empty”; witness-bearing satisfiability is `sat`/`symSatExt`. The real
-> `symSatExt` (made repeated-read-correct by EP-42, and
-> total on unconstrained-`ci` predicates by constraining `seInputCtor` to the
-> known-constructor domain) is now the implementation of `sat`. The historical
+> `symSatExt` (made repeated-read-correct by EP-42, and total on
+> unconstrained-`ci` predicates by constraining the model-only `seInputCtor`
+> ordinal to the known-constructor domain and its structural identity
+> constraint) is now the implementation of `sat`. The historical
 > design follows.
 
 SBV's `sat` returns a `SatResult` carrying a model: a map from
@@ -495,8 +511,8 @@ variable names to concrete `CV` (Concrete Value) tags. To produce a
 1. For each register slot, look up its model value (or use a default
    when the model leaves it unconstrained), decode via `fromSym`, and
    reassemble a `RegFile rs`.
-2. For the input symbol, look up `seInputCtor`'s model value, find the
-   matching `InCtor` (by `icName`), look up each of its fields' model
+2. For the input symbol, look up `seInputCtor`'s ordinal model value, find the
+   matching entry in `KnownInCtors`, look up each of its fields' model
    values, decode, and call `icBuild`.
 
 This is non-trivial. The `BoolAlg` typeclass forces `sat :: phi -> Maybe
@@ -632,10 +648,13 @@ Registration symbolic spec).
 - `translatePred PBot` ⇒ unsat under SBV's `sat`.
 - `translatePred (PEq (TLit 5 :: Term '[] () Int) (TLit 5))` ⇒ sat;
   `translatePred (PEq (TLit 5) (TLit 6))` ⇒ unsat.
-- `translatePred (PInCtor inCtorStart)` over a `UserCmd`-typed env ⇒
-  `seInputCtor .== "StartRegistration"`.
+- `translatePred (PInCtor inCtorStart)` over a `UserCmd`-typed env ⇒ the
+  conjunction describing `inCtorStart`'s trusted structural path.
 - `translatePred (PAnd (PInCtor inCtorStart) (PInCtor inCtorConfirm))`
   ⇒ unsat.
+- Two trusted constructors with the same `icName` and divergent paths ⇒ unsat;
+  two unavailable constructors with different names ⇒ satisfiable conservative
+  overlap.
 
 ### BoolAlg ops tests (M4)
 
@@ -655,8 +674,8 @@ Registration symbolic spec).
 ### Symbolic isSingleValued tests (M6)
 
 A synthetic 2-edge transducer with mutually exclusive guards (e.g. two
-`PInCtor`s for distinct constructors) ⇒ `isSingleValuedSym ==
-True`. A synthetic 2-edge transducer with overlapping guards (`top`
+trusted, structurally divergent `PInCtor`s) ⇒ `isSingleValuedSym == True`.
+A synthetic 2-edge transducer with overlapping guards (`top`
 and `top`) ⇒ `isSingleValuedSym == False`.
 
 ### User Registration tests (M7)
@@ -701,9 +720,9 @@ checkHiddenInputs) must continue to pass after the helpers migrate to
 - Curated `TApp1`/`TApp2` whitelist (integer arithmetic, string ops) —
   the User Registration aggregate doesn't need it.
 - Parallel solver backends (CVC4, Boolector) — z3 is enough for v2.
-- A constraint-aware `TInpCtorField` translation that conditionally
-  asserts `seInputCtor == icName ic` — out of scope; the simpler
-  unconditional fresh-var translation suffices for the User
+- A constraint-aware `TInpCtorField` translation that conditionally ties a
+  field read to its constructor's structural path — out of scope; the simpler
+  guarded memoized-variable translation suffices for the User
   Registration smoke test, and the cost of getting it wrong is loss of
   precision (some `isBot` queries return `False` when they should
   return `True`), not unsoundness.

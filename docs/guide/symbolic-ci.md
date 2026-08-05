@@ -106,6 +106,13 @@ gives back a model, and `evalPred` on the reconstructed
 signal something has changed in the symbolic surface or the
 aggregate's input ctor declarations.
 
+Constructor mutex is proof-bearing only when those `InCtor` bindings carry
+trusted structural schemas (normally from `mkInCtorVia`,
+`mkInCtorRecordVia`, or TH derivation). Manual constructors marked
+`inCtorSchemaUnavailable` use conservative name-keyed fallback atoms: equal
+names may conflate, while unequal names remain independently satisfiable and
+therefore retain a determinism warning instead of manufacturing exclusion.
+
 > Since EP-44, `sat` is a method of the `Sat` class (a subclass of `BoolAlg`,
 > not `BoolAlg` itself) and on `SymPred` returns the **same real witness** as
 > `symSatExt` — so `case sat (SymPred g) of Just w -> models (SymPred g) w` is a

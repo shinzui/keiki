@@ -113,6 +113,16 @@ type AlertEvent = EmailCmd
 alertSource :: Guarded AlertRegs AlertVertex AlertCmd EmailCmd
 ```
 
+Type equality is necessary but not sufficient for field substitution. The
+specific `WireCtor` emitted by `t1` and `InCtor` read by `t2` must also carry
+equal trusted structural schemas: constructor path, arity, field order, and
+field types. Prefer `mkInCtorVia` / `mkWireCtorVia`, the direct-record
+`mkInCtorRecordVia` / `mkWireCtorRecordVia` helpers, or TH derivation.
+`composeChecked` reports `StructurallyDifferentInputWire` for a witnessed
+mismatch and `UnwitnessedInputWireAlignment` when either side cannot prove the
+relationship. Equal `icName` / `wcName` strings are diagnostic and never
+authorize substitution.
+
 When the two natural alphabets don't match, you can either:
 
 - Author one aggregate's events to be the other's commands directly
@@ -208,10 +218,15 @@ each `compose`.
 
 ## 6. Verifying a composite
 
-After building the composite, the standard verification gates:
+Build durable pipelines with `composeChecked`, then run the standard
+verification gates:
 
 ```haskell
--- 1. No hidden inputs.
+pipeline <- case composeChecked t1 t2 of
+  Left alignmentWarnings -> expectationFailure (show alignmentWarnings)
+  Right checked -> pure checked
+
+-- 1. No hidden inputs after structural composition succeeds.
 checkHiddenInputs pipeline `shouldBe` []
 
 -- 2. Single-valued (symbolic, requires Keiki.Symbolic + z3).
@@ -460,9 +475,10 @@ names are the human-facing contract; keep them unique across summed families.
 
 **Singleton (payload-free) events.** `deriveWireCtors` also accepts a
 zero-argument event constructor (e.g. `data DoorEvent = Opened | Closed`),
-producing a `WireCtor … ()` via `mkWireCtor0` — the event-side twin of the
-command-side `mkInCtor0`. The constructor's event sum must derive `Eq` (they all
-do in practice).
+producing a trusted `WireCtor … ()` via `mkWireCtor0Via`; singleton command
+bindings likewise use trusted `mkInCtorVia`. Both sums derive `Generic`; `Eq`
+remains relevant only to APIs such as `solveOutput` that compare concrete
+events.
 
 For deeper background see `docs/guide/multi-event-commands.md` and
 `docs/research/composition-combinators-design.md`.

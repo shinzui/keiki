@@ -5,21 +5,38 @@ description: >-
   Give InCtor typed structural identity so composition substitution and symbolic constructor
   reasoning stop trusting icName string equality and the unsafeCoerceTerm it currently
   authorizes, mirroring the trusted wire-schema evidence ExecPlan 87 adds for output heads.
-timestamp: 2026-08-04T20:40:48Z
+timestamp: 2026-08-04T23:57:10Z
 requestId: IR-6
-status: planned
+status: implemented
 origin: mori://shinzui/keiki
+reviews:
+  - kind: model
+    reviewer: codex
+    reviewed_at: 2026-08-04T23:57:10Z
+    document_timestamp: 2026-08-04T23:57:10Z
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: gpt-5
+    effort: unspecified
+    context: >-
+      Reviewed against the implemented abstract InCtor schemas, checked input-to-wire composition
+      alignment, structural ordinary and replay-candidate PInCtor translation, conservative
+      unwitnessed fallback, focused law suites, and the local-only future-release boundary.
 ---
 
 # Improvement Request: Replace Name-Based Input-Constructor Identity With Structural Evidence
 
 ## Status
 
-Planned. Implementation is specified by ExecPlan 88
-(`docs/plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment.md`),
-sequenced after ExecPlans 87 and 85. It lands locally without selecting a release line or
-migrating adopters; a future user-authored release plan owns that coordinated rollout after all
-breaking Keiki ExecPlans are complete.
+Implemented locally by
+[ExecPlan 88](../plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment.md)
+after ExecPlans 87 and 85. `InCtor` now carries abstract trusted/unavailable schemas; composition
+uses typed input-to-wire alignment; and ordinary plus replay-candidate `PInCtor` translation uses
+structural constructor paths. Same-named trusted constructors are distinct, while unwitnessed
+unequal names remain conservatively overlapping. No release line or adopter migration was chosen;
+a future user-authored release plan owns that coordinated rollout after all breaking Keiki
+ExecPlans are complete.
 
 ## Context
 
@@ -28,7 +45,7 @@ Keiki 0.8.0.0 describes an input command constructor with `InCtor ci ifs` in
 closures over a typed slot schema. Nothing ties the name to the constructor the closures
 actually handle.
 
-Two soundness-adjacent boundaries currently trust that name:
+Before this implementation, two soundness-adjacent boundaries trusted that name:
 
 1. Composition substitution. `substInputField` in `src/Keiki/Composition.hs` accepts a
    t2-side field read whenever `icName ic2 == wcName wc1`, then realigns the substituted
@@ -64,9 +81,9 @@ unavailable value for manual closure construction. Then consume it at both bound
   never authorize `unsafeCoerceTerm`; an unwitnessed or mismatched alignment must produce
   a loud structural diagnostic (or an unsatisfiable poison leaf), never a coerced term.
 - Symbolic `PInCtor` identity comes from structural evidence when both constructors carry
-  it, with the name string only as a fallback for unwitnessed constructors. The fallback
-  must keep conservative polarity: conflation may only widen results (retain warnings and
-  overlap reports), never manufacture mutual exclusion or disjointness.
+  it. Unwitnessed constructors use name-keyed fallback atoms: equal names may conflate, but
+  unequal names remain independent. The fallback therefore only widens results (retaining
+  warnings and overlap reports) and never manufactures mutual exclusion or disjointness.
 
 Runtime stepping and replay semantics must not change. The shared structural-path
 abstraction should be reused from, not duplicated beside, ExecPlan 87's representation.
@@ -112,7 +129,7 @@ plan will choose one after all breaking ExecPlans are complete.
 - Prerequisite structural boundary:
   `mori://shinzui/keiki/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion`.
 - Keiki implementation: `src/Keiki/Core.hs` (`InCtor`), `src/Keiki/Composition.hs`
-  (`substInputField`, `composeGuard`), `src/Keiki/Symbolic.hs` (`seInputCtor`, `PInCtor`
-  translation).
+  (`substInputField`, `composeGuard`), `src/Keiki/Symbolic.hs`
+  (`inputCtorConstraint`, `replayInputCtorConstraint`, `PInCtor` translation).
 - Governing decisions: [ADR-0001](../adr/0001-structural-re-indexing-for-sound-replay.md),
   [ADR-0004](../adr/0004-composition-uses-snapshot-updates-and-checked-boundaries.md).

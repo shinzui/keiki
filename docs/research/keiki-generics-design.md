@@ -68,6 +68,7 @@ exported surface is:
                      , GRecord (Rep d) ifs
                      , AssembleRegFile ifs, KnownSlotNames ifs
                      ) => InCtor ci ifs
+    mkInCtorRecordVia :: forall (name :: Symbol) ci ifs. ... => InCtor ci ifs
 
     -- Generic-derived WireCtor
     mkWireCtor    :: (Generic d, GTuple (Rep d) fs)
@@ -77,6 +78,7 @@ exported surface is:
                      , GHasCtor name (Rep co) d
                      , GTuple (Rep d) fs
                      ) => WireCtor co fs
+    mkWireCtorRecordVia :: forall (name :: Symbol) co fs. ... => WireCtor co fs
     type FieldsOf d = FieldsOfRep (Rep d)
 
     -- Empty register file
@@ -87,11 +89,13 @@ exported surface is:
                   | name rep -> d where ...
     type family NameInRep n rep :: Bool
 
-The user-facing layer is `mkInCtorVia`, `mkWireCtorVia`, and
-`emptyRegFile`. The non-`Via` builders (`mkInCtor`, `mkWireCtor`) are
-kept as escape hatches — they accept an explicit match/wrap pair so
-the user can opt out of the type-level constructor lookup if their
-sum types don't fit the standard shape.
+The user-facing layer is `mkInCtorVia`, `mkWireCtorVia`, their
+`*RecordVia` counterparts, and `emptyRegFile`. Use the ordinary Via builders
+when a sum constructor wraps a separate record payload; use `*RecordVia` when
+the fields are declared directly on the sum constructor. Both forms derive
+trusted structural schemas. The closure-taking non-Via builders remain for
+compatibility but are deprecated and mark their schemas unavailable, because
+arbitrary match/build closures cannot establish structural identity.
 
 
 ## Per-construct delta (User Registration)

@@ -73,6 +73,10 @@ will choose the release line and coordinate Keiro and application adoption once.
       27, and the cross-suite PInCtor match 10, all with 0 failures.
 - [ ] Milestone 5: migrate in-tree consumers; update Haddocks, unreleased changelogs, IR-6, and
       ADRs; run all local Keiki gates and record the future-release handoff.
+- [x] (2026-08-04T23:59:51Z) Milestone 5 documentation phase: updated public Haddocks, composition
+      and symbolic guides, Generic and SBV design references, the unreleased changelog, and IR-6;
+      amended ADR-0004 through the profiled ADR workflow. Strict ADR validation and
+      `just adr-validate` pass. Full build, test, Haddock, and flake gates remain pending.
 
 
 ## Surprises & Discoveries
@@ -144,6 +148,15 @@ will choose the release line and coordinate Keiro and application adoption once.
   Evidence: the first Symbolic run after the translator change had 2 expected-value failures out
   of 107, and the first cross-suite PInCtor run found 1 stale Validation expectation out of 10;
   the corrected focused runs passed 107 and 10 respectively with 0 failures.
+
+- Observation: strict profile-enforced validation of the improvement-request bundle now accepts
+  IR-6's implementation record and model review, but the bundle-wide command still exits non-zero
+  for two pre-existing proposed requests (IR-7 and IR-8) that lack profile-recommended `reviews`.
+  ADR validation is clean; unrelated proposed-request metadata is not changed by this plan.
+  Evidence: `okf validate docs/improvement-requests --strict --profile
+  mori/improvement-requests-profile.dhall --profile-enforce --log-enforce` reports only
+  `provide-a-sanctioned-event-schema-evolution-path-for-structural-wires` and
+  `gate-the-opt-in-symbolic-inversion-checker-in-consumer-ci`.
 
 
 ## Decision Log

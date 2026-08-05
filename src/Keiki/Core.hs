@@ -647,6 +647,10 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
 -- @'RegFile' ifs@. The slot list @ifs@ is the field schema for the
 -- constructor; together with 'Index' it lets call sites read fields
 -- via 'OverloadedLabels' (for example @inpStart #email@).
+-- 'icSchema' separately carries abstract structural proof evidence. Generic
+-- and TH producers populate it; deliberate manual or meaning-changing
+-- constructors use 'inCtorSchemaUnavailable'. Diagnostic 'icName' text never
+-- substitutes for that evidence in composition or symbolic proof.
 --
 -- 'icMatch' must return 'Just' iff @ci@ is the named constructor.
 -- 'icBuild' is its left inverse: @icMatch (icBuild rf) == Just rf@ for
