@@ -71,8 +71,13 @@ will choose the release line and coordinate Keiro and application adoption once.
       issue, so unequal names cannot prove exclusion; model reconstruction uses a separate stable
       constructor ordinal. The Symbolic match passed 107 examples, ValidationReplayAlignmentSpec
       27, and the cross-suite PInCtor match 10, all with 0 failures.
-- [ ] Milestone 5: migrate in-tree consumers; update Haddocks, unreleased changelogs, IR-6, and
-      ADRs; run all local Keiki gates and record the future-release handoff.
+- [x] (2026-08-05T00:08:01Z) Milestone 5: migrated all in-tree consumers; updated Haddocks,
+      guides, design references, the unreleased changelog, IR-6, and ADR-0004; and recorded the
+      12-project reverse-dependent inventory for a future user-authored release plan. `nix fmt
+      -- --no-cache`, `cabal build all`, `cabal haddock all`, `nix flake check`, strict ADR
+      validation, and `git diff --check` passed. The all-package test gate passed 950 examples
+      with 0 failures: Keiki 706, Jitsurei 127, keiki-codec-json 104, and
+      keiki-codec-json-test 13.
 - [x] (2026-08-04T23:59:51Z) Milestone 5 documentation phase: updated public Haddocks, composition
       and symbolic guides, Generic and SBV design references, the unreleased changelog, and IR-6;
       amended ADR-0004 through the profiled ADR workflow. Strict ADR validation and
@@ -262,7 +267,33 @@ will choose the release line and coordinate Keiro and application adoption once.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Keiki now treats input-constructor structure as evidence rather than metadata. The public
+`InCtor` record carries an abstract schema; Generic and TH producers derive trusted constructor
+paths and typed field spines; closure-taking and meaning-changing producers state unavailability
+explicitly. Direct-record Via helpers close the only producer gap found while migrating in-tree
+fixtures, and categorical identity has a deliberately narrower, hidden composition capability.
+
+Composition no longer authorizes a field substitution or guard rewrite from `icName` equality.
+It compares the t1 wire and t2 input schemas and consumes a typed field-alignment witness; a
+collision or missing witness becomes a structural diagnostic or poison leaf. The old
+result-type coercion has been removed from this boundary. Focused composition, category, choice,
+and profunctor suites, followed by the full package suite, demonstrate unchanged behavior for
+well-shaped programs.
+
+Symbolic and replay-candidate translation now share constructor-path Boolean decisions for
+trusted `PInCtor` atoms. Equal paths denote the same choice, divergent paths contradict, and
+prefixes may overlap. Unwitnessed constructors retain only a conservative fallback: equal names
+share an atom, while unequal names do not prove exclusion. The model selector is a separate
+stable constructor ordinal, so diagnostic names no longer re-enter proof identity.
+
+The source break is intentionally local: no versions, dependency bounds, persisted identities,
+dependent repositories, or release artifacts changed. Mori found 12 registered reverse-dependent
+projects; their coordinated migration belongs to the future user-authored release plan. ADR
+distillation amended ADR-0004 with the checked input-side composition boundary and the restricted
+identity capability; no new ADR was needed. IR-6 is implemented. All required local gates pass.
+The optional bundle-wide strict improvement-request validation still reports only the pre-existing
+missing recommended reviews on proposed IR-7 and IR-8, so this plan did not alter those unrelated
+requests.
 
 
 ## Context and Orientation
@@ -546,3 +577,7 @@ Plan revision note (2026-08-04): Milestone 4 replaces the draft's ambiguous "nam
 fallback" with the implemented conservative rule: equal unwitnessed names share an atom and
 unequal names remain independent. It also records the separate ordinal witness selector and the
 same structural encoding in replay-candidate translation.
+
+Plan revision note (2026-08-04): Milestone 5 records the completed in-tree migration, all-package
+acceptance evidence, future-release handoff, and final ADR distillation into ADR-0004. The
+implementation is complete with every required local gate passing.
