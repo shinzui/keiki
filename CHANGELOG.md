@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.9.0.0] — 2026-08-04
+
 ### Added
 
 - `WireCtor` values can carry abstract, Generic-derived structural schemas for
@@ -93,8 +96,7 @@ and this project adheres to the
   wrapping record payloads, `mkInCtorRecordVia` for direct record constructors,
   and TH derivation where applicable. Use `renameInCtor` for diagnostic relabels
   and trusted producers on every boundary passed to `composeChecked` or relied
-  on for symbolic constructor exclusion. Version, bound, release, and downstream
-  migration work remains deferred until the remaining breaking ExecPlans finish.
+  on for symbolic constructor exclusion.
 
 
 ## [0.8.0.0] — 2026-08-02

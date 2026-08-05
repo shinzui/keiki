@@ -9,6 +9,16 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.9.0.0] — 2026-08-04
+
+### Changed
+
+- Co-released with `keiki-0.9.0.0`; internal dependency bounds now target the
+  `^>=0.9` PVP range containing the sealed `WireCtor` / `InCtor` evidence
+  boundaries, structural constructor schemas, and typed input-to-wire
+  composition alignment. The JSON wire format is unchanged.
+
+
 ## [0.8.0.0] — 2026-08-02
 
 ### Changed
