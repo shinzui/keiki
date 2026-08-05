@@ -20,6 +20,7 @@ module Keiki.Internal.WireSchema
     InCtorSchemaAvailability (..),
     WireHeadRelation (..),
     InputHeadRelation (..),
+    InputWireHeadRelation (..),
     WireFieldAlignment (..),
     WireSchemaComparison (..),
     InCtorFieldAlignment (..),
@@ -52,6 +53,8 @@ module Keiki.Internal.WireSchema
     compareWireSchemas,
     compareInCtorSchemas,
     compareInCtorWireSchemas,
+    classifyInputWireSchemas,
+    inputWireSpineRelationsForTesting,
     inCtorSchemaPath,
     wireSchemaPrefixRelationForTesting,
     inCtorSchemaPrefixRelationForTesting,
@@ -189,6 +192,15 @@ data InputHeadRelation
   = InputHeadsStructurallyEqual
   | InputHeadsStructurallyDifferent
   | InputHeadsUnwitnessed
+  deriving stock (Eq, Show)
+
+-- | Public, proof-safe classification of one input constructor against one
+-- output wire constructor at the same carrier — the observer form of the
+-- checked composition alignment. The typed alignment witness stays internal.
+data InputWireHeadRelation
+  = InputWireHeadsAligned
+  | InputWireHeadsStructurallyDifferent
+  | InputWireHeadsUnwitnessed
   deriving stock (Eq, Show)
 
 -- | A position-by-position type alignment between two field spines.
@@ -461,6 +473,57 @@ compareInCtorWireSchemas
           (alignInWireFields inputFields wireFields)
       PathsDiverge -> InWireSchemasDifferent
       PathsPrefixRelated -> InWireSchemasUnwitnessed
+
+-- | Regression observers pinning every 'compareInCtorWireSchemas' arm that
+-- involves a composition-only spine. Composition-only evidence has no public
+-- producer, so the scenarios are constructed here, where the constructors are
+-- in scope, and specs assert the full labelled list. Construction-free: the
+-- observer returns only proof-safe relations.
+inputWireSpineRelationsForTesting :: [(String, InputWireHeadRelation)]
+inputWireSpineRelationsForTesting =
+  [ ("root/root", classifyInputWireSchemas rootInput rootWire),
+    ( "left/left",
+      classifyInputWireSchemas
+        (prefixInCtorSchemaLeft rootInput :: InCtorSchema (Either Int Bool) '[ '("payload", Int)])
+        (prefixWireSchemaLeft rootWire)
+    ),
+    ( "right/right",
+      classifyInputWireSchemas
+        (prefixInCtorSchemaRight rootInput :: InCtorSchema (Either Bool Int) '[ '("payload", Int)])
+        (prefixWireSchemaRight rootWire)
+    ),
+    ( "left/right",
+      classifyInputWireSchemas
+        (prefixInCtorSchemaLeft rootInput :: InCtorSchema (Either Int Int) '[ '("payload", Int)])
+        (prefixWireSchemaRight rootWire)
+    ),
+    ( "root/left-prefixed",
+      classifyInputWireSchemas
+        (compositionOnlyInCtorSchema :: InCtorSchema (Either Int Bool) '[ '("payload", Either Int Bool)])
+        (prefixWireSchemaLeft rootWire)
+    ),
+    ("composition-only/trusted", classifyInputWireSchemas rootInput trustedRootWire),
+    ("trusted/composition-only", classifyInputWireSchemas trustedRootInput rootWire),
+    ("unavailable/composition-only", classifyInputWireSchemas inCtorSchemaUnavailable rootWire)
+  ]
+  where
+    rootInput = compositionOnlyInCtorSchema :: InCtorSchema Int '[ '("payload", Int)]
+    rootWire = compositionOnlyWireSchema :: WireSchema Int (Int, ())
+    trustedRootWire = trustedWireSchema wireCtorPathRoot wireFieldsNil :: WireSchema Int ()
+    trustedRootInput = trustedInCtorSchema wireCtorPathRoot inCtorFieldsNil :: InCtorSchema Int '[]
+
+-- | Project 'compareInCtorWireSchemas' to its proof-safe relation, dropping
+-- the typed alignment witness. Exists so specs can pin each comparison arm
+-- directly without access to internal witnesses.
+classifyInputWireSchemas ::
+  InCtorSchema carrier inputFields ->
+  WireSchema carrier wireFields ->
+  InputWireHeadRelation
+classifyInputWireSchemas inputSchema wireSchema =
+  case compareInCtorWireSchemas inputSchema wireSchema of
+    InWireSchemasEqual _ -> InputWireHeadsAligned
+    InWireSchemasDifferent -> InputWireHeadsStructurallyDifferent
+    InWireSchemasUnwitnessed -> InputWireHeadsUnwitnessed
 
 compareCompositionOnlySpines ::
   CompositionOnlySpine carrier inputField ->

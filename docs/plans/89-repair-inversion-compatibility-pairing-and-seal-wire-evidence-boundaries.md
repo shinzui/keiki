@@ -78,6 +78,11 @@ implementing a new consumer-facing request.
       check`, strict ADR validation, `just adr-validate`, `just compile-fail-check`, and
       `git diff --check` passed. The all-package test gate passed 955 examples with 0 failures:
       Keiki 711, Jitsurei 127, keiki-codec-json 104, and keiki-codec-json-test 13.
+- [x] (2026-08-05, post-completion) Hardening from the follow-up review: bottom-capability
+      strictness tests (WireSchema 16 examples, InputSchema 11, both 0 failures), the documented
+      `Generic` trust root, direct spine-arm coverage via `inputWireSpineRelationsForTesting`,
+      and the public `classifyInputWireHeads` observer; cast inventory extended with the
+      pre-existing EP-28 `unsafeCoerceDisjointness`. See the second revision note.
 
 
 ## Surprises & Discoveries
@@ -212,6 +217,35 @@ implementing a new consumer-facing request.
   Generic, composition, and profunctor producers preserve or mint evidence while downstream
   packages cannot successfully call the hooks. Public consumers receive only read-only patterns,
   unavailable constructors, and evidence-preserving rename helpers.
+  Date: 2026-08-05
+
+- Decision: Pin the capability hooks' strictness with runtime regression tests (a bottom
+  capability applied through `trustedWireCtorInternal`/`trustedInCtorInternal` must throw) and a
+  Haddock warning naming the tests, rather than removing the hooks from `Keiki.Core`'s exports.
+  Rationale: The exposed producer modules need the hooks, and the capability type is unnameable
+  outside the package, so the only residual risk is a future refactor to a lazy or wildcard
+  match silently opening the seal. The tests turn that refactor into a test failure; unexporting
+  would require restructuring the module graph for no additional security.
+  Date: 2026-08-05
+
+- Decision: Document the trust root explicitly — trusted evidence is rooted in lawful `Generic`
+  instances; a deliberately unlawful hand-written instance is outside the threat model, exactly
+  as `unsafeCoerce` is — in the "Keiki.Generics" Haddocks and the replay-verification
+  foundations page.
+  Rationale: The post-implementation review identified this as the one remaining route to
+  evidence/behavior mismatch. It cannot be closed by construction without forbidding hand-written
+  `Generic` instances, so it must be a stated boundary, not an omission.
+  Date: 2026-08-05
+
+- Decision: Pin every composition-only spine-comparison arm directly with the construction-free
+  observer `inputWireSpineRelationsForTesting` (canned scenarios built inside the hidden module,
+  following the existing `*ForTesting` convention), and expose the public observer
+  `classifyInputWireHeads` with trusted-arm spec coverage.
+  Rationale: The spine arms previously had only indirect coverage through identity law suites;
+  `identityInCtor`/`identityWireCtor` are deliberately unexported, so direct arm coverage needs
+  either canned internal scenarios or new public identity producers — the observer is the
+  smaller surface. The public classifier additionally gives consumers the observer form of the
+  alignment that authorizes composition substitution.
   Date: 2026-08-05
 
 
@@ -480,3 +514,14 @@ Revision note (2026-08-05): completed all five milestones; corrected the executa
 commands discovered during implementation; recorded the hidden-capability construction boundary,
 the six-fixture CI gate, the typed prefix-spine implementation, the full validation transcript,
 and the final ADR/changelog distillation so the plan reflects the delivered repository state.
+
+Revision note (2026-08-05, post-implementation hardening): applied the three hardening items from
+the post-implementation review, recorded as Decision Log entries dated 2026-08-05: bottom-capability
+strictness regression tests in `test/Keiki/WireSchemaSpec.hs` and `test/Keiki/InputSchemaSpec.hs`
+plus a load-bearing-strictness Haddock on the internal hooks; the documented `Generic`-lawfulness
+trust root in "Keiki.Generics" and `docs/foundations/07-replay-verification-and-trusted-events.md`;
+and direct spine-arm coverage via `inputWireSpineRelationsForTesting` plus the new public
+`classifyInputWireHeads` observer. The review also extended the known-cast inventory with the
+pre-existing `unsafeCoerceDisjointness` in `src/Keiki/Profunctor.hs` (EP-28, fabricates a
+methodless `Disjoint '[] '[]` dictionary for name-disjointness) — untouched by this plan,
+orthogonal to schema evidence, recorded here so the inventory stays complete.

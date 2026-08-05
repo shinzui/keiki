@@ -207,6 +207,9 @@ module Keiki.Core
     classifyInputHeads,
     WireHeadRelation (..),
     classifyWireHeads,
+    InputWireHeadRelation (..),
+    classifyInputWireHeads,
+    inputWireSpineRelationsForTesting,
     wireHeadsMayAliasForDefault,
     guardImpliesInputReadWarnings,
     predicateImpliesInCtor,
@@ -270,16 +273,19 @@ import Keiki.Internal.WireSchema
     InCtorSchemaAvailability (..),
     InCtorSchemaComparison (..),
     InputHeadRelation (..),
+    InputWireHeadRelation (..),
     WireFieldSchema,
     WireHeadRelation (..),
     WireSchema,
     WireSchemaAvailability (..),
     WireSchemaComparison (..),
+    classifyInputWireSchemas,
     compareInCtorSchemas,
     compareWireSchemas,
     inCtorSchemaAvailability,
     inCtorSchemaPrefixRelationForTesting,
     inCtorSchemaUnavailable,
+    inputWireSpineRelationsForTesting,
     wireSchemaAvailability,
     wireSchemaPrefixRelationForTesting,
     wireSchemaUnavailable,
@@ -733,6 +739,13 @@ renameInCtor name (MkInCtor _ schema match build) =
 -- | Internal trusted construction hook. The capability's constructor lives in
 -- an unexposed module, and is matched strictly here so downstream code cannot
 -- use bottom to manufacture a schema-bearing constructor.
+--
+-- The strict constructor match is load-bearing: this function is exported (so
+-- the exposed producer modules can reach it), and a consumer who cannot name
+-- the hidden capability type can still apply it to bottom. The pattern match
+-- forces that bottom before any constructor is produced. Never refactor it
+-- into a lazy or wildcard match; the bottom-capability regression tests in
+-- @test/Keiki/InputSchemaSpec.hs@ and @test/Keiki/WireSchemaSpec.hs@ pin this.
 trustedInCtorInternal ::
   (AssembleRegFile ifs, KnownSlotNames ifs) =>
   ConstructorEvidence ->
@@ -751,6 +764,15 @@ classifyInputHeads left right =
     InCtorSchemasEqual _ -> InputHeadsStructurallyEqual
     InCtorSchemasDifferent -> InputHeadsStructurallyDifferent
     InCtorSchemasUnwitnessed -> InputHeadsUnwitnessed
+
+-- | Compare an input constructor's evidence against an output wire
+-- constructor's evidence at the same carrier, using structural evidence
+-- only — the observer form of the checked alignment that authorizes
+-- sequential-composition substitution. Diagnostic names never participate.
+classifyInputWireHeads ::
+  InCtor mid ifs -> WireCtor mid fields -> InputWireHeadRelation
+classifyInputWireHeads inputCtor wireCtor =
+  classifyInputWireSchemas inputCtor.icSchema wireCtor.wcSchema
 
 -- * Slot-list helper classes (v2 inversion machinery) ---------------------
 

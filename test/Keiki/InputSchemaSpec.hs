@@ -3,6 +3,7 @@
 
 module Keiki.InputSchemaSpec (spec) where
 
+import Control.Exception (evaluate)
 import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
 import Keiki.Composition (leftInCtor, rightInCtor)
@@ -132,6 +133,14 @@ spec = do
     it "keeps proper-prefix trusted paths may-alias" $
       inCtorSchemaPrefixRelationForTesting
         `shouldBe` InputHeadsUnwitnessed
+
+  describe "trusted construction capability" $
+    it "bottoms when the capability argument is bottom" $
+      evaluate
+        ( trustedInCtorInternal undefined "Forged" inCtorSchemaUnavailable (const Nothing) (\RNil -> Empty) ::
+            InCtor SchemaCommand '[]
+        )
+        `shouldThrow` anyException
 
 data SomeInput ci where
   SomeInput :: InCtor ci fields -> SomeInput ci

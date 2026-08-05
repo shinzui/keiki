@@ -104,6 +104,19 @@ constructor they claim. Structural schemas prevent accidental cross-edge field
 alignment from names, but they do not make arbitrary consumer-owned Haskell
 functions trustworthy.
 
+## Where the trust bottoms out
+
+Trusted schemas are non-forgeable through Keiki's public API: their
+constructors are sealed, their types have nominal roles, and the construction
+capability lives in a hidden module. But every proof chain has a root, and
+here it is the lawfulness of your event and command types' derived `Generic`
+instances. `deriving stock (Generic)` is always lawful, so ordinary types get
+honest evidence by construction. A hand-written, deliberately dishonest
+`Generic` instance could pair trusted evidence with behavior it does not
+describe — that is a way of lying to the compiler, and Keiki treats it exactly
+like `unsafeCoerce`: outside the threat model. The boundaries exist to prevent
+accidents, not to survive a consumer who deliberately subverts the language.
+
 ## Where to go deeper
 
 The executable model and its soundness polarity are documented in

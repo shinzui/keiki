@@ -3,10 +3,11 @@
 
 module Keiki.WireSchemaSpec (spec) where
 
+import Control.Exception (evaluate)
 import GHC.Generics (Generic)
 import Keiki.Composition (leftWireCtor, rightWireCtor)
 import Keiki.Core
-import Keiki.Generics (FieldsOf, mkWireCtor, mkWireCtor0Via, mkWireCtorVia)
+import Keiki.Generics (FieldsOf, RegFieldsOf, mkInCtorVia, mkWireCtor, mkWireCtor0Via, mkWireCtorVia)
 import Test.Hspec
 
 data FirstPayload = FirstPayload
@@ -37,6 +38,9 @@ wireSecond = mkWireCtorVia @"Second"
 
 wireEmpty :: WireCtor SchemaEvent ()
 wireEmpty = mkWireCtor0Via @"Empty"
+
+inputFirst :: InCtor SchemaEvent (RegFieldsOf FirstPayload)
+inputFirst = mkInCtorVia @"First"
 
 manualFirst :: WireCtor SchemaEvent (FieldsOf FirstPayload)
 manualFirst =
@@ -126,6 +130,37 @@ spec = do
     it "keeps proper-prefix trusted paths may-alias" $
       wireSchemaPrefixRelationForTesting
         `shouldBe` WireHeadsUnwitnessed
+
+  describe "classifyInputWireHeads" $ do
+    it "aligns trusted input and wire evidence for the same constructor" $
+      classifyInputWireHeads inputFirst wireFirst
+        `shouldBe` InputWireHeadsAligned
+
+    it "separates trusted evidence for different constructors" $
+      classifyInputWireHeads inputFirst wireSecond
+        `shouldBe` InputWireHeadsStructurallyDifferent
+
+    it "treats unavailable wire evidence as unwitnessed" $
+      classifyInputWireHeads inputFirst manualFirst
+        `shouldBe` InputWireHeadsUnwitnessed
+
+    it "pins every composition-only spine comparison arm" $
+      inputWireSpineRelationsForTesting
+        `shouldBe` [ ("root/root", InputWireHeadsAligned),
+                     ("left/left", InputWireHeadsAligned),
+                     ("right/right", InputWireHeadsAligned),
+                     ("left/right", InputWireHeadsStructurallyDifferent),
+                     ("root/left-prefixed", InputWireHeadsUnwitnessed),
+                     ("composition-only/trusted", InputWireHeadsUnwitnessed),
+                     ("trusted/composition-only", InputWireHeadsUnwitnessed),
+                     ("unavailable/composition-only", InputWireHeadsUnwitnessed)
+                   ]
+
+  describe "trusted construction capability" $
+    it "bottoms when the capability argument is bottom" $
+      evaluate
+        (trustedWireCtorInternal undefined "Forged" wireSchemaUnavailable (const Nothing) (\() -> Empty))
+        `shouldThrow` anyException
 
 data SomeWire co where
   SomeWire :: WireCtor co fields -> SomeWire co

@@ -5,6 +5,20 @@
 -- without hand-rolling RCons-towers.
 --
 -- Status: experimental. See the EP-2 retrospective for context.
+--
+-- == Trust model
+--
+-- Trusted structural schemas minted by the @Via@ producers are rooted in the
+-- lawfulness of the consumer type's 'GHC.Generics.Generic' instance: the
+-- constructor path, field spine, and the match\/build closures are all read
+-- from the same @Rep@. A derived instance is always lawful, so
+-- @deriving stock Generic@ types get honest evidence by construction. A
+-- hand-written, deliberately unlawful 'GHC.Generics.Generic' instance can
+-- pair trusted evidence with behavior it does not describe; that path is
+-- outside the threat model in exactly the way 'Unsafe.Coerce.unsafeCoerce'
+-- is. Keiki's sealed boundaries defend against /accidental/ decoupling —
+-- record updates, closure-taking helpers, forged capabilities — not against a
+-- consumer determined to lie to the compiler.
 module Keiki.Generics
   ( -- * Generic-derived InCtor
     mkInCtor,

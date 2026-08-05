@@ -22,6 +22,14 @@ and this project adheres to the
 - `unavailableWireCtor` / `unavailableInCtor` are the explicit manual-behavior
   constructors, and `renameWireCtor` / `renameInCtor` change diagnostic names
   while preserving behavior and trusted evidence.
+- `classifyInputWireHeads` exposes the proof-safe aligned/different/unwitnessed
+  relation between an input constructor and an output wire constructor at the
+  same carrier — the observer form of the checked alignment that authorizes
+  sequential-composition substitution. The documented trust model
+  ("Keiki.Generics" Haddocks and the replay-verification foundations page) now
+  states explicitly that trusted evidence roots in lawful `Generic` instances;
+  a deliberately unlawful hand-written instance is outside the threat model,
+  exactly as `unsafeCoerce` is.
 - `checkInversionAmbiguitySymDetailed` and
   `checkInversionAmbiguitySym` provide an opt-in SBV analysis of two replay
   candidates against shared registers and a structurally aligned observed head.
