@@ -51,39 +51,37 @@ type ProvisionFields =
 
 inCtorProvision :: InCtor BrokenCommand ProvisionFields
 inCtorProvision =
-  InCtor
-    { icName = "Provision",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "Provision"
+    ( \case
         Provision ProvisionData {owner, quota} ->
           Just $
             RCons (Proxy @"owner") owner $
-              RCons (Proxy @"quota") quota RNil,
-      icBuild = \(RCons _ owner (RCons _ quota RNil)) ->
+              RCons (Proxy @"quota") quota RNil
+    )
+    ( \(RCons _ owner (RCons _ quota RNil)) ->
         Provision ProvisionData {owner, quota}
-    }
+    )
 
 wireOwnerRecorded :: WireCtor BrokenEvent (Text, ())
 wireOwnerRecorded =
-  WireCtor
-    { wcName = "OwnerRecorded",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "OwnerRecorded"
+    ( \case
         OwnerRecorded OwnerRecordedData {owner} -> Just (owner, ())
-        _ -> Nothing,
-      wcBuild = \(owner, ()) -> OwnerRecorded OwnerRecordedData {owner}
-    }
+        _ -> Nothing
+    )
+    (\(owner, ()) -> OwnerRecorded OwnerRecordedData {owner})
 
 wireQuotaAssigned :: WireCtor BrokenEvent (Int, ())
 wireQuotaAssigned =
-  WireCtor
-    { wcName = "QuotaAssigned",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "QuotaAssigned"
+    ( \case
         QuotaAssigned QuotaAssignedData {quota} -> Just (quota, ())
-        _ -> Nothing,
-      wcBuild = \(quota, ()) -> QuotaAssigned QuotaAssignedData {quota}
-    }
+        _ -> Nothing
+    )
+    (\(quota, ()) -> QuotaAssigned QuotaAssignedData {quota})
 
 provisionOwner :: Term BrokenRegs BrokenCommand ProvisionFields Text
 provisionOwner = TInpCtorField inCtorProvision (#owner :: Index ProvisionFields Text)

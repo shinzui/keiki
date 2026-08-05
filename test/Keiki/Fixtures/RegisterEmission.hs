@@ -39,66 +39,49 @@ type RegisterEmissionRegs =
 
 inCtorOpen :: InCtor RegisterCmd '[ '("owner", Text)]
 inCtorOpen =
-  InCtor
-    { icName = "Open",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Open owner -> Just (RCons (Proxy @"owner") owner RNil); _ -> Nothing,
-      icBuild = \(RCons _ owner RNil) -> Open owner
-    }
+  unavailableInCtor
+    "Open"
+    (\case Open owner -> Just (RCons (Proxy @"owner") owner RNil); _ -> Nothing)
+    (\(RCons _ owner RNil) -> Open owner)
 
 inCtorAdd :: InCtor RegisterCmd '[ '("amount", Int)]
 inCtorAdd =
-  InCtor
-    { icName = "Add",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Add amount -> Just (RCons (Proxy @"amount") amount RNil); _ -> Nothing,
-      icBuild = \(RCons _ amount RNil) -> Add amount
-    }
+  unavailableInCtor
+    "Add"
+    (\case Add amount -> Just (RCons (Proxy @"amount") amount RNil); _ -> Nothing)
+    (\(RCons _ amount RNil) -> Add amount)
 
 inCtorClose :: InCtor RegisterCmd '[]
 inCtorClose =
-  InCtor
-    { icName = "Close",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Close -> Just RNil; _ -> Nothing,
-      icBuild = \RNil -> Close
-    }
+  unavailableInCtor "Close" (\case Close -> Just RNil; _ -> Nothing) (\RNil -> Close)
 
 wireOpened :: WireCtor RegisterEvent (Text, ())
 wireOpened =
-  WireCtor
-    { wcName = "Opened",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Opened owner -> Just (owner, ()); _ -> Nothing,
-      wcBuild = \(owner, ()) -> Opened owner
-    }
+  unavailableWireCtor
+    "Opened"
+    (\case Opened owner -> Just (owner, ()); _ -> Nothing)
+    (\(owner, ()) -> Opened owner)
 
 wireAdded :: WireCtor RegisterEvent (Int, (Text, ()))
 wireAdded =
-  WireCtor
-    { wcName = "Added",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Added amount owner -> Just (amount, (owner, ())); _ -> Nothing,
-      wcBuild = \(amount, (owner, ())) -> Added amount owner
-    }
+  unavailableWireCtor
+    "Added"
+    (\case Added amount owner -> Just (amount, (owner, ())); _ -> Nothing)
+    (\(amount, (owner, ())) -> Added amount owner)
 
 wireClosed :: WireCtor RegisterEvent (Text, ())
 wireClosed =
-  WireCtor
-    { wcName = "Closed",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Closed owner -> Just (owner, ()); _ -> Nothing,
-      wcBuild = \(owner, ()) -> Closed owner
-    }
+  unavailableWireCtor
+    "Closed"
+    (\case Closed owner -> Just (owner, ()); _ -> Nothing)
+    (\(owner, ()) -> Closed owner)
 
 wireArchived :: WireCtor RegisterEvent (Text, ())
 wireArchived =
-  WireCtor
-    { wcName = "Archived",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Archived owner -> Just (owner, ()); _ -> Nothing,
-      wcBuild = \(owner, ()) -> Archived owner
-    }
+  unavailableWireCtor
+    "Archived"
+    (\case Archived owner -> Just (owner, ()); _ -> Nothing)
+    (\(owner, ()) -> Archived owner)
 
 registerEmission :: SymTransducer (HsPred RegisterEmissionRegs RegisterCmd) RegisterEmissionRegs RegisterVertex RegisterCmd RegisterEvent
 registerEmission =

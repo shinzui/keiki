@@ -46,6 +46,7 @@ import Data.Typeable (Typeable)
 import GHC.Generics
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Keiki.Core
+import Keiki.Internal.ConstructorEvidence (constructorEvidence)
 import Keiki.Internal.WireSchema
   ( AppendInCtorFields,
     AppendWireFields,
@@ -160,16 +161,15 @@ mkInCtor ::
   (ci -> Maybe d) ->
   (d -> ci) ->
   InCtor ci ifs
-{-# DEPRECATED mkInCtor "Use mkInCtorVia for Generic constructors, or construct InCtor explicitly with icSchema = inCtorSchemaUnavailable." #-}
+{-# DEPRECATED mkInCtor "Use mkInCtorVia for Generic constructors, or unavailableInCtor for manual behavior." #-}
 mkInCtor name match wrap =
-  InCtor
-    { icName = name,
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \ci -> case match ci of
+  unavailableInCtor
+    name
+    ( \ci -> case match ci of
         Just d -> Just (gToRegFile (from d))
-        Nothing -> Nothing,
-      icBuild = \rf -> wrap (to (gFromRegFile rf))
-    }
+        Nothing -> Nothing
+    )
+    (\rf -> wrap (to (gFromRegFile rf)))
 
 -- | Build an 'InCtor' for a no-payload (singleton) constructor. The
 -- 'icMatch' compares against the named singleton via 'Eq'; 'icBuild'
@@ -180,14 +180,12 @@ mkInCtor name match wrap =
 -- > inCtorContinue :: InCtor UserCmd '[]
 -- > inCtorContinue = mkInCtor0 "Continue" Continue
 mkInCtor0 :: forall ci. (Eq ci) => String -> ci -> InCtor ci '[]
-{-# DEPRECATED mkInCtor0 "Use mkInCtorVia for Generic nullary constructors, or construct InCtor explicitly with icSchema = inCtorSchemaUnavailable." #-}
+{-# DEPRECATED mkInCtor0 "Use mkInCtorVia for Generic nullary constructors, or unavailableInCtor for manual behavior." #-}
 mkInCtor0 name singleton =
-  InCtor
-    { icName = name,
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \ci -> if ci == singleton then Just RNil else Nothing,
-      icBuild = \RNil -> singleton
-    }
+  unavailableInCtor
+    name
+    (\ci -> if ci == singleton then Just RNil else Nothing)
+    (\RNil -> singleton)
 
 -- * Generic-derived WireCtor ----------------------------------------------
 
@@ -289,7 +287,7 @@ type family RegFieldsOfRep (rep :: Type -> Type) :: [Slot] where
 -- > wireRegistrationStarted = mkWireCtor "RegistrationStarted"
 -- >   (\case RegistrationStarted d -> Just d; _ -> Nothing)
 -- >   RegistrationStarted
-{-# DEPRECATED mkWireCtor "Use mkWireCtorVia for Generic constructors, or construct WireCtor explicitly with wcSchema = wireSchemaUnavailable." #-}
+{-# DEPRECATED mkWireCtor "Use mkWireCtorVia for Generic constructors, or unavailableWireCtor for manual behavior." #-}
 mkWireCtor ::
   forall co d fs.
   ( Generic d,
@@ -300,14 +298,13 @@ mkWireCtor ::
   (d -> co) ->
   WireCtor co fs
 mkWireCtor name match wrap =
-  WireCtor
-    { wcName = name,
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \co -> case match co of
+  unavailableWireCtor
+    name
+    ( \co -> case match co of
         Just d -> Just (gToTuple (from d))
-        Nothing -> Nothing,
-      wcBuild = \fs -> wrap (to (gFromTuple fs))
-    }
+        Nothing -> Nothing
+    )
+    (\fs -> wrap (to (gFromTuple fs)))
 
 -- | Build a 'WireCtor' for a no-payload (singleton) event constructor —
 -- the event-side twin of 'mkInCtor0'. Its field tuple is @()@ (a
@@ -321,15 +318,13 @@ mkWireCtor name match wrap =
 --
 -- > wireOpened :: WireCtor DoorEvent ()
 -- > wireOpened = mkWireCtor0 "Opened" Opened
-{-# DEPRECATED mkWireCtor0 "Use mkWireCtor0Via for Generic nullary constructors, or construct WireCtor explicitly with wcSchema = wireSchemaUnavailable." #-}
+{-# DEPRECATED mkWireCtor0 "Use mkWireCtor0Via for Generic nullary constructors, or unavailableWireCtor for manual behavior." #-}
 mkWireCtor0 :: forall co. (Eq co) => String -> co -> WireCtor co ()
 mkWireCtor0 name singleton =
-  WireCtor
-    { wcName = name,
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \co -> if co == singleton then Just () else Nothing,
-      wcBuild = \() -> singleton
-    }
+  unavailableWireCtor
+    name
+    (\co -> if co == singleton then Just () else Nothing)
+    (\() -> singleton)
 
 -- * Empty register file ---------------------------------------------------
 
@@ -722,17 +717,18 @@ mkInCtorVia ::
   ) =>
   InCtor ci ifs
 mkInCtorVia =
-  InCtor
-    { icName = symbolVal (Proxy @name),
-      icSchema =
-        trustedInCtorSchema
-          (gWireCtorPath @name @(Rep ci))
-          (gInCtorFieldSchema @(Rep d)),
-      icMatch = \ci -> case gMatchCtor @name (from ci) of
+  trustedInCtorInternal
+    constructorEvidence
+    (symbolVal (Proxy @name))
+    ( trustedInCtorSchema
+        (gWireCtorPath @name @(Rep ci))
+        (gInCtorFieldSchema @(Rep d))
+    )
+    ( \ci -> case gMatchCtor @name (from ci) of
         Just d -> Just (gToRegFile (from d))
-        Nothing -> Nothing,
-      icBuild = \rf -> to (gBuildCtor @name (to (gFromRegFile rf) :: d))
-    }
+        Nothing -> Nothing
+    )
+    (\rf -> to (gBuildCtor @name (to (gFromRegFile rf) :: d)))
 
 -- | Build a trusted 'InCtor' for a constructor whose payload fields are
 -- declared directly with record syntax. Use 'mkInCtorVia' when the sum
@@ -748,15 +744,15 @@ mkInCtorRecordVia ::
   ) =>
   InCtor ci ifs
 mkInCtorRecordVia =
-  InCtor
-    { icName = symbolVal (Proxy @name),
-      icSchema =
-        trustedInCtorSchema
-          (gWireCtorPath @name @(Rep ci))
-          (gRecordCtorSchema @name @(Rep ci)),
-      icMatch = gMatchRecordCtor @name . from,
-      icBuild = to . gBuildRecordCtor @name
-    }
+  trustedInCtorInternal
+    constructorEvidence
+    (symbolVal (Proxy @name))
+    ( trustedInCtorSchema
+        (gWireCtorPath @name @(Rep ci))
+        (gRecordCtorSchema @name @(Rep ci))
+    )
+    (gMatchRecordCtor @name . from)
+    (to . gBuildRecordCtor @name)
 
 -- | Build a trusted 'WireCtor' from a constructor name alone. Mirrors
 -- 'mkInCtorVia' on the wire side: the nested-pair field tuple comes
@@ -780,17 +776,18 @@ mkWireCtorVia ::
   ) =>
   WireCtor co fs
 mkWireCtorVia =
-  WireCtor
-    { wcName = symbolVal (Proxy @name),
-      wcSchema =
-        trustedWireSchema
-          (gWireCtorPath @name @(Rep co))
-          (gWireFieldSchema @(Rep d)),
-      wcMatch = \co -> case gMatchCtor @name (from co) of
+  trustedWireCtorInternal
+    constructorEvidence
+    (symbolVal (Proxy @name))
+    ( trustedWireSchema
+        (gWireCtorPath @name @(Rep co))
+        (gWireFieldSchema @(Rep d))
+    )
+    ( \co -> case gMatchCtor @name (from co) of
         Just d -> Just (gToTuple (from d))
-        Nothing -> Nothing,
-      wcBuild = \fs -> to (gBuildCtor @name (to (gFromTuple fs) :: d))
-    }
+        Nothing -> Nothing
+    )
+    (\fs -> to (gBuildCtor @name (to (gFromTuple fs) :: d)))
 
 -- | Build a trusted 'WireCtor' for a named no-payload constructor using
 -- structural Generic matching. Unlike 'mkWireCtor0', matching is not
@@ -817,12 +814,12 @@ mkWireCtorRecordVia ::
   ) =>
   WireCtor co fields
 mkWireCtorRecordVia =
-  WireCtor
-    { wcName = symbolVal (Proxy @name),
-      wcSchema =
-        trustedWireSchema
-          (gWireCtorPath @name @(Rep co))
-          (gTupleCtorSchema @name @(Rep co)),
-      wcMatch = gMatchTupleCtor @name . from,
-      wcBuild = to . gBuildTupleCtor @name
-    }
+  trustedWireCtorInternal
+    constructorEvidence
+    (symbolVal (Proxy @name))
+    ( trustedWireSchema
+        (gWireCtorPath @name @(Rep co))
+        (gTupleCtorSchema @name @(Rep co))
+    )
+    (gMatchTupleCtor @name . from)
+    (to . gBuildTupleCtor @name)

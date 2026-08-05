@@ -39,11 +39,11 @@ data StructuralCmd
 
 inCtorStructuralFoo :: InCtor StructuralCmd '[ '("structuralFooValue", Int)]
 inCtorStructuralFoo =
-  (mkInCtorVia @"StructuralFoo") {icName = "Same diagnostic name"}
+  renameInCtor "Same diagnostic name" (mkInCtorVia @"StructuralFoo")
 
 inCtorStructuralBar :: InCtor StructuralCmd '[ '("structuralBarValue", Int)]
 inCtorStructuralBar =
-  (mkInCtorVia @"StructuralBar") {icName = "Same diagnostic name"}
+  renameInCtor "Same diagnostic name" (mkInCtorVia @"StructuralBar")
 
 instance KnownInCtors StructuralCmd where
   allInCtors =
@@ -88,12 +88,7 @@ data AmtCmd = AmtTick deriving (Eq, Show)
 
 inCtorAmtTick :: InCtor AmtCmd '[]
 inCtorAmtTick =
-  InCtor
-    { icName = "AmtTick",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case AmtTick -> Just RNil,
-      icBuild = \RNil -> AmtTick
-    }
+  unavailableInCtor "AmtTick" (\case AmtTick -> Just RNil) (\RNil -> AmtTick)
 
 instance KnownInCtors AmtCmd where
   allInCtors = [SomeInCtor inCtorAmtTick]
@@ -283,12 +278,7 @@ data ArithCmd = ArithTick deriving (Eq, Show)
 
 inCtorArithTick :: InCtor ArithCmd '[]
 inCtorArithTick =
-  InCtor
-    { icName = "ArithTick",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case ArithTick -> Just RNil,
-      icBuild = \RNil -> ArithTick
-    }
+  unavailableInCtor "ArithTick" (\case ArithTick -> Just RNil) (\RNil -> ArithTick)
 
 instance KnownInCtors ArithCmd where
   allInCtors = [SomeInCtor inCtorArithTick]
@@ -313,25 +303,23 @@ arithRegs a b s r =
 
 inCtorTinyFoo :: InCtor TinyCmd '[ '("a", Int)]
 inCtorTinyFoo =
-  InCtor
-    { icName = "TinyFoo",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "TinyFoo"
+    ( \case
         TinyFoo a -> Just (RCons (Proxy @"a") a RNil)
-        _ -> Nothing,
-      icBuild = \(RCons _ a RNil) -> TinyFoo a
-    }
+        _ -> Nothing
+    )
+    (\(RCons _ a RNil) -> TinyFoo a)
 
 inCtorTinyBar :: InCtor TinyCmd '[ '("b", Int)]
 inCtorTinyBar =
-  InCtor
-    { icName = "TinyBar",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "TinyBar"
+    ( \case
         TinyBar b -> Just (RCons (Proxy @"b") b RNil)
-        _ -> Nothing,
-      icBuild = \(RCons _ b RNil) -> TinyBar b
-    }
+        _ -> Nothing
+    )
+    (\(RCons _ b RNil) -> TinyBar b)
 
 -- | Run an 'HsPred' through the SBV translator and ask the solver
 -- whether the conjunction of the predicate translation is
@@ -376,12 +364,10 @@ spec = do
   describe "Either-arm predicates" $ do
     let leftTinyFoo :: InCtor (Either TinyCmd Bool) '[]
         leftTinyFoo =
-          InCtor
-            { icName = "TinyFoo",
-              icSchema = inCtorSchemaUnavailable,
-              icMatch = \case Left (TinyFoo _) -> Just RNil; _ -> Nothing,
-              icBuild = \RNil -> Left (TinyFoo 0)
-            }
+          unavailableInCtor
+            "TinyFoo"
+            (\case Left (TinyFoo _) -> Just RNil; _ -> Nothing)
+            (\RNil -> Left (TinyFoo 0))
 
     it "proves Left and Right arms mutually exclusive" $
       symIsBot
@@ -822,7 +808,7 @@ spec = do
         `shouldSatisfy` (not . null)
 
     it "retains name-keyed conflation on the unwitnessed fallback" $ do
-      let sameNamedBar = inCtorTinyBar {icName = "TinyFoo"}
+      let sameNamedBar = renameInCtor "TinyFoo" inCtorTinyBar
       satP
         ( PAnd
             (PInCtor inCtorTinyFoo)

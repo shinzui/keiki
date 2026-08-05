@@ -41,14 +41,13 @@ inMany = mkInCtorVia @"Many"
 
 manualOne :: InCtor SchemaCommand (RegFieldsOf OnePayload)
 manualOne =
-  InCtor
-    { icName = "One",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "One"
+    ( \case
         One payload -> Just (RCons (Proxy @"value") payload.value RNil)
-        _ -> Nothing,
-      icBuild = \(RCons _ field RNil) -> One (OnePayload field)
-    }
+        _ -> Nothing
+    )
+    (\(RCons _ field RNil) -> One (OnePayload field))
 
 closureOne :: InCtor SchemaCommand (RegFieldsOf OnePayload)
 closureOne =
@@ -74,10 +73,18 @@ spec = do
         `shouldBe` InputHeadsStructurallyEqual
 
     it "uses structure rather than diagnostic names" $ do
-      let one = inOne {icName = "Repeated"}
-          many = inMany {icName = "Repeated"}
+      let one = renameInCtor "Repeated" inOne
+          many = renameInCtor "Repeated" inMany
       classifyInputHeads one many
         `shouldBe` InputHeadsStructurallyDifferent
+
+    it "preserves trusted evidence and behavior when renamed" $ do
+      let renamed = renameInCtor "RenamedOne" inOne
+      renamed.icName `shouldBe` "RenamedOne"
+      inCtorSchemaAvailability renamed.icSchema `shouldBe` InCtorSchemaTrusted
+      case renamed.icMatch (One (OnePayload 7)) of
+        Just fields -> renamed.icBuild fields `shouldBe` One (OnePayload 7)
+        Nothing -> expectationFailure "renamed trusted input constructor did not match"
 
     it "keeps match/build round trips unchanged" $ do
       case icMatch inOne (One (OnePayload 7)) of
@@ -96,7 +103,7 @@ spec = do
         Nothing -> expectationFailure "trusted nullary input constructor did not match"
 
   describe "unavailable input schemas" $
-    it "marks manual records and closure-taking helpers unavailable" $ do
+    it "marks manual constructors and closure-taking helpers unavailable" $ do
       inCtorSchemaAvailability manualOne.icSchema
         `shouldBe` InCtorSchemaUnavailable
       inCtorSchemaAvailability closureOne.icSchema

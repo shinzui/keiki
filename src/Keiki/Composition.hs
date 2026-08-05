@@ -114,6 +114,7 @@ import Data.Typeable (Typeable)
 import GHC.TypeLits (KnownSymbol)
 import Keiki.Core
 import Keiki.Generics (Append, appendRegFile)
+import Keiki.Internal.ConstructorEvidence (constructorEvidence)
 import Keiki.Internal.WireSchema
   ( InWireFieldAlignment (..),
     InWireSchemaComparison (..),
@@ -775,27 +776,29 @@ unsafeCoerceInCtor = unsafeCoerce
 -- transducer's 'solveOutput' walks back to the original input form.
 leftInCtor :: InCtor ci1 ifs -> InCtor (Either ci1 ci2) ifs
 leftInCtor InCtor {icName = n, icSchema = schema, icMatch = m, icBuild = b} =
-  InCtor
-    { icName = n,
-      icSchema = prefixInCtorSchemaLeft schema,
-      icMatch = \case
+  trustedInCtorInternal
+    constructorEvidence
+    n
+    (prefixInCtorSchemaLeft schema)
+    ( \case
         Left c1 -> m c1
-        Right _ -> Nothing,
-      icBuild = Left . b
-    }
+        Right _ -> Nothing
+    )
+    (Left . b)
 
 -- | Lift an 'InCtor' from the right arm of an 'Either' input
 -- alphabet. Symmetric to 'leftInCtor'.
 rightInCtor :: InCtor ci2 ifs -> InCtor (Either ci1 ci2) ifs
 rightInCtor InCtor {icName = n, icSchema = schema, icMatch = m, icBuild = b} =
-  InCtor
-    { icName = n,
-      icSchema = prefixInCtorSchemaRight schema,
-      icMatch = \case
+  trustedInCtorInternal
+    constructorEvidence
+    n
+    (prefixInCtorSchemaRight schema)
+    ( \case
         Left _ -> Nothing
-        Right c2 -> m c2,
-      icBuild = Right . b
-    }
+        Right c2 -> m c2
+    )
+    (Right . b)
 
 -- | Lift a 'WireCtor' from the left arm of an 'Either' output
 -- alphabet. Matches only on @Left _@ outputs; rebuilds via
@@ -803,28 +806,30 @@ rightInCtor InCtor {icName = n, icSchema = schema, icMatch = m, icBuild = b} =
 -- structural left-arm path prefix; unavailable evidence stays unavailable.
 leftWireCtor :: WireCtor co1 fs -> WireCtor (Either co1 co2) fs
 leftWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} =
-  WireCtor
-    { wcName = n,
-      wcSchema = prefixWireSchemaLeft schema,
-      wcMatch = \case
+  trustedWireCtorInternal
+    constructorEvidence
+    n
+    (prefixWireSchemaLeft schema)
+    ( \case
         Left c1 -> m c1
-        Right _ -> Nothing,
-      wcBuild = Left . b
-    }
+        Right _ -> Nothing
+    )
+    (Left . b)
 
 -- | Lift a 'WireCtor' from the right arm of an 'Either' output
 -- alphabet. Symmetric to 'leftWireCtor', including its preserve-or-drop schema
 -- rule.
 rightWireCtor :: WireCtor co2 fs -> WireCtor (Either co1 co2) fs
 rightWireCtor WireCtor {wcName = n, wcSchema = schema, wcMatch = m, wcBuild = b} =
-  WireCtor
-    { wcName = n,
-      wcSchema = prefixWireSchemaRight schema,
-      wcMatch = \case
+  trustedWireCtorInternal
+    constructorEvidence
+    n
+    (prefixWireSchemaRight schema)
+    ( \case
         Left _ -> Nothing
-        Right c2 -> m c2,
-      wcBuild = Right . b
-    }
+        Right c2 -> m c2
+    )
+    (Right . b)
 
 -- | Lift a 'Term' from the left side's input alphabet to
 -- @Either ci1 ci2@. Walks the AST and adjusts every 'TInpCtorField'
@@ -931,15 +936,14 @@ liftedArmInCtor ::
   Bool ->
   InCtor outer '[]
 liftedArmInCtor outerName project wantLeft =
-  InCtor
-    { icName = "keiki#" <> outerName <> "#" <> (if wantLeft then "leftArm#lmapped" else "rightArm#lmapped"),
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \outer -> case project outer of
+  unavailableInCtor
+    ("keiki#" <> outerName <> "#" <> (if wantLeft then "leftArm#lmapped" else "rightArm#lmapped"))
+    ( \outer -> case project outer of
         Just (Left _) | wantLeft -> Just RNil
         Just (Right _) | not wantLeft -> Just RNil
-        _ -> Nothing,
-      icBuild = \_ -> error "Keiki.Composition: nested lifted arm predicates cannot rebuild inputs"
-    }
+        _ -> Nothing
+    )
+    (\_ -> error "Keiki.Composition: nested lifted arm predicates cannot rebuild inputs")
 
 -- | Lift an 'Update' from the left side's input alphabet to
 -- @Either ci1 ci2@. The slot-name index @w@ is preserved; only the

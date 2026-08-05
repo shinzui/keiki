@@ -48,10 +48,10 @@ import Keiki.Core
     SymTransducer (..),
     Update (..),
     WireCtor (..),
-    inCtorSchemaUnavailable,
     opaqueLit,
     pack,
-    wireSchemaUnavailable,
+    unavailableInCtor,
+    unavailableWireCtor,
   )
 import Keiki.Fixtures.CounterPipeline (stageB)
 import Keiki.Fixtures.EmailDelivery (emailDelivery)
@@ -707,21 +707,11 @@ data Tick = Tick
 
 inCtorTick :: InCtor Tick '[]
 inCtorTick =
-  InCtor
-    { icName = "Tick",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \Tick -> Just RNil,
-      icBuild = \RNil -> Tick
-    }
+  unavailableInCtor "Tick" (\Tick -> Just RNil) (\RNil -> Tick)
 
 wireTick :: WireCtor Tick ()
 wireTick =
-  WireCtor
-    { wcName = "Tick",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \Tick -> Just (),
-      wcBuild = \() -> Tick
-    }
+  unavailableWireCtor "Tick" (\Tick -> Just ()) (\() -> Tick)
 
 data T1 = T1A | T1B
   deriving (Eq, Show, Enum, Bounded)
@@ -860,21 +850,11 @@ data SecretState = SecretState
 
 secretInCtor :: InCtor SecretCmd '[]
 secretInCtor =
-  InCtor
-    { icName = "SetSecret",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \SetSecret -> Just RNil,
-      icBuild = \RNil -> SetSecret
-    }
+  unavailableInCtor "SetSecret" (\SetSecret -> Just RNil) (\RNil -> SetSecret)
 
 secretWireCtor :: WireCtor SecretEvt ()
 secretWireCtor =
-  WireCtor
-    { wcName = "SecretSet",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \SecretSet -> Just (),
-      wcBuild = \() -> SecretSet
-    }
+  unavailableWireCtor "SecretSet" (\SecretSet -> Just ()) (\() -> SecretSet)
 
 opaqueValue ::
   SymTransducer
@@ -912,21 +892,11 @@ specialName =
 
 specialInCtor :: InCtor SpecialCmd '[]
 specialInCtor =
-  InCtor
-    { icName = specialName,
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \SpecialCmd -> Just RNil,
-      icBuild = \RNil -> SpecialCmd
-    }
+  unavailableInCtor specialName (\SpecialCmd -> Just RNil) (\RNil -> SpecialCmd)
 
 specialWireCtor :: WireCtor SpecialEvt ()
 specialWireCtor =
-  WireCtor
-    { wcName = "Event",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \SpecialEvt -> Just (),
-      wcBuild = \() -> SpecialEvt
-    }
+  unavailableWireCtor "Event" (\SpecialEvt -> Just ()) (\() -> SpecialEvt)
 
 specialChars ::
   SymTransducer
@@ -989,35 +959,15 @@ data MS = MS0 | MS1 | MS2
 
 inCtorGo :: InCtor MCmd '[]
 inCtorGo =
-  InCtor
-    { icName = "Go",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \MGo -> Just RNil,
-      icBuild = \RNil -> MGo
-    }
+  unavailableInCtor "Go" (\MGo -> Just RNil) (\RNil -> MGo)
 
 wireMA, wireMB, wireMC :: WireCtor MEvt ()
 wireMA =
-  WireCtor
-    { wcName = "A",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case MA -> Just (); _ -> Nothing,
-      wcBuild = \() -> MA
-    }
+  unavailableWireCtor "A" (\case MA -> Just (); _ -> Nothing) (\() -> MA)
 wireMB =
-  WireCtor
-    { wcName = "B",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case MB -> Just (); _ -> Nothing,
-      wcBuild = \() -> MB
-    }
+  unavailableWireCtor "B" (\case MB -> Just (); _ -> Nothing) (\() -> MB)
 wireMC =
-  WireCtor
-    { wcName = "C",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case MC -> Just (); _ -> Nothing,
-      wcBuild = \() -> MC
-    }
+  unavailableWireCtor "C" (\case MC -> Just (); _ -> Nothing) (\() -> MC)
 
 -- | A tiny transducer whose @MS0@ edge emits three events and whose
 -- @MS1@ edge emits two, so the three 'MermaidOutputLayout' goldens differ

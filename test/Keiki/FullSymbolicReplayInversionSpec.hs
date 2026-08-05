@@ -264,7 +264,7 @@ spec = describe "full symbolic replay inversion" $ do
           PAnd
             (PInCtor inSubmit)
             (PCmp CmpGe (TReg (#limit)) (TLit (0 :: Int)))
-        renamedRecorded = wireRecorded {wcName = "RenamedRecorded"}
+        renamedRecorded = renameWireCtor "RenamedRecorded" wireRecorded
         renamedOutput =
           pack inSubmit renamedRecorded (submitAmount *: submitAmount *: oNil)
         transducer =
@@ -373,7 +373,11 @@ spec = describe "full symbolic replay inversion" $ do
       `shouldContain` [InversionOpaqueDerivedOutput InversionCandidateB 1]
 
   it "does not run a solver when structural evidence is missing" $ do
-    let unavailable = wireRecorded {wcSchema = wireSchemaUnavailable}
+    let unavailable =
+          unavailableWireCtor
+            (wcName wireRecorded)
+            (wcMatch wireRecorded)
+            (wcBuild wireRecorded)
         outputWith wire = pack inSubmit wire (submitAmount *: submitAmount *: oNil)
         transducer =
           noRegsMachine
@@ -428,8 +432,8 @@ spec = describe "full symbolic replay inversion" $ do
       `shouldSatisfy` all (\case InversionUnsupportedDerivedProjection {} -> False; _ -> True)
 
   it "does not analyze structurally different heads even when short names collide" $ do
-    let sameNameRecorded = wireRecorded {wcName = "Same"}
-        sameNameOther = wireOtherRecorded {wcName = "Same"}
+    let sameNameRecorded = renameWireCtor "Same" wireRecorded
+        sameNameOther = renameWireCtor "Same" wireOtherRecorded
         firstOutput = pack inSubmit sameNameRecorded (submitAmount *: submitAmount *: oNil)
         secondOutput = pack inSubmit sameNameOther (submitAmount *: submitAmount *: oNil)
         transducer =

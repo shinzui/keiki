@@ -1,0 +1,5 @@
+module TrustedConstructorCapability where
+
+import Keiki.Internal.ConstructorEvidence (constructorEvidence)
+
+capabilityCannotCrossPackageBoundary = constructorEvidence

@@ -39,30 +39,24 @@ data IdentityEvent = Chosen
 
 firstCtor :: InCtor IdentityCommand '[]
 firstCtor =
-  InCtor
-    { icName = "ChooseFirst",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case ChooseFirst -> Just RNil; _ -> Nothing,
-      icBuild = \RNil -> ChooseFirst
-    }
+  unavailableInCtor
+    "ChooseFirst"
+    (\case ChooseFirst -> Just RNil; _ -> Nothing)
+    (\RNil -> ChooseFirst)
 
 secondCtor :: InCtor IdentityCommand '[]
 secondCtor =
-  InCtor
-    { icName = "ChooseSecond",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case ChooseSecond -> Just RNil; _ -> Nothing,
-      icBuild = \RNil -> ChooseSecond
-    }
+  unavailableInCtor
+    "ChooseSecond"
+    (\case ChooseSecond -> Just RNil; _ -> Nothing)
+    (\RNil -> ChooseSecond)
 
 chosenWire :: WireCtor IdentityEvent ()
 chosenWire =
-  WireCtor
-    { wcName = "Chosen",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Chosen -> Just (),
-      wcBuild = \() -> Chosen
-    }
+  unavailableWireCtor
+    "Chosen"
+    (\case Chosen -> Just ())
+    (\() -> Chosen)
 
 -- The two live siblings are behaviorally indistinguishable after erasure:
 -- they preserve the same registers, reach the same target, and emit equal

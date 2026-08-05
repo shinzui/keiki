@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms #-}
 -- 'combine''s 'Disjoint' constraint is the static check itself; GHC
 -- sees it as unused (the body is @UCombine@) and would otherwise warn.
 -- Same reasoning for any future helpers that re-export the constraint
@@ -71,7 +72,10 @@ module Keiki.Core
     ProjBase (..),
 
     -- * Input-side structural constructor (v2)
-    InCtor (..),
+    InCtor (InCtor, icName, icSchema, icMatch, icBuild),
+    unavailableInCtor,
+    renameInCtor,
+    trustedInCtorInternal,
     InCtorSchema,
     InCtorSchemaAvailability (..),
     inCtorSchemaUnavailable,
@@ -93,7 +97,10 @@ module Keiki.Core
     combine,
 
     -- * Output term language
-    WireCtor (..),
+    WireCtor (WireCtor, wcName, wcSchema, wcMatch, wcBuild),
+    unavailableWireCtor,
+    renameWireCtor,
+    trustedWireCtorInternal,
     WireSchema,
     WireFieldSchema,
     WireSchemaAvailability (..),
@@ -241,7 +248,9 @@ import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.OverloadedLabels (IsLabel (..))
+import GHC.Records (HasField (..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
+import Keiki.Internal.ConstructorEvidence (ConstructorEvidence (..))
 import Keiki.Internal.Slots
   ( Concat,
     Disjoint,
@@ -649,7 +658,7 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
 -- via 'OverloadedLabels' (for example @inpStart #email@).
 -- 'icSchema' separately carries abstract structural proof evidence. Generic
 -- and TH producers populate it; deliberate manual or meaning-changing
--- constructors use 'inCtorSchemaUnavailable'. Diagnostic 'icName' text never
+-- constructors use 'unavailableInCtor'. Diagnostic 'icName' text never
 -- substitutes for that evidence in composition or symbolic proof.
 --
 -- 'icMatch' must return 'Just' iff @ci@ is the named constructor.
@@ -667,14 +676,72 @@ data Term (rs :: [Slot]) (ci :: Type) (ifs :: [Slot]) (r :: Type) where
 -- the inversion algorithm that walks 'OutFields' gathering these
 -- per-field reads.
 data InCtor ci (ifs :: [Slot]) where
-  InCtor ::
+  MkInCtor ::
     (AssembleRegFile ifs, KnownSlotNames ifs) =>
-    { icName :: String,
-      icSchema :: InCtorSchema ci ifs,
-      icMatch :: ci -> Maybe (RegFile ifs),
-      icBuild :: RegFile ifs -> ci
-    } ->
+    String ->
+    InCtorSchema ci ifs ->
+    (ci -> Maybe (RegFile ifs)) ->
+    (RegFile ifs -> ci) ->
     InCtor ci ifs
+
+-- | Read-only record view of an input constructor. Matching and field
+-- selection remain available, but construction and record update do not:
+-- manual behavior must enter through 'unavailableInCtor', while trusted Keiki
+-- producers use the package-private construction capability.
+pattern InCtor ::
+  () =>
+  (AssembleRegFile ifs, KnownSlotNames ifs) =>
+  String ->
+  InCtorSchema ci ifs ->
+  (ci -> Maybe (RegFile ifs)) ->
+  (RegFile ifs -> ci) ->
+  InCtor ci ifs
+pattern InCtor {icName, icSchema, icMatch, icBuild} <-
+  MkInCtor icName icSchema icMatch icBuild
+
+{-# COMPLETE InCtor #-}
+
+instance HasField "icName" (InCtor ci ifs) String where
+  getField = icName
+
+instance HasField "icSchema" (InCtor ci ifs) (InCtorSchema ci ifs) where
+  getField = icSchema
+
+instance HasField "icMatch" (InCtor ci ifs) (ci -> Maybe (RegFile ifs)) where
+  getField = icMatch
+
+instance HasField "icBuild" (InCtor ci ifs) (RegFile ifs -> ci) where
+  getField = icBuild
+
+-- | Construct a manual input constructor. Its behavior is usable for forward
+-- and replay execution, but it carries no trusted structural evidence.
+unavailableInCtor ::
+  (AssembleRegFile ifs, KnownSlotNames ifs) =>
+  String ->
+  (ci -> Maybe (RegFile ifs)) ->
+  (RegFile ifs -> ci) ->
+  InCtor ci ifs
+unavailableInCtor name match build =
+  MkInCtor name inCtorSchemaUnavailable match build
+
+-- | Change only the diagnostic name while preserving behavior and structural
+-- evidence.
+renameInCtor :: String -> InCtor ci ifs -> InCtor ci ifs
+renameInCtor name (MkInCtor _ schema match build) =
+  MkInCtor name schema match build
+
+-- | Internal trusted construction hook. The capability's constructor lives in
+-- an unexposed module, and is matched strictly here so downstream code cannot
+-- use bottom to manufacture a schema-bearing constructor.
+trustedInCtorInternal ::
+  (AssembleRegFile ifs, KnownSlotNames ifs) =>
+  ConstructorEvidence ->
+  String ->
+  InCtorSchema ci ifs ->
+  (ci -> Maybe (RegFile ifs)) ->
+  (RegFile ifs -> ci) ->
+  InCtor ci ifs
+trustedInCtorInternal ConstructorEvidence = MkInCtor
 
 -- | Compare two input constructors using trusted structural evidence only.
 -- Diagnostic names never participate in this proof.
@@ -787,13 +854,64 @@ combine = UCombine
 -- 'evalOut' rebuild a @co@ from its fields. 'wcSchema' is structural proof
 -- evidence, not a persisted identity: Generic/TH producers supply a trusted
 -- constructor path and typed field spine, while manual or meaning-changing
--- construction must use 'wireSchemaUnavailable'. 'wcName' remains diagnostic.
-data WireCtor co fields = WireCtor
-  { wcName :: String,
-    wcSchema :: WireSchema co fields,
-    wcMatch :: co -> Maybe fields,
-    wcBuild :: fields -> co
-  }
+-- construction must use 'unavailableWireCtor'. 'wcName' remains diagnostic.
+data WireCtor co fields
+  = MkWireCtor
+      String
+      (WireSchema co fields)
+      (co -> Maybe fields)
+      (fields -> co)
+
+-- | Read-only record view of an output constructor. Matching and field
+-- selection remain available, but construction and record update do not.
+pattern WireCtor ::
+  String ->
+  WireSchema co fields ->
+  (co -> Maybe fields) ->
+  (fields -> co) ->
+  WireCtor co fields
+pattern WireCtor {wcName, wcSchema, wcMatch, wcBuild} <-
+  MkWireCtor wcName wcSchema wcMatch wcBuild
+
+{-# COMPLETE WireCtor #-}
+
+instance HasField "wcName" (WireCtor co fields) String where
+  getField = wcName
+
+instance HasField "wcSchema" (WireCtor co fields) (WireSchema co fields) where
+  getField = wcSchema
+
+instance HasField "wcMatch" (WireCtor co fields) (co -> Maybe fields) where
+  getField = wcMatch
+
+instance HasField "wcBuild" (WireCtor co fields) (fields -> co) where
+  getField = wcBuild
+
+-- | Construct a manual output constructor with explicitly unavailable
+-- structural evidence.
+unavailableWireCtor ::
+  String ->
+  (co -> Maybe fields) ->
+  (fields -> co) ->
+  WireCtor co fields
+unavailableWireCtor name match build =
+  MkWireCtor name wireSchemaUnavailable match build
+
+-- | Change only the diagnostic name while preserving behavior and structural
+-- evidence.
+renameWireCtor :: String -> WireCtor co fields -> WireCtor co fields
+renameWireCtor name (MkWireCtor _ schema match build) =
+  MkWireCtor name schema match build
+
+-- | Internal trusted construction hook; see 'trustedInCtorInternal'.
+trustedWireCtorInternal ::
+  ConstructorEvidence ->
+  String ->
+  WireSchema co fields ->
+  (co -> Maybe fields) ->
+  (fields -> co) ->
+  WireCtor co fields
+trustedWireCtorInternal ConstructorEvidence = MkWireCtor
 
 -- | Compare two output heads using only trusted structural evidence.
 -- Constructor names are diagnostics and never participate in this proof.

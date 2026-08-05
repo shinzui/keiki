@@ -32,23 +32,17 @@ type DivertRegs = '[ '("wasBlack", Bool)]
 
 inCtorConfirm :: InCtor DivertCmd '[ '("acuityBlack", Bool)]
 inCtorConfirm =
-  InCtor
-    { icName = "ConfirmReservation",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        ConfirmReservation b -> Just (RCons (Proxy @"acuityBlack") b RNil),
-      icBuild = \(RCons _ b RNil) -> ConfirmReservation b
-    }
+  unavailableInCtor
+    "ConfirmReservation"
+    (\case ConfirmReservation b -> Just (RCons (Proxy @"acuityBlack") b RNil))
+    (\(RCons _ b RNil) -> ConfirmReservation b)
 
 wireConfirmed :: WireCtor DivertEvent (Bool, ())
 wireConfirmed =
-  WireCtor
-    { wcName = "ReservationConfirmed",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
-        ReservationConfirmed b -> Just (b, ()),
-      wcBuild = \(b, ()) -> ReservationConfirmed b
-    }
+  unavailableWireCtor
+    "ReservationConfirmed"
+    (\case ReservationConfirmed b -> Just (b, ()))
+    (\(b, ()) -> ReservationConfirmed b)
 
 initialDivertRegs :: RegFile DivertRegs
 initialDivertRegs = RCons (Proxy @"wasBlack") False RNil

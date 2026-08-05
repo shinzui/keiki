@@ -151,12 +151,10 @@ data DocEvent = DocAccepted DocInfo
 
 docAcceptedWire :: WireCtor DocEvent (DocInfo, ())
 docAcceptedWire =
-  WireCtor
-    { wcName = "DocAccepted",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case DocAccepted doc -> Just (doc, ()),
-      wcBuild = \(doc, ()) -> DocAccepted doc
-    }
+  unavailableWireCtor
+    "DocAccepted"
+    (\case DocAccepted doc -> Just (doc, ()))
+    (\(doc, ()) -> DocAccepted doc)
 
 data DocState = DocState
   deriving stock (Eq, Ord, Show, Enum, Bounded)

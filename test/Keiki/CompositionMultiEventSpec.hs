@@ -34,13 +34,10 @@ data T1Cmd = T1Trigger Int deriving (Eq, Show)
 
 inCtorT1Trigger :: InCtor T1Cmd '[ '("payload", Int)]
 inCtorT1Trigger =
-  InCtor
-    { icName = "T1Trigger",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        T1Trigger n -> Just (RCons (Proxy @"payload") n RNil),
-      icBuild = \(RCons _ n RNil) -> T1Trigger n
-    }
+  unavailableInCtor
+    "T1Trigger"
+    (\case T1Trigger n -> Just (RCons (Proxy @"payload") n RNil))
+    (\(RCons _ n RNil) -> T1Trigger n)
 
 -- | t1's mid (output) alphabet: two constructors A and B.
 data Mid = MidA {a :: Int} | MidB {b :: Int}
@@ -107,25 +104,23 @@ data Echo = EchoA Int | EchoB Int deriving (Eq, Show)
 
 wcEchoA :: WireCtor Echo (Int, ())
 wcEchoA =
-  WireCtor
-    { wcName = "EchoA",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "EchoA"
+    ( \case
         EchoA n -> Just (n, ())
-        _ -> Nothing,
-      wcBuild = \(n, ()) -> EchoA n
-    }
+        _ -> Nothing
+    )
+    (\(n, ()) -> EchoA n)
 
 wcEchoB :: WireCtor Echo (Int, ())
 wcEchoB =
-  WireCtor
-    { wcName = "EchoB",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "EchoB"
+    ( \case
         EchoB n -> Just (n, ())
-        _ -> Nothing,
-      wcBuild = \(n, ()) -> EchoB n
-    }
+        _ -> Nothing
+    )
+    (\(n, ()) -> EchoB n)
 
 -- | t2's vertex (single).
 data Z = Z deriving (Eq, Ord, Show, Bounded, Enum)
@@ -184,12 +179,10 @@ data PendingSourceCmd = PendingSourceCmd FieldProj.DocInfo
 
 pendingSourceCtor :: InCtor PendingSourceCmd '[ '("doc", FieldProj.DocInfo)]
 pendingSourceCtor =
-  InCtor
-    { icName = "PendingSourceCmd",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \(PendingSourceCmd doc) -> Just (RCons (Proxy @"doc") doc RNil),
-      icBuild = \(RCons _ doc RNil) -> PendingSourceCmd doc
-    }
+  unavailableInCtor
+    "PendingSourceCmd"
+    (\(PendingSourceCmd doc) -> Just (RCons (Proxy @"doc") doc RNil))
+    (\(RCons _ doc RNil) -> PendingSourceCmd doc)
 
 data PendingMid
   = PendingLoad {doc :: FieldProj.DocInfo}

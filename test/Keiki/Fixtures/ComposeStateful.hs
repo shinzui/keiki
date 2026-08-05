@@ -92,30 +92,15 @@ data WrongVertex = WrongVertex
 
 inCtorTick :: InCtor SourceCmd '[]
 inCtorTick =
-  InCtor
-    { icName = "Tick",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Tick -> Just RNil,
-      icBuild = \RNil -> Tick
-    }
+  unavailableInCtor "Tick" (\case Tick -> Just RNil) (\RNil -> Tick)
 
 inCtorGo :: InCtor PairCmd '[]
 inCtorGo =
-  InCtor
-    { icName = "Go",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case Go -> Just RNil,
-      icBuild = \RNil -> Go
-    }
+  unavailableInCtor "Go" (\case Go -> Just RNil) (\RNil -> Go)
 
 inCtorProduceA :: InCtor M2SourceCmd '[]
 inCtorProduceA =
-  InCtor
-    { icName = "ProduceA",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case ProduceA -> Just RNil,
-      icBuild = \RNil -> ProduceA
-    }
+  unavailableInCtor "ProduceA" (\case ProduceA -> Just RNil) (\RNil -> ProduceA)
 
 inCtorMidVal :: InCtor MidVal '[ '("v", Int)]
 inCtorMidVal = mkInCtorRecordVia @"MidVal"
@@ -134,56 +119,50 @@ wireM2A = mkWireCtorRecordVia @"M2A"
 
 wireOutVal :: WireCtor OutVal (Int, ())
 wireOutVal =
-  WireCtor
-    { wcName = "OutVal",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case OutVal v -> Just (v, ()),
-      wcBuild = \(v, ()) -> OutVal v
-    }
+  unavailableWireCtor
+    "OutVal"
+    (\case OutVal v -> Just (v, ()))
+    (\(v, ()) -> OutVal v)
 
 wireStage1 :: WireCtor StageOut (Int, ())
 wireStage1 =
-  WireCtor
-    { wcName = "Stage1",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "Stage1"
+    ( \case
         Stage1 v -> Just (v, ())
-        Stage2 _ -> Nothing,
-      wcBuild = \(v, ()) -> Stage1 v
-    }
+        Stage2 _ -> Nothing
+    )
+    (\(v, ()) -> Stage1 v)
 
 wireStage2 :: WireCtor StageOut (Int, ())
 wireStage2 =
-  WireCtor
-    { wcName = "Stage2",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "Stage2"
+    ( \case
         Stage1 _ -> Nothing
-        Stage2 v -> Just (v, ()),
-      wcBuild = \(v, ()) -> Stage2 v
-    }
+        Stage2 v -> Just (v, ())
+    )
+    (\(v, ()) -> Stage2 v)
 
 wireSawA :: WireCtor WrongOut (Int, ())
 wireSawA =
-  WireCtor
-    { wcName = "SawA",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "SawA"
+    ( \case
         SawA v -> Just (v, ())
-        SawB _ -> Nothing,
-      wcBuild = \(v, ()) -> SawA v
-    }
+        SawB _ -> Nothing
+    )
+    (\(v, ()) -> SawA v)
 
 wireSawB :: WireCtor WrongOut (Int, ())
 wireSawB =
-  WireCtor
-    { wcName = "SawB",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "SawB"
+    ( \case
         SawA _ -> Nothing
-        SawB v -> Just (v, ()),
-      wcBuild = \(v, ()) -> SawB v
-    }
+        SawB v -> Just (v, ())
+    )
+    (\(v, ()) -> SawB v)
 
 counterSource :: SymTransducer (HsPred CounterRegs SourceCmd) CounterRegs CounterVertex SourceCmd MidVal
 counterSource =

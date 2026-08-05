@@ -54,9 +54,13 @@ implementing a new consumer-facing request.
       source-and-edge keyed verdict matching, derived solver candidates from the canonical pure
       warning keys, and added both positional-misalignment regressions. Corrected focused command
       passed with 16 examples and 0 failures.
-- [ ] Milestone 2: seal the `WireCtor`/`InCtor` construction and update boundary with
-      unidirectional record pattern synonyms, explicit unavailable constructors, and
-      evidence-preserving rename helpers; migrate in-tree uses.
+- [x] (2026-08-05T02:11:53Z) Milestone 2: sealed `WireCtor`/`InCtor` behind
+      unidirectional record patterns, added explicit unavailable constructors and
+      evidence-preserving rename helpers, protected trusted construction with a strict capability
+      from an unexposed module, and migrated all in-tree uses. `cabal build all` passed;
+      Symbolic passed 109 examples, WireSchema 11, and InputSchema 10, all with 0 failures; the
+      trusted-wire update fixture failed as required at `wcMatch` with GHC-16444, and importing
+      the trusted capability failed as a hidden module with GHC-87110.
 - [ ] Milestone 3: replace the composition-only alignment coercion with a typed prefix spine.
 - [ ] Milestone 4: sweep the minor review findings (Haddocks, unwitnessed-composition test,
       compile-fail automation).
@@ -102,6 +106,13 @@ implementing a new consumer-facing request.
   failed at argument parsing. Passing the filter as two Cabal options,
   `--test-option=--match --test-option='full symbolic replay inversion'`, ran 16 examples with
   0 failures. Use the split form for every focused command whose match contains spaces.
+
+- Observation: GHC record pattern synonyms generate ordinary selector functions but do not
+  automatically participate in `OverloadedRecordDot`'s `HasField` resolution. Evidence: the
+  initial sealed `Keiki.Core` build accepted `wcSchema wire` but rejected `wire.wcSchema` with a
+  missing `HasField` instance. Explicit `HasField` instances over the read-only selectors restore
+  dotted selection without enabling update; GHC 9.12.4 then rejected the trusted-wire record
+  update as a non-bidirectional pattern synonym use (GHC-16444).
 
 
 ## Decision Log
@@ -153,6 +164,16 @@ implementing a new consumer-facing request.
   Rationale: Reusing the pure warning result guarantees the solver analyzes precisely the pairs
   eligible for compatibility suppression without exporting the pure register-analysis internals.
   Requiring a unique matching detail makes accidental duplicate analysis fail closed.
+  Date: 2026-08-05
+
+- Decision: Keep the raw `MkWireCtor`/`MkInCtor` constructors private to `Keiki.Core` and require
+  trusted in-package producers to call strict internal hooks with a capability whose sole
+  constructor/value lives in the unexposed `Keiki.Internal.ConstructorEvidence` module.
+  Rationale: Haskell has module-level rather than package-private exports, so sibling modules
+  cannot directly use a non-exported raw constructor. A strict unforgeable capability lets
+  Generic, composition, and profunctor producers preserve or mint evidence while downstream
+  packages cannot successfully call the hooks. Public consumers receive only read-only patterns,
+  unavailable constructors, and evidence-preserving rename helpers.
   Date: 2026-08-05
 
 

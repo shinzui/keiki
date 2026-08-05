@@ -41,53 +41,44 @@ type BeginFields =
 
 inCtorBegin :: InCtor SplitCmd BeginFields
 inCtorBegin =
-  InCtor
-    { icName = "Begin",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "Begin"
+    ( \case
         Begin a b c ->
           Just $
             RCons (Proxy @"a") a $
               RCons (Proxy @"b") b $
-                RCons (Proxy @"c") c RNil,
-      icBuild = \(RCons _ a (RCons _ b (RCons _ c RNil))) -> Begin a b c
-    }
+                RCons (Proxy @"c") c RNil
+    )
+    (\(RCons _ a (RCons _ b (RCons _ c RNil))) -> Begin a b c)
 
 wireOutAB :: WireCtor SplitEvent (Int, (Int, ()))
 wireOutAB =
-  WireCtor
-    { wcName = "OutAB",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case OutAB a b -> Just (a, (b, ())); _ -> Nothing,
-      wcBuild = \(a, (b, ())) -> OutAB a b
-    }
+  unavailableWireCtor
+    "OutAB"
+    (\case OutAB a b -> Just (a, (b, ())); _ -> Nothing)
+    (\(a, (b, ())) -> OutAB a b)
 
 wireOutBC :: WireCtor SplitEvent (Int, (Int, ()))
 wireOutBC =
-  WireCtor
-    { wcName = "OutBC",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case OutBC b c -> Just (b, (c, ())); _ -> Nothing,
-      wcBuild = \(b, (c, ())) -> OutBC b c
-    }
+  unavailableWireCtor
+    "OutBC"
+    (\case OutBC b c -> Just (b, (c, ())); _ -> Nothing)
+    (\(b, (c, ())) -> OutBC b c)
 
 wireOutABC :: WireCtor SplitEvent (Int, (Int, (Int, ())))
 wireOutABC =
-  WireCtor
-    { wcName = "OutABC",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case OutABC a b c -> Just (a, (b, (c, ()))); _ -> Nothing,
-      wcBuild = \(a, (b, (c, ()))) -> OutABC a b c
-    }
+  unavailableWireCtor
+    "OutABC"
+    (\case OutABC a b c -> Just (a, (b, (c, ()))); _ -> Nothing)
+    (\(a, (b, (c, ()))) -> OutABC a b c)
 
 wireOutA :: WireCtor SplitEvent (Int, ())
 wireOutA =
-  WireCtor
-    { wcName = "OutA",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case OutA a -> Just (a, ()); _ -> Nothing,
-      wcBuild = \(a, ()) -> OutA a
-    }
+  unavailableWireCtor
+    "OutA"
+    (\case OutA a -> Just (a, ()); _ -> Nothing)
+    (\(a, ()) -> OutA a)
 
 beginA :: Term '[] SplitCmd BeginFields Int
 beginA = TInpCtorField inCtorBegin (#a :: Index BeginFields Int)

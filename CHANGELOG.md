@@ -19,6 +19,9 @@ and this project adheres to the
   equal/different/unwitnessed classification, and `mkInCtorRecordVia` /
   `mkWireCtorRecordVia` safely derive schemas for constructors whose fields are
   declared directly with record syntax.
+- `unavailableWireCtor` / `unavailableInCtor` are the explicit manual-behavior
+  constructors, and `renameWireCtor` / `renameInCtor` change diagnostic names
+  while preserving behavior and trusted evidence.
 - `checkInversionAmbiguitySymDetailed` and
   `checkInversionAmbiguitySym` provide an opt-in SBV analysis of two replay
   candidates against shared registers and a structurally aligned observed head.
@@ -32,8 +35,9 @@ and this project adheres to the
   Unsupported and opaque guards remain conservative warnings, and their
   `tvwDetail` identifies the construct that blocked the cheap proof. Runtime
   replay and the opt-in symbolic checker are unchanged.
-- **Breaking:** `WireCtor` adds `wcSchema`. Direct records must state
-  `wireSchemaUnavailable`; Generic `mkWireCtorVia` and TH-derived wires provide
+- **Breaking:** `WireCtor` construction and record update are sealed behind a
+  read-only `WireCtor` record pattern. Manual behavior uses
+  `unavailableWireCtor`; Generic `mkWireCtorVia` and TH-derived wires provide
   trusted evidence. Schema-preserving composition retains evidence, while
   meaning-changing profunctor transformations drop it.
 - **Breaking:** nullary TH-derived wires now use structural Generic matching via
@@ -42,11 +46,12 @@ and this project adheres to the
   instance no longer changes `wcMatch` behavior.
 - `mkWireCtor` and `mkWireCtor0` are deprecated because their closure-taking
   interfaces cannot establish trusted evidence. Use their `Via` counterparts or
-  an explicit `WireCtor` record with `wireSchemaUnavailable`.
-- **Breaking:** `InCtor` adds `icSchema`. Direct records must state
-  `inCtorSchemaUnavailable`; Generic `mkInCtorVia`, direct-record Via producers,
-  and TH-derived constructors provide trusted evidence. `mkInCtor` and
-  `mkInCtor0` are deprecated because closure-taking APIs cannot establish it.
+  `unavailableWireCtor`.
+- **Breaking:** `InCtor` construction and record update are sealed behind a
+  read-only `InCtor` record pattern. Manual behavior uses `unavailableInCtor`;
+  Generic `mkInCtorVia`, direct-record Via producers, and TH-derived constructors
+  provide trusted evidence. `mkInCtor` and `mkInCtor0` are deprecated because
+  closure-taking APIs cannot establish it.
 - Sequential composition now substitutes mid-side fields and discharges
   constructor guards only through typed input-to-wire alignment. Structural
   mismatch and unavailable evidence produce `StructurallyDifferentInputWire` or
@@ -60,15 +65,17 @@ and this project adheres to the
 
 ### Migration
 
-- Add `wcSchema = wireSchemaUnavailable` to intentional manual constructors, or
-  move honest Generic bindings to `mkWireCtorVia` / `mkWireCtor0Via`. Version,
-  bound, release, and downstream migration work is deliberately deferred until
-  the remaining breaking Keiki ExecPlans are complete.
-- Add `icSchema = inCtorSchemaUnavailable` to intentional manual input
-  constructors. Prefer `mkInCtorVia` for constructors wrapping record payloads,
-  `mkInCtorRecordVia` for direct record constructors, and TH derivation where
-  applicable. Use trusted producers on every boundary passed to `composeChecked`
-  or relied on for symbolic constructor exclusion.
+- Replace intentional manual `WireCtor` records with
+  `unavailableWireCtor name match build`, or move honest Generic bindings to
+  `mkWireCtorVia` / `mkWireCtor0Via`. Use `renameWireCtor` instead of record
+  update when only the diagnostic name changes.
+- Replace intentional manual `InCtor` records with
+  `unavailableInCtor name match build`. Prefer `mkInCtorVia` for constructors
+  wrapping record payloads, `mkInCtorRecordVia` for direct record constructors,
+  and TH derivation where applicable. Use `renameInCtor` for diagnostic relabels
+  and trusted producers on every boundary passed to `composeChecked` or relied
+  on for symbolic constructor exclusion. Version, bound, release, and downstream
+  migration work remains deferred until the remaining breaking ExecPlans finish.
 
 
 ## [0.8.0.0] — 2026-08-02

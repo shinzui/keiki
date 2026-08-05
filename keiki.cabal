@@ -82,6 +82,7 @@ library
     Keiki.Symbolic
 
   other-modules:
+    Keiki.Internal.ConstructorEvidence
     Keiki.Internal.ProjectionDomain
     Keiki.Internal.SymbolicTypes
     Keiki.Internal.WireSchema

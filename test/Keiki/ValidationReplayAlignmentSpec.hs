@@ -42,39 +42,31 @@ type AmbiguousFields = '[ '("value", Int)]
 
 inCtorX :: InCtor AmbiguousCmd AmbiguousFields
 inCtorX =
-  InCtor
-    { icName = "CmdX",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case CmdX value -> Just (RCons (Proxy @"value") value RNil); _ -> Nothing,
-      icBuild = \(RCons _ value RNil) -> CmdX value
-    }
+  unavailableInCtor
+    "CmdX"
+    (\case CmdX value -> Just (RCons (Proxy @"value") value RNil); _ -> Nothing)
+    (\(RCons _ value RNil) -> CmdX value)
 
 inCtorY :: InCtor AmbiguousCmd AmbiguousFields
 inCtorY =
-  InCtor
-    { icName = "CmdY",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case CmdY value -> Just (RCons (Proxy @"value") value RNil); _ -> Nothing,
-      icBuild = \(RCons _ value RNil) -> CmdY value
-    }
+  unavailableInCtor
+    "CmdY"
+    (\case CmdY value -> Just (RCons (Proxy @"value") value RNil); _ -> Nothing)
+    (\(RCons _ value RNil) -> CmdY value)
 
 wireLogged :: WireCtor AmbiguousEvent (Int, ())
 wireLogged =
-  WireCtor
-    { wcName = "Logged",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Logged value -> Just (value, ()); _ -> Nothing,
-      wcBuild = \(value, ()) -> Logged value
-    }
+  unavailableWireCtor
+    "Logged"
+    (\case Logged value -> Just (value, ()); _ -> Nothing)
+    (\(value, ()) -> Logged value)
 
 wireLoggedY :: WireCtor AmbiguousEvent (Int, ())
 wireLoggedY =
-  WireCtor
-    { wcName = "LoggedY",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case LoggedY value -> Just (value, ()); _ -> Nothing,
-      wcBuild = \(value, ()) -> LoggedY value
-    }
+  unavailableWireCtor
+    "LoggedY"
+    (\case LoggedY value -> Just (value, ()); _ -> Nothing)
+    (\(value, ()) -> LoggedY value)
 
 ambiguousTransducerWith ::
   WireCtor AmbiguousEvent (Int, ()) ->

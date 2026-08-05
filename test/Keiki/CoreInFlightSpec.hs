@@ -13,35 +13,30 @@ data MultiOutput = Started Int | Echoed Int deriving (Eq, Show)
 
 inCtorBegin :: InCtor MultiInput '[ '("payload", Int)]
 inCtorBegin =
-  InCtor
-    { icName = "Begin",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        Begin n -> Just (RCons (Proxy @"payload") n RNil),
-      icBuild = \(RCons _ n RNil) -> Begin n
-    }
+  unavailableInCtor
+    "Begin"
+    (\case Begin n -> Just (RCons (Proxy @"payload") n RNil))
+    (\(RCons _ n RNil) -> Begin n)
 
 wcStarted :: WireCtor MultiOutput (Int, ())
 wcStarted =
-  WireCtor
-    { wcName = "Started",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "Started"
+    ( \case
         Started n -> Just (n, ())
-        _ -> Nothing,
-      wcBuild = \(n, ()) -> Started n
-    }
+        _ -> Nothing
+    )
+    (\(n, ()) -> Started n)
 
 wcEchoed :: WireCtor MultiOutput (Int, ())
 wcEchoed =
-  WireCtor
-    { wcName = "Echoed",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "Echoed"
+    ( \case
         Echoed n -> Just (n, ())
-        _ -> Nothing,
-      wcBuild = \(n, ()) -> Echoed n
-    }
+        _ -> Nothing
+    )
+    (\(n, ()) -> Echoed n)
 
 -- | A minimal 2-vertex transducer with one length-2 edge followed by a
 -- length-1 self-loop:

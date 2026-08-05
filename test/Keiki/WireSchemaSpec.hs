@@ -40,14 +40,13 @@ wireEmpty = mkWireCtor0Via @"Empty"
 
 manualFirst :: WireCtor SchemaEvent (FieldsOf FirstPayload)
 manualFirst =
-  WireCtor
-    { wcName = "First",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case
+  unavailableWireCtor
+    "First"
+    ( \case
         First payload -> Just (payload.repeated, (payload.trailing, ()))
-        _ -> Nothing,
-      wcBuild = \(value, (flag, ())) -> First (FirstPayload value flag)
-    }
+        _ -> Nothing
+    )
+    (\(value, (flag, ())) -> First (FirstPayload value flag))
 
 closureFirst :: WireCtor SchemaEvent (FieldsOf FirstPayload)
 closureFirst =
@@ -73,10 +72,17 @@ spec = do
         `shouldBe` WireHeadsStructurallyEqual
 
     it "uses ordered field types rather than selector labels" $ do
-      let first = wireFirst {wcName = "Repeated"}
-          second = wireSecond {wcName = "Repeated"}
+      let first = renameWireCtor "Repeated" wireFirst
+          second = renameWireCtor "Repeated" wireSecond
       classifyWireHeads first second
         `shouldBe` WireHeadsStructurallyDifferent
+
+    it "preserves trusted evidence and behavior when renamed" $ do
+      let renamed = renameWireCtor "RenamedFirst" wireFirst
+      renamed.wcName `shouldBe` "RenamedFirst"
+      wireSchemaAvailability renamed.wcSchema `shouldBe` WireSchemaTrusted
+      renamed.wcMatch (First (FirstPayload 7 True)) `shouldBe` Just (7, (True, ()))
+      renamed.wcBuild (7, (True, ())) `shouldBe` First (FirstPayload 7 True)
 
     it "keeps match/build round trips unchanged" $ do
       wcMatch wireFirst (First (FirstPayload 7 True))
@@ -86,7 +92,7 @@ spec = do
       wcMatch wireEmpty Empty `shouldBe` Just ()
 
   describe "unavailable schemas" $ do
-    it "marks manual records and closure-taking helpers unavailable" $ do
+    it "marks manual constructors and closure-taking helpers unavailable" $ do
       wireSchemaAvailability manualFirst.wcSchema
         `shouldBe` WireSchemaUnavailable
       wireSchemaAvailability closureFirst.wcSchema
@@ -95,7 +101,7 @@ spec = do
     it "uses the legacy name fallback only for unavailable evidence" $ do
       wireHeadsMayAliasForDefault manualFirst wireFirst `shouldBe` True
       wireHeadsMayAliasForDefault
-        (manualFirst {wcName = "Other"})
+        (renameWireCtor "Other" manualFirst)
         wireFirst
         `shouldBe` False
 

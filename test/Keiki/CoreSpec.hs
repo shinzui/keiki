@@ -30,21 +30,14 @@ type LiteralLedgerRegs = '[ '("payload", ThrowingShowValue)]
 
 literalLedgerInCtor :: InCtor () '[]
 literalLedgerInCtor =
-  InCtor
-    { icName = "LiteralLedgerCommand",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \() -> Just RNil,
-      icBuild = \RNil -> ()
-    }
+  unavailableInCtor "LiteralLedgerCommand" (\() -> Just RNil) (\RNil -> ())
 
 literalLedgerWireCtor :: WireCtor LiteralLedgerEvent (ThrowingShowValue, ())
 literalLedgerWireCtor =
-  WireCtor
-    { wcName = "LiteralLedgerEvent",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \(LiteralLedgerEvent value) -> Just (value, ()),
-      wcBuild = \(value, ()) -> LiteralLedgerEvent value
-    }
+  unavailableWireCtor
+    "LiteralLedgerEvent"
+    (\(LiteralLedgerEvent value) -> Just (value, ()))
+    (\(value, ()) -> LiteralLedgerEvent value)
 
 literalLedgerValue :: ThrowingShowValue
 literalLedgerValue = ThrowingShowValue 41
@@ -107,12 +100,10 @@ type NoShowRegs = '[ '("payload", NoShowValue)]
 
 noShowWireCtor :: WireCtor NoShowEvent (NoShowValue, ())
 noShowWireCtor =
-  WireCtor
-    { wcName = "NoShowEvent",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \(NoShowEvent value) -> Just (value, ()),
-      wcBuild = \(value, ()) -> NoShowEvent value
-    }
+  unavailableWireCtor
+    "NoShowEvent"
+    (\(NoShowEvent value) -> Just (value, ()))
+    (\(value, ()) -> NoShowEvent value)
 
 noShowTransducer ::
   SymTransducer
@@ -157,19 +148,18 @@ inCtorTinyFoo ::
     TinyCmd
     '[ '("a", Int), '("b", Int)]
 inCtorTinyFoo =
-  InCtor
-    { icName = "TinyFoo",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "TinyFoo"
+    ( \case
         TinyFoo a b ->
           Just
             ( RCons (Proxy @"a") a $
                 RCons (Proxy @"b") b $
                   RNil
             )
-        _ -> Nothing,
-      icBuild = \(RCons _ a (RCons _ b RNil)) -> TinyFoo a b
-    }
+        _ -> Nothing
+    )
+    (\(RCons _ a (RCons _ b RNil)) -> TinyFoo a b)
 
 -- The synthetic transducer's input-side singleton: matches 'True' only,
 -- with an empty payload. 'icName' aligns with the wire-side 'wcName'
@@ -177,14 +167,13 @@ inCtorTinyFoo =
 -- empty slot list and recovers 'True'.
 inCtorTrue :: InCtor Bool '[]
 inCtorTrue =
-  InCtor
-    { icName = "True",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "True"
+    ( \case
         True -> Just RNil
-        False -> Nothing,
-      icBuild = \RNil -> True
-    }
+        False -> Nothing
+    )
+    (\RNil -> True)
 
 -- The synthetic transducer's wire-side singleton: a one-constructor
 -- 'WireCtor' over 'String' carrying no fields, recognising the literal
@@ -192,12 +181,10 @@ inCtorTrue =
 -- edge a structural output term (no opaque 'mkOut').
 wcStringTrue :: WireCtor String ()
 wcStringTrue =
-  WireCtor
-    { wcName = "True",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \s -> if s == "true" then Just () else Nothing,
-      wcBuild = \() -> "true"
-    }
+  unavailableWireCtor
+    "True"
+    (\s -> if s == "true" then Just () else Nothing)
+    (\() -> "true")
 
 -- A minimal 2-vertex transducer over 'Bool' input, 'String' output, no
 -- registers. Edges:
@@ -418,12 +405,10 @@ spec = do
     let -- An output sum mirroring TinyCmd's payload (ci-determined wire).
         wireTinyFoo :: WireCtor TinyCmdOut (Int, (Int, ()))
         wireTinyFoo =
-          WireCtor
-            { wcName = "TinyFooOut",
-              wcSchema = wireSchemaUnavailable,
-              wcMatch = \(TinyFooOut a b) -> Just (a, (b, ())),
-              wcBuild = \(a, (b, ())) -> TinyFooOut a b
-            }
+          unavailableWireCtor
+            "TinyFooOut"
+            (\(TinyFooOut a b) -> Just (a, (b, ())))
+            (\(a, (b, ())) -> TinyFooOut a b)
         -- Complete OPack: both fields read from inCtorTinyFoo.
         outComplete :: OutTerm '[] TinyCmd TinyCmdOut
         outComplete =
@@ -467,19 +452,18 @@ spec = do
         -- type-unsound coercion.
         inCtorTinyFooOther :: InCtor TinyCmd '[ '("a", Int), '("b", Int)]
         inCtorTinyFooOther =
-          InCtor
-            { icName = "OtherName",
-              icSchema = inCtorSchemaUnavailable,
-              icMatch = \case
+          unavailableInCtor
+            "OtherName"
+            ( \case
                 TinyFoo a b ->
                   Just
                     ( RCons (Proxy @"a") a $
                         RCons (Proxy @"b") b $
                           RNil
                     )
-                _ -> Nothing,
-              icBuild = \(RCons _ a (RCons _ b RNil)) -> TinyFoo a b
-            }
+                _ -> Nothing
+            )
+            (\(RCons _ a (RCons _ b RNil)) -> TinyFoo a b)
         outNameMismatch :: OutTerm '[] TinyCmd TinyCmdOut
         outNameMismatch =
           OPack

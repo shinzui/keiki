@@ -14,10 +14,10 @@ import Keiki.Core
     RegFile (..),
     Term (..),
     Update (..),
-    inCtorSchemaUnavailable,
     inpProj,
     opaqueLit,
     regProj,
+    unavailableInCtor,
   )
 import Keiki.FieldProjSpec qualified as FieldProj
 import Keiki.Internal.Slots (IndexN (..))
@@ -36,12 +36,10 @@ type DepFields = '[ '("amount", Int)]
 
 inCtorDeposit :: InCtor Cmd DepFields
 inCtorDeposit =
-  InCtor
-    { icName = "Deposit",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \(Deposit n) -> Just (RCons (Proxy @"amount") n RNil),
-      icBuild = \(RCons _ n RNil) -> Deposit n
-    }
+  unavailableInCtor
+    "Deposit"
+    (\(Deposit n) -> Just (RCons (Proxy @"amount") n RNil))
+    (\(RCons _ n RNil) -> Deposit n)
 
 -- Index helpers (built by hand so we do not depend on OverloadedLabels
 -- resolution here).

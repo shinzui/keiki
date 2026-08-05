@@ -21,27 +21,24 @@ type Payload2 = '[ '("first", Int), '("second", Int)]
 
 typoInMsgB :: InCtor MsgB Payload1
 typoInMsgB =
-  InCtor
-    { icName = "MsgTypo",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \(MsgB n) -> Just (RCons (Proxy @"payload") n RNil),
-      icBuild = \(RCons _ n RNil) -> MsgB n
-    }
+  unavailableInCtor
+    "MsgTypo"
+    (\(MsgB n) -> Just (RCons (Proxy @"payload") n RNil))
+    (\(RCons _ n RNil) -> MsgB n)
 
 twoFieldInMsgB :: InCtor MsgB Payload2
 twoFieldInMsgB =
-  InCtor
-    { icName = "MsgB",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \(MsgB n) ->
+  unavailableInCtor
+    "MsgB"
+    ( \(MsgB n) ->
         Just
           ( RCons
               (Proxy @"first")
               n
               (RCons (Proxy @"second") n RNil)
-          ),
-      icBuild = \(RCons _ n (RCons _ _ RNil)) -> MsgB n
-    }
+          )
+    )
+    (\(RCons _ n (RCons _ _ RNil)) -> MsgB n)
 
 misnamedStageB :: SymTransducer (HsPred BRegs MsgB) BRegs StageVertex MsgB MsgC
 misnamedStageB =
@@ -90,13 +87,12 @@ type ProjectionSourceFields = '[ '("doc", FieldProj.DocInfo)]
 
 projectionSourceCtor :: InCtor ProjectionSourceCmd ProjectionSourceFields
 projectionSourceCtor =
-  InCtor
-    { icName = "ProjectionSourceCmd",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \(ProjectionSourceCmd doc) ->
-        Just (RCons (Proxy @"doc") doc RNil),
-      icBuild = \(RCons _ doc RNil) -> ProjectionSourceCmd doc
-    }
+  unavailableInCtor
+    "ProjectionSourceCmd"
+    ( \(ProjectionSourceCmd doc) ->
+        Just (RCons (Proxy @"doc") doc RNil)
+    )
+    (\(RCons _ doc RNil) -> ProjectionSourceCmd doc)
 
 data ProjectionMid = ProjectionMid {doc :: FieldProj.DocInfo}
   deriving stock (Eq, Show, Generic)
@@ -174,15 +170,11 @@ data CollisionMid
 
 collisionWire :: WireCtor CollisionMid (Int, ())
 collisionWire =
-  (mkWireCtorRecordVia @"CollisionWire")
-    { wcName = "Collision"
-    }
+  renameWireCtor "Collision" (mkWireCtorRecordVia @"CollisionWire")
 
 collisionInput :: InCtor CollisionMid '[ '("inputValue", Int)]
 collisionInput =
-  (mkInCtorRecordVia @"CollisionInput")
-    { icName = "Collision"
-    }
+  renameInCtor "Collision" (mkInCtorRecordVia @"CollisionInput")
 
 collisionSource ::
   SymTransducer

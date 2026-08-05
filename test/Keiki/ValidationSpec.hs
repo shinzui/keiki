@@ -27,21 +27,11 @@ data VEvent = Fooed | Bared
 
 wireFooed :: WireCtor VEvent ()
 wireFooed =
-  WireCtor
-    { wcName = "Fooed",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Fooed -> Just (); _ -> Nothing,
-      wcBuild = \() -> Fooed
-    }
+  unavailableWireCtor "Fooed" (\case Fooed -> Just (); _ -> Nothing) (\() -> Fooed)
 
 wireBared :: WireCtor VEvent ()
 wireBared =
-  WireCtor
-    { wcName = "Bared",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case Bared -> Just (); _ -> Nothing,
-      wcBuild = \() -> Bared
-    }
+  unavailableWireCtor "Bared" (\case Bared -> Just (); _ -> Nothing) (\() -> Bared)
 
 -- A three-state enum: Start (reachable), Mid (reachable), Orphan (unreachable).
 data V = Start | Mid | Orphan
@@ -191,27 +181,24 @@ data MultiOutput = OutAB Int Int
 
 inCtorBegin :: InCtor MultiInput '[ '("a", Int), '("b", Int), '("c", Int)]
 inCtorBegin =
-  InCtor
-    { icName = "Begin",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
+  unavailableInCtor
+    "Begin"
+    ( \case
         Begin a b c ->
           Just $
             RCons (Proxy @"a") a $
               RCons (Proxy @"b") b $
                 RCons (Proxy @"c") c $
-                  RNil,
-      icBuild = \(RCons _ a (RCons _ b (RCons _ c RNil))) -> Begin a b c
-    }
+                  RNil
+    )
+    (\(RCons _ a (RCons _ b (RCons _ c RNil))) -> Begin a b c)
 
 wcAB :: WireCtor MultiOutput (Int, (Int, ()))
 wcAB =
-  WireCtor
-    { wcName = "OutAB",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \case OutAB a b -> Just (a, (b, ())),
-      wcBuild = \(a, (b, ())) -> OutAB a b
-    }
+  unavailableWireCtor
+    "OutAB"
+    (\case OutAB a b -> Just (a, (b, ())))
+    (\(a, (b, ())) -> OutAB a b)
 
 -- A two-state transducer whose only edge recovers slots {a, b} but not {c},
 -- so slot c is a hidden input.
@@ -580,14 +567,14 @@ spec = do
 
     it "rejects an output projection and still reports its owner field hidden" $ do
       let projectedWire =
-            WireCtor
-              { wcName = "ProjectedHash",
-                wcSchema = wireSchemaUnavailable,
-                wcMatch = \case
-                  FieldProj.DocAccepted doc -> Just (FieldProj.diHash doc, ()),
-                wcBuild = \(hash, ()) ->
+            unavailableWireCtor
+              "ProjectedHash"
+              ( \case
+                  FieldProj.DocAccepted doc -> Just (FieldProj.diHash doc, ())
+              )
+              ( \(hash, ()) ->
                   FieldProj.DocAccepted (FieldProj.DocInfo hash "" [])
-              }
+              )
           fixture =
             FieldProj.docProjectionTransducer
               { edgesOut = \FieldProj.DocState ->

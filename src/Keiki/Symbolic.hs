@@ -2555,12 +2555,10 @@ class KnownInCtors ci where
 -- @SymPred rs ()@.
 inCtorUnit :: InCtor () '[]
 inCtorUnit =
-  InCtor
-    { icName = "()",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \() -> Just RNil,
-      icBuild = \RNil -> ()
-    }
+  unavailableInCtor
+    "()"
+    (\() -> Just RNil)
+    (\RNil -> ())
 
 -- | @()@ has one constructor; its 'allInCtors' is the singleton
 -- 'inCtorUnit'. Added by EP-44 so @sat@ over a no-command carrier

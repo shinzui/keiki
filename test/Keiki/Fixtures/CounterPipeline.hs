@@ -136,5 +136,5 @@ stageConflict ::
 stageConflict =
   counterStage
     inMsgD
-    (wireMsgD {wcName = "MsgDOut"})
+    (renameWireCtor "MsgDOut" wireMsgD)
     id

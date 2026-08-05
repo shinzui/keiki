@@ -118,6 +118,7 @@ import Keiki.Composition
     withKnownSlots,
   )
 import Keiki.Core
+import Keiki.Internal.ConstructorEvidence (constructorEvidence)
 import Keiki.Internal.WireSchema
   ( compositionOnlyInCtorSchema,
     compositionOnlyWireSchema,
@@ -355,12 +356,12 @@ data IdVertex = IdVertex
 -- register is allocated.
 identityInCtor :: forall a. InCtor a '[ '("payload", a)]
 identityInCtor =
-  InCtor
-    { icName = "Identity",
-      icSchema = compositionOnlyInCtorSchema,
-      icMatch = \a -> Just (RCons (Proxy @"payload") a RNil),
-      icBuild = \(RCons _ a RNil) -> a
-    }
+  trustedInCtorInternal
+    constructorEvidence
+    "Identity"
+    compositionOnlyInCtorSchema
+    (\a -> Just (RCons (Proxy @"payload") a RNil))
+    (\(RCons _ a RNil) -> a)
 
 -- | A 'WireCtor' for an arbitrary alphabet @a@. Uses the field-tuple
 -- @(a, ())@ that 'OutFields' produces for a single-element list: one
@@ -369,12 +370,12 @@ identityInCtor =
 -- payload; inversion via 'wcMatch' wraps an @a@ back up.
 identityWireCtor :: forall a. WireCtor a (a, ())
 identityWireCtor =
-  WireCtor
-    { wcName = "Identity",
-      wcSchema = compositionOnlyWireSchema,
-      wcMatch = \a -> Just (a, ()),
-      wcBuild = \(a, ()) -> a
-    }
+  trustedWireCtorInternal
+    constructorEvidence
+    "Identity"
+    compositionOnlyWireSchema
+    (\a -> Just (a, ()))
+    (\(a, ()) -> a)
 
 -- | The identity transducer for an arbitrary alphabet @a@. One vertex
 -- ('IdVertex'); one edge whose guard is @'PInCtor' 'identityInCtor'@
@@ -724,12 +725,10 @@ firstSym t =
 
     firstWireCtor :: forall fs. WireCtor co fs -> WireCtor (co, c) (c, fs)
     firstWireCtor WireCtor {wcName = n, wcBuild = b} =
-      WireCtor
-        { wcName = n <> "_first",
-          wcSchema = wireSchemaUnavailable,
-          wcMatch = \_ -> Nothing,
-          wcBuild = \(cv, fs) -> (b fs, cv)
-        }
+      unavailableWireCtor
+        (n <> "_first")
+        (\_ -> Nothing)
+        (\(cv, fs) -> (b fs, cv))
 
     -- \| Combine an @(ci)@ input constructor with the threaded @c@ into a
     -- @(ci, c)@ constructor whose field schema is @"snd"@ (for @c@)
@@ -737,14 +736,13 @@ firstSym t =
     firstInCtor ::
       forall ifs. InCtor ci ifs -> InCtor (ci, c) ('("snd", c) ': ifs)
     firstInCtor ic@InCtor {} =
-      InCtor
-        { icName = icName ic,
-          icSchema = inCtorSchemaUnavailable,
-          icMatch = \(civ, cv) -> case icMatch ic civ of
+      unavailableInCtor
+        (icName ic)
+        ( \(civ, cv) -> case icMatch ic civ of
             Just rf -> Just (RCons (Proxy @"snd") cv rf)
-            Nothing -> Nothing,
-          icBuild = \(RCons _ cv rf) -> (icBuild ic rf, cv)
-        }
+            Nothing -> Nothing
+        )
+        (\(RCons _ cv rf) -> (icBuild ic rf, cv))
 
     firstOutFields ::
       forall ifs fs.
@@ -880,12 +878,10 @@ arrTransducer f =
 
     arrWc :: WireCtor b (a, ())
     arrWc =
-      WireCtor
-        { wcName = "arr",
-          wcSchema = wireSchemaUnavailable,
-          wcMatch = \_ -> Nothing,
-          wcBuild = \(a, ()) -> f a
-        }
+      unavailableWireCtor
+        "arr"
+        (\_ -> Nothing)
+        (\(a, ()) -> f a)
 
 -- | Standard 'Control.Arrow.Arrow' instance.
 --
@@ -922,24 +918,20 @@ instance Arr.Arrow SomeSymTransducer where
 -- 'Keiki.Core.solveOutput' on edges built from this 'InCtor'.
 contraInCtor :: (ci' -> ci) -> InCtor ci ifs -> InCtor ci' ifs
 contraInCtor f InCtor {icName = n, icMatch = m} =
-  InCtor
-    { icName = n <> "#lmapped",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = m . f,
-      icBuild = poisonedIcBuild n
-    }
+  unavailableInCtor
+    (n <> "#lmapped")
+    (m . f)
+    (poisonedIcBuild n)
 
 -- | Partial-contramap an 'InCtor'. The 'icMatch' becomes
 -- @\ci' -> f ci' >>= m@; 'icBuild' is poisoned (same caveat as
 -- 'contraInCtor').
 contraMaybeInCtor :: (ci' -> Maybe ci) -> InCtor ci ifs -> InCtor ci' ifs
 contraMaybeInCtor f InCtor {icName = n, icMatch = m} =
-  InCtor
-    { icName = n <> "#lmapped",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \ci' -> f ci' >>= m,
-      icBuild = poisonedIcBuild n
-    }
+  unavailableInCtor
+    (n <> "#lmapped")
+    (\ci' -> f ci' >>= m)
+    (poisonedIcBuild n)
 
 poisonedIcBuild :: String -> a -> b
 poisonedIcBuild icN = \_ ->
@@ -955,12 +947,10 @@ poisonedIcBuild icN = \_ ->
 -- 'WireCtor's 'wcMatch' is set to @const Nothing@.
 mapWireCtor :: (co -> co') -> WireCtor co fs -> WireCtor co' fs
 mapWireCtor g WireCtor {wcName = n, wcBuild = b} =
-  WireCtor
-    { wcName = n <> "#rmapped",
-      wcSchema = wireSchemaUnavailable,
-      wcMatch = \_co' -> Nothing,
-      wcBuild = g . b
-    }
+  unavailableWireCtor
+    (n <> "#rmapped")
+    (\_co' -> Nothing)
+    (g . b)
 
 -- ** Term ---------------------------------------------------------------
 
@@ -1033,15 +1023,14 @@ mappedArmInCtor ::
   Bool ->
   InCtor ci' '[]
 mappedArmInCtor f wantLeft =
-  InCtor
-    { icName = if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \ci' -> case f ci' of
+  unavailableInCtor
+    (if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped")
+    ( \ci' -> case f ci' of
         Just (Left _) | wantLeft -> Just RNil
         Just (Right _) | not wantLeft -> Just RNil
-        _ -> Nothing,
-      icBuild = poisonedIcBuild (if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped")
-    }
+        _ -> Nothing
+    )
+    (poisonedIcBuild (if wantLeft then "keiki#leftArm#lmapped" else "keiki#rightArm#lmapped"))
 
 -- ** Update -------------------------------------------------------------
 
