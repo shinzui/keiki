@@ -93,6 +93,9 @@ jobs:
       - name: Build
         run: cabal build all
 
+      - name: Compile-fail evidence boundaries
+        run: just compile-fail-check
+
       - name: Test (keiki — includes Keiki.ShapeSpec)
         run: cabal test keiki:keiki-test
 

@@ -152,11 +152,11 @@ import Unsafe.Coerce (unsafeCoerce)
 --     @ci ~ co@ comes from the constructor's GADT signature.
 --
 -- The sentinel exists because 'Keiki.Composition.compose' substitutes
--- t2's 'TInpCtorField'-on-@ic2@ against t1's 'WireCtor'-named
--- emission, requiring @icName ic2 == wcName wc1@ for the substitution
--- to be sound. A *generic* identity transducer (one whose 'InCtor' is
--- the same regardless of @ci@) cannot satisfy this for arbitrary
--- upstream wire names. The sentinel sidesteps this by short-circuiting
+-- t2's 'TInpCtorField' reads only when their typed input schema is proven
+-- equal to t1's emitted wire schema. A *generic* identity transducer (one
+-- whose 'InCtor' is the same regardless of @ci@) cannot carry evidence
+-- equal to every possible upstream or downstream constructor schema.
+-- The sentinel sidesteps this by short-circuiting
 -- @id . t@ and @t . id@ in 'Cat..' rather than running them through
 -- 'compose'. See 'identityTransducer' for the concrete-identity
 -- transducer that some non-Category code paths still want.
@@ -509,12 +509,12 @@ unsafeCoerceDisjointness =
 --
 -- /Why a sentinel rather than a real identity transducer:/
 -- 'Keiki.Composition.compose' substitutes t2's @TInpCtorField ic2@
--- against t1's emitted 'WireCtor' @wc1@ and demands
--- @icName ic2 == wcName wc1@; otherwise it raises a "structural
--- mismatch" runtime error. A *generic* identity transducer (one
--- 'InCtor' that serves every alphabet) cannot satisfy this for
--- arbitrary upstream wire names, so feeding it through 'compose'
--- would always fail. The sentinel sidesteps this by short-circuiting.
+-- against t1's emitted 'WireCtor' @wc1@ only when their typed schemas
+-- carry a definite equality witness. A *generic* identity transducer
+-- (one 'InCtor' that serves every alphabet) cannot carry evidence equal
+-- to every possible constructor schema, so feeding it through 'compose'
+-- would fail closed at many otherwise lawful identity boundaries. The
+-- sentinel sidesteps this by short-circuiting.
 --
 -- See @test/Keiki/CategorySpec.hs@ for the law tests (behavioural
 -- equality on @id . t@, @t . id@, and associativity, plus the
@@ -836,13 +836,14 @@ instance Strong SomeSymTransducer where
 -- unaffected.
 --
 -- /Composition limitation (see "Law status" above):/ 'Keiki.Composition.compose' substitutes
--- t2's 'TInpCtorField' against t1's 'WireCtor'-emitted output and
--- demands 'icName ic2 == wcName wc1'. An 'arrTransducer'-produced
--- transducer's 'WireCtor' is named @"arr"@ but the next stage's
--- 'TInpCtorField' uses 'identityInCtor' (named @"Identity"@), so
+-- t2's 'TInpCtorField' against t1's 'WireCtor'-emitted output only with
+-- definite typed input-to-wire schema alignment. An
+-- 'arrTransducer'-produced wire has unavailable evidence because an
+-- arbitrary Haskell function supplies no structural inverse, so
 -- 'arr f >>> arr g' will not produce 'arr (g . f)' through 'Cat..'
 -- — substitution turns the composed guard into 'PBot' and the
--- composite never fires. This is documented rather than worked
+-- composite never fires. Diagnostic names play no role. This is
+-- documented rather than worked
 -- around because the symbolic 'Term' AST has no
 -- 'TPure'-style constructor for arbitrary function application
 -- (intentional; see 'Keiki.Symbolic.translateTermSym' for why
@@ -894,10 +895,10 @@ arrTransducer f =
 --
 -- The default @'***'@ and @'&&&'@ methods of 'Arr.Arrow' use
 -- 'Arr.arr', 'Arr.first', and 'Arr.>>>' under the hood; they
--- typecheck and produce composite transducers. The same
--- @icName == wcName@ alignment limitation that affects
--- 'arr f >>> arr g' applies — see 'arrTransducer' for the full
--- caveat.
+-- typecheck and produce composite transducers. The same unavailable
+-- typed-schema evidence that prevents @arr f >>> arr g@ from crossing
+-- a checked composition boundary applies — see 'arrTransducer' for
+-- the full caveat.
 instance Arr.Arrow SomeSymTransducer where
   arr f =
     SomeSymTransducerWith

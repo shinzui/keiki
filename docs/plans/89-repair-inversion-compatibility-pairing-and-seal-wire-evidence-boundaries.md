@@ -66,8 +66,12 @@ implementing a new consumer-facing request.
       alignment coverage passed `checkComposeAlignment` with 6 examples, typed field projection
       composition with 4, Category laws with 4, `preserves Cat.id` with 4, `lmapCi` with 5, and
       Cat/Arrow interplay with 2, all with 0 failures; `unsafeCoerce` is absent from the module.
-- [ ] Milestone 4: sweep the minor review findings (Haddocks, unwitnessed-composition test,
-      compile-fail automation).
+- [x] (2026-08-05T02:27:05Z) Milestone 4: rewrote the four stale Profunctor Haddocks around
+      typed schema alignment; added an unwitnessed manual composition regression; and automated
+      all six construction, update, and capability fixtures through `just compile-fail-check`
+      and the release-blocking CI job. `checkComposeAlignment` passed 7 examples, Profunctor 69,
+      and the validate-clean replay group 4, all with 0 failures; the compile-fail gate reported
+      six expected failures.
 - [ ] Milestone 5: update changelog, plan/ADR records, and run all gates.
 
 
@@ -125,6 +129,17 @@ implementing a new consumer-facing request.
   listed in Milestone 3 above ran 25 examples with 0 failures. Focused filters must use actual
   Hspec description fragments and must be rejected as evidence when their example count is zero.
 
+- Observation: `cabal exec -- ghc` does not consistently expose the local `keiki` package in the
+  generated package environment; after other focused builds it rejected `Keiki.Core` as a member
+  of a hidden package before reaching a fixture's intended failure. Adding `-package keiki` makes
+  the target package visible while preserving the hidden-module rejection for
+  `Keiki.Internal.ConstructorEvidence`.
+
+- Observation: after sealing, the two historical omitted-schema fixtures fail earlier at public
+  `InCtor`/`WireCtor` construction, before GHC can diagnose `icSchema`/`wcSchema` omission. Two
+  trusted schema-update fixtures now carry those field-specific assertions; the historical
+  fixtures remain as direct-construction boundary checks.
+
 
 ## Decision Log
 
@@ -156,9 +171,11 @@ implementing a new consumer-facing request.
   The prose soundness argument becomes unnecessary instead of merely reviewed.
   Date: 2026-08-05
 
-- Decision: Wire both compile-fail fixtures into an automated gate (a recipe that invokes GHC
-  with `-fno-code` on each fixture and asserts failure at the expected message), extended with a
-  new fixture asserting record update of a trusted wire is rejected.
+- Decision: Wire every compile-fail fixture into an exhaustive automated gate (a recipe that
+  invokes GHC with `-fno-code -package keiki` and asserts failure at the expected message), and
+  run that recipe in the release-blocking CI job. The sealed suite covers both direct public
+  constructions, hidden capability import, trusted input/output schema replacement, and trusted
+  wire behavior replacement.
   Rationale: A compile-failure boundary that no gate executes is documentation, not enforcement;
   the review found both existing fixtures unreferenced by any runner.
   Date: 2026-08-05
@@ -316,13 +333,18 @@ rg -n "unsafeCoerce" src/Keiki/Internal/WireSchema.hs src/Keiki/Composition.hs
 Focused milestone tests (sequential; the active Hspec does not interpret `|` as alternation):
 
 ```bash
-nix develop -c cabal test keiki-test --test-options='--match=full symbolic replay inversion' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=Symbolic' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=WireSchema' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=InputSchema' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=CompositionAlignment' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=Profunctor' --test-show-details=direct
-nix develop -c cabal test keiki-test --test-options='--match=ValidationReplayAlignmentSpec' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option='full symbolic replay inversion' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option=Symbolic --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option=WireSchema --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option=InputSchema --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option=checkComposeAlignment --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option='typed field projection composition' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option='Category laws' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option='preserves Cat.id' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option=lmapCi --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option='Cat.id and the Arrow instance interplay' --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option=Profunctor --test-show-details=direct
+nix develop -c cabal test keiki-test --test-option=--match --test-option='validate-clean transducers replay their own logs' --test-show-details=direct
 just compile-fail-check
 ```
 

@@ -230,6 +230,81 @@ collisionSink =
       isFinal = const True
     }
 
+manualBoundaryWire :: WireCtor CollisionMid (Int, ())
+manualBoundaryWire =
+  unavailableWireCtor
+    "ManualBoundary"
+    (\case CollisionWire value -> Just (value, ()); CollisionInput {} -> Nothing)
+    (\(value, ()) -> CollisionWire value)
+
+manualBoundaryInput :: InCtor CollisionMid '[ '("payload", Int)]
+manualBoundaryInput =
+  unavailableInCtor
+    "ManualBoundary"
+    (\case CollisionWire value -> Just (RCons (Proxy @"payload") value RNil); CollisionInput {} -> Nothing)
+    (\(RCons _ value RNil) -> CollisionWire value)
+
+manualBoundarySource ::
+  SymTransducer
+    (HsPred '[] ProjectionSourceCmd)
+    '[]
+    ProjectionVertex
+    ProjectionSourceCmd
+    CollisionMid
+manualBoundarySource =
+  SymTransducer
+    { edgesOut = \ProjectionVertex ->
+        [ Edge
+            { guard = matchInCtor projectionSourceCtor,
+              update = UKeep,
+              output =
+                [ pack
+                    projectionSourceCtor
+                    manualBoundaryWire
+                    (OFCons (TLit (1 :: Int)) OFNil)
+                ],
+              target = ProjectionVertex,
+              mode = Live
+            }
+        ],
+      initial = ProjectionVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
+manualBoundarySink ::
+  SymTransducer
+    (HsPred '[] CollisionMid)
+    '[]
+    ProjectionVertex
+    CollisionMid
+    ()
+manualBoundarySink =
+  SymTransducer
+    { edgesOut = \ProjectionVertex ->
+        [ Edge
+            { guard =
+                PAnd
+                  (matchInCtor manualBoundaryInput)
+                  (PEq (TInpCtorField manualBoundaryInput #payload) (TLit (1 :: Int))),
+              update = UKeep,
+              output = [],
+              target = ProjectionVertex,
+              mode = Live
+            }
+        ],
+      initial = ProjectionVertex,
+      initialRegs = RNil,
+      isFinal = const True
+    }
+
+containsPBot :: HsPred rs ci -> Bool
+containsPBot PBot = True
+containsPBot (PAnd left right) = containsPBot left || containsPBot right
+containsPBot (POr left right) = containsPBot left || containsPBot right
+containsPBot (PNot predicate) = containsPBot predicate
+containsPBot _ = False
+
 spec :: Spec
 spec = do
   describe "checkComposeAlignment" $ do
@@ -293,6 +368,24 @@ spec = do
                                 "Collision"
                             ]
         Right _ -> expectationFailure "same-name structural collision passed composeChecked"
+
+    it "rejects an unwitnessed manual input/wire boundary and poisons raw composition" $ do
+      let warning =
+            UnwitnessedInputWireAlignment
+              (EdgeRef ProjectionVertex 0)
+              (EdgeRef ProjectionVertex 0)
+              "ManualBoundary"
+              "ManualBoundary"
+      checkComposeAlignment manualBoundarySource manualBoundarySink
+        `shouldBe` [warning]
+      case edgesOut
+        (compose manualBoundarySource manualBoundarySink)
+        (Composite ProjectionVertex ProjectionVertex) of
+        [edge] -> containsPBot (guard edge) `shouldBe` True
+        edges -> expectationFailure ("manual raw composition produced " <> show (length edges) <> " edges")
+      case composeChecked manualBoundarySource manualBoundarySink of
+        Left warnings -> warnings `shouldBe` [warning]
+        Right _ -> expectationFailure "unwitnessed manual boundary passed composeChecked"
 
   describe "typed field projection composition" $ do
     let matchingDoc = FieldProj.DocInfo "match" "title" []
