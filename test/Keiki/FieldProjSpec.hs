@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -Wno-name-shadowing -Wno-partial-fields #-}
 
 module Keiki.FieldProjSpec where
 
@@ -9,7 +10,9 @@ import Data.Proxy (Proxy (..))
 import Data.SBV qualified as SBV
 import Data.Text (Text)
 import Data.Text qualified as T
+import GHC.Generics (Generic)
 import Keiki.Core
+import Keiki.Generics (mkInCtorRecordVia, mkInCtorVia)
 import Keiki.ProjectionDomain
 import Keiki.Symbolic
   ( DeadEdgeAnalysisDetail (..),
@@ -21,7 +24,7 @@ import Keiki.Symbolic
     ProjectionDescriptor (..),
     ProjectionModel (..),
     SomeInCtor (..),
-    SymEnv (..),
+    SymEnv,
     TranslationIssue (..),
     TranslationStrength (..),
     checkDeadEdgesSym,
@@ -53,7 +56,7 @@ data DocInfo = DocInfo
     diTitle :: Text,
     diNumbers :: [Int]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Show, Generic)
 
 data DocContentHash
 
@@ -135,20 +138,13 @@ docIx = #doc
 docN :: IndexN "doc" DocRegs DocInfo
 docN = IZ
 
-data DocCmd = NewDoc DocInfo
-  deriving stock (Eq, Show)
+data DocCmd = NewDoc {doc :: DocInfo}
+  deriving stock (Eq, Show, Generic)
 
 type NewDocFields = '[ '("doc", DocInfo)]
 
 newDocCtor :: InCtor DocCmd NewDocFields
-newDocCtor =
-  InCtor
-    { icName = "NewDoc",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        NewDoc doc -> Just (RCons (Proxy @"doc") doc RNil),
-      icBuild = \(RCons _ doc RNil) -> NewDoc doc
-    }
+newDocCtor = mkInCtorRecordVia @"NewDoc"
 
 data DocEvent = DocAccepted DocInfo
   deriving stock (Eq, Show)
@@ -416,32 +412,16 @@ instance ExactFieldProjection UnderDeclaredDomain where
   reconstructFieldOwner _ "disabled" = Just False
   reconstructFieldOwner _ _ = Nothing
 
-data BoolProjectionCmd = WithOwner Bool | WithoutOwner
-  deriving stock (Eq, Show)
+data BoolProjectionCmd = WithOwner {owner :: Bool} | WithoutOwner
+  deriving stock (Eq, Show, Generic)
 
 type WithOwnerFields = '[ '("owner", Bool)]
 
 withOwnerCtor :: InCtor BoolProjectionCmd WithOwnerFields
-withOwnerCtor =
-  InCtor
-    { icName = "WithOwner",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        WithOwner owner -> Just (RCons (Proxy @"owner") owner RNil)
-        WithoutOwner -> Nothing,
-      icBuild = \(RCons _ owner RNil) -> WithOwner owner
-    }
+withOwnerCtor = mkInCtorRecordVia @"WithOwner"
 
 withoutOwnerCtor :: InCtor BoolProjectionCmd '[]
-withoutOwnerCtor =
-  InCtor
-    { icName = "WithoutOwner",
-      icSchema = inCtorSchemaUnavailable,
-      icMatch = \case
-        WithoutOwner -> Just RNil
-        WithOwner _ -> Nothing,
-      icBuild = \RNil -> WithoutOwner
-    }
+withoutOwnerCtor = mkInCtorVia @"WithoutOwner"
 
 instance KnownInCtors BoolProjectionCmd where
   allInCtors = [SomeInCtor withOwnerCtor, SomeInCtor withoutOwnerCtor]
@@ -883,7 +863,6 @@ spec = do
                 proveConcreteAgreement
                   predicate
                   ( \env -> do
-                      SBV.constrain (seInputCtor env SBV..== SBV.literal "NewDoc")
                       constrainFieldProjection
                         env
                         docHashW

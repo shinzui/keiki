@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+
 module Keiki.CompositionAlignmentSpec (spec) where
 
 import Data.Proxy (Proxy (..))

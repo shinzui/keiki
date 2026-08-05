@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+
 -- | Stateful fixtures for EP-74's sequential-composition regressions.
 -- Keep these transducers independent of hspec so later property suites can
 -- compare 'compose' with an explicit sequential reference.

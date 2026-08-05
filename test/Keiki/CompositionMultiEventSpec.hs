@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+
 -- | EP-19 M6 acceptance: 'Keiki.Composition.compose' on a multi-event
 -- first-edge produces a length-N composite edge via library-side
 -- chain expansion. The fixture is intentionally minimal: t1 has one

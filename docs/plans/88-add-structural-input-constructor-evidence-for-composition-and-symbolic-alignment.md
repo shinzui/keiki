@@ -77,6 +77,11 @@ will choose the release line and coordinate Keiro and application adoption once.
       and symbolic guides, Generic and SBV design references, the unreleased changelog, and IR-6;
       amended ADR-0004 through the profiled ADR workflow. Strict ADR validation and
       `just adr-validate` pass. Full build, test, Haddock, and flake gates remain pending.
+- [x] (2026-08-05T00:04:03Z) Milestone 5 full-suite repair: the first all-package test run exposed
+      two stale FieldProj assumptions around a manually unavailable but structurally honest input
+      constructor. Migrated its wrapped-record, direct-record, and nullary bindings to trusted Via
+      producers and removed a direct constraint on the now model-only selector. The focused
+      FieldProj suite passed 38 examples with 0 failures; the full test gate remains to be rerun.
 
 
 ## Surprises & Discoveries
@@ -157,6 +162,15 @@ will choose the release line and coordinate Keiro and application adoption once.
   mori/improvement-requests-profile.dhall --profile-enforce --log-enforce` reports only
   `provide-a-sanctioned-event-schema-evolution-path-for-structural-wires` and
   `gate-the-opt-in-symbolic-inversion-checker-in-consumer-ci`.
+
+- Observation: FieldProj's input-projection law fixture used unavailable schemas but expected an
+  exact `PInCtor` translation, and its concrete-agreement harness constrained `seInputCtor`
+  directly by the old name tag. Symbolic-only matching did not select this suite; the first full
+  test run caught both stale assumptions (2 failures among 706 Keiki examples). Trusted Via
+  migration made constructor domination exact again, while deleting the direct selector
+  constraint reflects `seInputCtor`'s new model-only ordinal role.
+  Evidence: the repaired focused FieldProj suite passed 38 examples and both 25-case agreement
+  properties with 0 failures.
 
 
 ## Decision Log
