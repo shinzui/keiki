@@ -1557,11 +1557,11 @@ headInversionCandidate Edge {output = OPack inputCtor wireCtor fields : _} =
   Just (InversionHead inputCtor wireCtor fields)
 headInversionCandidate _ = Nothing
 
--- Keep this enumeration intentionally isomorphic to
--- 'inversionAmbiguityWarnings'. The compatibility projection zips its result
--- with the warnings produced by that canonical pure function.
+-- Analyze exactly the pairs retained by the canonical pure warning pass. The
+-- compatibility projection still matches by 'InversionPairKey' rather than
+-- trusting these two traversals to remain positionally isomorphic.
 inversionCandidatePairs ::
-  (Bounded s, Enum s) =>
+  (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
   [InversionCandidatePair rs ci co s]
 inversionCandidatePairs transducer =
@@ -1588,8 +1588,35 @@ inversionCandidatePairs transducer =
       [headInversionCandidate leftEdge],
     Just (InversionHead rightInputCtor rightWireCtor rightFields) <-
       [headInversionCandidate rightEdge],
-    wcName leftWireCtor == wcName rightWireCtor
+    InversionPairKey (fromEnum source) leftIndex rightIndex `elem` warningKeys
   ]
+  where
+    warningKeys =
+      [ key
+      | warning <- inversionAmbiguityWarnings transducer,
+        Just key <- [inversionWarningKey warning]
+      ]
+
+data InversionPairKey = InversionPairKey Int Int Int
+  deriving stock (Eq, Ord, Show)
+
+inversionWarningKey ::
+  (Enum s) =>
+  TransducerValidationWarning s ->
+  Maybe InversionPairKey
+inversionWarningKey InversionAmbiguity {tvwSource, tvwEdgeA, tvwEdgeB} =
+  Just (InversionPairKey (fromEnum tvwSource) tvwEdgeA tvwEdgeB)
+inversionWarningKey _ = Nothing
+
+inversionDetailKey ::
+  (Enum s) =>
+  InversionAnalysisDetail s ->
+  InversionPairKey
+inversionDetailKey detail =
+  InversionPairKey
+    (fromEnum detail.iadSource)
+    detail.iadLeftEdge.edgeIndex
+    detail.iadRightEdge.edgeIndex
 
 data ReplayVarKey
   = ReplayRegisterVar Int SomeTypeRep
@@ -2241,8 +2268,8 @@ checkInversionAmbiguitySymDetailed transducer =
 
 -- | Compatibility projection of 'checkInversionAmbiguitySymDetailed'. It
 -- returns the exact existing warning values, removing a pair only after a
--- definite solver 'Unsatisfiable' result. Enumeration drift fails closed by
--- retaining every warning.
+-- definite solver 'Unsatisfiable' result for that exact source-and-edges key.
+-- Missing or duplicate details fail closed by retaining the warning.
 checkInversionAmbiguitySym ::
   (Bounded s, Enum s, Show s) =>
   SymTransducer (HsPred rs ci) rs s ci co ->
@@ -2250,14 +2277,20 @@ checkInversionAmbiguitySym ::
 checkInversionAmbiguitySym transducer = do
   let warnings = inversionAmbiguityWarnings transducer
   details <- checkInversionAmbiguitySymDetailed transducer
-  pure $
-    if length warnings /= length details
-      then warnings
-      else
-        [ warning
-        | (warning, detail) <- zip warnings details,
-          iadVerdict detail /= InversionProvedDisjoint
-        ]
+  pure
+    [ warning
+    | warning <- warnings,
+      case inversionWarningKey warning of
+        Nothing -> True
+        Just key ->
+          case filter ((== key) . inversionDetailKey) details of
+            [detail] ->
+              not
+                ( iadSolverStatus detail == InversionSolverUnsatisfiable
+                    && iadVerdict detail == InversionProvedDisjoint
+                )
+            _ -> True
+    ]
 
 -- * Single-valuedness ------------------------------------------------------
 

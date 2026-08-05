@@ -50,8 +50,10 @@ implementing a new consumer-facing request.
 - [x] (2026-08-05) Plan created from the recorded four-dimension review results; reproducers for
       the compatibility-projection defect were demonstrated against the built library during
       review and are captured in Surprises & Discoveries.
-- [ ] Milestone 1: repair the compatibility projection with keyed verdict-to-warning matching and
-      add the misalignment regression fixtures.
+- [x] (2026-08-05T01:51:31Z) Milestone 1: repaired the compatibility projection with
+      source-and-edge keyed verdict matching, derived solver candidates from the canonical pure
+      warning keys, and added both positional-misalignment regressions. Corrected focused command
+      passed with 16 examples and 0 failures.
 - [ ] Milestone 2: seal the `WireCtor`/`InCtor` construction and update boundary with
       unidirectional record pattern synonyms, explicit unavailable constructors, and
       evidence-preserving rename helpers; migrate in-tree uses.
@@ -93,6 +95,13 @@ implementing a new consumer-facing request.
   spine yields honest `Typeable` equalities per position.
   Evidence: review of `compareInCtorWireSchemas` and the composition-only constructors; the
   prose invariant is exactly the shape a typed prefix GADT can carry.
+
+- Observation: Cabal splits the plan's quoted `--test-options='--match=full symbolic replay
+  inversion'` value before Hspec receives it, producing `unexpected argument 'symbolic'`.
+  Evidence: the first Milestone 1 validation compiled successfully but ran zero examples and
+  failed at argument parsing. Passing the filter as two Cabal options,
+  `--test-option=--match --test-option='full symbolic replay inversion'`, ran 16 examples with
+  0 failures. Use the split form for every focused command whose match contains spaces.
 
 
 ## Decision Log
@@ -136,6 +145,14 @@ implementing a new consumer-facing request.
   Rationale: Every item repairs or hardens unreleased local work produced by Plans 85/87/88; the
   IR bundle tracks consumer-facing requests, and IR-5/IR-6 already record the features these
   repairs protect. The review evidence lives in this plan's Surprises & Discoveries.
+  Date: 2026-08-05
+
+- Decision: Build the symbolic candidate set from the canonical warning keys and retain a warning
+  unless exactly one matching detail carries both `InversionSolverUnsatisfiable` and
+  `InversionProvedDisjoint`.
+  Rationale: Reusing the pure warning result guarantees the solver analyzes precisely the pairs
+  eligible for compatibility suppression without exporting the pure register-analysis internals.
+  Requiring a unique matching detail makes accidental duplicate analysis fail closed.
   Date: 2026-08-05
 
 

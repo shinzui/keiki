@@ -76,6 +76,9 @@ instance ExactFieldProjection FlagProjection where
 data Vertex = Only
   deriving stock (Eq, Show, Enum, Bounded)
 
+data PairVertex = RegisterVertex | StructuralVertex
+  deriving stock (Eq, Show, Enum, Bounded)
+
 type AmountFields = RegFieldsOf AmountData
 
 inSubmit :: InCtor Command AmountFields
@@ -151,6 +154,21 @@ edge edgeMode predicate emitted =
       mode = edgeMode
     }
 
+pairEdge ::
+  PairVertex ->
+  EdgeMode ->
+  HsPred rs Command ->
+  OutTerm rs Command event ->
+  Edge (HsPred rs Command) rs Command event PairVertex
+pairEdge targetVertex edgeMode predicate emitted =
+  Edge
+    { guard = predicate,
+      update = UKeep,
+      output = [emitted],
+      target = targetVertex,
+      mode = edgeMode
+    }
+
 machine ::
   RegFile rs ->
   [Edge (HsPred rs Command) rs Command event Vertex] ->
@@ -172,6 +190,29 @@ onlyDetail :: [InversionAnalysisDetail Vertex] -> InversionAnalysisDetail Vertex
 onlyDetail [detail] = detail
 onlyDetail details = error ("expected exactly one inversion detail, got " <> show (length details))
 
+warningKey ::
+  (Enum s) =>
+  TransducerValidationWarning s ->
+  (Int, Int, Int)
+warningKey InversionAmbiguity {tvwSource, tvwEdgeA, tvwEdgeB} =
+  (fromEnum tvwSource, tvwEdgeA, tvwEdgeB)
+warningKey _ = error "expected an inversion warning"
+
+detailKey ::
+  (Enum s) =>
+  InversionAnalysisDetail s ->
+  (Int, Int, Int)
+detailKey detail =
+  ( fromEnum detail.iadSource,
+    detail.iadLeftEdge.edgeIndex,
+    detail.iadRightEdge.edgeIndex
+  )
+
+isDefiniteUnsat :: InversionAnalysisDetail s -> Bool
+isDefiniteUnsat detail =
+  iadSolverStatus detail == InversionSolverUnsatisfiable
+    && iadVerdict detail == InversionProvedDisjoint
+
 spec :: Spec
 spec = describe "full symbolic replay inversion" $ do
   it "proves an output-dependent pair disjoint and removes its compatibility warning" $ do
@@ -187,6 +228,68 @@ spec = describe "full symbolic replay inversion" $ do
     iadVerdict detail `shouldBe` InversionProvedDisjoint
     checkInversionAmbiguitySym transducer `shouldReturn` []
 
+  it "matches mixed solver verdicts to warning pairs by source and edge indices" $ do
+    let registers = RCons (Proxy @"limit") 0 RNil
+        lower =
+          PAnd
+            (PInCtor inSubmit)
+            (PCmp CmpLt (TReg (#limit)) (TLit (0 :: Int)))
+        upper =
+          PAnd
+            (PInCtor inSubmit)
+            (PCmp CmpGe (TReg (#limit)) (TLit (0 :: Int)))
+        transducer =
+          machine
+            registers
+            [ edge Live lower (recordedPlus 0),
+              edge Live upper (recordedPlus 1),
+              edge Live (PInCtor inSubmit) (recordedPlus 2),
+              edge Live (PInCtor inSubmit) (recordedPlus 3)
+            ]
+        pureWarnings = inversionAmbiguityWarnings transducer
+    details <- checkInversionAmbiguitySymDetailed transducer
+    compatibilityWarnings <- checkInversionAmbiguitySym transducer
+    length pureWarnings `shouldBe` 5
+    fmap detailKey details `shouldMatchList` fmap warningKey pureWarnings
+    fmap isDefiniteUnsat details `shouldBe` replicate 5 True
+    compatibilityWarnings `shouldBe` []
+
+  it "does not let an unrelated UNSAT detail suppress a renamed structural pair" $ do
+    let registers = RCons (Proxy @"limit") 0 RNil
+        lower =
+          PAnd
+            (PInCtor inSubmit)
+            (PCmp CmpLt (TReg (#limit)) (TLit (0 :: Int)))
+        upper =
+          PAnd
+            (PInCtor inSubmit)
+            (PCmp CmpGe (TReg (#limit)) (TLit (0 :: Int)))
+        renamedRecorded = wireRecorded {wcName = "RenamedRecorded"}
+        renamedOutput =
+          pack inSubmit renamedRecorded (submitAmount *: submitAmount *: oNil)
+        transducer =
+          SymTransducer
+            { edgesOut = \case
+                RegisterVertex ->
+                  [ pairEdge RegisterVertex Live lower (recordedPlus 0),
+                    pairEdge RegisterVertex Live upper (recordedPlus 1)
+                  ]
+                StructuralVertex ->
+                  [ pairEdge StructuralVertex Live (PInCtor inSubmit) (recordedPlus 0),
+                    pairEdge StructuralVertex Live (PInCtor inSubmit) renamedOutput
+                  ],
+              initial = RegisterVertex,
+              initialRegs = registers,
+              isFinal = const True
+            }
+        pureWarnings = inversionAmbiguityWarnings transducer
+    details <- checkInversionAmbiguitySymDetailed transducer
+    compatibilityWarnings <- checkInversionAmbiguitySym transducer
+    fmap warningKey pureWarnings `shouldBe` [(fromEnum StructuralVertex, 0, 1)]
+    fmap detailKey details `shouldBe` [(fromEnum StructuralVertex, 0, 1)]
+    fmap iadSolverStatus details `shouldBe` [InversionSolverSatisfiable]
+    compatibilityWarnings `shouldBe` pureWarnings
+
   it "retains a real overlap and does not call SAT a concrete witness" $ do
     let transducer =
           noRegsMachine
@@ -200,7 +303,10 @@ spec = describe "full symbolic replay inversion" $ do
 
   it "shares registers and proves guard-only disjointness" $ do
     let registers = RCons (Proxy @"limit") 0 RNil
-        lower = PAnd (PInCtor inSubmit) (PCmp CmpLt (TReg (#limit)) (TLit (0 :: Int)))
+        lower =
+          PAnd
+            (PInCtor inSubmit)
+            (PNot (PCmp CmpGe (TReg (#limit)) (TLit (0 :: Int))))
         upper = PAnd (PInCtor inSubmit) (PCmp CmpGe (TReg (#limit)) (TLit (0 :: Int)))
         transducer =
           machine
@@ -321,7 +427,7 @@ spec = describe "full symbolic replay inversion" $ do
     iadTranslationIssues detail
       `shouldSatisfy` all (\case InversionUnsupportedDerivedProjection {} -> False; _ -> True)
 
-  it "uses structural head difference even when short names collide" $ do
+  it "does not analyze structurally different heads even when short names collide" $ do
     let sameNameRecorded = wireRecorded {wcName = "Same"}
         sameNameOther = wireOtherRecorded {wcName = "Same"}
         firstOutput = pack inSubmit sameNameRecorded (submitAmount *: submitAmount *: oNil)
@@ -331,9 +437,8 @@ spec = describe "full symbolic replay inversion" $ do
             [ edge Live (PInCtor inSubmit) firstOutput,
               edge Live (PInCtor inSubmit) secondOutput
             ]
-    detail <- onlyDetail <$> checkInversionAmbiguitySymDetailed transducer
-    iadHeadRelation detail `shouldBe` WireHeadsStructurallyDifferent
-    iadVerdict detail `shouldBe` InversionProvedDisjoint
+    inversionAmbiguityWarnings transducer `shouldBe` []
+    checkInversionAmbiguitySymDetailed transducer `shouldReturn` []
 
   it "analyzes live with live and replay-only with replay-only only" $ do
     let one = edge Live (PInCtor inSubmit) (recordedPlus 0)
