@@ -35,6 +35,10 @@ and this project adheres to the
   Unsupported and opaque guards remain conservative warnings, and their
   `tvwDetail` identifies the construct that blocked the cheap proof. Runtime
   replay and the opt-in symbolic checker are unchanged.
+- The symbolic inversion compatibility projection now joins detailed solver
+  verdicts to warnings by source vertex and both edge indices. A warning is
+  removed only by one uniquely matching definitely-UNSAT, proved-disjoint
+  detail; missing, duplicate, or reordered details fail closed.
 - **Breaking:** `WireCtor` construction and record update are sealed behind a
   read-only `WireCtor` record pattern. Manual behavior uses
   `unavailableWireCtor`; Generic `mkWireCtorVia` and TH-derived wires provide
@@ -52,11 +56,18 @@ and this project adheres to the
   Generic `mkInCtorVia`, direct-record Via producers, and TH-derived constructors
   provide trusted evidence. `mkInCtor` and `mkInCtor0` are deprecated because
   closure-taking APIs cannot establish it.
+- Trusted `WireCtor` / `InCtor` construction requires a strict capability from
+  a hidden library module. Public callers cannot import that capability and
+  receive only read-only patterns, evidence-unavailable manual constructors,
+  and evidence-preserving rename helpers.
 - Sequential composition now substitutes mid-side fields and discharges
   constructor guards only through typed input-to-wire alignment. Structural
   mismatch and unavailable evidence produce `StructurallyDifferentInputWire` or
   `UnwitnessedInputWireAlignment` diagnostics instead of authorizing a
   result-type coercion from equal names.
+- Composition-only identity alignment now carries a typed `Either` prefix
+  spine and derives field equality by lockstep GADT refinement. Schema
+  alignment no longer contains an `unsafeCoerce`.
 - Symbolic `PInCtor` translation now uses shared structural constructor-path
   decisions. Same-named trusted constructors remain distinct; unwitnessed equal
   names share a conservative fallback atom, while unequal names remain

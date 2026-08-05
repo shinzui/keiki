@@ -38,12 +38,12 @@ compile-fail-check:
     #!/usr/bin/env zsh
     set -eu
     typeset -A expected=(
-      OmittedInCtorSchema.hs "non-bidirectional pattern synonym"
-      OmittedWireSchema.hs "non-bidirectional pattern synonym"
-      TrustedConstructorCapability.hs "hidden module"
-      TrustedInCtorSchemaUpdate.hs "icSchema"
-      TrustedWireCtorSchemaUpdate.hs "wcSchema"
-      TrustedWireCtorUpdate.hs "wcMatch"
+      OmittedInCtorSchema.hs "non-bidirectional pattern synonym ‘InCtor’"
+      OmittedWireSchema.hs "non-bidirectional pattern synonym ‘WireCtor’"
+      TrustedConstructorCapability.hs "hidden module in the package"
+      TrustedInCtorSchemaUpdate.hs "record update at field ‘icSchema’"
+      TrustedWireCtorSchemaUpdate.hs "record update at field ‘wcSchema’"
+      TrustedWireCtorUpdate.hs "record update at field ‘wcMatch’"
     )
     fixtures=(test/compile-fail/*.hs(N))
     (( ${#fixtures} > 0 )) || { print -u2 "no compile-fail fixtures found"; exit 1; }

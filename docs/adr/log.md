@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-08-05
+* **Update**: ADR-4: require sealed constructor evidence and typed cast-free identity alignment
+* **Update**: ADR-3: key symbolic inversion compatibility verdicts to canonical warning identities
+* **Update**: ADR-1: seal trusted constructor authority and remove the composition-only schema cast
+
 ## 2026-08-04
 * **Update**: ADR-4: require typed input-to-wire evidence for composition substitution and guard discharge
 * **Update**: ADR-3: apply fail-conservative proof polarity to default replay inversion

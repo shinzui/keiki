@@ -8,7 +8,7 @@ description: >-
 docId: ADR-3
 status: Accepted
 date: 2026-07-13
-timestamp: 2026-08-04T21:47:25Z
+timestamp: 2026-08-05T02:29:30Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -16,7 +16,7 @@ generated:
 
 # ADR-0003: Proof gates fail conservatively
 
-- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`; `docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
+- **Plan(s):** `docs/plans/76-symbolic-soundness-solver-unknown-handling-encoding-gap-caveats-and-a-stronger-pure-overlap-check.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/80-harden-natural-symbolic-validation-and-documentation.md`; `docs/plans/82-classify-unconstrained-symbolic-field-projections-conservatively.md`; `docs/plans/83-add-exact-reconstructible-symbolic-field-projection-domains.md`; `docs/plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md`; `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`; `docs/plans/89-repair-inversion-compatibility-pairing-and-seal-wire-evidence-boundaries.md`
 
 ## Context
 
@@ -41,6 +41,12 @@ relationships, and absent or untrusted wire evidence makes the full event relati
 Only definite UNSAT over this conservative formula may suppress an ambiguity warning. The opt-in
 checker obtains cross-edge field alignment from trusted `WireSchema` evidence and does not run
 from default validation or runtime replay.
+
+Compatibility projection joins each detailed symbolic verdict to its canonical pure warning by
+the warning's source vertex and two edge indices, never by list position. Suppression requires
+exactly one matching detail with both an `Unsatisfiable` solver status and a proved-disjoint
+verdict. A missing key, duplicate key, inconclusive verdict, or enumeration-order drift retains
+the warning.
 
 The default solver-free replay check has the same proof polarity. It extracts only exact integral
 register-versus-literal conjuncts that every real candidate must satisfy, keys a register by its
@@ -160,8 +166,9 @@ emit conformance tests exercising the owner-side law.
   declaration-law coverage, especially the owner-to-domain direction that no
   solver model can test.
 - Full symbolic replay inversion is an available optional proof gate. Its compatibility projection
-  removes only pairs whose single detailed result is definitely UNSAT; missing schemas, unsupported
-  relations, timeouts, and solver failures preserve the existing warning.
+  removes only pairs whose uniquely keyed detailed result is definitely UNSAT and proved
+  disjoint; missing or duplicate details, missing schemas, unsupported relations, timeouts, and
+  solver failures preserve the existing warning.
 - Default replay inversion remains solver-free and removes only warnings backed by an exact
   shared-register necessary-condition contradiction. Every other verdict retains an actionable
   warning rather than blessing the pair.

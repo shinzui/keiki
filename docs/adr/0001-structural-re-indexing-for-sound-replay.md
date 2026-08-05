@@ -7,7 +7,7 @@ description: >-
 docId: ADR-1
 status: Accepted
 date: 2026-05-23
-timestamp: 2026-08-04T20:31:10Z
+timestamp: 2026-08-05T02:29:30Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -18,7 +18,9 @@ generated:
 - **Plan(s):** `docs/plans/53-harden-inctor-identity-for-structural-replay.md`;
   follow-up `docs/plans/54-thread-input-field-schema-through-edgebuilder-to-remove-emit-s-coercion.md`;
   research `docs/plans/86-research-a-full-symbolic-replay-inversion-model.md`;
-  implementation `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`
+  implementation `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`;
+  sealing and cast-removal follow-up
+  `docs/plans/89-repair-inversion-compatibility-pairing-and-seal-wire-evidence-boundaries.md`
 - **Implementation:** commit `30c89fa` (`feat(core)!: re-index Term/OutFields by input
   schema for sound replay`)
 
@@ -86,6 +88,18 @@ state `wireSchemaUnavailable`; checked sum composition prefixes evidence, while 
 meaning-changing wires drop it. Missing or prefix-related evidence retains the conservative
 ambiguity warning.
 
+The raw `MkWireCtor` and `MkInCtor` constructors are private. Public construction and record
+update are blocked by unidirectional record patterns; manual closure-taking constructors always
+stamp evidence unavailable, and diagnostic-only rename helpers preserve the existing evidence.
+Trusted in-package producers require a strict capability whose constructor and value live in a
+hidden Cabal module, so downstream code cannot import the authority needed by the internal trusted
+hooks.
+
+Composition-only identity evidence carries a typed prefix spine: the root pins the field to the
+carrier, and Left/Right constructors retain each proven `Either` arm. Comparing two spines in
+lockstep refines their hidden field types directly. Schema alignment therefore contains no cast,
+including the polymorphic identity case.
+
 ## Consequences
 
 **Positive**
@@ -103,21 +117,20 @@ ambiguity warning.
   type parameter; the TH-generated `<Short>TermFields` record gained one too. Downstream code
   with *explicit* `Term`/`OutFields` annotations must add the parameter (record-syntax/`*:`
   authoring is unaffected).
-- **Scope of the guarantee:** this is *type soundness* (the recovered index is valid for the
-  schema it is assembled into), **not** *semantic constructor identity*. Two genuinely
-  different constructors that share both `icName` and field schema still compare equal; the
-  `icName` check is a diagnostic, not proof of identity. Establishing unforgeable identity is
-  out of scope.
-- **Breaking record change:** `WireCtor` now requires `wcSchema`. Direct construction must state
-  unavailability, while `mkWireCtorVia`, `mkWireCtor0Via`, and TH derivation are the trusted paths.
-  Trusted constructors remain internal and schema roles are nominal so casts cannot mint proof
-  evidence.
+- **Scope of the guarantee:** diagnostic names remain outside the proof relation. Generic/TH
+  constructor paths and typed field spines establish structural identity; unavailable manual
+  evidence cannot authorize alignment even when names and runtime behavior happen to agree.
+- **Breaking construction change:** downstream code can neither construct nor record-update
+  `WireCtor` / `InCtor` through their public record patterns. Manual behavior must use the
+  unavailable smart constructors, while Generic, TH, and structure-preserving in-package
+  combinators retain the hidden trusted authority. Nominal schema roles prevent ordinary coercion
+  from minting proof evidence.
 - **Residual `unsafeCoerce` outside the replay path** (current trust boundaries, not
-  soundness holes in core inversion):
-  - `Keiki.Composition.unsafeCoerceTerm` / `unsafeCoerceInCtor` — `compose`'s substitution
-    relies on a runtime structural-alignment invariant (`icName == wcName` ⇒ same
-    Generic-derived shape). `unsafeCoerceTerm` was *extended* to also realign `ifs` under the
-    same justification.
+  soundness holes in core inversion or schema alignment):
+  - `Keiki.Composition` retains confined existential re-indexing for the already-aligned
+    upstream input schema, pending multi-event terms after their register result type is proved,
+    and the composite output's original input constructor. None compares constructor names or
+    manufactures an input-to-wire field equality.
   - `Keiki.Profunctor.unsafeCoerceDisjointness` fabricates only the
     methodless `Disjoint` constraint after a runtime slot-name overlap
     check. The former `unsafeCoerceWrapperDict` / `KnownSlotNames`

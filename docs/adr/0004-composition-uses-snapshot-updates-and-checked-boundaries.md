@@ -8,7 +8,7 @@ description: >-
 docId: ADR-4
 status: Accepted
 date: 2026-07-13
-timestamp: 2026-08-04T23:57:10Z
+timestamp: 2026-08-05T02:29:30Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -16,7 +16,7 @@ generated:
 
 # ADR-0004: Composition uses snapshot updates and checked boundaries
 
-- **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`; `docs/plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment.md`
+- **Plan(s):** `docs/plans/74-fix-compose-update-snapshot-semantics-and-multi-event-chain-expansion-under-stateful-transducers.md`; `docs/plans/75-composition-alignment-validation-and-forward-fragment-law-documentation-for-the-categorical-instances.md`; `docs/plans/79-typed-symbolic-field-projections-over-mapped-consumer-owned-values.md`; `docs/plans/87-add-structural-wire-schemas-for-optional-symbolic-replay-inversion.md`; `docs/plans/88-add-structural-input-constructor-evidence-for-composition-and-symbolic-alignment.md`; `docs/plans/89-repair-inversion-compatibility-pairing-and-seal-wire-evidence-boundaries.md`
 
 ## Context
 
@@ -69,6 +69,17 @@ meaning-changing constructors explicitly report unavailable. Polymorphic categor
 has a hidden one-field capability used only for checked composition; it remains unavailable to
 general schema observers and symbolic constructor-identity proofs.
 
+Raw input and wire constructors are private and public record patterns are read-only. Trusted
+in-package production requires a strict capability from a hidden module; downstream manual
+behavior can only use evidence-unavailable constructors. Name-only changes go through explicit
+rename helpers that retain the schema, matcher, and builder together. Compile-fail gates cover
+direct construction, record updates, schema replacement, and capability import.
+
+The polymorphic identity's composition-only evidence is represented by a typed prefix spine. Its
+root equates the payload with the carrier, and matched Left/Right prefixes refine two schemas in
+lockstep; unequal arms differ and prefix-related spines remain unwitnessed. This preserves the
+checked-boundary behavior without any schema-alignment cast.
+
 ## Consequences
 
 - Intra-edge updates cannot intentionally depend on a sibling write;
@@ -85,6 +96,8 @@ general schema observers and symbolic constructor-identity proofs.
   remain usable but cannot authorize cross-edge observed-field sharing.
 - Input-to-wire substitution is typed and checked; name collisions and unavailable evidence fail
   loudly instead of authorizing an unchecked result-type coercion.
+- Trusted constructor evidence cannot be separated from its behavior by downstream record update;
+  manual behavior is deliberately unwitnessed and therefore fails closed at checked composition.
 - `Category`, `Choice`, `Strong`, and `Arrow` claims are documented per
   forward and replay observations; some fragments remain partial or
   forward-only rather than unqualified lawful instances.

@@ -72,7 +72,12 @@ implementing a new consumer-facing request.
       and the release-blocking CI job. `checkComposeAlignment` passed 7 examples, Profunctor 69,
       and the validate-clean replay group 4, all with 0 failures; the compile-fail gate reported
       six expected failures.
-- [ ] Milestone 5: update changelog, plan/ADR records, and run all gates.
+- [x] (2026-08-05T02:35:28Z) Milestone 5: updated the changelog and distilled the durable
+      construction, matching, and cast-removal decisions into ADR-0001/0003/0004 through the
+      profiled log workflow. Formatting, `cabal build all`, `cabal haddock all`, `nix flake
+      check`, strict ADR validation, `just adr-validate`, `just compile-fail-check`, and
+      `git diff --check` passed. The all-package test gate passed 955 examples with 0 failures:
+      Keiki 711, Jitsurei 127, keiki-codec-json 104, and keiki-codec-json-test 13.
 
 
 ## Surprises & Discoveries
@@ -139,6 +144,11 @@ implementing a new consumer-facing request.
   `InCtor`/`WireCtor` construction, before GHC can diagnose `icSchema`/`wcSchema` omission. Two
   trusted schema-update fixtures now carry those field-specific assertions; the historical
   fixtures remain as direct-construction boundary checks.
+
+- Observation: `okf log add` appended all three required ADR entries but warned that its local
+  index could not resolve `ADR-1`, `ADR-3`, or `ADR-4`, matching the already-recorded behavior
+  from Plan 85. Evidence: both the strict profile/log-enforced validator and `just adr-validate`
+  accepted all 6 concepts after the timestamp and log changes.
 
 
 ## Decision Log
@@ -207,7 +217,25 @@ implementing a new consumer-facing request.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The repair closes both unsoundness paths found by review. Symbolic compatibility no longer couples
+one warning to another pair's solver result: warning identity is the source vertex plus both edge
+indices, candidates come from the canonical pure warning set, and suppression requires one unique
+matching definite proof. The two adversarial regressions cover both unequal-length and equal-length
+enumeration drift.
+
+Trusted constructor evidence is now inseparable from its matcher, builder, and schema through the
+public API. `WireCtor` and `InCtor` expose read-only patterns and selection, direct construction and
+every record update are rejected, manual behavior always starts with unavailable evidence, and
+diagnostic renaming has an explicit evidence-preserving path. Trusted in-package producers need a
+strict capability from an unexposed module. Six compile-fail fixtures enforce public construction,
+schema/behavior update, and capability-import boundaries in the release-blocking CI job.
+
+Composition-only alignment now carries its proof in a typed prefix spine and derives equality by
+GADT refinement, removing the last cast from schema-alignment code. Existing equal/divergent/prefix
+behavior remains covered, and a new manual boundary proves that unavailable evidence yields an
+`UnwitnessedInputWireAlignment`, a raw-composition `PBot` leaf, and checked-composition rejection.
+No version, dependency-bound, release, or downstream migration work was performed; that remains
+owned by the future coordinated release plan for the local breaking sequence.
 
 
 ## Context and Orientation
@@ -232,7 +260,7 @@ identifying refs plus schema availability, translation issues, solver status, an
 compatibility projection must return exactly the pure warnings minus those whose *own* detail is
 `InversionProvedDisjoint` with a definite `Unsatisfiable` solver status.
 
-The construction boundary today: `Keiki.Core` exports `WireCtor (..)` and `InCtor (..)` with
+The construction boundary at plan start: `Keiki.Core` exported `WireCtor (..)` and `InCtor (..)` with
 record fields. GHC permits record update whenever the fields are in scope, without the data
 constructor, so exported fields alone allow `wc { wcMatch = f }`. The trusted schema field is
 abstract and non-forgeable (nominal roles, hidden constructors, sealed Generic classes — verified
@@ -447,3 +475,8 @@ synonyms over GADTs; the behavioral requirements are fixed by Validation and Acc
 typed composition-only spine stays inside `Keiki.Internal.WireSchema` (still an
 `other-module`); its public observers (availability, classifiers, prefix helpers) keep their
 signatures. No new package dependency; no version or bound changes; z3/SBV usage unchanged.
+
+Revision note (2026-08-05): completed all five milestones; corrected the executable Hspec and GHC
+commands discovered during implementation; recorded the hidden-capability construction boundary,
+the six-fixture CI gate, the typed prefix-spine implementation, the full validation transcript,
+and the final ADR/changelog distillation so the plan reflects the delivered repository state.
