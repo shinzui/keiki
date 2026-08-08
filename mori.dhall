@@ -1,6 +1,6 @@
 let Schema =
-      https://raw.githubusercontent.com/shinzui/mori-schema/93104153ecf8817547229a867302a70a25c4b3d8/package.dhall
-        sha256:5e00bba267f27069df1d3caadfec2ec6a8c4e797ce652d78c09528f981b71b42
+      https://raw.githubusercontent.com/shinzui/mori-schema/027403783777cbce0e87eb660a0b3d8119ebe8d2/package.dhall
+        sha256:d29ca03286afa92b7589d09b7a6d98ad8e39d11b255a4b8751f3327b0722fba3
 
 in  Schema.Project::{
     , project = Schema.ProjectIdentity::{
@@ -36,6 +36,14 @@ in  Schema.Project::{
         , profile = Some "docs/adr/profile.dhall"
         , okfVersion = "0.2"
         , description = Some "Durable architecture decisions"
+        }
+      , Schema.OkfBundle::{
+        , name = "capabilities"
+        , path = "docs/capabilities"
+        , profile = Some "docs/capabilities/profile.dhall"
+        , okfVersion = "0.2"
+        , description = Some
+            "What keiki provides today, one concept per capability, with evidence"
         }
       ]
     }

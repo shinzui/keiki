@@ -31,6 +31,15 @@ adr-validate:
         --profile-enforce \
         --log-enforce
 
+# Strict OKF profile + log validation for docs/capabilities. Requires `okf` and
+# `dhall` on PATH (not yet part of the Nix dev shell — see the ADR note above).
+capabilities-validate:
+    dhall type --file docs/capabilities/profile.dhall > /dev/null
+    okf validate docs/capabilities \
+        --profile docs/capabilities/profile.dhall \
+        --profile-enforce \
+        --log-enforce
+
 # Every fixture must fail for its named evidence-boundary reason. Keeping the
 # expectation table exhaustive makes a newly-added fixture fail this gate until
 # its intended rejection is reviewed explicitly.
