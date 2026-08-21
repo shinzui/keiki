@@ -870,12 +870,10 @@ spec = do
         [InversionAmbiguity {tvwDetail = detail}] -> detail `shouldContain` "TApp1"
         other -> expectationFailure ("expected one opaque-only warning, got " <> show other)
 
-    it "pins the pre-implementation Bool carrier blocker for complementary same-command guards" $
-      case inversionAmbiguityWarnings (complementaryBoolFixture True Live) of
-        [InversionAmbiguity {tvwDetail = detail}] -> do
-          detail `shouldContain` "unsupported register carrier"
-          detail `shouldContain` "Bool"
-        other -> expectationFailure ("expected one complementary-Bool warning, got " <> show other)
+    it "suppresses complementary same-command Bool guards in default validation" $ do
+      let transducer = complementaryBoolFixture True Live
+      inversionAmbiguityWarnings transducer `shouldBe` []
+      validateTransducer defaultValidationOptions transducer `shouldBe` []
 
     it "preserves forward/replay agreement for both complementary Bool register values" $ do
       forM_ [False, True] $ \initialEnabled -> do

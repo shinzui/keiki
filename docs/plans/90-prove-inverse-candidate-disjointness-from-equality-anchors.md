@@ -47,8 +47,10 @@ plan does not publish to Hackage or edit the Rei repository.
       fixtures, pinned the pre-implementation Bool blocker, separated the unregistered-carrier
       control, proved the `PTop` overlap with two concrete candidates, and recorded 12 focused
       and 30 module examples passing.
-- [ ] Milestone 2: add the internal producer-owned exact finite domain for `Bool` and integrate
-      exhaustive comparison-group satisfiability without changing public APIs or runtime replay.
+- [x] (2026-08-21T04:13:07Z) Milestone 2: added the internal producer-owned non-empty Bool
+      domain and exhaustive closure evaluation after the unchanged integral path; the
+      complementary warning disappeared while the `PTop` and unregistered controls remained,
+      with 12 focused and 30 module examples passing and no public export or runtime change.
 - [ ] Milestone 3: add exhaustive Bool relation-pair, mode, event, and concrete-candidate
       agreement coverage, including ordering, `PTop`, `PNot`, and unregistered-carrier controls.
 - [ ] Milestone 4: update Haddocks, foundations, changelog, IR-9, ADR-0002, ADR-0003, and the
@@ -155,6 +157,11 @@ plan does not publish to Hackage or edit the Rei repository.
 Milestone 1 established the executable safety baseline without changing production code. The
 motivating Bool pair still warns for exactly the expected missing-domain reason, while the
 overlap and unregistered-carrier controls demonstrate that later suppression must remain narrow.
+
+Milestone 2 delivered the smallest production change promised by the plan: closed Bool discovery
+and exhaustive evaluation of the existing concrete comparison closures. The same focused group
+now proves the complementary pair clean under default validation without weakening either
+conservative control.
 
 
 ## Context and Orientation

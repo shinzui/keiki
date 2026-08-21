@@ -246,6 +246,7 @@ where
 import Data.Int (Int32, Int64)
 import Data.Kind (Type)
 import Data.List (nub, partition, (\\))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Proxy (Proxy (..))
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
@@ -3680,15 +3681,15 @@ knownRegisterComparison ::
   (r -> Bool) ->
   RegisterConstraintExtraction
 knownRegisterComparison variable relation literalValue accepts =
-  case discoverIntegralDomain @r of
-    Nothing ->
+  case (discoverIntegralDomain @r, discoverExactFiniteDomain @r) of
+    (Nothing, Nothing) ->
       blockedRegisterConstraintExtraction
         ( "unsupported register carrier "
             <> show (typeRep @r)
             <> " at position "
             <> show variable.registerVariablePosition
         )
-    Just _ ->
+    _ ->
       emptyRegisterConstraintExtraction
         { registerExtractionComparisons =
             [RegisterComparison variable relation literalValue accepts]
@@ -3766,11 +3767,17 @@ registerComparisonGroupVerdict
         let comparisons =
               TypedPureComparison relation literalValue accepts : alignedRest
          in case discoverIntegralDomain @r of
-              Nothing -> RegisterConstraintsUnknown
               Just domain
                 | integralComparisonsSatisfiable domain comparisons ->
                     RegisterConstraintsSatisfiable
                 | otherwise -> RegisterConstraintsUnsatisfiable
+              Nothing ->
+                case discoverExactFiniteDomain @r of
+                  Nothing -> RegisterConstraintsUnknown
+                  Just domain
+                    | exactFiniteComparisonsSatisfiable domain comparisons ->
+                        RegisterConstraintsSatisfiable
+                    | otherwise -> RegisterConstraintsUnsatisfiable
 
 registerPositionTypeMismatch :: [RegisterComparison] -> Maybe String
 registerPositionTypeMismatch comparisons =
@@ -4125,6 +4132,24 @@ data IntegralDomain r = IntegralDomain
     integralMinimum :: Maybe Integer,
     integralMaximum :: Maybe Integer
   }
+
+data ExactFiniteDomain r = ExactFiniteDomain
+  { exactFiniteValues :: NonEmpty r
+  }
+
+discoverExactFiniteDomain :: forall r. (Typeable r) => Maybe (ExactFiniteDomain r)
+discoverExactFiniteDomain
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Bool) =
+      Just (ExactFiniteDomain (False :| [True]))
+  | otherwise = Nothing
+
+exactFiniteComparisonsSatisfiable ::
+  ExactFiniteDomain r -> [TypedPureComparison r] -> Bool
+exactFiniteComparisonsSatisfiable domain comparisons =
+  any satisfiesEveryComparison (exactFiniteValues domain)
+  where
+    satisfiesEveryComparison candidate =
+      all (\comparison -> typedPureAccepts comparison candidate) comparisons
 
 discoverIntegralDomain :: forall r. (Typeable r) => Maybe (IntegralDomain r)
 discoverIntegralDomain
