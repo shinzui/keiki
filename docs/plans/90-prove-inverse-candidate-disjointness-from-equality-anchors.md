@@ -51,8 +51,10 @@ plan does not publish to Hackage or edit the Rei repository.
       domain and exhaustive closure evaluation after the unchanged integral path; the
       complementary warning disappeared while the `PTop` and unregistered controls remained,
       with 12 focused and 30 module examples passing and no public export or runtime change.
-- [ ] Milestone 3: add exhaustive Bool relation-pair, mode, event, and concrete-candidate
-      agreement coverage, including ordering, `PTop`, `PNot`, and unregistered-carrier controls.
+- [x] (2026-08-21T04:16:28Z) Milestone 3: added the ten-atom, 100-pair Bool relation matrix,
+      checked both modes, both register values, and representative observed events, and retained
+      named ordering, `PTop`, `PNot`, sibling-contradiction, and unregistered controls; 16
+      focused, 34 module, 26 replay-only, and 16 full-symbolic examples passed.
 - [ ] Milestone 4: update Haddocks, foundations, changelog, IR-9, ADR-0002, ADR-0003, and the
       profiled logs to describe the delivered proof boundary.
 - [ ] Milestone 5: run the focused and complete Keiki gates, audit registered dependents, record
@@ -104,6 +106,13 @@ plan does not publish to Hackage or edit the Rei repository.
   complementary pair blocked only by `unsupported register carrier Bool`, a `True`/`PTop`
   control with two concrete candidates, and forward/replay agreement from both Bool values. The
   full `ValidationReplayAlignmentSpec` baseline passed 30 examples.
+
+- Observation: Concurrent `cabal test` processes cannot safely share this checkout's
+  `dist-newstyle` package cache even when they use different Hspec selectors.
+  Evidence: the concurrently launched replay-only selector failed while removing
+  `package.conf.inplace/package.cache` as the full-symbolic selector rebuilt the same test suite;
+  rerunning replay-only sequentially passed 26 examples, and the concurrent full-symbolic run
+  itself passed 16 examples. Validation commands therefore remain sequential.
 
 
 ## Decision Log
@@ -162,6 +171,11 @@ Milestone 2 delivered the smallest production change promised by the plan: close
 and exhaustive evaluation of the existing concrete comparison closures. The same focused group
 now proves the complementary pair clean under default validation without weakening either
 conservative control.
+
+Milestone 3 exercised every ordered pair of equality and ordering atoms over the complete Bool
+domain. Suppression agreed with direct concrete guard evaluation in both edge modes, every
+suppressed pair admitted at most one concrete replay candidate, and negation remained outside the
+extracted fragment unless a separate supported contradiction was sufficient.
 
 
 ## Context and Orientation

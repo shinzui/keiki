@@ -3,7 +3,7 @@
 module Keiki.ValidationReplayAlignmentSpec (spec) where
 
 import Control.Exception (evaluate)
-import Control.Monad (foldM, forM_)
+import Control.Monad (foldM, forM_, unless)
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
@@ -411,6 +411,34 @@ complementaryBoolFixture initialEnabled edgeMode =
     edgeMode
     (PEq boolRegisterTerm (TLit True))
     (PEq boolRegisterTerm (TLit False))
+
+data BoolRegisterAtom = BoolRegisterAtom
+  { boolAtomLabel :: String,
+    boolAtomPredicate :: HsPred BoolRegisterRegs RegisterReplayCmd
+  }
+
+boolRegisterAtoms :: [BoolRegisterAtom]
+boolRegisterAtoms =
+  [ BoolRegisterAtom "enabled == False" (PEq boolRegisterTerm (TLit False)),
+    BoolRegisterAtom "enabled == True" (PEq boolRegisterTerm (TLit True)),
+    BoolRegisterAtom "enabled < False" (PCmp CmpLt boolRegisterTerm (TLit False)),
+    BoolRegisterAtom "enabled < True" (PCmp CmpLt boolRegisterTerm (TLit True)),
+    BoolRegisterAtom "enabled <= False" (PCmp CmpLe boolRegisterTerm (TLit False)),
+    BoolRegisterAtom "enabled <= True" (PCmp CmpLe boolRegisterTerm (TLit True)),
+    BoolRegisterAtom "enabled > False" (PCmp CmpGt boolRegisterTerm (TLit False)),
+    BoolRegisterAtom "enabled > True" (PCmp CmpGt boolRegisterTerm (TLit True)),
+    BoolRegisterAtom "enabled >= False" (PCmp CmpGe boolRegisterTerm (TLit False)),
+    BoolRegisterAtom "enabled >= True" (PCmp CmpGe boolRegisterTerm (TLit True))
+  ]
+
+boolAtomsShareWitness :: BoolRegisterAtom -> BoolRegisterAtom -> Bool
+boolAtomsShareWitness leftAtom rightAtom =
+  any satisfiesBoth [False, True]
+  where
+    command = CompleteNonFinal (ReplayCompletionData 7)
+    satisfiesBoth enabled =
+      models (boolAtomPredicate leftAtom) (boolRegisterRegs enabled, command)
+        && models (boolAtomPredicate rightAtom) (boolRegisterRegs enabled, command)
 
 boolTopControlFixture ::
   SymTransducer
@@ -889,6 +917,73 @@ spec = do
                   `shouldBe` (forwardRegs ! (#enabled :: Index BoolRegisterRegs Bool))
               Nothing -> expectationFailure "complementary-Bool fixture did not replay"
           Nothing -> expectationFailure "complementary-Bool fixture did not step"
+
+    it "suppresses flag < True versus flag == True" $
+      inversionAmbiguityWarnings
+        ( boolRegisterFixture
+            False
+            Live
+            (PCmp CmpLt boolRegisterTerm (TLit True))
+            (PEq boolRegisterTerm (TLit True))
+        )
+        `shouldBe` []
+
+    it "retains flag <= True versus flag == True" $
+      case inversionAmbiguityWarnings
+        ( boolRegisterFixture
+            True
+            Live
+            (PCmp CmpLe boolRegisterTerm (TLit True))
+            (PEq boolRegisterTerm (TLit True))
+        ) of
+        [InversionAmbiguity {}] -> pure ()
+        other -> expectationFailure ("expected one inclusive-ordering warning, got " <> show other)
+
+    it "agrees with all concrete Bool relation pairs across modes, values, and observed events" $ do
+      forM_ boolRegisterAtoms $ \leftAtom ->
+        forM_ boolRegisterAtoms $ \rightAtom -> do
+          let sharedWitnessExists = boolAtomsShareWitness leftAtom rightAtom
+              pairLabel = boolAtomLabel leftAtom <> " / " <> boolAtomLabel rightAtom
+          forM_ [Live, ReplayOnly] $ \candidateMode -> do
+            let transducer =
+                  boolRegisterFixture
+                    False
+                    candidateMode
+                    (boolAtomPredicate leftAtom)
+                    (boolAtomPredicate rightAtom)
+                warningSuppressed = null (inversionAmbiguityWarnings transducer)
+            unless (warningSuppressed == not sharedWitnessExists) $
+              expectationFailure
+                ( "warning/concrete disagreement for "
+                    <> pairLabel
+                    <> " in "
+                    <> show candidateMode
+                )
+            unless sharedWitnessExists $
+              forM_ [False, True] $ \registerValue ->
+                forM_ [-2 .. 2] $ \observedId ->
+                  concreteReplayCandidateCount
+                    candidateMode
+                    transducer
+                    False
+                    (boolRegisterRegs registerValue)
+                    (StepCompleted (ReplayCompletionData observedId))
+                    `shouldSatisfy` (<= 1)
+
+    it "keeps Bool inequality negation unsupported unless a sibling contradiction proves disjointness" $ do
+      let negatedEquality = boolRegisterTerm ./= TLit True
+          blockedFixture = boolRegisterFixture True Live negatedEquality negatedEquality
+      case inversionAmbiguityWarnings blockedFixture of
+        [InversionAmbiguity {tvwDetail = detail}] -> detail `shouldContain` "PNot"
+        other -> expectationFailure ("expected one negation warning, got " <> show other)
+
+      let contradictedFixture =
+            boolRegisterFixture
+              True
+              Live
+              (PAnd negatedEquality (PEq boolRegisterTerm (TLit True)))
+              (PAnd negatedEquality (PEq boolRegisterTerm (TLit False)))
+      inversionAmbiguityWarnings contradictedFixture `shouldBe` []
 
     it "retains True versus PTop and exhibits two concrete replay candidates" $ do
       case inversionAmbiguityWarnings boolTopControlFixture of
