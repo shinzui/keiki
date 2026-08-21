@@ -1,5 +1,15 @@
 # Bundle Update Log
 
+## 2026-08-20
+* **Addition**: IR-9 requests that IR-5's inverse-candidate disjointness proof reach past the
+integral fragment to finite enumerated register carriers, `Bool` first, so that
+`flag == True` versus `flag == False` can discharge a same-head inversion ambiguity instead of
+blocking on `unsupported register carrier Bool`. Filed from Rei, whose Intention root has three
+such pairs and cannot be declared at `keiro-dsl` language 5 while they stand: a generated event
+stream validates under default options with no opt-out. Found by reading the actionable
+retained-warning diagnostic IR-5 added, which named the blocking carrier precisely enough to
+diagnose from outside the producer.
+
 ## 2026-08-04
 * **Update**: IR-6: record local implementation of structural input-constructor evidence, checked composition alignment, and conservative symbolic identity
 * **Addition**: IR-5 requests sound guard-aware inverse-candidate disjointness proofs so the
