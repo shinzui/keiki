@@ -9,6 +9,15 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.9.1.0] — 2026-08-20
+
+### Changed
+
+- Co-released with `keiki-0.9.1.0` and `keiki-codec-json-0.9.1.0`; internal
+  dependency bounds continue to target the coordinated `^>=0.9` PVP major
+  range. This package's API is unchanged.
+
+
 ## [0.9.0.0] — 2026-08-04
 
 ### Changed

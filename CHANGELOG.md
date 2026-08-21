@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## [Unreleased]
 
+
+## [0.9.1.0] — 2026-08-20
+
 ### Changed
 
 - Default `inversionAmbiguityWarnings` now proves complementary standard

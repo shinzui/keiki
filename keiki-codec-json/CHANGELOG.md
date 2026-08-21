@@ -9,6 +9,16 @@ and this project adheres to the
 ## [Unreleased]
 
 
+## [0.9.1.0] — 2026-08-20
+
+### Changed
+
+- Co-released with `keiki-0.9.1.0`; internal dependency bounds continue to
+  target the `^>=0.9` PVP range, which now contains the exact `Bool`
+  finite-domain disjointness proof in the default inversion-ambiguity pass.
+  The JSON wire format and this package's API are unchanged.
+
+
 ## [0.9.0.0] — 2026-08-04
 
 ### Changed
