@@ -1,39 +1,63 @@
 ---
 type: Improvement Request
-title: Prove inverse-candidate disjointness over finite enumerated register carriers
+title: Prove inverse-candidate disjointness over the exact Bool register domain
 description: >-
-  Extend IR-5's inverse-candidate disjointness proof past the integral fragment so a guard pair
-  over a finite enumerated register carrier — `Bool` first — can discharge a same-head inversion
-  ambiguity instead of blocking on an unsupported carrier.
-timestamp: 2026-08-20T00:00:00Z
+  Extend IR-5's inverse-candidate disjointness proof with a producer-owned exact Bool domain so
+  complementary Bool register guards can discharge a same-head inversion ambiguity without
+  trusting arbitrary Enum or Eq laws.
+timestamp: 2026-08-21T03:52:41Z
 requestId: IR-9
-status: proposed
+status: planned
 origin: mori://shinzui/rei
+reviews:
+  - kind: model
+    reviewer: codex
+    reviewed_at: 2026-08-21T03:52:41Z
+    document_timestamp: 2026-08-21T03:52:41Z
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: gpt-5
+    effort: unspecified
+    context: >-
+      Validated against Keiki 0.9.0.0, concrete replay candidate selection, Keiro's generated
+      default-validation path, and Rei's real three-warning Intention reproducer; approval is for
+      the corrected producer-owned Bool domain, not the superseded generic Enum proposal.
 ---
 
-# Improvement Request: Prove Inverse-Candidate Disjointness Over Finite Enumerated Register Carriers
+# Improvement Request: Prove Inverse-Candidate Disjointness Over the Exact Bool Register Domain
 
 ## Status
 
-Proposed. IR-5 shipped the disjointness proof and its actionable retained-warning diagnostics, and
-both work exactly as specified — this request was found by *reading* one of those diagnostics. What
-is missing is coverage: the proof's supported fragment is the integral domain, so the smallest and
-most common disjoint guard pair a consumer can write is the one it cannot prove.
+Planned by
+[ExecPlan 90](../plans/90-prove-inverse-candidate-disjointness-from-equality-anchors.md).
+IR-5 shipped the shared-register disjointness proof and its actionable retained-warning
+diagnostics. This request extends that proof only with a closed, producer-owned description of
+the standard `Bool` carrier.
+
+The request was initially filed as generic support for finite `Bounded`/`Enum` carriers. Technical
+validation rejected that generalisation as a proof boundary. `Typeable` can establish that a
+hidden carrier is one particular known type, but it cannot recover arbitrary `Bounded` and `Enum`
+dictionaries. Even if those dictionaries were carried, Haskell does not enforce that a consumer's
+`Enum` instance visits every inhabitant. Similarly, treating `x == a` as a universal equality
+anchor would add an implicit trust in consumer-defined `Eq` laws. Neither is necessary for Rei's
+case. Keiki can recognise the standard `Bool` type by `TypeRep` and exhaust the complete list
+`[False, True]` while evaluating the exact comparison closures already captured from the guard.
 
 ## Context
 
 IR-5 refined `inversionAmbiguityWarnings` so a same-head, same-mode edge pair is reported only when
 Keiki cannot prove the reconstructed candidates' guards mutually unsatisfiable. The proof is
-carried by `knownRegisterComparison`, which admits a register comparison only when
-`discoverIntegralDomain` recognises the carrier (`src/Keiki/Core.hs:4129`):
+carried by `knownRegisterComparison`, which currently admits a register comparison only when
+`discoverIntegralDomain` recognises the carrier (`src/Keiki/Core.hs`):
 
 ```haskell
 discoverIntegralDomain :: forall r. (Typeable r) => Maybe (IntegralDomain r)
 discoverIntegralDomain
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = …
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Natural) = …
-  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int)     = …
-  | …  -- Word8/16/32/64, Int32, Int64
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Integer) = ...
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Natural) = ...
+  | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Int)     = ...
+  | ...  -- Word8/16/32/64, Int32, Int64
   | otherwise = Nothing
 ```
 
@@ -43,11 +67,9 @@ Anything else lands in the `Nothing` branch and yields:
 unsupported register carrier <Type> at position <n>
 ```
 
-which `blockedRegisterConstraintExtraction` turns into a conservatively retained warning.
-
-`Bool` is not in that list, so the *simplest possible* disjoint guard pair — `x == True` against
-`x == False` — is unprovable. That is not an edge case in the two-element domain; it is the whole
-domain.
+`blockedRegisterConstraintExtraction` turns that outcome into a conservatively retained warning.
+`Bool` is not in the integral registry, so the complete two-value domain is unavailable to the
+proof.
 
 ### The reproducer
 
@@ -61,18 +83,18 @@ consumer being declared at `keiro-dsl` language 5. Its transducer carries a `Boo
 B.onCmd inCtorApplyActionRecorded $ \d -> B.do
   B.requireEq #isDormant (lit True)
   B.slot @"isDormant" =: lit False
-  B.emit wireActionRecorded    …
-  B.emit wireIntentionAwakened …
+  B.emit wireActionRecorded    ...
+  B.emit wireIntentionAwakened ...
   B.goto vtx
 
 -- Recording activity on an awake intention emits only the activity.
 B.onCmd inCtorApplyActionRecorded $ \d -> B.do
   B.requireEq #isDormant (lit False)
-  B.emit wireActionRecorded …
+  B.emit wireActionRecorded ...
   B.goto vtx
 ```
 
-Enabling `checkInversionAmbiguity` reports three warnings and every one of them names the reason:
+Enabling `checkInversionAmbiguity` reports three warnings:
 
 ```text
 inversion-ambiguity @IntentionActive: edges #4 and #5 out of IntentionActive both emit
@@ -80,123 +102,135 @@ inversion-ambiguity @IntentionActive: edges #4 and #5 out of IntentionActive bot
 "ActionRecorded" to a unique edge; register proof blocked by unsupported register carrier Bool
 at position 0
 
-inversion-ambiguity @IntentionActive: edges #44 and #45 … both emit "OutcomeRecorded" …
+inversion-ambiguity @IntentionActive: edges #44 and #45 ... both emit "OutcomeRecorded" ...
 register proof blocked by unsupported register carrier Bool at position 0
 
-inversion-ambiguity @IntentionCompleted: edges #1 and #2 … both emit "OutcomeRecorded" …
+inversion-ambiguity @IntentionCompleted: edges #1 and #2 ... both emit "OutcomeRecorded" ...
 register proof blocked by unsupported register carrier Bool at position 0
 ```
 
-The guards are complementary on one register. The two edges can never both fire, and replay always
-has exactly one candidate. Keiki is not wrong to warn — it is being conservative exactly as
-designed — but the fragment it can prove over stops one type short of the case.
+Replay evaluates both candidates' guards against the same pre-event register file before applying
+either edge's update. For `False`, only the awake edge can match; for `True`, only the dormant edge
+can match. Those are all `Bool` values, so the candidates are disjoint for every concrete register
+file. The trailing `IntentionAwakened` remains irrelevant because streaming replay intentionally
+inverts only the head event.
 
 ### Why the consumer cannot route around it
 
-Rei has been carrying `checkInversionAmbiguity = False` on this one stream since the keiro 0.3
-upgrade, which trades away real coverage on every other edge pair in a 48-constructor aggregate.
-That was tolerable while the stream was hand-assembled. It stops being available at language 5:
-a generated event stream is built with `mkEventStreamOrThrow` under *default* validation options,
+Rei has carried `checkInversionAmbiguity = False` on this one stream since the keiro 0.3 upgrade,
+which trades away real coverage on every other edge pair in a 48-constructor aggregate. A generated
+language-5 event stream is built with `mkEventStreamOrThrow` under default validation options;
 there is no spec clause that reproduces the opt-out, and the brownfield-adoption ladder forbids
-substituting `mkEventStreamUnchecked`. So the aggregate cannot be declared at all while this
-warning stands.
+substituting `mkEventStreamUnchecked`.
 
-The two local workarounds are both worse than the problem:
-
-- **Retype the register.** `isDormant :: Natural` with `0`/`1` would be provable today, and Rei's
-  registers are not persisted, so nothing stored would move. But `Bool` is one of `keiro-dsl`'s six
-  direct scalars, so the declaration would then read `isDormant Natural = 0` — misdescribing the
-  domain in a file whose entire purpose is to describe it. Every other consumer with a boolean flag
-  faces the same trade.
-- **Reshape the edges.** Making each pair's head event distinguishable means adding a field to
-  `ActionRecorded` and `OutcomeRecorded`, which are 3,095 and 16 stored events respectively. That is
-  a wire change, a schema-version bump, and an upcaster rung — to work around a checker fragment.
-
-Neither is a fix; both are a consumer paying for a producer-side gap.
+Retyping `isDormant` as `Natural` would make the proof succeed while misdescribing the domain.
+Changing `ActionRecorded` or `OutcomeRecorded` to distinguish the two heads would impose a wire
+change, schema-version bump, and upcaster work on stored history to compensate for a producer-side
+proof gap. Neither workaround is acceptable.
 
 ## Requested Change
 
-Extend the register-constraint fragment past `discoverIntegralDomain` so that a carrier with a
-finite, enumerable set of inhabitants can participate in the disjointness proof, and admit `Bool`
-as the first such carrier.
+Add a small internal exact-finite-domain abstraction beside `IntegralDomain`, and recognise only
+the standard `Bool` carrier in this change. The domain must contain the explicit complete list
+`[False, True]`; it must not call a consumer-supplied `Enum` instance or infer finiteness from
+`Bounded`.
 
-The minimum that unblocks the reproducer is equality and inequality over `Bool`. A natural
-generalisation, if it costs little more, is any carrier the producer can enumerate soundly —
-`Bounded`+`Enum` types reachable through `Typeable`, evaluated by exhaustion over the (small)
-inhabitant set rather than by the interval arithmetic the integral fragment uses.
+Admit register-versus-literal `PEq` and `PCmp` comparisons when either
+`discoverIntegralDomain` or the new exact finite-domain discovery recognises the carrier. For an
+exact finite group, decide satisfiability by evaluating the existing typed comparison closures on
+every listed inhabitant. Return `RegisterConstraintsUnsatisfiable` only when no inhabitant
+satisfies every comparison. A non-empty witness set is satisfiable. Missing domain evidence,
+type-alignment failure, and every unsupported guard shape remain unknown.
 
-Constraints this must keep, all inherited from IR-5 and
-[ADR-0003](../adr/0003-proof-gates-fail-conservatively.md):
+This closed representation eliminates bound explosion rather than managing it dynamically: the
+only newly registered domain has exactly two producer-owned values. Any future carrier addition
+must be reviewed as a separate exact-domain extension with a complete producer-owned inhabitant
+list and explicit size policy; this request does not establish a generic `Bounded`/`Enum`
+mechanism.
 
-- **No unsound suppression.** A pair is suppressed only when overlap is impossible for every
-  register file and observed head event. Unknown, opaque, and unenumerable carriers stay warnings.
-- **No solver.** Default validation stays pure, z3-free, and microsecond-scale. A two-element
-  domain is decided by exhaustion, not by SMT.
-- **No bound explosion.** Exhaustive evaluation must be capped, and a carrier whose inhabitant set
-  exceeds the cap must fall back to the existing blocked outcome with a diagnostic that says so
-  rather than silently timing out.
-- **The diagnostic stays actionable.** A retained warning still names the blocking construct. This
-  request exists *because* that diagnostic named `Bool` precisely enough to diagnose from the
-  outside; do not regress it.
-- **API source compatibility.** `validateTransducer`, the `InversionAmbiguity` warning
-  constructor's shape, the live/replay phase distinction, the literal-bottom exemption, and the
-  head-only streaming inversion rule all stay as they are. No new validation option.
+The change must preserve all IR-5 and
+[ADR-0003](../adr/0003-proof-gates-fail-conservatively.md) constraints:
+
+- A pair is suppressed only when overlap is impossible for every register file and observed head
+  event. Unknown, opaque, and unregistered carriers stay warnings.
+- Default validation remains pure, solver-free, and microsecond-scale.
+- Retained warnings continue naming the first blocking construct. An unregistered carrier keeps
+  the existing `unsupported register carrier <Type> at position <n>` wording.
+- `validateTransducer`, the `InversionAmbiguity` constructor, the live/replay phase distinction,
+  the literal-bottom exemption, and the head-only streaming rule remain source- and
+  behavior-compatible. No validation option is added.
 
 ## Acceptance
 
-1. A fixture matching Rei's shape — same source vertex, same mode, same head wire constructor,
-   register guards `flag == True` versus `flag == False` — produces no `InversionAmbiguity`
-   warning.
-2. Replacing the second guard with `PTop` restores the warning, because the candidates overlap when
-   `flag == True`.
-3. A guard pair over a three-or-more-inhabitant `Bounded`/`Enum` carrier is proved disjoint when it
-   is disjoint and retained when it is not, or — if enumerated support is deliberately limited to
-   `Bool` in this change — the wider carrier retains its warning with a diagnostic naming the
-   limitation, and that limitation is stated in the Haddocks.
-4. A carrier with no finite enumeration retains the existing `unsupported register carrier`
-   warning, unchanged in wording and shape.
-5. Default validation performs no solver call and stays within its existing latency budget;
-   the exhaustion cap is documented and has a test at the boundary.
-6. Property tests compare every newly-suppressed pair against concrete candidate evaluation over
-   the carrier's full inhabitant set and find no state/event with two candidates.
-7. Haddocks explain that the enumerated fragment is a proof by exhaustion over a finite domain, and
-   that suppression remains a proof of candidate disjointness rather than a claim about equal head
-   names.
-8. The change is released on Hackage and tagged upstream so Keiro, `keiro-dsl`, and Rei can adopt
-   it from an authoritative version.
+1. A fixture matching Rei's shape -- same source vertex, same mode, same reconstructed command
+   constructor, same head wire constructor, and register guards `flag == True` versus
+   `flag == False` -- produces no
+   `InversionAmbiguity` warning.
+2. Replacing the second guard with `PTop` retains the warning and a concrete register file with
+   `flag == True` exhibits two replay candidates.
+3. Bool ordering uses the same exact domain: a disjoint pair such as `flag < True` versus
+   `flag == True` is suppressed, while an overlapping pair such as `flag <= True` versus
+   `flag == True` retains its warning.
+4. An unregistered carrier retains the existing `unsupported register carrier` wording and
+   warning shape. A test must use a non-integral carrier outside the exact registry rather than
+   reusing the Bool fixture this change narrows.
+5. `PNot (PEq ...)`, including the public `./=` spelling, remains unsupported and retains a
+   diagnostic naming `PNot`. This request supports equality and the existing four structural
+   `PCmp` relations over Bool; it does not extend negation extraction.
+6. Exhaustive property coverage enumerates both Bool register values for every newly suppressed
+   relation pair and finds no register/event/mode combination with two concrete candidates.
+7. Default validation performs no solver call. Focused latency remains in the existing budget;
+   domain evaluation is bounded by exactly two inhabitants times the comparisons in one register
+   group.
+8. Haddocks explain that Bool suppression is a proof by exhaustion over a producer-owned exact
+   domain, not a consequence of equal head names, arbitrary `Enum`, or assumed consumer `Eq` laws.
+9. Against a released Keiki containing the change, Rei's real Intention root reports none of the
+   three Bool-blocked warnings under default validation, allowing its one-stream opt-out to be
+   removed without reshaping events.
+10. The change is released on Hackage and tagged upstream so Keiro, `keiro-dsl`, and Rei can adopt
+    it from an authoritative version.
 
 ## Out of Scope
 
-- Any change to live-first replay semantics or to what replay attributes.
-- Multi-event tails as inversion keys; streaming replay still inverts only the head. (Rei's pair
-  *is* distinguishable by its tail — one emits a trailing `IntentionAwakened` — and that is
-  deliberately not the argument this request makes.)
+- Generic discovery of arbitrary `Bounded`/`Enum` carriers through `Typeable`.
+- Treating equality literals as universal anchors for unregistered consumer-defined `Eq` types.
+- Adding a public finite-domain declaration API or changing the register schema to carry domain
+  evidence.
+- Extracting constraints through `PNot`, including `./=`.
+- Any change to live-first replay semantics, command reconstruction, or runtime stepping.
+- Multi-event tails as inversion keys; streaming replay continues to invert only the head.
 - Solver-backed proof in default validation. `checkInversionAmbiguitySym` remains the opt-in path
-  for anything this fragment cannot decide.
+  for anything outside the pure fragment.
 - Suppressing warnings from reachability evidence alone.
-- `keiro-dsl` syntax, generated validation-policy configuration, or any spec clause that would
-  reproduce a per-stream opt-out. Making the opt-out expressible is the wrong fix for this and is
-  not requested here.
+- `keiro-dsl` syntax or generated validation-policy configuration.
 
 ## Compatibility Baseline
 
-Verified against Keiki 0.9.0.0, which is what
-[Rei's `rei-core`](mori://shinzui/rei/packages/rei-core) resolves (`keiki ^>=0.9`). At that
-version `knownRegisterComparison` gates every register comparison on `discoverIntegralDomain`, and
-`Bool` is absent from it. The requested behaviour is an additive validation-precision change:
-strictly fewer warnings, no new ones, and no change to runtime stepping or replay.
+Verified against Hackage Keiki 0.9.0.0 and the matching public `v0.9.0.0` upstream tag, which are
+the latest authoritative release and tag at validation time. Rei's
+[`rei-core`](mori://shinzui/rei/packages/rei-core) resolves `keiki ^>=0.9`. In 0.9.0.0,
+`knownRegisterComparison` gates every extracted comparison on `discoverIntegralDomain`, so Bool
+falls back to the unsupported-carrier warning.
+
+The requested behavior is an additive validation-precision change: strictly fewer false-positive
+warnings inside the newly exact Bool fragment, no new warnings, and no change to forward stepping
+or replay. Publication and consumer adoption remain separate authorized release work after the
+implementation plan passes.
 
 ## References
 
+- Implementation plan:
+  [ExecPlan 90](../plans/90-prove-inverse-candidate-disjointness-from-equality-anchors.md).
 - Requesting initiative:
   `mori://shinzui/rei/masterplans/25-rebase-rei-on-the-keiro-0-13-runtime-and-the-keiro-dsl-language-5-authoring-contract`.
 - Reproducer and consumer acceptance:
   `mori://shinzui/rei/plans/206-author-the-rei-service-workspace-at-keiro-dsl-language-5`
   (Milestone 6, finding S30).
-- The proof this extends: IR-5,
-  `prove-inverse-candidates-disjoint-before-reporting-ambiguity.md`.
-- Keiki implementation: `src/Keiki/Core.hs` — `discoverIntegralDomain`,
-  `knownRegisterComparison`, `blockedRegisterConstraintExtraction`, `inversionAmbiguityWarnings`.
-- Keiki tests: `test/Keiki/ValidationReplayAlignmentSpec.hs` (which already asserts the
-  `unsupported register carrier` message this request narrows).
-- Conservative-failure policy: [ADR-0003](../adr/0003-proof-gates-fail-conservatively.md).
+- The proof this extends: [IR-5](prove-inverse-candidates-disjoint-before-reporting-ambiguity.md)
+  and [ExecPlan 85](../plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md).
+- Keiki implementation: `src/Keiki/Core.hs` -- `discoverIntegralDomain`,
+  `knownRegisterComparison`, `registerComparisonGroupVerdict`,
+  `analyzeCandidateRegisterConstraints`, and `inversionAmbiguityWarnings`.
+- Keiki tests: `test/Keiki/ValidationReplayAlignmentSpec.hs` and
+  `test/Keiki/ReplayOnlySpec.hs`.
+- Conservative proof policy: [ADR-0003](../adr/0003-proof-gates-fail-conservatively.md).

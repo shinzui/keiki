@@ -1,5 +1,16 @@
 # Bundle Update Log
 
+## 2026-08-21
+* **Refinement**: IR-9 now requests a producer-owned exact `Bool` domain rather than generic
+`Bounded`/`Enum` discovery or unrestricted equality anchoring. Technical validation found that
+`Typeable` cannot recover arbitrary enumeration dictionaries and Haskell cannot enforce either
+complete `Enum` coverage or the `Eq` laws an anchor-only emptiness proof would require. Exhausting
+the closed standard domain `[False, True]` evaluates the same comparison closures as concrete
+replay without adding either trust boundary.
+* **Status change**: IR-9 `proposed` -> `planned`. Implementation is specified by ExecPlan 90
+(`docs/plans/90-prove-inverse-candidate-disjointness-from-equality-anchors.md`); release and Rei
+adoption remain separate authorized work.
+
 ## 2026-08-20
 * **Addition**: IR-9 requests that IR-5's inverse-candidate disjointness proof reach past the
 integral fragment to finite enumerated register carriers, `Bool` first, so that
