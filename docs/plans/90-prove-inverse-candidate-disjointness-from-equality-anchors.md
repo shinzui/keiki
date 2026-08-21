@@ -43,8 +43,10 @@ plan does not publish to Hackage or edit the Rei repository.
       Rei's real Intention transducer; reproduced its three Bool-blocked warnings; rejected
       generic `Bounded`/`Enum` discovery and unrestricted equality anchoring as proof sources;
       corrected IR-9 and created this plan.
-- [ ] Milestone 1: add the exact Rei-shaped Bool fixtures and pin the pre-implementation warning,
-      overlap control, unsupported-carrier control, and concrete replay behavior.
+- [x] (2026-08-21T04:09:32Z) Milestone 1: added same-command, same-head complementary Bool
+      fixtures, pinned the pre-implementation Bool blocker, separated the unregistered-carrier
+      control, proved the `PTop` overlap with two concrete candidates, and recorded 12 focused
+      and 30 module examples passing.
 - [ ] Milestone 2: add the internal producer-owned exact finite domain for `Bool` and integrate
       exhaustive comparison-group satisfiability without changing public APIs or runtime replay.
 - [ ] Milestone 3: add exhaustive Bool relation-pair, mode, event, and concrete-candidate
@@ -92,6 +94,14 @@ plan does not publish to Hackage or edit the Rei repository.
   Evidence: the first validation command rejected the second word as an unexpected argument;
   `--test-option=--match --test-option='shared-register replay candidate disjointness'` is the
   form this plan uses.
+
+- Observation: The faithful Rei-shaped fixture can use the same `CompleteNonFinal` input
+  constructor on both edges; the concrete inverter then recovers the same command for both and
+  leaves the shared pre-event Bool register as the only distinguishing fact.
+  Evidence: before the proof change, the focused group passed 12 examples, including a
+  complementary pair blocked only by `unsupported register carrier Bool`, a `True`/`PTop`
+  control with two concrete candidates, and forward/replay agreement from both Bool values. The
+  full `ValidationReplayAlignmentSpec` baseline passed 30 examples.
 
 
 ## Decision Log
@@ -142,7 +152,9 @@ plan does not publish to Hackage or edit the Rei repository.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Milestone 1 established the executable safety baseline without changing production code. The
+motivating Bool pair still warns for exactly the expected missing-domain reason, while the
+overlap and unregistered-carrier controls demonstrate that later suppression must remain narrow.
 
 
 ## Context and Orientation

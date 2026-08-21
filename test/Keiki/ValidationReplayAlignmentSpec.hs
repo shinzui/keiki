@@ -352,39 +352,116 @@ unsupportedRegisterConditions =
     )
   ]
 
-type UnsupportedCarrierRegs = '[ '("enabled", Bool)]
+type BoolRegisterRegs = '[ '("enabled", Bool)]
 
-unsupportedCarrierFixture ::
+boolRegisterTerm :: Term BoolRegisterRegs RegisterReplayCmd ifs Bool
+boolRegisterTerm = TReg (#enabled :: Index BoolRegisterRegs Bool)
+
+boolRegisterRegs :: Bool -> RegFile BoolRegisterRegs
+boolRegisterRegs enabled = RCons (Proxy @"enabled") enabled RNil
+
+boolRegisterFixture ::
+  Bool ->
+  EdgeMode ->
+  HsPred BoolRegisterRegs RegisterReplayCmd ->
+  HsPred BoolRegisterRegs RegisterReplayCmd ->
   SymTransducer
-    (HsPred UnsupportedCarrierRegs RegisterReplayCmd)
-    UnsupportedCarrierRegs
+    (HsPred BoolRegisterRegs RegisterReplayCmd)
+    BoolRegisterRegs
     Bool
     RegisterReplayCmd
     RegisterReplayEvent
-unsupportedCarrierFixture =
+boolRegisterFixture initialEnabled edgeMode leftCondition rightCondition =
   SymTransducer
     { edgesOut = \case
         False ->
-          [ unsupportedEdge inCompleteNonFinal True,
-            unsupportedEdge inCompleteFinal False
+          [ boolRegisterEdge leftCondition,
+            boolRegisterEdge rightCondition
           ]
         True -> [],
       initial = False,
-      initialRegs = RCons (Proxy @"enabled") True RNil,
+      initialRegs = boolRegisterRegs initialEnabled,
       isFinal = id
     }
   where
-    unsupportedEdge inputCtor expected =
+    boolRegisterEdge condition =
       Edge
         { guard =
             PAnd
-              (PInCtor inputCtor)
+              (PInCtor inCompleteNonFinal)
+              condition,
+          update = UKeep,
+          output = [registerReplayOutput inCompleteNonFinal],
+          target = True,
+          mode = edgeMode
+        }
+
+complementaryBoolFixture ::
+  Bool ->
+  EdgeMode ->
+  SymTransducer
+    (HsPred BoolRegisterRegs RegisterReplayCmd)
+    BoolRegisterRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+complementaryBoolFixture initialEnabled edgeMode =
+  boolRegisterFixture
+    initialEnabled
+    edgeMode
+    (PEq boolRegisterTerm (TLit True))
+    (PEq boolRegisterTerm (TLit False))
+
+boolTopControlFixture ::
+  SymTransducer
+    (HsPred BoolRegisterRegs RegisterReplayCmd)
+    BoolRegisterRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+boolTopControlFixture =
+  boolRegisterFixture
+    True
+    Live
+    (PEq boolRegisterTerm (TLit True))
+    PTop
+
+data UnregisteredFlag = UnregisteredOff | UnregisteredOn
+  deriving stock (Eq, Ord, Show)
+
+type UnregisteredCarrierRegs = '[ '("flag", UnregisteredFlag)]
+
+unregisteredCarrierFixture ::
+  SymTransducer
+    (HsPred UnregisteredCarrierRegs RegisterReplayCmd)
+    UnregisteredCarrierRegs
+    Bool
+    RegisterReplayCmd
+    RegisterReplayEvent
+unregisteredCarrierFixture =
+  SymTransducer
+    { edgesOut = \case
+        False ->
+          [ unregisteredEdge UnregisteredOff,
+            unregisteredEdge UnregisteredOn
+          ]
+        True -> [],
+      initial = False,
+      initialRegs = RCons (Proxy @"flag") UnregisteredOff RNil,
+      isFinal = id
+    }
+  where
+    unregisteredEdge expected =
+      Edge
+        { guard =
+            PAnd
+              (PInCtor inCompleteNonFinal)
               ( PEq
-                  (TReg (#enabled :: Index UnsupportedCarrierRegs Bool))
+                  (TReg (#flag :: Index UnregisteredCarrierRegs UnregisteredFlag))
                   (TLit expected)
               ),
           update = UKeep,
-          output = [registerReplayOutput inputCtor],
+          output = [registerReplayOutput inCompleteNonFinal],
           target = True,
           mode = Live
         }
@@ -793,12 +870,46 @@ spec = do
         [InversionAmbiguity {tvwDetail = detail}] -> detail `shouldContain` "TApp1"
         other -> expectationFailure ("expected one opaque-only warning, got " <> show other)
 
-    it "names an unsupported register carrier and fails conservatively" $
-      case inversionAmbiguityWarnings unsupportedCarrierFixture of
+    it "pins the pre-implementation Bool carrier blocker for complementary same-command guards" $
+      case inversionAmbiguityWarnings (complementaryBoolFixture True Live) of
         [InversionAmbiguity {tvwDetail = detail}] -> do
           detail `shouldContain` "unsupported register carrier"
           detail `shouldContain` "Bool"
-        other -> expectationFailure ("expected one unsupported-carrier warning, got " <> show other)
+        other -> expectationFailure ("expected one complementary-Bool warning, got " <> show other)
+
+    it "preserves forward/replay agreement for both complementary Bool register values" $ do
+      forM_ [False, True] $ \initialEnabled -> do
+        let transducer = complementaryBoolFixture initialEnabled Live
+            command = CompleteNonFinal (ReplayCompletionData 7)
+        case runCommands transducer [command] of
+          Just (forwardVertex, forwardRegs, emitted) -> do
+            emitted `shouldBe` [StepCompleted (ReplayCompletionData 7)]
+            case reconstitute transducer emitted of
+              Just (replayVertex, replayRegs) -> do
+                replayVertex `shouldBe` forwardVertex
+                replayRegs ! (#enabled :: Index BoolRegisterRegs Bool)
+                  `shouldBe` (forwardRegs ! (#enabled :: Index BoolRegisterRegs Bool))
+              Nothing -> expectationFailure "complementary-Bool fixture did not replay"
+          Nothing -> expectationFailure "complementary-Bool fixture did not step"
+
+    it "retains True versus PTop and exhibits two concrete replay candidates" $ do
+      case inversionAmbiguityWarnings boolTopControlFixture of
+        [InversionAmbiguity {}] -> pure ()
+        other -> expectationFailure ("expected one Bool/PTop warning, got " <> show other)
+      concreteReplayCandidateCount
+        Live
+        boolTopControlFixture
+        False
+        (boolRegisterRegs True)
+        (StepCompleted (ReplayCompletionData 7))
+        `shouldBe` 2
+
+    it "names an unregistered non-integral carrier and fails conservatively" $
+      case inversionAmbiguityWarnings unregisteredCarrierFixture of
+        [InversionAmbiguity {tvwDetail = detail}] -> do
+          detail `shouldContain` "unsupported register carrier"
+          detail `shouldContain` "UnregisteredFlag"
+        other -> expectationFailure ("expected one unregistered-carrier warning, got " <> show other)
 
     it "retains every unsupported guard shape unless a supported sibling proves disjointness" $ do
       forM_ unsupportedRegisterConditions $ \(label, expectedBlocker, condition) -> do
