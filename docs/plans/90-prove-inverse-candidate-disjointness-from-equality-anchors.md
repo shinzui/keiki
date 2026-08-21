@@ -59,10 +59,14 @@ plan does not publish to Hackage or edit the Rei repository.
       foundations, changelog, ADR-0002, ADR-0003, and the ADR bundle log to distinguish integral
       intervals from producer-owned Bool exhaustion; both repository and explicit strict ADR
       validation accepted all 6 concepts.
-- [ ] Milestone 4 status remainder: after the complete producer gates pass, advance IR-9 from
-      `planned` to `implemented`, update its timestamp and profiled log, and validate the bundle.
-- [ ] Milestone 5: run the focused and complete Keiki gates, audit registered dependents, record
-      evidence, and complete the plan's living-document sections.
+- [x] (2026-08-21T04:37:57Z) Milestone 4 status remainder: after the complete producer gates
+      passed, advanced IR-9 from `planned` to `implemented`, updated its timestamp and profiled
+      log, and confirmed that strict bundle validation retains only the two unchanged legacy
+      `reviews` recommendations while leaving release and Rei adoption explicitly pending.
+- [x] (2026-08-21T04:43:42Z) Milestone 5: passed the focused and complete Keiki gates, audited
+      all 14 Mori-registered dependent projects without editing them, recorded the two unchanged
+      legacy improvement-request profile recommendations, and completed every living-document
+      section and final diff check.
 
 
 ## Surprises & Discoveries
@@ -118,6 +122,30 @@ plan does not publish to Hackage or edit the Rei repository.
   rerunning replay-only sequentially passed 26 examples, and the concurrent full-symbolic run
   itself passed 16 examples. Validation commands therefore remain sequential.
 
+- Observation: Mori reports 14 registered dependent projects:
+  `mori://shinzui/danwa`, `mori://shinzui/kawa`, `mori://shinzui/keiro`,
+  `mori://shinzui/keiro-runtime-docs`, `mori://shinzui/keiro-runtime-jitsurei`,
+  `mori://shinzui/keiro-runtime-patterns`, `mori://shinzui/kikan`,
+  `mori://shinzui/kioku`, `mori://shinzui/kizashi`, `mori://shinzui/kotei`,
+  `mori://shinzui/meibo`, `mori://shinzui/mori`, `mori://shinzui/rei`, and
+  `mori://shinzui/shikigami`.
+  Evidence: narrow searches of every resolved project for `checkInversionAmbiguity = False`,
+  `InversionAmbiguity`, and `unsupported register carrier Bool` found one active consumer
+  override in `mori://shinzui/rei/packages/rei-core`, at the project-relative path
+  `rei-core/src/Rei/Modules/Intention/Domain/IntentionEventStream.hs`; it remains necessary until
+  a release is adopted. The only Keiro code override is a deliberate truly-ambiguous test fixture
+  under `mori://shinzui/keiro` at project-relative `test/Main.hs` (an artifact-level URI is not
+  yet defined). Other matches were documentation or plans, including the intentionally
+  integral-only released description in `mori://shinzui/keiro-runtime-patterns`, and require no
+  producer-side edit.
+
+- Observation: the strict improvement-request validator exits 1 for two pre-existing profile
+  recommendations on older local requests that lack `reviews`; IR-9 adds no diagnostic.
+  Evidence: before and after the IR-9 status transition, the command named only
+  `gate-the-opt-in-symbolic-inversion-checker-in-consumer-ci` and
+  `provide-a-sanctioned-event-schema-evolution-path-for-structural-wires`; IR-9 has its required
+  technical review metadata.
+
 
 ## Decision Log
 
@@ -171,6 +199,13 @@ plan does not publish to Hackage or edit the Rei repository.
   changes in an independently validated working state.
   Date: 2026-08-21
 
+- Decision: Leave every dependent override and released-version description unchanged.
+  Rationale: this implementation changes only the unreleased Keiki producer tree. Rei cannot
+  remove its override until it adopts an authoritative release, and Keiro's matching override is
+  a test of the public option against a genuinely ambiguous transducer rather than a Bool-domain
+  workaround.
+  Date: 2026-08-21
+
 
 ## Outcomes & Retrospective
 
@@ -191,7 +226,19 @@ extracted fragment unless a separate supported contradiction was sufficient.
 Milestone 4 documented and distilled the delivered proof boundary. ADR-2 now records how exact
 Bool guards preserve replay attribution, and ADR-3 records why producer-owned exhaustion is valid
 while arbitrary enumeration and equality anchoring remain outside the conservative proof gate.
-IR-9 intentionally remains `planned` until the final validation milestone passes.
+After the producer gates passed, IR-9 advanced to `implemented`; its release and consumer
+acceptance items remain explicitly incomplete.
+
+Milestone 5 validated the final producer tree and audited all registered dependents without
+editing them. The focused proof group passed 16 examples, its containing module passed 34,
+replay-only passed 26, and full-symbolic inversion passed 16. The complete test run passed all
+four suites: Keiki 724 examples, Jitsurei 127, Keiki JSON codec 104, and the reusable JSON codec
+test library 13, for 968 examples and zero failures. Formatting changed no files. `cabal build all`
+passed, as did full and targeted Haddock, `nix flake check`, both ADR validators, and the strict
+improvement-request check introduced no new diagnostic: it retained exactly two pre-existing
+missing-`reviews` recommendations and its expected exit status 1. Existing unrelated Haddock
+warnings remain, while the new exact-domain comment produces no warning. No new ADR was needed
+beyond the completed ADR-0002 and ADR-0003 distillation.
 
 
 ## Context and Orientation
@@ -218,10 +265,12 @@ The implementation added by
 [Plan 85](85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md) lives in
 `src/Keiki/Core.hs`. `RegisterComparison` existentially stores a structural register variable,
 relation, literal, and comparison closure. `alignRegisterComparison` uses `eqTypeRep` to put
-one register group's values at a common type. `knownRegisterComparison` currently rejects every
-carrier not recognised by `discoverIntegralDomain`.
-`registerComparisonGroupVerdict` uses `integralComparisonsSatisfiable` for recognised
-integrals. `analyzeCandidateRegisterConstraints` suppresses a warning only if some group is
+one register group's values at a common type. Before this plan, `knownRegisterComparison`
+rejected every carrier not recognised by `discoverIntegralDomain`. It now also recognises only
+the producer-owned standard Bool domain through `discoverExactFiniteDomain`.
+`registerComparisonGroupVerdict` first uses `integralComparisonsSatisfiable` for recognised
+integrals and then exhaustive closure evaluation for Bool. `analyzeCandidateRegisterConstraints`
+suppresses a warning only if some group is
 `RegisterConstraintsUnsatisfiable`; every unknown result retains it with an actionable detail.
 
 `TypedPureComparison`, `discoverIntegralDomain`, and
@@ -232,9 +281,9 @@ that overlap exists, whereas this plan exhausts an entire trusted domain before 
 that overlap is absent.
 
 Tests for the current proof and a concrete replay-candidate counter live in
-`test/Keiki/ValidationReplayAlignmentSpec.hs`. Its existing `unsupportedCarrierFixture` uses
-complementary Bool equalities and expects the warning IR-9 now removes. Replace or rename that
-fixture; retain an unsupported-carrier regression using an unregistered non-integral type.
+`test/Keiki/ValidationReplayAlignmentSpec.hs`. This plan replaced the prior Bool-based
+unsupported-carrier fixture with a faithful complementary Bool fixture and retained the
+unsupported-carrier regression through the local non-integral `UnregisteredFlag` type.
 `test/Keiki/ReplayOnlySpec.hs` covers same-mode replay-only and live-first phase behavior.
 `test/Keiki/FullSymbolicReplayInversionSpec.hs` covers the optional SBV/Z3 checker and must keep
 showing that default validation starts no solver.
@@ -417,8 +466,8 @@ git status --short
 The expected result is zero build/test/Haddock/flake failures, strict ADR acceptance, no new
 improvement-request profile errors, and a final diff containing only the files named by this
 plan. If the improvement-request validator still reports the repository's already-recorded
-status-vocabulary mismatch for older concepts, record the exact unchanged diagnostics and do not
-weaken the profile.
+profile mismatch for older concepts, record the exact unchanged diagnostics and do not weaken the
+profile.
 
 
 ## Validation and Acceptance
@@ -544,3 +593,8 @@ The cross-repository consumer is identified canonically as
 `mori://shinzui/rei/packages/rei-core`; it is not added as a package dependency. Authoritative
 release verification continues to use Hackage and `mori://shinzui/keiki/repos/keiki`, but
 publication is outside this ExecPlan.
+
+Revision note (2026-08-21): completed all five milestones, narrowed the originally proposed
+generic finite-carrier/equality-anchor idea to a producer-owned exact Bool proof, recorded the
+dependent audit and final gate evidence, advanced IR-9 to `implemented`, and left publication and
+consumer adoption to their owning release plans.

@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-08-21
+* **Status change**: IR-9 planned -> implemented: exact Bool inverse-candidate proof and producer gates complete; release and Rei adoption remain pending
 * **Refinement**: IR-9 now requests a producer-owned exact `Bool` domain rather than generic
 `Bounded`/`Enum` discovery or unrestricted equality anchoring. Technical validation found that
 `Typeable` cannot recover arbitrary enumeration dictionaries and Haskell cannot enforce either

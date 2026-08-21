@@ -4166,7 +4166,7 @@ discoverExactFiniteDomain
 
 -- | Whether at least one listed inhabitant satisfies every captured concrete
 -- comparison closure. Returning 'False' proves unsatisfiability only because
--- 'ExactFiniteDomain' is complete.
+-- @ExactFiniteDomain@ is complete.
 exactFiniteComparisonsSatisfiable ::
   ExactFiniteDomain r -> [TypedPureComparison r] -> Bool
 exactFiniteComparisonsSatisfiable domain comparisons =

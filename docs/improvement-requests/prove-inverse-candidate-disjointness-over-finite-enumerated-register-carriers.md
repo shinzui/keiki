@@ -5,9 +5,9 @@ description: >-
   Extend IR-5's inverse-candidate disjointness proof with a producer-owned exact Bool domain so
   complementary Bool register guards can discharge a same-head inversion ambiguity without
   trusting arbitrary Enum or Eq laws.
-timestamp: 2026-08-21T03:52:41Z
+timestamp: 2026-08-21T04:37:57Z
 requestId: IR-9
-status: planned
+status: implemented
 origin: mori://shinzui/rei
 reviews:
   - kind: model
@@ -29,8 +29,13 @@ reviews:
 
 ## Status
 
-Planned by
+Implemented locally by
 [ExecPlan 90](../plans/90-prove-inverse-candidate-disjointness-from-equality-anchors.md).
+Keiki now recognises only the producer-owned standard `Bool` domain and evaluates the captured
+comparison closures at both `False` and `True`. The exhaustive relation matrix, concrete replay
+controls, replay-only tests, symbolic tests, and full producer gates pass. Publication and Rei
+adoption remain pending, so acceptance items 9 and 10 are not yet complete.
+
 IR-5 shipped the shared-register disjointness proof and its actionable retained-warning
 diagnostics. This request extends that proof only with a closed, producer-owned description of
 the standard `Bool` carrier.
@@ -229,6 +234,7 @@ implementation plan passes.
 - The proof this extends: [IR-5](prove-inverse-candidates-disjoint-before-reporting-ambiguity.md)
   and [ExecPlan 85](../plans/85-prove-replay-inverse-candidates-disjoint-from-shared-register-conjuncts.md).
 - Keiki implementation: `src/Keiki/Core.hs` -- `discoverIntegralDomain`,
+  `discoverExactFiniteDomain`, `exactFiniteComparisonsSatisfiable`,
   `knownRegisterComparison`, `registerComparisonGroupVerdict`,
   `analyzeCandidateRegisterConstraints`, and `inversionAmbiguityWarnings`.
 - Keiki tests: `test/Keiki/ValidationReplayAlignmentSpec.hs` and
