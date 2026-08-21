@@ -55,8 +55,12 @@ plan does not publish to Hackage or edit the Rei repository.
       checked both modes, both register values, and representative observed events, and retained
       named ordering, `PTop`, `PNot`, sibling-contradiction, and unregistered controls; 16
       focused, 34 module, 26 replay-only, and 16 full-symbolic examples passed.
-- [ ] Milestone 4: update Haddocks, foundations, changelog, IR-9, ADR-0002, ADR-0003, and the
-      profiled logs to describe the delivered proof boundary.
+- [x] (2026-08-21T04:20:38Z) Milestone 4 documentation and ADR work: updated Haddocks,
+      foundations, changelog, ADR-0002, ADR-0003, and the ADR bundle log to distinguish integral
+      intervals from producer-owned Bool exhaustion; both repository and explicit strict ADR
+      validation accepted all 6 concepts.
+- [ ] Milestone 4 status remainder: after the complete producer gates pass, advance IR-9 from
+      `planned` to `implemented`, update its timestamp and profiled log, and validate the bundle.
 - [ ] Milestone 5: run the focused and complete Keiki gates, audit registered dependents, record
       evidence, and complete the plan's living-document sections.
 
@@ -160,6 +164,13 @@ plan does not publish to Hackage or edit the Rei repository.
   implementation request and require coordinated release authority.
   Date: 2026-08-21
 
+- Decision: Commit the durable documentation and ADR distillation before advancing IR-9's status;
+  perform the `planned` to `implemented` transition only in the final gate commit.
+  Rationale: The ExecPlan explicitly makes that status conditional on all producer gates. Splitting
+  the milestone preserves truthful profile metadata while still leaving the documentation and ADR
+  changes in an independently validated working state.
+  Date: 2026-08-21
+
 
 ## Outcomes & Retrospective
 
@@ -176,6 +187,11 @@ Milestone 3 exercised every ordered pair of equality and ordering atoms over the
 domain. Suppression agreed with direct concrete guard evaluation in both edge modes, every
 suppressed pair admitted at most one concrete replay candidate, and negation remained outside the
 extracted fragment unless a separate supported contradiction was sufficient.
+
+Milestone 4 documented and distilled the delivered proof boundary. ADR-2 now records how exact
+Bool guards preserve replay attribution, and ADR-3 records why producer-owned exhaustion is valid
+while arbitrary enumeration and equality anchoring remain outside the conservative proof gate.
+IR-9 intentionally remains `planned` until the final validation milestone passes.
 
 
 ## Context and Orientation

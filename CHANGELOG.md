@@ -8,6 +8,16 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Changed
+
+- Default `inversionAmbiguityWarnings` now proves complementary standard
+  `Bool` register guards disjoint by exhaustively evaluating their captured
+  equality or ordering closures over Keiki's producer-owned exact domain
+  `[False, True]`. Integral interval reasoning is unchanged; arbitrary
+  `Bounded`/`Enum` carriers, unregistered equality anchors, `PNot`, and opaque
+  guards remain conservative warnings. Public validation and runtime replay
+  interfaces are unchanged.
+
 
 ## [0.9.0.0] — 2026-08-04
 

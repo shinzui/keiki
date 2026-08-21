@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-08-21
+* **Update**: ADR-3: bound solver-free Bool disjointness to producer-owned exhaustive evidence
+* **Update**: ADR-2: record producer-owned exact Bool exhaustion in default replay attribution
+
 ## 2026-08-05
 * **Update**: ADR-4: require sealed constructor evidence and typed cast-free identity alignment
 * **Update**: ADR-3: key symbolic inversion compatibility verdicts to canonical warning identities

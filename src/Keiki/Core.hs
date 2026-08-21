@@ -2859,11 +2859,15 @@ defaultValidationOptions =
 -- The pass therefore has no false positives but can miss overlaps outside that
 -- fragment. The inversion component classifies head wires through trusted
 -- structural schemas (with the legacy name fallback for unavailable schemas),
--- then suppresses a same-mode warning only when exact integral
--- register-versus-literal conjuncts are jointly unsatisfiable. Opaque or
--- unsupported conjuncts are dropped as weakening and can never supply proof;
--- retained warnings name the first precision blocker in 'tvwDetail'. The
--- dead-edge component is structural reachability plus a literal-'PBot' check.
+-- then suppresses a same-mode warning only when supported exact
+-- register-versus-literal conjuncts are jointly unsatisfiable. Integral
+-- carriers use interval intersection; 'Bool' uses exhaustive evaluation over
+-- Keiki's producer-owned @[False, True]@ domain. Arbitrary 'Bounded'/'Enum'
+-- instances and equality literals on unregistered carriers supply no proof.
+-- Opaque or unsupported conjuncts are dropped as weakening and can never
+-- supply proof; retained warnings name the first precision blocker in
+-- 'tvwDetail'. The dead-edge component is structural reachability plus a
+-- literal-'PBot' check.
 -- For the exact, solver-backed answers use
 -- 'Keiki.Symbolic.checkTransitionDeterminismSym' and
 -- 'Keiki.Symbolic.checkDeadEdgesSym' directly, and use
@@ -3342,15 +3346,19 @@ stateChangingEpsilonWarnings t =
 -- Head aliasing uses 'wireHeadsMayAliasForDefault': trusted structural schemas
 -- can prove constructor paths different, while unavailable evidence retains
 -- the legacy equal-'wcName' fallback. For a pair that may alias, the cheap pure
--- proof recursively extracts exact integral @TReg relation literal@ conjuncts
--- through 'PAnd'. Register variables are keyed by zero-based position and
--- runtime type; labels are diagnostic only. Unsupported sibling conjuncts are
--- dropped as weakening, so they cannot manufacture disjointness and a supported
--- contradiction may still prove the full candidates disjoint. The warning is
--- suppressed only when the combined necessary register conditions are
--- definitely unsatisfiable. Satisfiable, unsupported, type-inconsistent, and
--- otherwise unknown cases retain the warning, whose 'tvwDetail' names the first
--- precision blocker.
+-- proof recursively extracts exact @TReg relation literal@ conjuncts through
+-- 'PAnd'. Integral carriers use exact interval intersection. Standard 'Bool'
+-- uses exhaustive evaluation of the captured concrete 'Eq'/'Ord' closures over
+-- Keiki's complete producer-owned @[False, True]@ domain. It does not trust an
+-- arbitrary 'Bounded'/'Enum' enumeration or infer universal equality anchors
+-- for unregistered consumer types. Register variables are keyed by zero-based
+-- position and runtime type; labels are diagnostic only. Unsupported sibling
+-- conjuncts are dropped as weakening, so they cannot manufacture disjointness
+-- and a supported contradiction may still prove the full candidates disjoint.
+-- The warning is suppressed only when the combined necessary register
+-- conditions are definitely unsatisfiable. Satisfiable, unsupported,
+-- type-inconsistent, and otherwise unknown cases retain the warning, whose
+-- 'tvwDetail' names the first precision blocker.
 --
 -- The proof intentionally does not enter 'POr' or 'PNot', model output fields,
 -- or infer disjointness from different reconstructed command constructors. It
@@ -3542,6 +3550,9 @@ data RegisterVariable = RegisterVariable
   }
   deriving stock (Show)
 
+-- | An extracted register comparison plus the exact concrete acceptance
+-- closure from its source 'PEq' or 'PCmp' dictionary. Exact finite-domain
+-- proofs evaluate this closure rather than reconstructing relation semantics.
 data RegisterComparison where
   RegisterComparison ::
     (Typeable r) =>
@@ -3672,6 +3683,8 @@ registerVariable (TReg index) =
       }
 registerVariable _ = Nothing
 
+-- | Retain a comparison only when Keiki owns exact carrier evidence: an
+-- integral interval model or a closed producer-owned finite domain.
 knownRegisterComparison ::
   forall r.
   (Typeable r) =>
@@ -3757,6 +3770,9 @@ alignRegisterComparison
       Just HRefl -> Just (TypedPureComparison relation literalValue accepts)
       Nothing -> Nothing
 
+-- | Decide one structurally aligned register group. Integral interval reasoning
+-- remains first; exact finite carriers are exhausted; absent evidence is
+-- unknown and cannot suppress a warning.
 registerComparisonGroupVerdict :: [RegisterComparison] -> RegisterConstraintVerdict
 registerComparisonGroupVerdict [] = RegisterConstraintsSatisfiable
 registerComparisonGroupVerdict
@@ -4133,16 +4149,24 @@ data IntegralDomain r = IntegralDomain
     integralMaximum :: Maybe Integer
   }
 
+-- | A non-empty, producer-owned complete inhabitant list for one recognised
+-- carrier. Completeness is established by the closed discovery function, never
+-- by a consumer 'Enum' instance.
 data ExactFiniteDomain r = ExactFiniteDomain
   { exactFiniteValues :: NonEmpty r
   }
 
+-- | Discover exact finite evidence. The only admitted carrier is standard
+-- 'Bool', whose two inhabitants are listed explicitly.
 discoverExactFiniteDomain :: forall r. (Typeable r) => Maybe (ExactFiniteDomain r)
 discoverExactFiniteDomain
   | Just HRefl <- eqTypeRep (typeRep @r) (typeRep @Bool) =
       Just (ExactFiniteDomain (False :| [True]))
   | otherwise = Nothing
 
+-- | Whether at least one listed inhabitant satisfies every captured concrete
+-- comparison closure. Returning 'False' proves unsatisfiability only because
+-- 'ExactFiniteDomain' is complete.
 exactFiniteComparisonsSatisfiable ::
   ExactFiniteDomain r -> [TypedPureComparison r] -> Bool
 exactFiniteComparisonsSatisfiable domain comparisons =

@@ -89,7 +89,9 @@ The layers answer different questions:
 - `checkHiddenInputs` verifies that the head carries every command field replay
   needs.
 - default `inversionAmbiguityWarnings` remains pure and conservative; it starts
-  no solver.
+  no solver. Integral register-versus-literal conjunctions use exact interval
+  intersection, while standard `Bool` uses exhaustive evaluation over Keiki's
+  producer-owned complete domain `[False, True]`.
 - `checkInversionAmbiguitySymDetailed` is an explicit IO analysis. It models two
   independently reconstructed commands against shared pre-event registers and,
   when structurally witnessed, shared observed fields.
@@ -97,6 +99,13 @@ The layers answer different questions:
   warning. Satisfiable means “not proved disjoint,” not “a concrete ambiguity
   witness exists.” Unknown, timeout, missing z3, unsupported carriers, opaque
   functions, and missing schemas all retain the warning.
+
+The Bool proof is deliberately closed. Keiki evaluates the exact comparison
+closures captured from the concrete guard at both standard Bool values. It does
+not enumerate arbitrary consumer `Bounded`/`Enum` types, and an equality literal
+on an unregistered type is not treated as a universal anchor: either choice
+would make warning suppression depend on laws that Haskell's typeclasses do not
+enforce. Missing exact-domain evidence therefore remains a warning.
 
 Runtime replay and these build-time checks rely on the documented honesty laws
 of `InCtor` and `WireCtor`: their matchers and builders must describe the
