@@ -40,6 +40,16 @@ capabilities-validate:
         --profile-enforce \
         --log-enforce
 
+# Strict OKF profile + log validation for commit-pinned review records. Findings
+# stay in the review body or become records in the owning request bundle.
+reviews-validate:
+    dhall type --file docs/reviews/profile.dhall > /dev/null
+    okf validate docs/reviews \
+        --strict \
+        --profile docs/reviews/profile.dhall \
+        --profile-enforce \
+        --log-enforce
+
 # Every fixture must fail for its named evidence-boundary reason. Keeping the
 # expectation table exhaustive makes a newly-added fixture fail this gate until
 # its intended rejection is reviewed explicitly.
