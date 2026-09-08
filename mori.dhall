@@ -19,6 +19,132 @@ in  Schema.Project::{
         , name = "keiki"
         , type = Schema.PackageType.Library
         , language = Schema.Language.Haskell
+        , path = Some "."
+        , description = Some "Pure core for symbolic-register transducer event sourcing"
+        , dependencies =
+          [ Schema.Dependency.WithAugmentation
+              { name = "haskell-hvr/cryptohash-sha256:cryptohash-sha256"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Regular
+              , versionConstraint = Some "^>=0.11"
+              }
+          , Schema.Dependency.WithAugmentation
+              { name = "LeventErkok/sbv:sbv"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Regular
+              , versionConstraint = Some ">=11.7 && <15"
+              }
+          ]
+        }
+      , Schema.Package::{
+        , name = "keiki-codec-json"
+        , type = Schema.PackageType.Library
+        , language = Schema.Language.Haskell
+        , path = Some "keiki-codec-json"
+        , description = Some "Optional JSON codec for keiki's RegFile"
+        , dependencies =
+          [ Schema.Dependency.WithAugmentation
+              { name = "haskell/aeson:aeson"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Regular
+              , versionConstraint = Some "^>=2.2"
+              }
+          , Schema.Dependency.WithAugmentation
+              { name = "Bodigrim/tasty-bench:tasty-bench"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Test
+              , versionConstraint = Some "^>=0.4 || ^>=0.5"
+              }
+          ]
+        }
+      , Schema.Package::{
+        , name = "keiki-codec-json-test"
+        , type = Schema.PackageType.Library
+        , language = Schema.Language.Haskell
+        , path = Some "keiki-codec-json-test"
+        , description = Some "Property-test toolkit for keiki-codec-json downstream consumers"
+        , dependencies =
+          [ Schema.Dependency.WithAugmentation
+              { name = "haskell/aeson:aeson"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Regular
+              , versionConstraint = Some "^>=2.2"
+              }
+          ]
+        }
+      , Schema.Package::{
+        , name = "jitsurei"
+        , type = Schema.PackageType.Library
+        , language = Schema.Language.Haskell
+        , path = Some "jitsurei"
+        , description = Some "Worked examples for the keiki library"
+        , dependencies =
+          [ Schema.Dependency.WithAugmentation
+              { name = "LeventErkok/sbv:sbv"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Regular
+              , versionConstraint = Some ">=11.7 && <15"
+              }
+          , Schema.Dependency.WithAugmentation
+              { name = "Bodigrim/tasty-bench:tasty-bench"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Test
+              , versionConstraint = Some ">=0.4 && <0.6"
+              }
+          ]
+        }
+      ]
+    , dependencies =
+      [ "Bodigrim/tasty-bench:tasty-bench"
+      , "LeventErkok/sbv:sbv"
+      , "haskell-hvr/cryptohash-sha256:cryptohash-sha256"
+      , "haskell/aeson:aeson"
+      ]
+    , dependencyRefs =
+      [ Schema.MoriRef::{
+        , namespace = "Bodigrim"
+        , name = "tasty-bench"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "tasty-bench"
+        }
+      , Schema.MoriRef::{
+        , namespace = "LeventErkok"
+        , name = "sbv"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "sbv"
+        }
+      , Schema.MoriRef::{
+        , namespace = "haskell-hvr"
+        , name = "cryptohash-sha256"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "cryptohash-sha256"
+        }
+      , Schema.MoriRef::{
+        , namespace = "haskell"
+        , name = "aeson"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "aeson"
         }
       ]
     , okfBundles =
