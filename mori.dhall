@@ -179,5 +179,12 @@ in  Schema.Project::{
         , description = Some
             "Commit-pinned records of Keiki artifacts having been reviewed"
         }
+      , Schema.OkfBundle::{
+        , name = "terminology"
+        , path = "docs/terminology"
+        , profile = Some "docs/terminology/profile.dhall"
+        , okfVersion = "0.2"
+        , description = Some "Controlled vocabulary for Keiki's core, replay, composition, analysis, and codecs"
+        }
       ]
     }

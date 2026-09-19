@@ -81,3 +81,11 @@ compile-fail-check:
       fi
       print "expected failure: $fixture ($token)"
     done
+
+# Controlled vocabulary: profile, provenance log, references, and source anchors.
+terminology-validate:
+    dhall type --file docs/terminology/profile.dhall > /dev/null
+    okf validate docs/terminology --strict \
+        --profile docs/terminology/profile.dhall \
+        --profile-enforce --log-enforce
+    mori terms validate --path . --bundle terminology

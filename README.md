@@ -137,6 +137,7 @@ history:
 | `docs/foundations/` | Onboarding. Reads as a tutorial in ~1 hour; assumes Haskell, no automata-theory background. Start at `00-reading-guide.md`. |
 | `docs/guide/` | Action-oriented. `user-guide.md` is the canonical authoring walkthrough; topical guides cover composition, profunctors, symbolic CI, AST drop-down, and B-views. |
 | `docs/research/` | Design notes for the library itself. Assume foundations vocabulary. The current baseline is `synthesis-c-foundation-b-presentation-with-worked-examples.md`. |
+| [`docs/terminology/`](docs/terminology/index.md) | Controlled vocabulary for the core model, replay, composition, analysis, and codecs. |
 | `docs/adr/` | Stable architecture decisions distilled from the plan history. |
 | `docs/plans/` and `docs/masterplans/` | Execution records for the work that produced v0.1. |
 | `docs/historical/` | Superseded design notes, retained for context only. |
