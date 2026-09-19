@@ -20,3 +20,7 @@ node_modules/
 site/assets/pragmata/
 site-dist/
 .mina/
+.envrc.local
+db/
+result
+result-*
