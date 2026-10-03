@@ -34,6 +34,8 @@ import Keiki.Render.InspectorSpec qualified
 import Keiki.Render.MarkdownSpec qualified
 import Keiki.Render.MermaidSpec qualified
 import Keiki.Render.PrettySpec qualified
+import Keiki.Render.SCXMLFixtures (exportDirVariable, writeScxmlFixtures)
+import Keiki.Render.SCXMLSpec qualified
 import Keiki.Render.ValidateSpec qualified
 import Keiki.ReplayEitherSpec qualified
 import Keiki.ReplayOnlySpec qualified
@@ -45,10 +47,19 @@ import Keiki.SymbolicSpec qualified
 import Keiki.ValidationReplayAlignmentSpec qualified
 import Keiki.ValidationSpec qualified
 import Keiki.WireSchemaSpec qualified
+import System.Environment (lookupEnv)
 import Test.Hspec
 
+-- | Runs the Hspec suite, or — when @KEIKI_SCXML_EXPORT_DIR@ is set —
+-- only writes the SCXML fixture documents into that directory for the
+-- independent checker driven by @scripts/check-scxml.sh@.
 main :: IO ()
-main = hspec $ do
+main = do
+  exportDir <- lookupEnv exportDirVariable
+  maybe (hspec specs) writeScxmlFixtures exportDir
+
+specs :: Spec
+specs = do
   describe "Keiki.Acceptor" Keiki.AcceptorSpec.spec
   describe "Keiki.Builder (EP-15 M6)" Keiki.BuilderSpec.spec
   describe "Keiki.BuilderSpike (EP-15 M2)" Keiki.BuilderSpike.spec
@@ -87,6 +98,7 @@ main = hspec $ do
   describe "Keiki.Render.Markdown (EP-65)" Keiki.Render.MarkdownSpec.spec
   describe "Keiki.Render.Mermaid (EP-30, EP-31, EP-32, EP-33)" Keiki.Render.MermaidSpec.spec
   describe "Keiki.Render.Pretty (EP-61)" Keiki.Render.PrettySpec.spec
+  describe "Keiki.Render.SCXML (EP-91)" Keiki.Render.SCXMLSpec.spec
   describe "Keiki.Render.Validate (EP-66)" Keiki.Render.ValidateSpec.spec
   describe "Keiki.Shape (EP-36 M1)" Keiki.ShapeSpec.spec
   describe "Keiki.Symbolic" Keiki.SymbolicSpec.spec

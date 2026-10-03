@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-02T21:57:55Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-03T02:34:00Z
+      mode: "implement"
+      note: "Implemented SCXML exporter, fixtures, independent checker, docs, and ADR-6 extension"
 ---
 
 # Add descriptive SCXML state-chart export for transducers
@@ -29,11 +35,14 @@ The observable demonstration is an exported Email Delivery chart with an initial
 ## Progress
 
 
-- [ ] Milestone 1: The public exporter produces an independently parsed Email Delivery chart with correct states, initial reference, transition, and terminal marker.
+- [x] Milestone 1: The public exporter produces an independently parsed Email Delivery chart with correct states, initial reference, transition, and terminal marker. (2026-10-02) `Keiki.Render.SCXML` exposed; `nix develop -c bash scripts/check-scxml.sh` regenerates `email-delivery.scxml` from the compiled test component and prints `SCXML fixtures: all 1 expected documents parsed; graph and metadata checks passed`; the focused Hspec group passes (2 examples, 0 failures).
 - [ ] Milestone 2: Descriptions, replay-edge policy, acceptance markers, unusual names, and malformed finite-state enumeration are handled explicitly and covered by semantic and parser tests.
 - [ ] Milestone 3: The documented export example, repeatable CI acceptance gate, regression checks, and durable rendering decision are delivered.
 
 ## Surprises & Discoveries
+
+- The builder-authored Email Delivery edge records its guard as plain `SendEmail` and its update as `emailSentAt := SendEmail.at, emailSubject := SendEmail.subject, emailRecipient := SendEmail.recipient, (keep)`: `B.slot … .=` statements accumulate in reverse declaration order onto a trailing `UKeep`. The export reports the declared AST faithfully, so the `assignments` array lists the three `USet`s in that AST order and omits the `UKeep`. Evidence: the first golden comparison in `test/Keiki/Render/SCXMLSpec.hs`.
+- Python's `xml.etree.ElementTree` discards comments unless the tree builder is created with `ET.TreeBuilder(insert_comments=True)`; the checker uses that explicitly.
 
 
 ## Decision Log
@@ -46,6 +55,10 @@ Decision (2026-10-02): Default to forward edges, preserve replay-only edge descr
 Decision (2026-10-02): A keiki accepting state becomes SCXML `<final>` only when it has no displayed outgoing edges. Other accepting states remain `<state>` with an acceptance annotation. `isFinal` is an acceptance predicate; keiki forward stepping does not consult it to prohibit further transitions.
 
 Decision (2026-10-02): Keep the exporter pure and use existing Haskell dependencies. Validate generated documents independently with Python's standard XML and JSON parsers, adding Python only to development/CI tooling. This avoids coupling the core package to an XML implementation or a graphical editor.
+
+Decision (2026-10-02): Generate checker input by running the compiled test executable with `KEIKI_SCXML_EXPORT_DIR` set, instead of feeding a GHCi script to `cabal repl`. The test `main` writes the registered fixtures and exits (non-zero, writing nothing, on any export failure) when the variable is set, and runs Hspec otherwise. This reuses the test component's compiled fixtures and extensions as the plan requires, but gives the shell script a reliable exit status; GHCi statements do not fail the session on error. The GHCi route in Concrete Steps remains a valid manual diagnostic.
+
+Decision (2026-10-02): Edge records carry both `update` (the full `prettyUpdate` text) and `assignments` (one `slot := term` string per `USet`, in AST order), plus `eventSource` (`input-constructor` or `synthetic`) so consumers need not reverse-engineer label provenance. Structural mode (`includeBehavior = False`) omits `guard`, `update`, `assignments`, `updateReads`, and the entire `outputs` array, including output constructor names.
 
 ## Outcomes & Retrospective
 

@@ -81,6 +81,7 @@ library
     Keiki.Render.Markdown
     Keiki.Render.Mermaid
     Keiki.Render.Pretty
+    Keiki.Render.SCXML
     Keiki.Render.Validate
     Keiki.Shape
     Keiki.Symbolic
@@ -152,6 +153,8 @@ test-suite keiki-test
     Keiki.Render.MarkdownSpec
     Keiki.Render.MermaidSpec
     Keiki.Render.PrettySpec
+    Keiki.Render.SCXMLFixtures
+    Keiki.Render.SCXMLSpec
     Keiki.Render.ValidateSpec
     Keiki.ReplayEitherSpec
     Keiki.ReplayOnlySpec

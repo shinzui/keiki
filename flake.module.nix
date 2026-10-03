@@ -27,10 +27,14 @@
       #                     `node site/check-links.mjs`).
       #   z3:               the SMT solver keiki's specs are written against; the
       #                     dev shell pins it so it stays identical across machines.
+      #   python3:          the independent SCXML export checker
+      #                     (scripts/check-scxml.py, `just scxml-check`); check-time
+      #                     only, never a library dependency.
       haskellProject.extraDevPackages = [
         pkgs.nodejs_22
         pkgs.pnpm
         pkgs.z3
+        pkgs.python3
       ];
 
       # CI dev shell, consumed by .github/workflows/ci.yml (`nix develop .#ci`).
