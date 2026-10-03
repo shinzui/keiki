@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-02
+* **Update**: ADR-6: label SCXML arrows by sole top-level constructor and qualify same-state shared labels to prevent SCXML shadowing
 * **Update**: ADR-6: extend the readable rendering contract to the descriptive SCXML export and its keiki-scxml-v1 comment convention
 
 ## 2026-08-21

@@ -207,9 +207,26 @@ edgeCases =
                 output = [pack inGo wireA (OFCons (opaqueLit 42) OFNil)],
                 target = EcDone,
                 mode = Live
-              }
+              },
+            -- e7: a sole top-level constructor conjoined with a
+            -- disjunction and a negation still names its event.
+            liveEdge
+              ( PAnd
+                  (PInCtor inStop)
+                  (POr (PEq countReg (lit 0)) (PNot (PCmp CmpGt countReg (lit 9))))
+              )
+              []
+              EcDone,
+            -- e8: a second constructor test under negation is not a sole
+            -- constructor, so the label is synthetic.
+            liveEdge (PAnd (PInCtor inPing) (PNot (PInCtor inGo))) [] EcDone
           ]
-        EcAccepting -> [liveEdge (PInCtor inPing) [] EcAccepting]
+        -- Two guard-split arrows on the same command: both are qualified
+        -- (Ping.e0, Ping.e1) so neither shadows the other in SCXML.
+        EcAccepting ->
+          [ liveEdge (PInCtor inPing) [] EcAccepting,
+            liveEdge (PAnd (PInCtor inPing) (PEq countReg (lit 0))) [] EcDone
+          ]
         EcDone -> []
         EcIsolated -> [],
       initial = EcStart,

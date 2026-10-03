@@ -15,7 +15,10 @@
 -- or @\<send\>@: loading it into an SCXML interpreter does not reproduce
 -- keiki's command rejection, guard evaluation, register updates, event
 -- emission, or replay. Every @event@ attribute is a diagram label, not a
--- command encoding. Generic viewers may ignore or drop the comments.
+-- command encoding. Arrows leaving one state that would share a
+-- constructor label are qualified as @\<Ctor\>.e\<j\>@, so that no
+-- unconditional sibling transition shadows another. Generic viewers may
+-- ignore or drop the comments.
 --
 -- The exporter is pure. It never reads 'initialRegs', never applies a
 -- stored function inside a term, and in structural mode
@@ -160,9 +163,20 @@ data EdgeRec = EdgeRec
     eMode :: EdgeMode,
     eDisplayed :: Bool,
     eEvent :: Text,
-    eEventFromInput :: Bool,
+    eEventSource :: EventSource,
     eBehavior :: Maybe Behavior
   }
+
+-- | Where an edge's @event@ label came from.
+data EventSource
+  = -- | @keiki_edge_…@ or @keiki_replay_…@.
+    Synthetic
+  | -- | The edge's sole input-constructor name.
+    InputConstructor
+  | -- | @\<constructor\>.e\<j\>@: the constructor name qualified by
+    --     edge index because sibling arrows share it.
+    QualifiedInputConstructor
+  deriving stock (Eq)
 
 data Behavior = Behavior
   { bGuard :: Text,
@@ -179,7 +193,7 @@ buildVertex ::
   (Int, s, Text) ->
   Either ScxmlError Vertex
 buildVertex opts t lookupId (i, s, sid) = do
-  edges <- traverse edgeRec (zip [0 ..] (edgesOut t s))
+  edges <- qualifySharedLabels <$> traverse edgeRec (zip [0 ..] (edgesOut t s))
   pure
     Vertex
       { vIndex = i,
@@ -210,10 +224,34 @@ buildVertex opts t lookupId (i, s, sid) = do
             eMode = m,
             eDisplayed = displayed,
             eEvent = maybe synthetic id inputLabel,
-            eEventFromInput = maybe False (const True) inputLabel,
+            eEventSource = maybe Synthetic (const InputConstructor) inputLabel,
             eBehavior =
               if includeBehavior opts then Just (behaviorOf e) else Nothing
           }
+
+-- | Give every drawn arrow of one state a distinct, non-overlapping event
+-- label. Exported transitions carry no @cond@, so an SCXML processor treats
+-- sibling transitions on the same event as unconditional and the first in
+-- document order shadows the rest, even when keiki's guards are mutually
+-- exclusive. When two or more drawn arrows share an input-constructor
+-- label, each becomes @\<label\>.e\<j\>@. SCXML matches events by
+-- dot-separated token prefix, so these qualified labels cannot match one
+-- another, and none stays bare (a bare label would match them all).
+-- Synthetic labels embed the edge index and never collide.
+qualifySharedLabels :: [EdgeRec] -> [EdgeRec]
+qualifySharedLabels edges = map qualify edges
+  where
+    shared e =
+      eDisplayed e
+        && eEventSource e == InputConstructor
+        && length [() | o <- edges, eDisplayed o, eEventSource o == InputConstructor, eEvent o == eEvent e] > 1
+    qualify e
+      | shared e =
+          e
+            { eEvent = eEvent e <> T.pack (".e" ++ show (eIndex e)),
+              eEventSource = QualifiedInputConstructor
+            }
+      | otherwise = e
 
 -- | Readable behavior descriptions for an edge. @update@ is bound by the
 -- 'Edge' pattern so its existential write-set does not escape.
@@ -240,30 +278,37 @@ assignments UKeep = []
 assignments u@(USet _ _) = [prettyUpdate u]
 assignments (UCombine a b) = assignments a ++ assignments b
 
--- | The single input-constructor name of a purely conjunctive guard, when
--- it is a safe SCXML event token. A guard qualifies only when it contains
--- no disjunction or negation and exactly one 'PInCtor'; the name must
+-- | The input-constructor name an edge's guard commits to, when it is a
+-- safe SCXML event token. The guard must contain exactly one 'PInCtor'
+-- anywhere, and that test must be a top-level conjunct (reached from the
+-- root through 'PAnd' only), so the edge can fire only for that
+-- constructor. Other conjuncts may use @||@ and @!@ freely. The name must
 -- match @[A-Za-z_][A-Za-z0-9_]*@ and must not start with the reserved
--- exporter prefix @keiki_@. Anything else gets a synthetic label: the
--- exporter does not pretend that a disjunction, negation, wildcard, or
--- arbitrary display string denotes a single SCXML event.
+-- exporter prefix @keiki_@. Anything else — a disjunction over or negation
+-- of constructor tests, several constructor tests, a wildcard, or an
+-- arbitrary display string — gets a synthetic label.
 soleInputConstructor :: HsPred rs ci -> Maybe Text
-soleInputConstructor g = case conj g of
-  Just [n]
-    | isEventToken n && not (T.pack "keiki_" `T.isPrefixOf` n) -> Just n
+soleInputConstructor g = case (allCtors g, topLevelCtors g) of
+  ([n], [m])
+    | n == m && isEventToken n && not (T.pack "keiki_" `T.isPrefixOf` n) -> Just n
   _ -> Nothing
   where
-    conj :: HsPred rs ci -> Maybe [Text]
-    conj (PAnd a b) = (++) <$> conj a <*> conj b
-    conj (POr _ _) = Nothing
-    conj (PNot _) = Nothing
-    conj (PInCtor InCtor {icName = n}) = Just [T.pack n]
-    conj PTop = Just []
-    conj PBot = Just []
-    conj PLeftArm = Just []
-    conj PRightArm = Just []
-    conj (PEq _ _) = Just []
-    conj (PCmp {}) = Just []
+    topLevelCtors :: HsPred rs ci -> [Text]
+    topLevelCtors (PAnd a b) = topLevelCtors a ++ topLevelCtors b
+    topLevelCtors (PInCtor InCtor {icName = n}) = [T.pack n]
+    topLevelCtors _ = []
+
+    allCtors :: HsPred rs ci -> [Text]
+    allCtors (PAnd a b) = allCtors a ++ allCtors b
+    allCtors (POr a b) = allCtors a ++ allCtors b
+    allCtors (PNot p) = allCtors p
+    allCtors (PInCtor InCtor {icName = n}) = [T.pack n]
+    allCtors PTop = []
+    allCtors PBot = []
+    allCtors PLeftArm = []
+    allCtors PRightArm = []
+    allCtors (PEq _ _) = []
+    allCtors (PCmp {}) = []
 
 isEventToken :: Text -> Bool
 isEventToken n = case T.uncons n of
@@ -410,9 +455,10 @@ edgeRecord e =
         ("event", JString (eEvent e)),
         ( "eventSource",
           JString
-            ( if eEventFromInput e
-                then T.pack "input-constructor"
-                else T.pack "synthetic"
+            ( case eEventSource e of
+                Synthetic -> T.pack "synthetic"
+                InputConstructor -> T.pack "input-constructor"
+                QualifiedInputConstructor -> T.pack "qualified-input-constructor"
             )
         )
       ]

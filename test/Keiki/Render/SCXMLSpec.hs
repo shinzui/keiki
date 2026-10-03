@@ -70,8 +70,16 @@ spec = do
                      ("keiki_edge_s0_e4", "s2_EcDone"),
                      ("keiki_edge_s0_e5", "s2_EcDone"),
                      ("Go", "s2_EcDone"),
-                     ("Ping", "s1_EcAccepting")
+                     ("Stop", "s2_EcDone"),
+                     ("keiki_edge_s0_e8", "s2_EcDone"),
+                     ("Ping.e0", "s1_EcAccepting"),
+                     ("Ping.e1", "s2_EcDone")
                    ]
+
+    it "qualifies every arrow of a state that would share a constructor label" $ do
+      doc <- expectRight (toSCXML edgeCases)
+      T.count "\"eventSource\":\"qualified\\u002dinput\\u002dconstructor\"" doc `shouldBe` 2
+      doc `shouldNotSatisfy` T.isInfixOf "event=\"Ping\""
 
     it "uses <final> only for accepting states with no displayed edges" $ do
       doc <- expectRight (toSCXML edgeCases)

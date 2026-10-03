@@ -8,7 +8,7 @@ description: >-
 docId: ADR-6
 status: Accepted
 date: 2026-08-02
-timestamp: 2026-10-03T02:43:37Z
+timestamp: 2026-10-03T03:39:02Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -78,9 +78,12 @@ character as a `\u` escape and is never entity-escaped, so parsing the XML and
 then decoding the JSON recovers each string exactly. Structural mode
 (`includeBehavior = False`) is the explicit redaction route: it omits guards,
 assignments, and outputs and never forces a pretty-printer or `Show`. `event`
-attributes are diagram labels. The exporter uses a constructor name only for a
-purely conjunctive guard with exactly one safe `PInCtor` and otherwise uses a
-reserved `keiki_` synthetic label. Replay-only edges stay out of the default
+attributes are diagram labels. The exporter uses a constructor name only when
+the guard has exactly one safe `PInCtor` and it is a top-level conjunct, and
+otherwise uses a reserved `keiki_` synthetic label. Because transitions carry no
+`cond`, sibling arrows that share a constructor label are all qualified as
+`<Ctor>.e<j>`. A state-chart processor would otherwise treat them as
+unconditional and shadow all but the first. Replay-only edges stay out of the default
 forward graph. An independent standard-library XML/JSON checker validates the
 generated documents.
 

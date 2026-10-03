@@ -18,7 +18,10 @@ and this project adheres to the
   document is not executable (`datamodel="null"`, no `cond`/`<assign>`/
   `<send>`). By default only `Live` edges are drawn (`AllDeclaredEdges` adds
   replay-only arrows with reserved labels), and `includeBehavior = False` gives
-  a structural view. Malformed enumerations return `Left`. See
+  a structural view. An arrow is labelled with its command constructor when
+  the guard's only constructor test is a top-level conjunct. Sibling arrows
+  that would share a label become `<Ctor>.e<j>`, so no transition shadows
+  another in SCXML tools. Malformed enumerations return `Left`. See
   `docs/guide/scxml-export.md`.
 - `just scxml-check` regenerates the SCXML fixtures and validates them with
   an independent Python standard-library checker. `python3` is now part of the

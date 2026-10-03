@@ -96,13 +96,28 @@ export uses only these elements:
   still one arrow, and its record keeps the output order.
 - **Every transition has an `event`.** In SCXML, omitting `event` would mean an
   automatically eligible eventless transition. The label is the edge's input
-  constructor name only when the whole guard is a conjunction with exactly one
-  `PInCtor`, no `||` or `!`, and the name matches `[A-Za-z_][A-Za-z0-9_]*` and
-  does not start with `keiki_`. Builder `onCmd` edges usually qualify. Every other
-  edge gets the synthetic label `keiki_edge_s<i>_e<j>` (source position `i`,
-  local edge index `j`). **Event labels are diagram labels, not a command
-  encoding.** The exporter does not prune guards it believes are false, and it
-  does not claim that every drawn path is feasible.
+  constructor name when the guard contains exactly one `PInCtor` and that test
+  is a top-level conjunct (reached from the root through `&&` only), so the
+  edge can fire only for that constructor. Other conjuncts may freely use `||`
+  and `!`, as in `ReplacePreferences && (flag differs || …)`. The name must
+  also match `[A-Za-z_][A-Za-z0-9_]*` and not start with `keiki_`. Builder
+  `onCmd` edges qualify. Every other edge gets the synthetic label
+  `keiki_edge_s<i>_e<j>` (source position `i`, local edge index `j`). Examples
+  include a disjunction over constructors, a negated constructor test, two
+  constructor tests, or a wildcard guard.
+- **No arrow shadows a sibling.** Transitions carry no `cond`, so an SCXML
+  processor treats sibling transitions on the same event as unconditional and
+  takes the first in document order, even when keiki's guards are mutually
+  exclusive (for example `MarkBounced` split on `permanent == True` and
+  `permanent == False`). When two or more drawn arrows leaving one state would
+  share a constructor label, **every** arrow in that group is labelled
+  `<Ctor>.e<j>`, for example `MarkBounced.e1` and `MarkBounced.e2`. SCXML
+  matches events by dot-separated token prefix, so these qualified labels
+  cannot match each other. Leaving any one of them bare would match them all.
+  The guard in each edge record tells the arrows apart. **Event labels are
+  diagram labels, not a command encoding.** The exporter does not prune guards
+  it believes are false, and it does not claim that every drawn path is
+  feasible.
 
 ## 3. Edge views
 
@@ -128,7 +143,7 @@ Every comment the exporter writes has the form
 |---|---|---|
 | First child of `<scxml>` | `document` | `purpose` (`"descriptive-only"`), `edgeView` (`"forward-edges"` or `"all-declared-edges"`), `includeBehavior`, `warning`, `replayEdges`, `edgeIndex`, `updateSemantics` (explanatory strings) |
 | First child of each `<state>`/`<final>` | `state` | `id`, `index`, `label` (exact `show` text), `accepting` |
-| Inside each `<transition>`, or directly in the source state for an omitted replay-only edge | `edge` | `source`, `target` (state IDs), `edgeIndex` (local declaration position, not a durable identifier), `mode` (`"Live"` or `"ReplayOnly"`), `displayed`, `event`, `eventSource` (`"input-constructor"` or `"synthetic"`), then `note` for replay-only edges, then the behavior fields |
+| Inside each `<transition>`, or directly in the source state for an omitted replay-only edge | `edge` | `source`, `target` (state IDs), `edgeIndex` (local declaration position, not a durable identifier), `mode` (`"Live"` or `"ReplayOnly"`), `displayed`, `event`, `eventSource` (`"input-constructor"`, `"qualified-input-constructor"`, or `"synthetic"`), then `note` for replay-only edges, then the behavior fields |
 
 With `includeBehavior = True` (the default), an edge record also contains:
 

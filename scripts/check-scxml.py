@@ -23,7 +23,8 @@ from pathlib import Path
 
 NS = "http://www.w3.org/2005/07/scxml"
 MARKER = "keiki-scxml-v1 "
-EVENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+QUALIFIED_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.e(0|[1-9][0-9]*)\Z")
 XML_DECL = b'<?xml version="1.0" encoding="UTF-8"?>\n'
 
 DOCUMENT_KEYS = [
@@ -223,6 +224,7 @@ def parse_state(element, position, document, name):
 
     for expected_index, edge in enumerate(state.edges):
         check_edge(state, position, expected_index, edge, document, name)
+    check_no_shadowing(state, name)
 
     accepting = record["accepting"]
     if state.element == "final":
@@ -261,9 +263,7 @@ def check_edge(state, position, expected_index, edge, document, name):
     else:
         require(edge.drawn, f"{where}: all-edges view omits an edge")
     event = r["event"]
-    require(
-        isinstance(event, str) and EVENT_RE.match(event), f"{where}: bad event label"
-    )
+    require(isinstance(event, str) and event, f"{where}: empty event label")
     synthetic_live = f"keiki_edge_s{position}_e{expected_index}"
     synthetic_replay = f"keiki_replay_s{position}_e{expected_index}"
     if replay:
@@ -271,8 +271,15 @@ def check_edge(state, position, expected_index, edge, document, name):
         require(r["eventSource"] == "synthetic", f"{where}: replay eventSource")
     elif r["eventSource"] == "synthetic":
         require(event == synthetic_live, f"{where}: synthetic label")
+    elif r["eventSource"] == "qualified-input-constructor":
+        m = QUALIFIED_RE.match(event)
+        require(m is not None, f"{where}: bad qualified label {event!r}")
+        require(int(m.group(2)) == expected_index, f"{where}: qualifier index")
+        require(not event.startswith("keiki_"), f"{where}: reserved prefix")
+        require(edge.drawn, f"{where}: qualified label on an undrawn edge")
     else:
         require(r["eventSource"] == "input-constructor", f"{where}: eventSource")
+        require(TOKEN_RE.match(event), f"{where}: bad event label {event!r}")
         require(not event.startswith("keiki_"), f"{where}: reserved prefix")
     if edge.drawn:
         require(edge.event == event, f"{where}: event attribute != record")
@@ -296,6 +303,33 @@ def check_edge(state, position, expected_index, edge, document, name):
                 and all(isinstance(f, str) for f in out["fields"]),
                 f"{where}: output object",
             )
+
+
+def check_no_shadowing(state, name):
+    """No drawn arrow of a state may match another's event.
+
+    Exported transitions carry no cond, so SCXML treats every one as
+    unconditional, and the first in document order whose event descriptor
+    matches wins. A descriptor matches an event equal to it or extending it
+    by dot-separated tokens, so equal labels and dotted-prefix labels shadow.
+    """
+    events = [e.record["event"] for e in state.transitions]
+    for i, a in enumerate(events):
+        for b in events[i + 1 :]:
+            require(
+                a != b and not b.startswith(a + ".") and not a.startswith(b + "."),
+                f"{name}: {state.id} arrows {a!r} and {b!r} shadow each other",
+            )
+    qualified = [
+        QUALIFIED_RE.match(e.record["event"]).group(1)
+        for e in state.transitions
+        if e.record["eventSource"] == "qualified-input-constructor"
+    ]
+    for base in set(qualified):
+        require(
+            qualified.count(base) >= 2,
+            f"{name}: {state.id} qualifies {base!r} without a shared label",
+        )
 
 
 # --- Fixture expectations ---------------------------------------------------
@@ -420,7 +454,10 @@ def check_edge_cases(chart):
             ("EcStart", 4, live, True, "keiki_edge_s0_e4", "EcDone"),
             ("EcStart", 5, live, True, "keiki_edge_s0_e5", "EcDone"),
             ("EcStart", 6, live, True, "Go", "EcDone"),
-            ("EcAccepting", 0, live, True, "Ping", "EcAccepting"),
+            ("EcStart", 7, live, True, "Stop", "EcDone"),
+            ("EcStart", 8, live, True, "keiki_edge_s0_e8", "EcDone"),
+            ("EcAccepting", 0, live, True, "Ping.e0", "EcAccepting"),
+            ("EcAccepting", 1, live, True, "Ping.e1", "EcDone"),
         ],
         "edge-cases: edges",
     )
@@ -461,6 +498,20 @@ def check_edge_cases(chart):
     )
     require(
         e6["eventSource"] == "input-constructor", "edge-cases: Go event source"
+    )
+    require(
+        edge(chart, "EcStart", 7)["guard"]
+        == "(Stop && (count == 0 || !(count > 9)))",
+        "edge-cases: sole top-level constructor guard",
+    )
+    require(
+        edge(chart, "EcStart", 8)["guard"] == "(Ping && !(Go))",
+        "edge-cases: negated second constructor guard",
+    )
+    require(
+        [edge(chart, "EcAccepting", i)["eventSource"] for i in (0, 1)]
+        == ["qualified-input-constructor"] * 2,
+        "edge-cases: qualified group",
     )
 
 
@@ -584,12 +635,33 @@ EXPECTED = {
 # --- Negative self-test -----------------------------------------------------
 
 
-def rejects(data, label):
+def rejection(data, label):
+    """The checker's error message for data, or None if it is accepted."""
     try:
         parse_chart(data, label)
-    except CheckError:
-        return True
-    return False
+    except CheckError as err:
+        return str(err)
+    return None
+
+
+def rejects(data, label):
+    return rejection(data, label) is not None
+
+
+def self_test_shadowing(good):
+    """Unqualifying one arrow of a shared group must fail as shadowing."""
+    text = good.decode("utf-8")
+    mutated = text.replace('event="Ping.e0"', 'event="Ping"', 1).replace(
+        '"event":"Ping.e0","eventSource":"qualified\\u002dinput\\u002dconstructor"',
+        '"event":"Ping","eventSource":"input\\u002dconstructor"',
+        1,
+    )
+    require(mutated != text, "self-test: shadowing mutation did not apply")
+    message = rejection(mutated.encode("utf-8"), "shadowing")
+    require(
+        message is not None and "shadow" in message,
+        f"self-test: unqualified shared label not rejected as shadowing ({message})",
+    )
 
 
 def self_test(good):
@@ -625,6 +697,7 @@ def main(argv):
             chart = parse_chart((directory / name).read_bytes(), name)
             EXPECTED[name](chart)
         self_test((directory / "email-delivery.scxml").read_bytes())
+        self_test_shadowing((directory / "edge-cases.scxml").read_bytes())
     except CheckError as err:
         print(f"SCXML check FAILED: {err}", file=sys.stderr)
         return 1
