@@ -1,7 +1,7 @@
-cabal-version:   3.0
-name:            keiki
-version:         0.9.1.0
-synopsis:        Pure core for symbolic-register transducer event sourcing.
+cabal-version: 3.0
+name: keiki
+version: 0.9.1.0
+synopsis: Pure core for symbolic-register transducer event sourcing.
 description:
   A Haskell library for the pure core of event sourcing, workflow
   engines, and durable execution, built on the symbolic-register
@@ -21,28 +21,33 @@ description:
   sibling package @keiki-codec-json@; an opt-in test toolkit
   lives in @keiki-codec-json-test@.
 
-license:         BSD-3-Clause
-author:          Nadeem Bitar
-maintainer:      nadeem@gmail.com
-copyright:       2026 Nadeem Bitar
-category:        Control
-build-type:      Simple
-tested-with:     GHC >=9.12 && <9.13
+license: BSD-3-Clause
+author: Nadeem Bitar
+maintainer: nadeem@gmail.com
+copyright: 2026 Nadeem Bitar
+category: Control
+build-type: Simple
+tested-with: ghc >=9.12 && <9.13
 extra-doc-files:
   CHANGELOG.md
   README.md
 
 source-repository head
-  type:     git
+  type: git
   location: https://github.com/shinzui/keiki.git
 
 common warnings
   ghc-options:
-    -Wall -Wcompat -Widentities -Wincomplete-record-updates
-    -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wpartial-fields
+    -Wredundant-constraints
 
 common shared-extensions
-  default-language:   GHC2024
+  default-language: GHC2024
   default-extensions:
     AllowAmbiguousTypes
     DuplicateRecordFields
@@ -58,9 +63,8 @@ common shared-extensions
 -- (Debian). The library will fail loudly if z3 is missing when those
 -- analyses run; pure evaluation (delta/omega/step/reconstitute) does
 -- not depend on z3.
-
 library
-  import:          warnings, shared-extensions
+  import: warnings, shared-extensions
   exposed-modules:
     Keiki.Acceptor
     Keiki.Builder
@@ -87,24 +91,24 @@ library
     Keiki.Internal.SymbolicTypes
     Keiki.Internal.WireSchema
 
-  hs-source-dirs:  src
+  hs-source-dirs: src
   build-depends:
-    , base               ^>=4.21
-    , bytestring         ^>=0.12
-    , containers         >=0.6   && <0.9
-    , cryptohash-sha256  ^>=0.11
-    , nothunks           >=0.3   && <0.4
-    , profunctors        >=5.6   && <6
-    , sbv                >=11.7  && <15
-    , template-haskell   ^>=2.23
-    , text               ^>=2.1
-    , time               ^>=1.14
+    base ^>=4.21,
+    bytestring ^>=0.12,
+    containers >=0.6 && <0.9,
+    cryptohash-sha256 ^>=0.11,
+    nothunks >=0.3 && <0.4,
+    profunctors >=5.6 && <6,
+    sbv >=11.7 && <15,
+    template-haskell ^>=2.23,
+    text ^>=2.1,
+    time ^>=1.14,
 
 test-suite keiki-test
-  import:         warnings, shared-extensions
-  type:           exitcode-stdio-1.0
+  import: warnings, shared-extensions
+  type: exitcode-stdio-1.0
   hs-source-dirs: test
-  main-is:        Spec.hs
+  main-is: Spec.hs
   other-modules:
     Keiki.AcceptorSpec
     Keiki.ArrowSpec
@@ -162,14 +166,14 @@ test-suite keiki-test
     Keiki.WireSchemaSpec
 
   build-depends:
-    , base         ^>=4.21
-    , containers   >=0.6   && <0.9
-    , deepseq      ^>=1.5
-    , hspec        ^>=2.11
-    , keiki
-    , nothunks     >=0.3   && <0.4
-    , profunctors  >=5.6   && <6
-    , QuickCheck   ^>=2.15
-    , sbv          >=11.7  && <15
-    , text         ^>=2.1
-    , time         ^>=1.14
+    QuickCheck ^>=2.15,
+    base ^>=4.21,
+    containers >=0.6 && <0.9,
+    deepseq ^>=1.5,
+    hspec ^>=2.11,
+    keiki,
+    nothunks >=0.3 && <0.4,
+    profunctors >=5.6 && <6,
+    sbv >=11.7 && <15,
+    text ^>=2.1,
+    time ^>=1.14,
