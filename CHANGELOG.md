@@ -8,6 +8,22 @@ and this project adheres to the
 
 ## [Unreleased]
 
+### Added
+
+- `Keiki.Render.SCXML` (`toSCXML`, `toSCXMLWith`, `ScxmlOptions`,
+  `ScxmlEdgeView`, `ScxmlError`) exports a finite transducer as a flat,
+  descriptive SCXML 1.0 state chart: one `state`/`final` per enumerated control
+  state and one event-labelled `transition` per drawn edge, with guards,
+  register assignments, and outputs kept as `keiki-scxml-v1` JSON comments. The
+  document is not executable (`datamodel="null"`, no `cond`/`<assign>`/
+  `<send>`). By default only `Live` edges are drawn (`AllDeclaredEdges` adds
+  replay-only arrows with reserved labels), and `includeBehavior = False` gives
+  a structural view. Malformed enumerations return `Left`. See
+  `docs/guide/scxml-export.md`.
+- `just scxml-check` regenerates the SCXML fixtures and validates them with
+  an independent Python standard-library checker. `python3` is now part of the
+  dev and CI shells as a check-time tool only.
+
 
 ## [0.9.1.0] — 2026-08-20
 

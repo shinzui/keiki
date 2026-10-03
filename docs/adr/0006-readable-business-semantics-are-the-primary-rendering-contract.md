@@ -8,6 +8,7 @@ description: >-
 docId: ADR-6
 status: Accepted
 date: 2026-08-02
+timestamp: 2026-10-03T02:43:37Z
 generated:
   by: adopt-architecture-decisions/0.8.0
   at: 2026-08-04T16:35:24Z
@@ -15,7 +16,7 @@ generated:
 
 # ADR-0006: Readable business semantics are the primary rendering contract
 
-- **Plan(s):** `docs/plans/84-preserve-readable-business-semantics-in-keiki-transducers-and-diagrams.md`
+- **Plan(s):** `docs/plans/84-preserve-readable-business-semantics-in-keiki-transducers-and-diagrams.md`; `docs/plans/91-add-descriptive-scxml-state-chart-export-for-transducers.md`
 
 ## Context
 
@@ -63,6 +64,26 @@ visible full-width forms; raw CR/LF use visible control pictures. The known
 line and transition counts, heuristic warnings, recovered SVG text, and the
 checked-in documentation backend.
 
+The SCXML export (`Keiki.Render.SCXML`) applies the same contract at a
+different boundary. It is descriptive, not executable: the document declares
+`datamodel="null"` and never moves Haskell guards, updates, or outputs into
+SCXML `cond`, `<assign>`, or `<send>`. An interpreter that loaded those elements
+would run them as executable content, and update right-hand sides read the
+edge-entry snapshot (ADR-4) rather than sequential assignments. Readable
+behavior is the default. It is recorded in XML comments of the form
+`<!--keiki-scxml-v1 {JSON}-->`, using the same `prettyPred`/`prettyUpdate`/
+`prettyTerm` text, `<fn>`/`<lit>` markers, and literal disclosure policy as
+Mermaid. The JSON writes every hyphen and every XML-forbidden or discouraged
+character as a `\u` escape and is never entity-escaped, so parsing the XML and
+then decoding the JSON recovers each string exactly. Structural mode
+(`includeBehavior = False`) is the explicit redaction route: it omits guards,
+assignments, and outputs and never forces a pretty-printer or `Show`. `event`
+attributes are diagram labels. The exporter uses a constructor name only for a
+purely conjunctive guard with exactly one safe `PInCtor` and otherwise uses a
+reserved `keiki_` synthetic label. Replay-only edges stay out of the default
+forward graph. An independent standard-library XML/JSON checker validates the
+generated documents.
+
 ## Consequences
 
 - Primary diagrams expose the command, states, event constructors, full guard,
@@ -77,3 +98,7 @@ checked-in documentation backend.
   migration. Callers needing stable 0.7 diagram bytes must opt into topology.
 - Full-width control punctuation is a visible sign that semantic input was
   neutralized at the Mermaid boundary, not silently interpreted as structure.
+- SCXML exports interchange the chart's shape, not its behavior. Generic viewers
+  may drop the metadata comments, so editor round-trips are not guaranteed, and
+  executable or editor-specific SCXML would need its own decision and semantic
+  tests.

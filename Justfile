@@ -82,6 +82,13 @@ compile-fail-check:
       print "expected failure: $fixture ($token)"
     done
 
+# Descriptive SCXML export: regenerate every fixture document from the compiled
+# test component, validate it with the independent standard-library Python
+# checker, and byte-compare docs/examples/email-delivery.scxml. Pass a
+# directory to keep the checked documents. Run inside `nix develop`.
+scxml-check *out:
+    bash scripts/check-scxml.sh {{out}}
+
 # Controlled vocabulary: profile, provenance log, references, and source anchors.
 terminology-validate:
     dhall type --file docs/terminology/profile.dhall > /dev/null

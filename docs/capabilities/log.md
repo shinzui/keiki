@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-02
+* **Update**: CAP-9: add the descriptive SCXML export (Keiki.Render.SCXML) with its spec and independent checker evidence
+
 ## 2026-08-08
 * **Adoption**: Authored the capability catalog against the shared
   `coordination.capabilities` profile (okf-profiles v0.9.0). Twelve capabilities

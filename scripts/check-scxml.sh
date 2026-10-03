@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Generate the SCXML fixture documents from the compiled keiki test
-# component and validate them with the independent Python checker.
+# component, validate them with the independent Python checker, and
+# byte-compare the documented example docs/examples/email-delivery.scxml
+# against fresh output.
 #
 #   scripts/check-scxml.sh             # generate + check in a temporary directory
 #   scripts/check-scxml.sh OUTPUT_DIR  # also copy the checked documents there
@@ -46,3 +48,13 @@ if (($# == 1)); then
   cp "$generated"/*.scxml "$1"/
   echo "copied checked SCXML documents to $1"
 fi
+
+# The documented example is generated output, never hand-maintained.
+example=docs/examples/email-delivery.scxml
+if ! cmp -s "$example" "$generated/email-delivery.scxml"; then
+  echo "$example differs from fresh export; regenerate with:" >&2
+  echo "  scripts/check-scxml.sh <dir>; cp <dir>/email-delivery.scxml $example" >&2
+  diff -u "$example" "$generated/email-delivery.scxml" >&2 || true
+  exit 1
+fi
+echo "$example matches fresh export"

@@ -21,7 +21,7 @@ provenance:
 # Add descriptive SCXML state-chart export for transducers
 
 
-This ExecPlan is a living document. Keep Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective current during implementation. The authorized deliverable of the authoring session is this plan; implementation remains pending.
+This ExecPlan is a living document. Keep Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective current during implementation. Implementation completed on 2026-10-02; see Outcomes & Retrospective.
 
 ## Purpose / Big Picture
 
@@ -37,12 +37,15 @@ The observable demonstration is an exported Email Delivery chart with an initial
 
 - [x] Milestone 1: The public exporter produces an independently parsed Email Delivery chart with correct states, initial reference, transition, and terminal marker. (2026-10-02) `Keiki.Render.SCXML` exposed; `nix develop -c bash scripts/check-scxml.sh` regenerates `email-delivery.scxml` from the compiled test component and prints `SCXML fixtures: all 1 expected documents parsed; graph and metadata checks passed`; the focused Hspec group passes (2 examples, 0 failures).
 - [x] Milestone 2: Descriptions, replay-edge policy, acceptance markers, unusual names, and malformed finite-state enumeration are handled explicitly and covered by semantic and parser tests. (2026-10-02) Seven fixture documents (`email-delivery`, `email-delivery-structural`, `edge-cases`, `replay-forward`, `replay-all-edges`, `hostile-text`, `unshowable-structural`) are regenerated and checked with parsed-metadata equality: `SCXML fixtures: all 7 expected documents parsed; graph and metadata checks passed`. The focused Hspec group passes 16 examples, including the three ordered malformed-enumeration errors, bottom `initialRegs`, an unforced failing `Show` in structural mode, and an opaque function that never runs. Mutating the hostile document (dropping a hyphen, writing a raw `--`, truncating) makes the checker fail.
-- [ ] Milestone 3: The documented export example, repeatable CI acceptance gate, regression checks, and durable rendering decision are delivered.
+- [x] Milestone 3: The documented export example, repeatable CI acceptance gate, regression checks, and durable rendering decision are delivered. (2026-10-02) `nix develop -c just scxml-check` reports all 7 documents checked and `docs/examples/email-delivery.scxml matches fresh export`; CI runs `just scxml-check` after the build in the `.#ci` shell, which provides Python 3.14.7 and just. Final candidate: `cabal build all` succeeds; `keiki-test` 740 examples, 0 failures; `keiki-codec-json-test` 104 examples, 0 failures; `just compile-fail-check` passes; `cabal check` reports no errors or warnings; `cabal sdist` includes the scripts, example, and fixtures; `git diff --check` is clean. ADR-6 is extended, and its strict OKF validation passes. CAP-9, the guide, README, and CHANGELOG are updated.
 
 ## Surprises & Discoveries
 
 - The builder-authored Email Delivery edge records its guard as plain `SendEmail` and its update as `emailSentAt := SendEmail.at, emailSubject := SendEmail.subject, emailRecipient := SendEmail.recipient, (keep)`: `B.slot … .=` statements accumulate in reverse declaration order onto a trailing `UKeep`. The export reports the declared AST faithfully, so the `assignments` array lists the three `USet`s in that AST order and omits the `UKeep`. Evidence: the first golden comparison in `test/Keiki/Render/SCXMLSpec.hs`.
 - Python's `xml.etree.ElementTree` discards comments unless the tree builder is created with `ET.TreeBuilder(insert_comments=True)`; the checker uses that explicitly.
+- The pre-commit `treefmt` hook now runs cabal-gild (introduced by the nix-haskell-flake 0.24.0 migration), which had never been applied to `keiki.cabal`. Staging `keiki.cabal` therefore failed until the file was reformatted. That whitespace and ordering change landed separately in `style(cabal): apply cabal-gild formatting to keiki.cabal`. `nix fmt` similarly reformats `cabal.project`, `jitsurei/jitsurei.cabal`, and both codec `.cabal` files; those unrelated changes were reverted, and the drift remains.
+- `okf index docs/capabilities --write` regenerates `docs/capabilities/index.md` as a bare list and would delete its hand-authored overview and table. The index was restored, and only the CAP-9 table row was edited. `okf log add` also re-wraps the indentation of earlier multi-line entries; that reflow was reverted. `okf index docs/adr` produced no change.
+- `okf validate docs/capabilities --strict … --profile-enforce --log-enforce` exits 1 both at the plan's starting commit and after this change. The only diagnostics are the profile-recommended `reviews` field missing from all 12 capability records, which strict mode promotes to errors. The repository's `just capabilities-validate` recipe runs without `--strict` and passes before and after. Adding fabricated review provenance would be wrong, so the pre-existing strict failure is left as is. `docs/adr` passes strict validation.
 
 
 ## Decision Log
@@ -61,6 +64,12 @@ Decision (2026-10-02): Generate checker input by running the compiled test execu
 Decision (2026-10-02): Edge records carry both `update` (the full `prettyUpdate` text) and `assignments` (one `slot := term` string per `USet`, in AST order), plus `eventSource` (`input-constructor` or `synthetic`) so consumers need not reverse-engineer label provenance. Structural mode (`includeBehavior = False`) omits `guard`, `update`, `assignments`, `updateReads`, and the entire `outputs` array, including output constructor names.
 
 ## Outcomes & Retrospective
+
+Delivered (2026-10-02): `Keiki.Render.SCXML` exports any finite `SymTransducer (HsPred rs ci)` as a descriptive SCXML 1.0 document with the planned API surface. It assigns collision-free `s<i>_<name>` IDs, emits `<final>` only for accepting states with no drawn edges, and labels events conservatively (`keiki_edge_`/`keiki_replay_` synthetic labels). It records `keiki-scxml-v1` JSON metadata comments whose encoding never emits a hyphen or an XML-forbidden character, and it offers forward and all-declared edge views plus a structural mode. Errors are structured and ordered. The library adds no dependency beyond `base` and `text`.
+
+Evidence comes from two independent sides. The Hspec group pins the exporter's contract: the Email Delivery golden, laziness with respect to `initialRegs`, structural mode with a failing `Show`, opaque functions that never run, both edge views, hostile names, and the three error cases. Separately, `scripts/check-scxml.py` parses seven freshly generated documents with Python's standard XML and JSON parsers and compares decoded metadata for equality. The documented example is byte-compared against fresh output in CI.
+
+Lessons: generating checker input from the compiled test executable, keyed by an environment variable, was simpler and more reliable than driving GHCi. The hostile-text fixture caught nothing during development, but mutation runs confirmed that the checker rejects a single dropped escape or a raw `--`, so it bites. Future work outside this plan includes a tested compatibility claim for a specific graphical editor, executable SCXML generation, SCXML import, and nested `Composite` charts.
 
 
 ## Context and Orientation

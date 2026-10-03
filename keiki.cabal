@@ -32,6 +32,11 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
+extra-source-files:
+  docs/examples/email-delivery.scxml
+  scripts/check-scxml.py
+  scripts/check-scxml.sh
+
 source-repository head
   type: git
   location: https://github.com/shinzui/keiki.git

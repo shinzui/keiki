@@ -52,7 +52,7 @@ the project's phase, not a gap in this catalog.
 | [CAP-6](b-presentation-views.md) | Per-vertex B-presentation projections | 0.1.0.0 | keiki |
 | [CAP-7](composition-combinators.md) | Composition and profunctor combinators | 0.1.0.0 | keiki |
 | [CAP-8](acceptors.md) | Input and output acceptors | 0.1.0.0 | keiki |
-| [CAP-9](diagram-rendering.md) | Readable Mermaid and Markdown rendering | 0.1.0.0 | keiki |
+| [CAP-9](diagram-rendering.md) | Readable Mermaid, Markdown, and SCXML rendering | 0.1.0.0 | keiki |
 | [CAP-10](snapshot-shape-hash.md) | Codec-independent snapshot shape discrimination | 0.1.0.0 | keiki |
 | [CAP-11](json-codec.md) | Optional JSON codec for register files and events | 0.1.0.0 | keiki-codec-json |
 | [CAP-12](codec-test-toolkit.md) | Codec property-test toolkit for downstream consumers | 0.1.0.0 | keiki-codec-json-test |

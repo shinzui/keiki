@@ -1,7 +1,7 @@
 ---
-title: "Readable Mermaid and Markdown rendering"
+title: "Readable Mermaid, Markdown, and SCXML rendering"
 type: Capability
-description: "Render a transducer as a behaviour-readable Mermaid diagram, Markdown edge inventory, or pretty-printed predicate directly from its declaration."
+description: "Render a transducer as a behaviour-readable Mermaid diagram, Markdown edge inventory, pretty-printed predicate, or descriptive SCXML state chart directly from its declaration."
 generated:
   by: adopt-capabilities/0.9.2
   at: "2026-08-08T00:00:00Z"
@@ -17,6 +17,7 @@ interface:
   - Keiki.Render.Markdown
   - Keiki.Render.Inspector
   - Keiki.Render.Pretty
+  - Keiki.Render.SCXML
   - Keiki.Render.Validate
 requires:
   - CAP-1
@@ -30,9 +31,15 @@ evidence:
   - kind: test
     resource: test/Keiki/Render/PrettySpec.hs
     proves: Predicates, terms, and updates pretty-print in domain-readable form while marking opaque and redacted values honestly.
+  - kind: test
+    resource: test/Keiki/Render/SCXMLSpec.hs
+    proves: SCXML export assigns collision-free state IDs, chooses final elements and event labels conservatively, keeps replay-only edges out of the forward view, never forces initial registers or structural-mode literals, and rejects malformed enumerations in a fixed order.
+  - kind: test
+    resource: scripts/check-scxml.py
+    proves: Freshly generated SCXML fixtures parse with Python's standard XML parser, every reference resolves, decoded metadata comments match each fixture's expected graph and descriptions (including hostile text), and the documented example matches fresh output.
 ---
 
-# Readable Mermaid and Markdown rendering
+# Readable Mermaid, Markdown, and SCXML rendering
 
 A transducer declaration is also its own documentation source. keiki renders it
 to Mermaid diagrams and Markdown inventories derived from the same edge AST, so
@@ -54,12 +61,19 @@ the picture cannot drift from the behaviour. It reads the core declaration in
   literals honestly.
 - **`Keiki.Render.Validate`**: pure heuristic validation of generated diagrams
   and atlases.
+- **`Keiki.Render.SCXML`**: `toSCXML` / `toSCXMLWith` export a flat,
+  **descriptive** SCXML state chart (states, initial, finals, event-labelled
+  transitions), with guards, assignments, and outputs kept as
+  `keiki-scxml-v1` JSON comments. The default view draws only forward (`Live`)
+  edges; `includeBehavior = False` is the structural view. See
+  [`docs/guide/scxml-export.md`](../guide/scxml-export.md).
 
 ## Shortest real usage
 
 ```haskell
 toMermaid emailDelivery :: Text          -- full behaviour
 toTopologyMermaid emailDelivery :: Text  -- shape only
+toSCXML emailDelivery :: Either ScxmlError Text  -- descriptive state chart
 ```
 
 ## Limits
@@ -72,5 +86,11 @@ toTopologyMermaid emailDelivery :: Text  -- shape only
   no earlier than the Mermaid renderer.
 - **`Keiki.Render.Validate` is heuristic**, not a proof that a diagram is
   faithful.
+- **SCXML export is descriptive, not executable.** An SCXML interpreter loading
+  the document does not reproduce guards, register updates, event emission,
+  command rejection, or replay; `event` attributes are diagram labels, and
+  viewers may drop the metadata comments. No graphical editor has been tested,
+  and SCXML import is out of scope. `Keiki.Render.SCXML` is unreleased, so no
+  `since` version is recorded for it.
 - `lit` requires `Show` (breaking, 0.8.0.0); values without `Show`, secrets, and
   deliberately redacted values must use `opaqueLit`, which renders as `<lit>`.

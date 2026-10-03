@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-02
+* **Update**: ADR-6: extend the readable rendering contract to the descriptive SCXML export and its keiki-scxml-v1 comment convention
+
 ## 2026-08-21
 * **Update**: ADR-3: bound solver-free Bool disjointness to producer-owned exhaustive evidence
 * **Update**: ADR-2: record producer-owned exact Bool exhaustion in default replay attribution

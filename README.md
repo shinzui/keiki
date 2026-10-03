@@ -57,7 +57,8 @@ Symbolic Finite Transducers and Streaming String Transducers. From one
 - checked sequential composition (`composeChecked`) plus `alternative` and `feedback1`,
 - profunctor / `Category` / `Strong` / `Choice` / `Arrow` instances,
 - behavior-readable Mermaid and Markdown renderers, with explicit compact
-  topology output,
+  topology output, plus a descriptive (non-executable) SCXML state-chart export
+  (`Keiki.Render.SCXML`; see `docs/guide/scxml-export.md`),
 - eager builder validation and default-on replay-safety checks, plus opt-in
   SBV + z3 checks for single-valuedness and output-dependent replay inversion,
 - trusted Generic/TH wire schemas that align event fields structurally for
