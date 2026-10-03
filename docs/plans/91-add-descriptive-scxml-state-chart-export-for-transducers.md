@@ -36,7 +36,7 @@ The observable demonstration is an exported Email Delivery chart with an initial
 
 
 - [x] Milestone 1: The public exporter produces an independently parsed Email Delivery chart with correct states, initial reference, transition, and terminal marker. (2026-10-02) `Keiki.Render.SCXML` exposed; `nix develop -c bash scripts/check-scxml.sh` regenerates `email-delivery.scxml` from the compiled test component and prints `SCXML fixtures: all 1 expected documents parsed; graph and metadata checks passed`; the focused Hspec group passes (2 examples, 0 failures).
-- [ ] Milestone 2: Descriptions, replay-edge policy, acceptance markers, unusual names, and malformed finite-state enumeration are handled explicitly and covered by semantic and parser tests.
+- [x] Milestone 2: Descriptions, replay-edge policy, acceptance markers, unusual names, and malformed finite-state enumeration are handled explicitly and covered by semantic and parser tests. (2026-10-02) Seven fixture documents (`email-delivery`, `email-delivery-structural`, `edge-cases`, `replay-forward`, `replay-all-edges`, `hostile-text`, `unshowable-structural`) are regenerated and checked with parsed-metadata equality: `SCXML fixtures: all 7 expected documents parsed; graph and metadata checks passed`. The focused Hspec group passes 16 examples, including the three ordered malformed-enumeration errors, bottom `initialRegs`, an unforced failing `Show` in structural mode, and an opaque function that never runs. Mutating the hostile document (dropping a hyphen, writing a raw `--`, truncating) makes the checker fail.
 - [ ] Milestone 3: The documented export example, repeatable CI acceptance gate, regression checks, and durable rendering decision are delivered.
 
 ## Surprises & Discoveries

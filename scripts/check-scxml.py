@@ -190,10 +190,6 @@ def parse_state(element, position, document, name):
     require(set(element.attrib) == {"id"}, f"{name}: state attributes")
     require(blank(element.text) and blank(element.tail), f"{name}: stray text")
     sid = element.get("id")
-    require(
-        re.fullmatch(r"s%d_[A-Za-z0-9_]*" % position, sid),
-        f"{name}: state ID {sid!r} is not s{position}_<name>",
-    )
     children = list(element)
     require(children, f"{name}: {sid} has no state record")
     record = decode_record(children[0], f"{name}: {sid} state record")
@@ -202,6 +198,8 @@ def parse_state(element, position, document, name):
     require(record["id"] == sid, f"{name}: {sid} record id mismatch")
     require(record["index"] == position, f"{name}: {sid} index mismatch")
     require(isinstance(record["label"], str), f"{name}: {sid} label")
+    expected_id = "s%d_%s" % (position, re.sub(r"[^A-Za-z0-9_]", "_", record["label"]))
+    require(sid == expected_id, f"{name}: state ID {sid!r} is not {expected_id!r}")
     require(isinstance(record["accepting"], bool), f"{name}: {sid} accepting")
     state = State("final" if tag == q("final") else "state", sid, record)
 
@@ -348,8 +346,238 @@ def check_email_delivery(chart):
         )
 
 
+def elements(chart):
+    return [(s.element, s.record["label"]) for s in chart.states]
+
+
+def label_of(chart, sid):
+    return chart.by_id[sid].record["label"]
+
+
+def edge_summary(chart):
+    """(source label, edgeIndex, mode, drawn, event, target label) per edge."""
+    return [
+        (
+            s.record["label"],
+            e.record["edgeIndex"],
+            e.record["mode"],
+            e.drawn,
+            e.record["event"],
+            label_of(chart, e.record["target"]),
+        )
+        for s in chart.states
+        for e in s.edges
+    ]
+
+
+def edge(chart, label, index):
+    return chart.state(label).edges[index].record
+
+
+def behavior(record):
+    return (record["guard"], record["assignments"], record["outputs"])
+
+
+def out(constructor, *fields):
+    return {"constructor": constructor, "fields": list(fields)}
+
+
+def check_email_default(chart):
+    require(chart.document["includeBehavior"], "email: behavior expected")
+    require(chart.document["edgeView"] == "forward-edges", "email: edge view")
+    check_email_delivery(chart)
+
+
+def check_email_structural(chart):
+    require(not chart.document["includeBehavior"], "email: structural expected")
+    check_email_delivery(chart)
+
+
+def check_edge_cases(chart):
+    require(
+        elements(chart)
+        == [
+            ("state", "EcStart"),
+            ("state", "EcAccepting"),
+            ("final", "EcDone"),
+            ("state", "EcIsolated"),
+        ],
+        "edge-cases: elements",
+    )
+    require(chart.initial == chart.state("EcStart").id, "edge-cases: initial")
+    require(
+        [s.record["accepting"] for s in chart.states] == [False, True, True, False],
+        "edge-cases: acceptance",
+    )
+    live = "Live"
+    require(
+        edge_summary(chart)
+        == [
+            ("EcStart", 0, live, True, "keiki_edge_s0_e0", "EcAccepting"),
+            ("EcStart", 1, live, True, "keiki_edge_s0_e1", "EcDone"),
+            ("EcStart", 2, live, True, "keiki_edge_s0_e2", "EcStart"),
+            ("EcStart", 3, live, True, "keiki_edge_s0_e3", "EcDone"),
+            ("EcStart", 4, live, True, "keiki_edge_s0_e4", "EcDone"),
+            ("EcStart", 5, live, True, "keiki_edge_s0_e5", "EcDone"),
+            ("EcStart", 6, live, True, "Go", "EcDone"),
+            ("EcAccepting", 0, live, True, "Ping", "EcAccepting"),
+        ],
+        "edge-cases: edges",
+    )
+    require(
+        behavior(edge(chart, "EcStart", 0)) == ("(Go || Stop)", ["count := 1"], []),
+        "edge-cases: disjunction edge",
+    )
+    require(
+        behavior(edge(chart, "EcStart", 1))
+        == ("!(Go)", [], [out("A", "count"), out("B"), out("C")]),
+        "edge-cases: negated multi-output edge",
+    )
+    require(
+        behavior(edge(chart, "EcStart", 2)) == ("true", [], []),
+        "edge-cases: wildcard self-loop",
+    )
+    require(
+        edge(chart, "EcStart", 3)["guard"] == "(keiki_edge_s0_e9 && count == 0)",
+        "edge-cases: reserved-prefix guard",
+    )
+    require(
+        edge(chart, "EcStart", 5)["guard"] == "(Do Thing && true)",
+        "edge-cases: unsafe-name guard",
+    )
+    e6 = edge(chart, "EcStart", 6)
+    require(
+        behavior(e6)
+        == (
+            "(Go && count > 0)",
+            ["count := (count + 1)", "note := <fn>(note)"],
+            [out("A", "<lit>")],
+        ),
+        "edge-cases: opaque markers",
+    )
+    require(
+        e6["update"] == "count := (count + 1), note := <fn>(note)",
+        "edge-cases: full update",
+    )
+    require(
+        e6["eventSource"] == "input-constructor", "edge-cases: Go event source"
+    )
+
+
+def check_replay_forward(chart):
+    require(chart.document["edgeView"] == "forward-edges", "replay: view")
+    require(
+        elements(chart) == [("state", "RpOpen"), ("final", "RpShut")],
+        "replay-forward: elements",
+    )
+    require(
+        edge_summary(chart)
+        == [
+            ("RpOpen", 0, "Live", True, "Close", "RpShut"),
+            ("RpOpen", 1, "ReplayOnly", False, "keiki_replay_s0_e1", "RpOpen"),
+            ("RpShut", 0, "ReplayOnly", False, "keiki_replay_s1_e0", "RpOpen"),
+        ],
+        "replay-forward: edges",
+    )
+    check_replay_behavior(chart)
+
+
+def check_replay_all(chart):
+    require(chart.document["edgeView"] == "all-declared-edges", "replay: view")
+    require(
+        "historical inversion" in chart.document["replayEdges"],
+        "replay-all: document explains replay arrows",
+    )
+    require(
+        elements(chart) == [("state", "RpOpen"), ("state", "RpShut")],
+        "replay-all: elements",
+    )
+    require(
+        edge_summary(chart)
+        == [
+            ("RpOpen", 0, "Live", True, "Close", "RpShut"),
+            ("RpOpen", 1, "ReplayOnly", True, "keiki_replay_s0_e1", "RpOpen"),
+            ("RpShut", 0, "ReplayOnly", True, "keiki_replay_s1_e0", "RpOpen"),
+        ],
+        "replay-all: edges",
+    )
+    check_replay_behavior(chart)
+
+
+def check_replay_behavior(chart):
+    require(
+        behavior(edge(chart, "RpOpen", 0)) == ("Close", [], [out("Closed")]),
+        "replay: live edge behavior",
+    )
+    for label, index in (("RpOpen", 1), ("RpShut", 0)):
+        r = edge(chart, label, index)
+        require(behavior(r) == ("Reopen", [], [out("Reopened")]), "replay: behavior")
+        require("historical inversion" in r["note"], "replay: edge note")
+
+
+HOSTILE = (
+    "\u00dcnic\u00f8de \u65e5\u672c \U0001f389 \"quote\" 'apos' & <tag> </scxml> ]]> "
+    "\n new\r\nline\ttab \\ backslash -- double --> end <!-- open "
+    "\x01 \x7f \x85 \ufdd0 \ufffe \U0010ffff -"
+)
+
+
+def check_hostile(chart):
+    require(
+        [s.record["label"] for s in chart.states]
+        == ["Same Name", "Same Name", "Same-Name", HOSTILE],
+        "hostile: labels did not survive decoding",
+    )
+    require(
+        [s.id for s in chart.states][:3]
+        == ["s0_Same_Name", "s1_Same_Name", "s2_Same_Name"],
+        "hostile: colliding IDs",
+    )
+    require(
+        [s.element for s in chart.states] == ["state", "state", "state", "final"],
+        "hostile: elements",
+    )
+    require(
+        [(s, i, e, t) for (s, i, _, _, e, t) in edge_summary(chart)]
+        == [
+            ("Same Name", 0, "keiki_edge_s0_e0", HOSTILE),
+            ("Same Name", 0, "Poke", "Same Name"),
+            ("Same-Name", 0, "Poke", "Same Name"),
+        ],
+        "hostile: edges",
+    )
+    targets = [e.record["target"] for s in chart.states for e in s.edges]
+    require(
+        targets == [chart.states[3].id, "s0_Same_Name", "s1_Same_Name"],
+        "hostile: colliding names merged or misdirected",
+    )
+    r = chart.states[0].edges[0].record
+    require(r["guard"] == HOSTILE, "hostile: guard text did not survive")
+    require(r["update"] == "a--b := a--b", "hostile: update text did not survive")
+    require(r["assignments"] == ["a--b := a--b"], "hostile: assignments")
+    require(r["outputs"] == [out(HOSTILE)], "hostile: output constructor")
+
+
+def check_unshowable_structural(chart):
+    require(not chart.document["includeBehavior"], "unshowable: structural")
+    require(
+        edge_summary(chart) == [("UStart", 0, "Live", True, "UGo", "UEnd")],
+        "unshowable: edges",
+    )
+    require(
+        elements(chart) == [("state", "UStart"), ("final", "UEnd")],
+        "unshowable: elements",
+    )
+
+
 EXPECTED = {
-    "email-delivery.scxml": check_email_delivery,
+    "email-delivery.scxml": check_email_default,
+    "email-delivery-structural.scxml": check_email_structural,
+    "edge-cases.scxml": check_edge_cases,
+    "replay-forward.scxml": check_replay_forward,
+    "replay-all-edges.scxml": check_replay_all,
+    "hostile-text.scxml": check_hostile,
+    "unshowable-structural.scxml": check_unshowable_structural,
 }
 
 
