@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "Mermaid rendering"
+description: "Look up Mermaid rendering options, readable edge semantics, topology views, atlases, and validation helpers."
+docId: DOC-17
+tags: [rendering, mermaid, diagrams]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Mermaid rendering
 
 Keiki's render surface lives under `src/Keiki/Render/`. The primary

@@ -1,3 +1,14 @@
+---
+type: Tutorial
+title: "keiki User Guide"
+description: "Learn to author aggregates, run forward decisions and replay, derive views, compose transducers, and use symbolic analysis."
+docId: DOC-24
+tags: [tutorial, authoring, builder, replay]
+generated:
+  by: human:nadeem
+  at: "2026-08-04T20:42:41Z"
+---
+
 # keiki User Guide
 
 This guide is the action-oriented companion to the conceptual

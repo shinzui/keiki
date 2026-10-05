@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "User Registration behavior"
+description: "Inspect and regenerate UserRegistration behavior showing commands, events, register assignments, and guards."
+docId: DOC-14
+tags: [diagrams, behavior, user-registration, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # User Registration behavior
 
 Rendered by `Keiki.Render.Mermaid.toMermaid` over

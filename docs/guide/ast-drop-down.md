@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Authoring against the AST directly"
+description: "Hand-author transducer edges against the Core AST when the Builder DSL cannot express a model."
+docId: DOC-3
+tags: [authoring, ast, builder]
+generated:
+  by: human:nadeem
+  at: "2026-07-13T14:25:04Z"
+---
+
 # Authoring against the AST directly
 
 When the `Keiki.Builder` DSL can't express what you need, drop down

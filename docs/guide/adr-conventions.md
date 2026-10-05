@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Architecture Decision Records (ADRs)"
+description: "Write and maintain architecture decision records using the shared ADR profile and repository conventions."
+docId: DOC-2
+tags: [documentation, architecture, adrs]
+generated:
+  by: human:nadeem
+  at: "2026-08-04T17:08:23Z"
+---
+
 # Architecture Decision Records (ADRs)
 
 `docs/adr/` holds **Architecture Decision Records**: short, durable notes that

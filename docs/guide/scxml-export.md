@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "SCXML state-chart export"
+description: "Look up the descriptive SCXML export API, document subset, metadata comments, and verification procedure."
+docId: DOC-22
+tags: [rendering, scxml, diagrams]
+generated:
+  by: human:nadeem
+  at: "2026-10-03T02:47:12Z"
+---
+
 # SCXML state-chart export
 
 `Keiki.Render.SCXML` exports a finite transducer as a

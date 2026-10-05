@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "User Registration V0 topology"
+description: "Inspect and regenerate the UserRegistrationV0 topology with its earlier multi-step registration flow."
+docId: DOC-13
+tags: [diagrams, topology, user-registration, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # User Registration V0 topology
 
 Rendered by `Keiki.Render.Mermaid.toTopologyMermaid` over

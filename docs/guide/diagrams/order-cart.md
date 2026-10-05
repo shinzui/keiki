@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "Order / Cart topology"
+description: "Inspect and regenerate the OrderCart aggregate topology from an empty cart through payment and shipping."
+docId: DOC-12
+tags: [diagrams, topology, order-cart, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Order / Cart topology
 
 Rendered by `Keiki.Render.Mermaid.toTopologyMermaid` over

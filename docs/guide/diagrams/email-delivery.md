@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "Email Delivery topology"
+description: "Inspect and regenerate the minimal EmailDelivery aggregate topology used in composition examples."
+docId: DOC-11
+tags: [diagrams, topology, email-delivery, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Email Delivery topology
 
 Rendered by `Keiki.Render.Mermaid.toTopologyMermaid` over

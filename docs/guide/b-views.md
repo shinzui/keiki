@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "B-presentation views"
+description: "Derive and consume per-vertex B-presentation views that expose the register slots live at each control vertex."
+docId: DOC-4
+tags: [views, registers, template-haskell]
+generated:
+  by: human:nadeem
+  at: "2026-05-17T01:32:28Z"
+---
+
 # B-presentation views
 
 How to derive and consume per-vertex views — the **B-presentation

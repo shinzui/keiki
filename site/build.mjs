@@ -132,6 +132,7 @@ async function loadCollection(collection) {
   const extensions = collection.extensions ?? ['.md']
   const files = (await fs.readdir(dir, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && extensions.includes(path.extname(entry.name)))
+    .filter((entry) => !['index.md', 'log.md'].includes(entry.name))
     .map((entry) => entry.name)
     .sort(naturalFileSort)
 
@@ -477,7 +478,7 @@ function masterPlanGraph(masterplans, standalone) {
 
 function rewriteDocLinks(html, currentDoc) {
   return html.replace(/href="([^"]+)"/g, (match, href) => {
-    if (/^(https?:|mailto:|#)/.test(href)) return match
+    if (/^(https?:|mailto:|mori:|#)/.test(href)) return match
     const [target, hash = ''] = href.split('#')
     const normalized = normalizeDocPath(target, currentDoc)
     const generated = routeBySource.get(normalized)

@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "AlertSource ⨾ EmailDelivery composite topology (nested form)"
+description: "Inspect and regenerate the nested topology of the AlertSource and EmailDelivery sequential composite."
+docId: DOC-7
+tags: [diagrams, topology, composition, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # AlertSource ⨾ EmailDelivery composite topology (nested form)
 
 Rendered with the explicit topology policy via

@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Deriving lifecycle transitions"
+description: "Model threshold-derived lifecycle transitions and place re-evaluation where state changes cannot silently miss them."
+docId: DOC-6
+tags: [modeling, lifecycle, guards]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Deriving lifecycle transitions
 
 How to model a status/lifecycle vertex transition that is *derived* from a

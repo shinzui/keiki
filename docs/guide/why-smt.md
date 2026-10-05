@@ -1,3 +1,14 @@
+---
+type: Explanation
+title: "Why keiki uses an SMT solver"
+description: "Understand why Keiki uses an SMT solver, which bugs symbolic analysis detects, and its limitations."
+docId: DOC-25
+tags: [symbolic-analysis, smt, guards]
+generated:
+  by: human:nadeem
+  at: "2026-07-31T13:15:51Z"
+---
+
 # Why keiki uses an SMT solver
 
 A short explainer for keiki users who've encountered the phrase "SMT

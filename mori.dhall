@@ -149,6 +149,14 @@ in  Schema.Project::{
       ]
     , okfBundles =
       [ Schema.OkfBundle::{
+        , name = "guides"
+        , path = "docs/guide"
+        , profile = Some "docs/guide/profile.dhall"
+        , okfVersion = "0.2"
+        , description = Some
+            "Reader-facing tutorials, guides, explanations, runbooks, and diagram references"
+        }
+      , Schema.OkfBundle::{
         , name = "improvement-requests"
         , path = "docs/improvement-requests"
         , profile = Some "mori/improvement-requests-profile.dhall"

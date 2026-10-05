@@ -20,7 +20,7 @@ for (const file of files) {
   const html = await fs.readFile(file, 'utf8')
   const base = path.dirname(file)
   for (const [, href] of html.matchAll(/href="([^"]+)"/g)) {
-    if (/^(https?:|mailto:|#)/.test(href)) continue
+    if (/^(https?:|mailto:|mori:|#)/.test(href)) continue
     const [target] = href.split('#')
     if (!target) continue
 

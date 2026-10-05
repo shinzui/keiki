@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Composition"
+description: "Combine transducers with sequential composition, disjoint alternatives, and the experimental feedback1 cascade."
+docId: DOC-5
+tags: [composition, replay, feedback1]
+generated:
+  by: human:nadeem
+  at: "2026-08-05T00:00:20Z"
+---
+
 # Composition
 
 How to combine two transducers with the `Keiki.Composition`

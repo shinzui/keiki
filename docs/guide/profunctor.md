@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Profunctor wrappers and variance combinators"
+description: "Reshape transducer input and output alphabets with profunctor wrappers and variance combinators."
+docId: DOC-21
+tags: [composition, profunctors, alphabets]
+generated:
+  by: human:nadeem
+  at: "2026-07-13T04:29:32Z"
+---
+
 # Profunctor wrappers and variance combinators
 
 How to reshape a transducer's input or output alphabet without

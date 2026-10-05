@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Generic-lens and label reads"
+description: "Keep Keiki register labels resolving alongside generic-lens and handle operator-name collisions."
+docId: DOC-15
+tags: [authoring, labels, generic-lens, operators]
+generated:
+  by: human:nadeem
+  at: "2026-06-06T17:14:04Z"
+---
+
 # Generic-lens and label reads
 
 keiki lets you read a register with a bare overloaded label: inside a transducer,

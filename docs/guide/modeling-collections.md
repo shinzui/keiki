@@ -1,3 +1,14 @@
+---
+type: Explanation
+title: "Modeling collections"
+description: "Understand the analysis trade-offs of collection registers and choose scalar projections or separate aggregates."
+docId: DOC-18
+tags: [modeling, collections, symbolic-analysis]
+generated:
+  by: human:nadeem
+  at: "2026-06-06T18:39:22Z"
+---
+
 # Modeling collections
 
 You have an aggregate, and a part of its state is naturally "many of

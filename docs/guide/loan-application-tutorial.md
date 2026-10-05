@@ -1,3 +1,14 @@
+---
+type: Tutorial
+title: "Loan Application — a worked tutorial"
+description: "Build a loan-underwriting workflow with evidence accumulation, threshold guards, B-views, and aggregate composition."
+docId: DOC-16
+tags: [tutorial, loan-application, composition, guards]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Loan Application — a worked tutorial
 
 This guide walks through a multi-aggregate workflow end to end: a

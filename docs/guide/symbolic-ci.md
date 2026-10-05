@@ -1,3 +1,14 @@
+---
+type: Runbook
+title: "Symbolic CI"
+description: "Wire symbolic single-valuedness checks into CI and diagnose failures, solver requirements, and analysis costs."
+docId: DOC-23
+tags: [ci, symbolic-analysis, smt, validation]
+generated:
+  by: human:nadeem
+  at: "2026-08-05T00:00:20Z"
+---
+
 # Symbolic CI
 
 How to wire keiki's symbolic single-valuedness check into a CI

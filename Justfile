@@ -22,6 +22,17 @@ website-linkcheck:
 
 website-verify: install website-build website-linkcheck
 
+# Reader-facing documentation, including Markdown diagram notes. Requires
+# `okf` 0.9.0.0 or later and `dhall` on PATH, like the other OKF checks.
+guides-validate:
+    dhall type --file docs/guide/profile.dhall > /dev/null
+    okf validate docs/guide --strict \
+        --profile docs/guide/profile.dhall \
+        --profile-enforce --log-enforce
+    okf graph docs/guide --json > /dev/null
+
+documentation-validate: adr-validate capabilities-validate reviews-validate terminology-validate guides-validate
+
 # Strict OKF profile + log validation for docs/adr. Requires `okf` and `dhall`
 # on PATH (not yet part of the Nix dev shell — see docs/guide/adr-conventions.md).
 adr-validate:

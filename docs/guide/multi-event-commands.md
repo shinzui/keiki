@@ -1,3 +1,14 @@
+---
+type: Guide
+title: "Multi-event commands"
+description: "Author multi-event edges and understand their snapshot, replay, composition, and rendering behavior."
+docId: DOC-19
+tags: [authoring, events, replay, snapshot-semantics]
+generated:
+  by: human:nadeem
+  at: "2026-07-13T14:25:04Z"
+---
+
 # Multi-event commands
 
 When one command produces two or more events from a single transition

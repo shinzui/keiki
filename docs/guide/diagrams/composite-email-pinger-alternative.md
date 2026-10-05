@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "EmailDelivery + Pinger alternative composite topology"
+description: "Inspect and regenerate the topology of the EmailDelivery and Pinger alternative composite."
+docId: DOC-9
+tags: [diagrams, topology, alternative, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # EmailDelivery + Pinger alternative composite topology
 
 Rendered with the explicit topology policy via

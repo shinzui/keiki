@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "Output invertibility — which events round-trip on replay"
+description: "Look up the replay invertibility contract, derived-field verification rules, diagnostics, and modeling recipes."
+docId: DOC-20
+tags: [replay, invertibility, derived-values]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Output invertibility — which events round-trip on replay
 
 keiki reconstitutes an aggregate from its event log without any hand-written inverse

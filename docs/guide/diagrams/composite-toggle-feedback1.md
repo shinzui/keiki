@@ -1,3 +1,14 @@
+---
+type: Reference
+title: "Toggle ↔ Toggle-policy feedback1 cascade topology"
+description: "Inspect and regenerate the topology of the Toggle and Toggle-policy feedback1 cascade."
+docId: DOC-10
+tags: [diagrams, topology, feedback1, mermaid]
+generated:
+  by: human:nadeem
+  at: "2026-08-02T15:24:16Z"
+---
+
 # Toggle ↔ Toggle-policy feedback1 cascade topology
 
 Rendered with the explicit topology policy via
